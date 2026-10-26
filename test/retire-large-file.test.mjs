@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import * as nodeFs from "node:fs";
-import { chmodSync, closeSync, ftruncateSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statfsSync, statSync, symlinkSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, ftruncateSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statfsSync, statSync, symlinkSync, truncateSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exactTreeDigest, fingerprintTree, generatedWorkDigest, storedTreeDigest, worktreeBytes, worktreeDigests } from "../lib/core.mjs";
@@ -67,15 +67,15 @@ test("#617 the digests of a tree whose files cross the size of the pieces are th
     v2File: storedTreeDigest(several, 2),
     exactFile: exactTreeDigest(several),
   }, {
-    legacy: "GOLDEN",
-    legacyHome: "GOLDEN",
-    v2: "GOLDEN",
-    v2Home: "GOLDEN",
-    exact: "GOLDEN",
-    exactChildren: "GOLDEN",
-    legacyFile: "GOLDEN",
-    v2File: "GOLDEN",
-    exactFile: "GOLDEN",
+    legacy: "sha256:8559122dc7aa5094427b3b7c8df2153332d57f107008b8840a3de5da735901dd",
+    legacyHome: "sha256:fe5030fb08e198c9dcc2572896ed314d18435eb098eec5814e63e1229a9bfaf9",
+    v2: "sha256:9f3adc71a18ae481cbba30a7334c84c8ff51abb99f5204c787113dd749432fec",
+    v2Home: "sha256:a77bea498f218b64141626c677f9cd9f966a807c27bfa531d8d5ad0161c7f31b",
+    exact: "sha256:6ef648a6665bedd16147d9b76ca45f5d0f2859d9a81b23c433202e979991bbf0",
+    exactChildren: "sha256:9f3adc71a18ae481cbba30a7334c84c8ff51abb99f5204c787113dd749432fec",
+    legacyFile: "sha256:3aac769ac1ad228dcb2ea1bc6685cffb4477898238f21302455564d9404748df",
+    v2File: "sha256:4f78b269527d3e74d93de72f15121cefb5b414e692549903763a04b6aa9d5f22",
+    exactFile: "sha256:4f78b269527d3e74d93de72f15121cefb5b414e692549903763a04b6aa9d5f22",
   });
 });
 
@@ -85,7 +85,10 @@ test("#617 a worktree's digests, its untracked paths read as taps of the walk, a
   const status = fixtureGit(root, STATUS_ARGS);
   const both = worktreeDigests(root, status);
   assert.ok(both, "the worktree's digests are read");
-  assert.deepEqual({ generated: both.generated, bytes: both.bytes }, { generated: "GOLDEN", bytes: "GOLDEN" });
+  assert.deepEqual({ generated: both.generated, bytes: both.bytes }, {
+    generated: "sha256:04c511a06bba9d5ec9f56871307ac0a5dc75a852354aaa1baa01cb2513f64b8a",
+    bytes: "sha256:9f3adc71a18ae481cbba30a7334c84c8ff51abb99f5204c787113dd749432fec",
+  });
 });
 
 test("#617 a file's stored digest is the one spelled out from its bytes read whole", () => {
@@ -103,11 +106,11 @@ test("#617 a file's stored digest is the one spelled out from its bytes read who
 // A digest frames a file's bytes with their length, which it takes when it opens the file: the bytes
 // that follow are exactly that many.
 
-/** readFilePieces of `path` with `between` run after its first piece → { size, bytes }. */
+/** readFilePieces of `path` with `between()` run after its first piece → { size, bytes }. */
 function readWith(path, between) {
   const pieces = [];
   let size, first = true;
-  const io = { readSync: (fd, ...args) => { const n = readSync(fd, ...args); if (first) { first = false; between(fd); } return n; } };
+  const io = { readSync: (fd, ...args) => { const n = readSync(fd, ...args); if (first) { first = false; between(); } return n; } };
   readFilePieces(path, (s) => { size = s; }, (piece) => pieces.push(Buffer.from(piece)), io);
   return { size, bytes: Buffer.concat(pieces) };
 }
@@ -115,7 +118,7 @@ function readWith(path, between) {
 test("#617 a file that shrinks while it is read refuses with E_WORK_INSPECTION_FAILED naming it", () => {
   const root = smallTree();
   const path = join(root, "dir", "several");
-  assert.throws(() => readWith(path, (fd) => ftruncateSync(fd, MIB + 10)), (e) => {
+  assert.throws(() => readWith(path, () => truncateSync(path, MIB + 10)), (e) => {
     assert.equal(e.code, "E_WORK_INSPECTION_FAILED");
     assert.match(e.message, new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} changed while it was read`));
     return true;
@@ -126,7 +129,7 @@ test("#617 a file that grows while it is read is read for the size it had when o
   const root = smallTree();
   const path = join(root, "dir", "several");
   const before = readFileSync(path);
-  const { size, bytes } = readWith(path, (fd) => writeSync(fd, Buffer.from("appended"), 0, 8, before.length));
+  const { size, bytes } = readWith(path, () => appendFileSync(path, "appended"));
   assert.equal(size, before.length);
   assert.ok(bytes.equals(before), "the bytes read are the ones it held when opened");
 });
