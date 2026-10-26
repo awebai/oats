@@ -128,14 +128,14 @@ steward takes them up with the person later.
   reference.
 - **The namespace `N`:** the part of every agent's address before the `/`,
   which other people's agents use to reach this machine's agents. Default:
-  the workspace's name, so the namespace is the machine's own. Messaging is
+  the hostname, normalised as above, so the namespace is the machine's own. Messaging is
   on, and the root's name `A` is `<workspace>-root`.
-- **The steward's name `R`:** its instance name here and the name in its
-  address, `N.aweb.ai/R`: lowercase letters and digits, words joined by
-  single `-`. Default: `steward`, or `<hostname>-steward` (the hostname
-  normalised as above) when the person says `N` is a namespace another
-  machine already uses, so that this machine never adopts the other
-  machine's resident.
+- **The steward's name:** lowercase letters and digits, words joined by
+  single `-`. Default: `steward`. It gives `R`, the steward's instance name
+  here and the name in its address, `N.aweb.ai/R`. `R` is the chosen name,
+  or `<hostname>-<chosen name>` (the hostname normalised as above) when the
+  person says `N` is a namespace another machine already uses, so that this
+  machine never adopts the other machine's resident.
 - **The deployment directory `D`:** default `<home>/Agents/<workspace>`,
   with the home folder spelled out.
 - **OATS Desktop:** installed and started by default; the TUI not opened.

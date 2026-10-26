@@ -81,7 +81,11 @@ test("on a machine found-list, step 1 is the machine's round, with a default for
   const round = skill.slice(skill.indexOf("**The machine's round.**"), skill.indexOf("## 2. Check"));
   assert.ok(round.includes("Enter, or\n\"yes\", accepts every default. Nothing is asked after this round, and never\na key."));
   assert.ok(round.includes("lowercased, with every character outside `[a-z0-9-]` turned\n  into `-`"), "the workspace and N default to the normalised hostname");
-  for (const value of ["**The workspace:**", "**The namespace `N`:**", "`<workspace>-root`", "**The steward's name `R`:**", "Default: `steward`", "`<hostname>-steward`", "**The deployment directory `D`:** default `<home>/Agents/<workspace>`", "**OATS Desktop:** installed and started by default", "**The harness:** the found-list's `harness`"]) {
+  // N follows the hostname, never the workspace's name, which the person may change.
+  assert.match(round, /\*\*The namespace `N`:\*\*[^-]*Default:\s+the hostname, normalised as above/);
+  // R is the chosen name, prefixed by the hostname in another machine's namespace, whatever name was chosen.
+  assert.match(round, /`R` is the chosen name,\s+or `<hostname>-<chosen name>`/);
+  for (const value of ["**The workspace:**", "`<workspace>-root`", "**The steward's name:**", "Default: `steward`", "**The deployment directory `D`:** default `<home>/Agents/<workspace>`", "**OATS Desktop:** installed and started by default", "**The harness:** the found-list's `harness`"]) {
     assert.ok(round.includes(value), `the machine's round gives ${value}`);
   }
 });
