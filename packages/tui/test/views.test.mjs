@@ -4011,6 +4011,24 @@ test("an instance row shows its name as words, the Desktop's sidebar label, a ne
   assert.equal(listLines(open).some((line) => line.startsWith("> ● Oats expert maint")), true, "while its row beside it shows the words, cut to the sidebar's 30 cells");
 });
 
+test("a name the display filter withholds is withheld on its row as it came: it is never made words first, which would hide what made it unsafe; the names around it are words", () => {
+  // Synthetic names a machine's roster can report (its rows are not held to the kernel's grammar): a
+  // credential's URL whose `-` the words would make a space, and a control character the words would trim.
+  const UNSAFE = ["https://u:p-ass@h", "\rordinary-name"];
+  for (const name of UNSAFE) {
+    assert.equal(displayLine(name), DETAIL_WITHHELD, `${JSON.stringify(name)}: the filter withholds the name as it came`);
+    assert.notEqual(displayLine(drawnName(name)), DETAIL_WITHHELD, `${JSON.stringify(name)}: and would let its words through`);
+  }
+  const state = heard(local(), answered(group({ instances: [farRow(FAR_A), ...UNSAFE.map((name) => farRow(name))] })), T1);
+  assert.deepEqual(UNSAFE.map((name) => panelRow(state, name)?.instance), UNSAFE, "the rows keep the names they came with");
+  for (const sz of [S120, S80]) {
+    const lines = listLines(draw(state, sz), sz), at = `${sz.cols}x${sz.rows}`;
+    assert.equal(lines.some((line) => line.includes(drawnName(FAR_A))), true, `${at}: a name the filter lets through is words`);
+    assert.equal(lines.filter((line) => /^[> ] +[●○◌?◆] \[withheld\]$/.test(line)).length, 2, `${at}: each unsafe name is drawn withheld: ${JSON.stringify(lines)}`);
+    for (const line of lines) assert.doesNotMatch(line, /Https|p ass|ordinary/i, `${at}: nothing of an unsafe name is drawn`);
+  }
+});
+
 test("under 80 columns the Instances detail page's first row carries its keys at the right, dim, ending a cell before the edge: `Tab back`, what Enter does, `n spawn` and `w workspaces`, given up from the end as the name grows; `Tab back` always stands, the name cut to leave it room (round 3 of the review)", () => {
   const page = (name, sz, options = {}) => draw(press(stateOf(observed([instanceRow("dev", name)]), options), ["tab"], sz).state, sz);
   const ALL = "Tab back   Enter open   n spawn   w workspaces", SPAWN = "Tab back   Enter open   n spawn";
