@@ -5,8 +5,8 @@
   in the shortcuts editor), chooses between
   **Omarchy's font** and **System font**. The choice is kept on this computer
   and applies at once: open terminals switch font in place and keep their
-  session. The terminal font size and zoom are unchanged
-  ([Workspaces](../desktop.md#workspaces)).
+  session. The terminal font size and zoom are unchanged (**Theme and
+  font**, under [Workspaces](../desktop.md#workspaces)).
 
 ## Changed
 
