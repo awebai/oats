@@ -320,7 +320,7 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / ↓ | the same | the same | yes (a named exception, principle 2) |
 | Show the previous / next workspace of the list (`workspace.previous`, `workspace.next`; the leader's ↑ ↓) | ⌥↑ / ⌥↓ | Alt+↑ / Alt+↓ | none (the leader): Alt+↑ / ↓ are the program's | none (the leader) | yes |
 | Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Alt+Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
-| Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | the same | yes |
+| Souls: choose a soul to spawn (Workspace › Souls) (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | the same | yes |
 | Close tab (`tabs.close`) | ⌘W | Alt+W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
 | Next / previous tab of the active tab's strip, wrapping; split, the focused group's (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | the same | the same | yes |
 | Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`; the leader's → ←) | ⌥→ / ⌥← | Alt+→ / Alt+← | Alt+Shift+→ / Alt+Shift+← | Alt+Shift+→ / Alt+Shift+← | yes (in Ctrl+Alt and Ctrl+Shift, a named exception, principle 2) |
@@ -457,19 +457,24 @@ sends as one bracketed paste when the program asked for it; right-click ›
 Paste does the same, and so does middle-click on Linux, which pastes the
 primary selection a drag sets.
 
-Scroll back in a terminal (#1502). Every pane, a local one or one on another
-machine, scrolls back with the wheel or touchpad, Shift+PgUp, or Ctrl+B then
-`[`. Each enters tmux's copy mode, where the copy-mode keys move (PgUp, PgDn,
-the arrows) and `q` leaves it. The shortcuts window lists them in the Tabs
-group, as one read-only row ("Scroll back in a terminal"). So a terminal on
+Scroll back in a terminal (#1502). A pane on this computer scrolls back with
+the wheel or touchpad, Shift+PgUp, or Ctrl+B then `[`. A pane on another
+machine runs that machine's viewer, which has Shift+PgUp and Ctrl+B `[` from
+OATS 0.69.0; with an older OATS there, the wheel alone scrolls back. Each
+enters tmux's copy mode, where the copy-mode keys move (PgUp, PgDn, the
+arrows) and `q` leaves it. The shortcuts window lists them in Most useful and
+in the Tabs group, as one read-only row ("Scroll back in a terminal") whose
+tooltip names these conditions (`scrollBackKeys` in
+`renderer/keybindings-editor.mjs`). So a terminal on
 another machine opens without the kernel viewer's own status line, which
 names the same keys (`--no-status-line`, asked only of a CLI that lists
 `session-attach-no-status-line`): that row goes to the agent.
 - **Shift+PgUp and Shift+PgDn reach tmux.** xterm.js would keep them to scroll
   its own viewport, which is empty while tmux draws on the alternate screen.
   The terminal's key path sends them on instead (CSI 5;2 ~ and CSI 6;2 ~,
-  `shiftPageAction` in `renderer/terminal-tab.mjs`), after the keymap, so a
-  chord you bind to either stays yours. tmux binds Shift+PgUp to scroll back a
+  `shiftPageAction` in `renderer/terminal-tab.mjs`). No shortcut takes them
+  first: a chord with no modifier but Shift never fires from a terminal's
+  input, even when you bind it. tmux binds Shift+PgUp to scroll back a
   page; Shift+PgDn reaches the program as a native terminal sends it.
 - **Ctrl+B [ is the one Ctrl+B key the viewer takes.** Ctrl+B then any other
   key reaches the agent as both keys, as typed, with no timeout. So C-b n,
@@ -480,6 +485,13 @@ names the same keys (`--no-status-line`, asked only of a CLI that lists
   every client's key table when any terminal opens on the same tmux server, so
   a Ctrl+B still waiting for its next key at that instant is dropped. Press it
   again.
+- **A shortcut can take Ctrl+B before tmux.** On Linux/Windows, a shortcut
+  on `TERMINAL_ALLOWLIST` (the ones marked as working in a terminal) bound to
+  Ctrl+B fires instead, so Ctrl+B never reaches the pane. The two scroll rows
+  then leave Ctrl+B [ out, and the Tabs row's tooltip names the shortcut that
+  holds it (`terminalTaker` in `renderer/keybindings.mjs`, the dispatcher's
+  own rule). On macOS only a chord with ⌘ fires in a terminal, so Ctrl+B is
+  never taken there.
 - **A scrolling viewer pauses the pane for everyone.** Copy mode is the pane's
   own, so while one viewer of a shared pane scrolls back, the others see the
   same paused view until it leaves copy mode. The wheel has always done this.

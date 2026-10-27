@@ -22,7 +22,7 @@ export const catalogCSS = `
 .oats-view .capability-nav.ws-segmented button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 12px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-weight:500; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .capability-nav.ws-segmented button:hover { color:var(--fg); }
 .oats-view .capability-nav.ws-segmented button[aria-current] { background:var(--sel); color:var(--accent); font-weight:650; }
-.capability-nav-count { font:10.5px var(--mono,monospace); }
+.capability-nav-count { font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); }
 /* Workspace owned's repository pills (human, 2026-10-07): where capabilities are defined, as one
    single-choice group of wrapping chips (a workspace can have many repos), at the section head's
    right. Each chip has the segmented look (rule 1): a 1px frame, muted at rest, the brand tint
@@ -58,14 +58,14 @@ export const catalogCSS = `
 .catalog-tile[data-tint=clay], .catalog-core[data-tint=clay] { background:var(--soul-clay-bg); color:var(--soul-clay-fg); }
 .catalog-cap { display:flex; flex-direction:column; justify-content:center; min-width:0; }
 .catalog-cap-line { display:flex; align-items:center; gap:7px; min-width:0; }
-.catalog-name { color:var(--fg); font:650 13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.catalog-name { color:var(--fg); font-weight:650; font-size:13px; line-height:normal; font-family:var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 /* One line, always: the card keeps its height and the page holds the full text. */
 .catalog-desc { display:block; min-width:0; color:var(--muted); font-size:12px; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .catalog-chevron { color:var(--muted); }
 /* A repository group's heading: the Souls tab's (group-heading.mjs), between the cards. */
 .catalog-group { min-height:28px; margin:10px 0 0; }
 .catalog-head + .catalog-group { margin-top:0; }
-${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7px; min-width:0; color:var(--muted); font:12px var(--mono,monospace); }
+${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7px; min-width:0; color:var(--muted); font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); }
 .source-chip .shell-icon { flex:none; }
 .source-chip-name { color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .source-chip-version { white-space:nowrap; }

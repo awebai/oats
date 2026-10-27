@@ -83,7 +83,7 @@ import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
-import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
+import { waitingClaim, waitingSentence, waitingDetail, waitingClock } from "../../client/waiting-on-you.mjs";
 import { syncWaitingRow } from "./waiting-row.mjs";
 import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
@@ -1581,7 +1581,8 @@ function syncTabNeedsInput(instances, workspace) {
         if (drawn.mark?.parentNode === trigger) drawn.mark.replaceWith(attn); else trigger.prepend(attn);
       }
       label = `${drawn.label}, needs input`;
-      note = `Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`;
+      const detail = waitingDetail(claim);
+      note = `Needs input${detail ? `: ${detail}` : ""} since ${waitingClock(claim.since, now)}`;
     } else if (attn) {
       if (drawn.mark) attn.replaceWith(drawn.mark); else attn.remove();
     }
@@ -2381,7 +2382,7 @@ const palette = createPalette({
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
     ...[...NAV, ...NAV_TABS].map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStageFocused(v.name) })),
-    { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
+    { label: "Souls: choose a soul to spawn (Workspace › Souls)", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
     { label: "Theme: choose…", detail: chordDetail("app.themePicker"), run: () => runAction("app.themePicker") },
@@ -2839,7 +2840,7 @@ for (const [id, action, label] of [['instance.openSplit', 'open-split', 'Instanc
 let paletteTargetId = null;
 registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); if (!palette.isOpen()) paletteTargetId = leaderTargetId(document.activeElement); palette.toggle(); } });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
-registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
+registerAction({ id: "app.chooseSoul", label: "Souls: choose a soul to spawn (Workspace › Souls)", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
 registerAction({ id: "app.connections", label: "Settings: Connections…", context: "global", run: () => openConnections() });
 // A window with no workspace, showing the switcher (#481). No default chord: Ctrl+Shift+N stays Choose soul.

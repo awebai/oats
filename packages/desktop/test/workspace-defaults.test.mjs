@@ -364,7 +364,7 @@ test('the panel\'s look: one --surface panel, two headed groups of one 3-column 
   assert.match(defaultsCSS, /\.ws-default-tile\[data-tint=clay\] \{ background:var\(--soul-clay-bg\); color:var\(--soul-clay-fg\); \}/);
   assert.match(defaultsCSS, /\.ws-default-label \{ height:24px; color:var\(--muted\); font-weight:600; font-size:12px; font-family:var\(--ui-font,system-ui\); line-height:24px; \}/);
   assert.doesNotMatch(defaultsCSS, /uppercase|dashed/);
-  assert.match(defaultsCSS, /\.ws-default-name \{[^}]*font:650 14px var\(--mono,monospace\); line-height:24px;/);
+  assert.match(defaultsCSS, /\.ws-default-name \{[^}]*font-weight:650; font-size:14px; font-family:var\(--mono,monospace\); line-height:24px;/);
   assert.match(defaultsCSS, /\.ws-default-none \{ color:var\(--muted\); font-weight:500; font-size:14px;/);
   assert.match(defaultsCSS, /\.ws-default-cell\.off \.ws-default-name \{ color:var\(--muted\); text-decoration:line-through; \}/);
   assert.match(defaultsCSS, /\.oats-view button\.ws-default-cell:focus-visible \{ background:var\(--sel\); \}/, 'keyboard focus keeps the shell tint');

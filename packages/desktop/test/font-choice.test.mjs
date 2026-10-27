@@ -315,7 +315,7 @@ test("the shell applies the font before its first await, with the platform; the 
 // exactly as before, and Omarchy's font reaches code, ids, paths and tab numbers too.
 test("every UI font rule follows the choice: no sans or monospace stack outside var(--ui-font, <its own stack>)", () => {
   const dir = new URL("../renderer/", import.meta.url);
-  const files = ["shell.css", "theme.css", ...readdirSync(dir).filter(name => name.endsWith(".mjs")),
+  const files = ["shell.css", "theme.css", "loading.css", ...readdirSync(dir).filter(name => name.endsWith(".mjs")),
     ...readdirSync(new URL("views/", dir)).filter(name => name.endsWith(".mjs")).map(name => `views/${name}`)];
   let follows = 0;
   for (const name of files) {
@@ -323,9 +323,10 @@ test("every UI font rule follows the choice: no sans or monospace stack outside 
     const outside = text.replace(/var\(--ui-font,[^)]*\)/g, () => { follows++; return "var(--ui-font)"; });
     assert.doesNotMatch(outside, /-apple-system|BlinkMacSystemFont|system-ui|"Segoe UI"|sans-serif/, `${name}: a sans stack that does not follow the font`);
     assert.doesNotMatch(text, /var\(--sans\b/, `${name}: the old, never-defined --sans token`);
-    // The choice is a longhand, font-family: var(--ui-font, …), never inside a font shorthand: jsdom drops a shorthand
-    // that holds var(), so a test would read the parent's size, weight and line-height (Chromium resolves it).
-    assert.doesNotMatch(text, /(?<![-\w])font\s*:[^;{}]*var\(--ui-font/, `${name}: a font shorthand with var(--ui-font): use longhands`);
+    // A font token (the choice's --ui-font, --mono) is a longhand, font-family: var(--ui-font, …), never inside a font
+    // shorthand: jsdom drops a shorthand that holds var(), so a test would read the parent's size, weight and
+    // line-height (Chromium resolves it). No shorthand holds a var() at all.
+    assert.doesNotMatch(text, /(?<![-\w])font\s*:[^;{}]*var\(/, `${name}: a font shorthand with var(): use longhands`);
     // A font declaration (not a custom property's definition) names a monospace face only inside a font token.
     for (const [, value] of outside.matchAll(/(?<![-\w])font(?:-family)?\s*:\s*([^;{}]*)/g)) {
       const bare = value.replace(/var\(--(?:ui-font|mono|term-font-family)\b[^)]*\)/g, "");

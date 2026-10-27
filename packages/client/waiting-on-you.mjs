@@ -20,13 +20,14 @@ export function waitingMessage(v) {
 
 /** The sidebar's claim: `{ since, producer, reason, message }` or null. Only `since` and `producer` can
  * drop a claim: a missing or malformed reason (never rendered) is null, a malformed message is null, and
- * so is a withheld one (#584): the row, the card and the tab then show the reason in words (waitingLabel),
- * never the withheld marker. Extra keys are ignored (forward compatible). */
+ * so is a withheld one (#584) or one with no character but white space (#1502): the row, the card and the
+ * tab then show the reason in words (waitingLabel), never the withheld marker or a blank line. Extra keys
+ * are ignored (forward compatible). */
 export function waitingOnYouData(v) {
   if (!record(v) || !eventsTimestamp(v.since) || !eventsId(v.producer)) return null;
   const reason = typeof v.reason === 'string' && v.reason.length <= 64 ? v.reason : null;
   const message = waitingMessage(v.message);
-  return { since: v.since, producer: v.producer, reason, message: message === EVENTS_WITHHELD ? null : message };
+  return { since: v.since, producer: v.producer, reason, message: message === EVENTS_WITHHELD || !message?.trim() ? null : message };
 }
 
 /** The claim a row may show, or null. The only gate: liveness says running (`running === true`, and no
@@ -45,6 +46,9 @@ export function waitingClaim(row, { stale = false } = {}) {
 const LABELS = Object.freeze({ permission: 'Waiting for a tool approval', question: 'Asked you a question', attention: 'Asked for your attention' });
 /** The reason in words. The raw reason is never rendered: an unknown one reads "Needs input". */
 export const waitingLabel = claim => Object.hasOwn(LABELS, claim?.reason ?? '') ? LABELS[claim.reason] : 'Needs input';
+/** What a surface that already says "Needs input" adds after it: the message, else the reason in words,
+ * else null, when the claim names no reason of its own and the tag's words say it all (#1502). */
+export const waitingDetail = claim => claim?.message ?? (Object.hasOwn(LABELS, claim?.reason ?? '') ? LABELS[claim.reason] : null);
 
 /** How long it has waited (floor): "under a minute", "N min", "N h", "N d". A future `since` (clock skew)
  * reads "under a minute". Computed when shown, never painted into the row. */
@@ -82,7 +86,10 @@ export const waitingBelowText = rows => `${rows.length} ${rows.length === 1 ? 'n
  * the sentence is painted once; `now` is the paint time (it decides whether the start needs a date). */
 export function waitingSentence(claim, below = [], now = Date.now()) {
   const parts = [];
-  if (claim) parts.push(`Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`);
+  if (claim) {
+    const detail = waitingDetail(claim);
+    parts.push(`Needs input${detail ? `: ${detail}` : ''} since ${waitingClock(claim.since, now)}`);
+  }
   if (below.length) parts.push(`${below.length} below need input: ${waitingNames(below)}`);
   return parts.map(p => ` · ${p}`).join('');
 }

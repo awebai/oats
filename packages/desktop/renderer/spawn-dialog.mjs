@@ -100,8 +100,8 @@ export const spawnDialogCSS = `
 /* The instance first and largest, its home beneath (shortened; the full path is its title). */
 .spawn-preview-identity { display:flex; flex-direction:column; gap:2px; margin:0; min-width:0; }
 .spawn-preview-identity dd { margin:0; min-width:0; overflow-wrap:anywhere; }
-.spawn-preview-name { color:var(--fg); font:650 13.5px/1.45 var(--mono,monospace); }
-.spawn-preview-home { color:var(--muted); font:11.5px/1.45 var(--mono,monospace); }
+.spawn-preview-name { color:var(--fg); font-weight:650; font-size:13.5px; line-height:1.45; font-family:var(--mono,monospace); }
+.spawn-preview-home { color:var(--muted); font-weight:normal; font-size:11.5px; line-height:1.45; font-family:var(--mono,monospace); }
 /* The facts: a label column and a value column; a value's origin or extra on its own muted line. */
 .spawn-preview-facts { display:grid; grid-template-columns:86px minmax(0,1fr); row-gap:8px; column-gap:10px; margin:0; font-size:12.5px; line-height:1.5; color:var(--fg); }
 .spawn-preview-facts dt { margin:0; color:var(--muted); font-size:11.5px; line-height:1.6; }
@@ -150,7 +150,7 @@ export const spawnDialogCSS = `
 .spawn-chooser-title { margin:0; font-size:13px; font-weight:650; color:var(--fg); }
 .spawn-search-label { display:flex; align-items:center; gap:6px; margin:0 4px 10px; }
 .spawn-search-label input { min-width:0; flex:1; }
-.spawn-search-count { flex:none; color:var(--muted); font:10.5px var(--mono,monospace); }
+.spawn-search-count { flex:none; color:var(--muted); font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); }
 .spawn-chooser h3 { margin:14px 8px var(--title-gap); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
 .spawn-choice { width:100%; min-height:56px; display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid transparent; border-radius:8px; text-align:left; background:var(--surface); color:var(--fg); font:inherit; cursor:pointer; }
 .spawn-choice[aria-selected=true] { background:var(--sel); border-color:var(--accent); }
@@ -172,7 +172,7 @@ export const spawnDialogCSS = `
 .spawn-label .shell-icon { color:var(--muted); }
 .spawn-label small { font-weight:500; }
 /* Spec E: a section's jump chord, quiet beside its label (never the only way to learn it: the editor lists it) */
-.spawn-dialog kbd.spawn-key-hint { flex:none; margin:0; padding:0; border:0; background:none; font:500 10.5px var(--mono,monospace); letter-spacing:0; text-transform:none; color:var(--muted); white-space:nowrap; }
+.spawn-dialog kbd.spawn-key-hint { flex:none; margin:0; padding:0; border:0; background:none; font-weight:500; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); letter-spacing:0; text-transform:none; color:var(--muted); white-space:nowrap; }
 .spawn-dialog kbd.spawn-key-hint[hidden] { display:none; }
 .spawn-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .spawn-row > label { display:flex; flex-direction:column; gap:var(--title-gap); min-width:0; }
@@ -182,17 +182,17 @@ export const spawnDialogCSS = `
 /* Name: optional, the form's last field. One frame (the wrapper's border) that turns to the accent on focus; no ring. */
 .spawn-name-input { display:flex; align-items:stretch; min-width:0; height:36px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
 .spawn-name-input:focus-within { border-color:var(--accent); box-shadow:none; outline:none; }
-.spawn-name-prefix { flex:none; display:flex; align-items:center; max-width:55%; padding:0 0 0 12px; color:var(--muted); font:13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.spawn-name-input input.field { flex:1; height:100%; border:0; border-radius:8px; background:transparent; padding:0 12px 0 1px; font:600 13px var(--mono,monospace); color:var(--fg); }
+.spawn-name-prefix { flex:none; display:flex; align-items:center; max-width:55%; padding:0 0 0 12px; color:var(--muted); font-weight:normal; font-size:13px; line-height:normal; font-family:var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.spawn-name-input input.field { flex:1; height:100%; border:0; border-radius:8px; background:transparent; padding:0 12px 0 1px; font-weight:600; font-size:13px; line-height:normal; font-family:var(--mono,monospace); color:var(--fg); }
 .spawn-dialog .spawn-name-input input.field, .spawn-dialog .spawn-name-input input.field:focus, .spawn-dialog .spawn-name-input input.field:focus-visible { outline:none; border:0; box-shadow:none; }
 .spawn-name-result { display:flex; align-items:center; gap:6px; }
 /* The <soul>- prefix is shown only where the typed name is a purpose (an older kernel, a remote target). */
 .spawn-name-input.unprefixed .spawn-name-prefix { display:none; }
 .spawn-name-input.unprefixed input.field { padding-left:12px; }
-.spawn-name-result strong { font:600 11.5px var(--mono,monospace); color:var(--fg); }
+.spawn-name-result strong { font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--mono,monospace); color:var(--fg); }
 .spawn-hint { margin:0; color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; }
 .spawn-hint:empty { display:none; }
-.spawn-hint code, .spawn-work-text code { font:11.5px var(--mono,monospace); color:var(--fg); }
+.spawn-hint code, .spawn-work-text code { font-weight:normal; font-size:11.5px; line-height:normal; font-family:var(--mono,monospace); color:var(--fg); }
 .spawn-hint.err { color:var(--danger); }
 /* Teams (teams contract): one line like Relationship — Default fixed on, mapped teams toggle, unmapped greyed. */
 .spawn-teams-row { flex-wrap:wrap; align-self:flex-start; max-width:100%; box-sizing:border-box; }
@@ -223,8 +223,8 @@ export const spawnDialogCSS = `
 /* Work */
 .spawn-joined { display:flex; align-items:stretch; min-width:0; height:38px; border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:hidden; }
 .spawn-joined-from { flex:none; display:flex; align-items:center; gap:6px; padding:0 4px 0 10px; background:var(--surface-2); border-right:1px solid var(--border); color:var(--muted); font-size:11.5px; }
-.spawn-joined-from input.field { width:112px; height:100%; border:0; background:transparent; padding:0 6px; font:700 12px var(--mono,monospace); color:var(--fg); }
-.spawn-joined > input.field { flex:1; height:100%; border:0; border-radius:0; background:transparent; padding:0 10px; font:12.5px var(--mono,monospace); }
+.spawn-joined-from input.field { width:112px; height:100%; border:0; background:transparent; padding:0 6px; font-weight:700; font-size:12px; line-height:normal; font-family:var(--mono,monospace); color:var(--fg); }
+.spawn-joined > input.field { flex:1; height:100%; border:0; border-radius:0; background:transparent; padding:0 10px; font-weight:normal; font-size:12.5px; line-height:normal; font-family:var(--mono,monospace); }
 .spawn-joined input.field:focus-visible { box-shadow:none; }
 .spawn-work-text { margin:0; font-size:12.5px; line-height:1.5; color:var(--fg); overflow-wrap:anywhere; }
 .spawn-work-text:empty { display:none; }
@@ -295,7 +295,7 @@ export const spawnDialogCSS = `
 ${launchDifferedCSS}
 .spawn-footer .act { min-height:34px; padding:0 16px; border-radius:8px; font-weight:600; }
 /* data-chord, not data-shortcut: the shell rewrites [data-shortcut] elements as action-id hints. */
-.spawn-footer .fspawn::after { content:attr(data-chord); margin-left:8px; font:10.5px var(--mono,monospace); }
+.spawn-footer .fspawn::after { content:attr(data-chord); margin-left:8px; font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); }
 .oats-view .spawn-footer button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
 .spawn-choice-popover { position:relative; min-width:0; }
 .spawn-choice-trigger { width:100%; min-height:36px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-weight:600; font-size:12.5px; line-height:normal; font-family:var(--ui-font,system-ui); text-align:left; padding:0 10px; display:flex; align-items:center; gap:8px; cursor:pointer; }

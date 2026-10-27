@@ -826,7 +826,8 @@ over its terminal:
 - **Needs input**, then how long it has waited (`· 12 min`), on one line.
 - Under it, the agent's question as it wrote it, shown as plain text. When
   the agent left no text, the row says why in words, for example "Waiting for
-  a tool approval".
+  a tool approval". When the agent gave no reason either, the first line
+  says it all and the row has no second line.
 - The question wraps to at most three lines, and the row never takes more
   than a quarter of the pane; a longer question ends with "…". The tab's
   tooltip and the sidebar's card have the whole of it. A pane too short
@@ -851,8 +852,12 @@ terminals do.
 A drag selects what is on the screen. To select older output, scroll back
 first, then select. Wheel up, or press **Shift+PgUp**, or **Ctrl+B** then `[`:
 the pane scrolls back through tmux's history, and `q` returns to the bottom.
-Ctrl+B `[` needs tmux 3.3 or later on the computer the agent runs on. Ctrl+B
-followed by any other key still reaches the agent. The pane is shared: while
+Ctrl+B `[` needs tmux 3.3 or later on the computer the agent runs on. On
+another computer, Shift+PgUp and Ctrl+B `[` need OATS 0.69.0 or later there;
+with an older OATS, scroll back with the wheel. Ctrl+B followed by any other
+key still reaches the agent. On Linux and Windows, a shortcut you bind to
+Ctrl+B in the shortcuts window takes Ctrl+B first, if it is one that works in
+a terminal. The pane is shared: while
 you scroll back, anyone else viewing the same agent sees the same paused view
 until you return to the bottom, as with the wheel. The wheel scrolls
 as before, and a program that uses the mouse itself still receives the wheel.

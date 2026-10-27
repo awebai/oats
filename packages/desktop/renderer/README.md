@@ -35,7 +35,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
   for instructions; attached-mode souls cannot launch standalone. The shell's
-  `app.chooseSoul` (⌘N / Ctrl+Shift+N, **Spawn instance: choose a soul in Workspace**) navigates to soul
+  `app.chooseSoul` (⌘N / Ctrl+Shift+N, **Souls: choose a soul to spawn (Workspace › Souls)**) navigates to soul
   selection, and the sidebar foot's **Spawn instance** opens Quick Open (`app.quickOpenSouls`); neither launches.
   Capability facts and source provenance use negotiated read-only inspection,
   never inferred membership, installation or remote discovery. Shared CLI recovery
@@ -148,9 +148,11 @@ also carries `.theme-picker-overlay` or `.font-picker-overlay`.
   the context panel's ids, paths and facts, the soul tab's meta and sources, PR
   chips, team details, the tab hints and numbers, and the terminal search's
   controls. theme.css never defines `--ui-font`, so with System font each rule
-  is its own stack exactly as before. `test/font-choice.test.mjs` refuses a sans
-  or monospace stack outside that fallback (or a font token: `--mono`,
-  `--term-font-family`).
+  is its own stack exactly as before. The rules on `--mono` are longhands too
+  (`font-weight`, `font-size`, `line-height`, then `font-family: var(--mono,
+  …)`): no `font` shorthand in the shipped CSS holds a `var()`.
+  `test/font-choice.test.mjs` refuses one, and a sans or monospace stack outside
+  that fallback (or a font token: `--mono`, `--term-font-family`).
 - **Stored per computer** under `oats.desktop.font` (like `oatsweb.theme`); a
   missing or unknown value is `defaultFont()`, and the default is never stored.
   The shell calls `initFont(isMac, undefined, { isOmarchy })` before its first
