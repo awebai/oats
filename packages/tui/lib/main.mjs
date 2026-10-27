@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
 import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, createResumeTrigger, displayLine, heldHome, pendingEntry, prepareRemoteTerm, runResumeSweep, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig, loadKeys } from "./config.mjs";
-import { ACT_WORDS, LIST_WORDS, RESUME_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, resumeObservation, roster, spawnContext } from "./model.mjs";
+import { ACT_WORDS, LIST_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, resumeObservation, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -72,10 +72,8 @@ export function parseArgs(argv) {
 
 /** The label of a change to this computer's deployments list (an add or a remove), for the line after leaving. */
 const LIST_CHANGE = Object.freeze({ verb: "list" });
-/** The labels of the kernel's machine sweep (`oats session resume --json`): the one the run starts as it
- *  opens (RESUME_LAUNCH), which usually finds nothing lost and is not named after leaving, and one a read
- *  that showed a lost session started (RESUME_CHANGE), which is starting sessions and is named. */
-const RESUME_LAUNCH = Object.freeze({ verb: "resume", launch: true });
+/** The label of the kernel's machine sweep (`oats session resume --json`), every one the run starts: a
+ *  change, never signalled, and never named after leaving (the TUI says nothing of a sweep). */
 const RESUME_CHANGE = Object.freeze({ verb: "resume" });
 /** Why a call to this computer's deployments list has no answer at all: it threw before the kernel
  *  could answer. The shared adapter's own code for a kernel call that failed (deployment-list-cli.mjs). */
@@ -255,16 +253,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // given the view's rows and its local deployment ids: lib/model.mjs resumeObservation), never two at
   // a time nor more often than its floor, and only with a kernel that has the sweep. The TUI decides nothing of what
   // resumes. The sweep is a change of the run (the reader's changeExec: detached, its output in files,
-  // never signalled), which outlives the TUI; what it did goes to the store as `{ resumed }`. The first
-  // sweep the trigger runs is the one `launch` started (`observed` starts none before it, nor while one is
-  // in flight): labelled RESUME_LAUNCH, it is let go in silence on the way out; every later one is named.
-  let sweeps = 0;
+  // never signalled), which outlives the TUI and is let go in silence on the way out; what it read goes
+  // to the store as `{ resumed }`, which says nothing of it and at most reads the rows live.
   const resume = effects.createResumeTrigger({
     cli: () => probe.cli,
-    run: (cli) => {
-      const label = sweeps++ === 0 ? RESUME_LAUNCH : RESUME_CHANGE;
-      return runResumeSweep(cli, { exec: (bin, argv, options, callback) => reader.changeExec(bin, argv, { ...options, label }, callback), env });
-    },
+    run: (cli) => runResumeSweep(cli, { exec: (bin, argv, options, callback) => reader.changeExec(bin, argv, { ...options, label: RESUME_CHANGE }, callback), env }),
     now,
     onReading: (reading) => heard({ resumed: reading }),
   });
@@ -908,10 +901,10 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   if (kbTimer !== null) clearTimer(kbTimer);
   // After the alternate screen is left, so the message stays on the screen the user returns to.
   // One line per change still running, to a terminal or a file only; the status never depends on it.
-  // The sweep the run started as it opened is no change of the person's, and usually finds nothing: none.
-  const running = (reader.changes?.() ?? []).filter(({ label }) => label !== RESUME_LAUNCH);
+  // The machine sweep is no change of the person's: none for it.
+  const running = (reader.changes?.() ?? []).filter(({ label }) => label !== RESUME_CHANGE);
   if (running.length && effects.tellable(stderr)) {
-    try { stderr.write(running.map(({ label }) => `${label === LIST_CHANGE ? LIST_WORDS.leaving : label === RESUME_CHANGE ? RESUME_WORDS.leaving : ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
+    try { stderr.write(running.map(({ label }) => `${label === LIST_CHANGE ? LIST_WORDS.leaving : ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
   }
   if (end.error !== undefined) stderr.write(`oats: \`oats tui\` stopped on an internal error; the terminal was restored\n${errorLines(end.error).map((line) => `  ${line}\n`).join("")}`);
   return end.status;

@@ -10,9 +10,9 @@
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
-import { CHORDS, chordFamilyFrom, collapseKey, workspaceStep, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, resumeNotice, shortPath, spawnProblem } from "./client.mjs";
+import { CHORDS, chordFamilyFrom, collapseKey, workspaceStep, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, RESUME_WORDS, WORKSPACE_WORDS, listChoice, listChoices, workspaceList } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, WORKSPACE_WORDS, listChoice, listChoices, workspaceList } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -82,9 +82,8 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  by the leader's Up or Down, and the leader cancelled by its own read) until the next key of any kind (the leader's: the key after it), one
  *  typed to the agent included, or a resize (the loop's `{ passed }`). `notice`: such a line that came while no view that
  *  draws one at every width was shown (the switcher, the help, a detail or a terminal with the
- *  focus: see `drawsOutcome`), or while a line stood there, held until one is shown and the line
- *  has gone (`noticed`); or null.
- *  It is the add of the deployment the run started in, refused, or what the machine sweep did.
+ *  focus: see `drawsOutcome`), held until one is; or null.
+ *  It is the add of the deployment the run started in, refused.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"; without one,
  *  the default, C-x on every platform: config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
  *  where the TUI reads keys (term/through.mjs backKeyId).
@@ -721,26 +720,14 @@ function listedHeard(state, { rows, failure }) {
   return { state: next(state, { listed: Object.freeze({ rows: Object.freeze(rows.map((row) => Object.freeze({ path: row.path, name: row.name, state: row.state }))), failure: null }) }), effect: null };
 }
 
-/** A code fit for a line of the TUI's own: the kernel's form, never anything else it printed. */
-const RESUME_CODE = /^E_[A-Z0-9_]{1,64}$/;
 /** The kernel's machine sweep read (lib/main.mjs; the shared readResumeSweep's `{ kind, summary?, code? }`).
- *  A sweep that told of a row (`notice`) is said once, in the line under the sidebar's title, held as
- *  `notListed` is: the shared resumeNotice's headline, and its detail under it, a deployment named as the
- *  switcher names its path. It and a sweep with nothing to tell (`quiet`) ask for a live read, so a
- *  resumed row reads running. One that failed is a line of the TUI's own with its code (none when it
- *  is not of the kernel's form, which the shared reader never gives); one that found
- *  the machine's sweep busy, or a kernel without it, says nothing. */
+ *  The TUI says nothing of a sweep (docs/tui.md, "Resuming lost sessions"): no line, whatever it read,
+ *  and the list shows each instance as it is after the next read. A sweep that ran (`notice`, `quiet`)
+ *  asks for that read live, so a resumed row reads running; one that failed, found the machine's sweep
+ *  busy, or a kernel without it, asks for nothing. */
 function resumedHeard(state, reading) {
-  if (reading?.kind === "failed") {
-    const code = typeof reading.code === "string" && RESUME_CODE.test(reading.code) ? reading.code : null;
-    return { state: next(state, { notice: Object.freeze({ said: RESUME_WORDS.failed(code), under: Object.freeze([]) }) }), effect: null };
-  }
-  if (reading?.kind === "quiet") return { state, effect: { refresh: { live: true } } };
-  if (reading?.kind !== "notice") return { state, effect: null };
-  const made = resumeNotice(reading.summary, { label: (path) => shortPath(path, { home: state.home }) });
-  if (made === null) return { state, effect: { refresh: { live: true } } };
-  const notice = Object.freeze({ said: Object.freeze([{ own: made.headline }]), under: Object.freeze(made.detail === undefined ? [] : made.detail.split("\n")) });
-  return { state: next(state, { notice }), effect: { refresh: { live: true } } };
+  if (reading?.kind === "notice" || reading?.kind === "quiet") return { state, effect: { refresh: { live: true } } };
+  return { state, effect: null };
 }
 
 /** A Remove answered (lib/main.mjs): the switcher says how, and the list is read again. */
@@ -763,7 +750,7 @@ function removedHeard(state, { name, ok, reason = null }) {
  *  `{ identity: { path, read } }` (what an identity read answered of a row of the list),
  *  `{ removed: { path, name, ok, reason } }` (a Remove's answer) and
  *  `{ notListed: <reason> }` (the deployment the run started in was not added to the list),
- *  `{ resumed: <reading> }` (the kernel's machine sweep read: see `resumedHeard`), and
+ *  `{ resumed: <reading> }` (the kernel's machine sweep read, which says nothing: see `resumedHeard`), and
  *  `{ passed: true }` (bytes typed to the agent, or a resize: what the loop saw that the store does
  *  not, which ends a line of one key).
  *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
@@ -806,13 +793,10 @@ function drawsOutcome(state) {
   return false;
 }
 /** A notice waiting for a view that draws the line under the sidebar's title (`notice`), made the
- *  line there as soon as one is shown and no line stands there: a notice comes from what the run did
- *  by itself (the add of the deployment it started in, the machine sweep), and never hides the
- *  answer to what the person did. It is said once that line has gone (the next key bound to an
- *  action). */
+ *  line there as soon as one is shown. */
 function noticed(step) {
   const s = step.state;
-  if (s.notice === null || s.outcome !== null || !drawsOutcome(s)) return step;
+  if (s.notice === null || !drawsOutcome(s)) return step;
   return { ...step, state: next(s, { outcome: s.notice, notice: null }) };
 }
 /** A Remove asked stands only while its row is the switcher's selected choice: once the row is
@@ -1661,10 +1645,10 @@ function reduced(state, event, keymap) {
   if (event.retiring !== undefined) return { state: next(state, { retiring: new Set(event.retiring) }), effect: null };
   if (event.listed !== undefined) return listedHeard(state, event.listed);
   if (event.removed !== undefined) return removedHeard(state, event.removed);
+  // The machine sweep's reading: no line, at most a live read.
+  if (event.resumed !== undefined) return resumedHeard(state, event.resumed);
   // Shown once, in the line under the sidebar's title, as the line after an open is.
   // Held while nothing may draw such a line (the switcher, the help): it is said once a view that does is shown.
-  // The machine sweep's reading, said the same way.
-  if (event.resumed !== undefined) return resumedHeard(state, event.resumed);
   if (event.notListed !== undefined) return { state: next(state, { notice: Object.freeze({ said: LIST_WORDS.notAdded(event.notListed?.message ?? ""), under: Object.freeze([]) }) }), effect: null };
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
   if (event.joined !== undefined) return joinedHeard(state, { ...event.joined, at: event.at });
