@@ -248,11 +248,27 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
       const text = term.screen().map((row) => [...row].slice(0, 48).join("")).find((row) => new RegExp(`^[> ] +[●○◌?◆] ${instanceDisplayName(name)}\\b`).test(row));
       return text ? { selected: text.startsWith(">"), mark: /^[> ] +(\S)/.exec(text)[1], text } : null;
     },
+    /** The list's rows, top to bottom, each as its drawn name (the sidebar's part of the row, before
+     *  its rule) and whether it is selected. */
+    rows() {
+      return term.screen().map((row) => /^([> ]) +[●○◌?◆] (\S.*?) *$/.exec(row.split("│")[0])).filter(Boolean).map(([, at, shown]) => ({ selected: at === ">", shown }));
+    },
     /** The confirmation's buttons row, as drawn in the main area: `> Label <` has the focus. */
     buttons() { return term.screen().map(mainOf).find((row) => /^ {2}(> .* <|\[ .* \])/.test(row)) ?? ""; },
     focused() { return /> (.*?) </.exec(run.buttons())?.[1] ?? null; },
+    /** `g`, then `j` until `name` is selected, each key once the move of the one before is drawn:
+     *  a key decided on a frame from before the last move moves once too often, and the list does
+     *  not wrap (a run that saw Gamma selected waiting for Beta). */
     async select(name) {
-      for (let i = 0; i < 10 && !run.row(name)?.selected; i++) { term.press(i === 0 ? "g" : "j"); await until(term, () => run.drawn(), `the list after a move to ${name}`); }
+      if (!run.row(name)?.selected) {
+        term.press("g");
+        await until(term, () => run.drawn() && run.rows()[0]?.selected === true, `the list's first row selected after g, on the way to ${name}`);
+      }
+      for (let i = 0; i < 10 && !run.row(name)?.selected; i++) {
+        const was = run.rows().find((row) => row.selected)?.shown;
+        term.press("j");
+        await until(term, () => run.drawn() && (run.rows().find((row) => row.selected)?.shown ?? was) !== was, `the selection moved down from ${was}, on the way to ${name}`);
+      }
       await until(term, () => run.row(name)?.selected === true, `${name} selected`);
     },
     /** Esc closes the confirmation; resolves once the list is drawn again. The next key then
