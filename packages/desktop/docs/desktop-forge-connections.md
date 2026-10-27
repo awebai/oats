@@ -243,13 +243,30 @@ and URL. It then composes ONE line:
 **The digest** is the sha256 of the exact bytes pasted. A send whose digest
 differs from a fresh composition is `E_THREADS_CHANGED`, and pastes nothing.
 
-**Delivery.** The block goes to the instance's own anchored tmux target as ONE
-bracketed paste: `load-buffer -b oatsrt-<random>` then
-`paste-buffer -p -r -d`. There's never a send-keys and never an Enter; the
-human presses Enter. The block has no CR/LF, so even an app that has not
-asked for bracketed paste receives no Enter. The buffer is deleted on every
-path. All three tmux calls (`load-buffer`, `paste-buffer`, and the
-`delete-buffer` after a failed paste) go to the tmux server the instance's row
+**Delivery.** The block goes to the instance's agent pane as ONE bracketed
+paste: `load-buffer -b oatsrt-<random>` then `paste-buffer -p -r -d -t <pane>`.
+There's never a send-keys and never an Enter; the human presses Enter. The
+block has no CR/LF, so even an app that has not asked for bracketed paste
+receives no Enter. The buffer is deleted on every path.
+
+**The agent's pane** (#1569) is the kernel's answer, never the window's active
+pane: a window can hold more than one pane (OATS's setup splits one off for a
+no-echo prompt), and the active one may be that prompt. Right before the
+paste, the server runs `oats session inspect --home <home> --json`
+(`cliSessionInspect` in `packages/client/cli-adapter.mjs`) and takes its
+`paneId`. A refusal or unreadable answer is `E_TERMINAL_UNSUPPORTED`. That
+includes a kernel that can't tell which pane is the agent's, and a kernel
+before #1569 on a split window. A terminal that isn't present, or isn't
+running a harness, is `E_NOT_RUNNING`. Either way nothing is pasted. The row
+is then read again and checked as before. A pane id names a pane of one tmux
+server only, so the fresh row must record the same socket, session and window
+as the row the kernel was asked about (a restart onto another server can hand
+the same id to another program there). The pane must also be one of that
+anchored window's (`list-panes -t =<session>:=<window>`). Otherwise the paste
+is `E_TERMINAL_UNSUPPORTED` and nothing is loaded.
+
+Every tmux call (`list-panes`, `load-buffer`, `paste-buffer`, and the
+`delete-buffer` after a failed paste) goes to the tmux server the instance's row
 records (`tmux.socket`), with the prefix the terminals use (`tmuxSocketArgs`
 in `local-tmux-io.mjs`): `-u -S <socket>`, or `-u` alone for a row that
 records none, which is the default server. The socket comes from the row and

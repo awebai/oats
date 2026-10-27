@@ -130,8 +130,9 @@ const unsupportedText = (row) => {
   const reason = instanceActs(row).acts.find((act) => act.verb === "start")?.reason ?? null;
   return reason?.code === "unsupported-session" ? reason.sentence : null;
 };
-/** A sentence of the terminal check's own, as it answers for a probe that failed (tmux-status.mjs). */
-const CHECK_FAILED = "Instance window has multiple panes; check its terminal before starting";
+/** A sentence of the terminal check's own, as it answers for a probe that failed (tmux-status.mjs): a
+ *  window with two panes marked as the agent's, so it can't tell which is (#1569). */
+const CHECK_FAILED = "the window has 2 panes marked as odd's agent pane (%3, %7); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance";
 /** The collector's documented answer for the rows `collector` leaves out (`observeLiveness`
  *  again). Before anything else, a row whose session backend OATS no longer has is never probed:
  *  it reads unsupported, with that text and no tmux. And a probed row whose check fails reads
