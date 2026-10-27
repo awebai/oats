@@ -29,7 +29,7 @@ import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/ins
 import { terminalKey } from "../renderer/instance-tree-view.mjs";
 import { paletteRows } from "../renderer/palette.mjs";
 import { panelDeployments } from "../renderer/view-deployments.mjs";
-import { NAV, stageSidebarMode } from "../renderer/shell-nav.mjs";
+import { NAV, navTab, stageSidebarMode } from "../renderer/shell-nav.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
@@ -231,13 +231,13 @@ function memoryStorage() {
 /** The shipped tab layer (addTab, selectTab, activateTab, restoreWorkspaceTabs…), the record it writes (Spec C,
  * instance-recency.mjs) and the palette's shipped loadInstances over the same record. */
 function tabsRig(t) {
-  const dom = new JSDOM(`<body><aside><section id="ws-list"><div id="ws-options"></div></section><nav id="nav"></nav></aside>
+  const dom = new JSDOM(`<body><aside><section id="ws-list"><div id="ws-options"></div></section><nav id="nav"></nav><div id="nav-foot"></div></aside>
     <div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, navEl = document.getElementById("nav");
   let clock = 1000;
   const c = {
-    document, console, navigator: { platform: "MacIntel" }, NAV, stageSidebarMode,
+    document, console, navigator: { platform: "MacIntel" }, NAV, navTab, stageSidebarMode,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", activeInstanceMenu: null,
     stage: null, stageOp: 0, stageHost: document.getElementById("stagehost"), navEl,
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "overview", tabLayerVisible: false,
@@ -316,4 +316,23 @@ test("⌘K / Ctrl+Alt+K after A → B → A: A's instances most recently selecte
   s.switchTo("B"); s.switchTo("A");
   assert.deepEqual(await s.palette(), ["a2", "a1", "a3", "a4"], "and is kept across another visit");
   assert.deepEqual([...s.c.instanceRecency.snapshot("B").keys()].map(id => id.split("/").at(-1)).sort(), ["b1", "b2"], "B's record is B's alone");
+});
+
+// The palette lists its own commands (shell.mjs createPalette's `commands`), not the keymap's registry: Show only
+// the current workspace has its entry there, with its live chord, and runs its action (review of PR 8).
+test("the palette has Show only the current workspace: the shipped entry, found by search, its chord, running workspaces.currentOnly", () => {
+  const src = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  const commands = src.slice(src.indexOf("  commands: [\n"), src.indexOf("\n  ],\n});", src.indexOf("  commands: [\n")));
+  const line = commands.match(/^ {4}\{ label: "Workspaces: show only the current workspace \(on \/ off\)"[^]*?\} \},$/m)?.[0];
+  assert.ok(line, "an entry of the palette's commands");
+  const ran = [];
+  // It takes the palette's focus handoff back first (workspace-open-in-window runs it through the real palette).
+  const entry = runInNewContext(`[${line}][0]`, { chordDetail: id => () => `chord of ${id}`, runAction: id => ran.push(id),
+    document: {}, takePickerFocusReturn: () => ({ restore: () => { ran.push("restore"); return true; } }) });
+  assert.equal(entry.detail(), "chord of workspaces.currentOnly", "its detail is the action's live chord");
+  entry.run(); assert.deepEqual(ran, ["restore", "workspaces.currentOnly"], "focus back first, then the toggle");
+  for (const query of [">show only", ">current workspace", "show only the current"]) {
+    const rows = paletteRows([], [entry], query, { openTerminal() {} });
+    assert.ok(rows.some(row => row.label === entry.label), `"${query}" finds it`);
+  }
 });

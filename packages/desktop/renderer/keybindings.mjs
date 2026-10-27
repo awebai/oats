@@ -385,6 +385,9 @@ function keymapIn(family) {
     // target (shell.mjs leaderTargetId).
     "instance.edit": chordOf("instance.edit"),
     "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
+    // Show only the current workspace (2026-10-23): the list of workspaces' ⌥⌘O / Ctrl+Alt+O with Shift, the same in
+    // every family (in the Alt family too, whose own key for the list is Alt+O); the Desktop's alone (no TUI action).
+    "workspaces.currentOnly": { mac: "Mod+Alt+Shift+O", other: "Ctrl+Alt+Shift+O" },
     "app.shortcuts": "Mod+,",
     // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
     // Linux terminals. The palette keeps the command; the editor can bind one.
@@ -503,7 +506,7 @@ export function defaultBinding(actionId, isMac = defaultIsMac(), family = chordF
 // Every plain Ctrl+letter, every other Alt key and the F-keys stay the program's, so these stay
 // out: app.openFile (Ctrl+O) and focus.next/prevRegion (F6: mc, htop, nano).
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.leader", "app.palette", "app.quickOpenSouls", "app.workspaces", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
+  "app.leader", "app.palette", "app.quickOpenSouls", "app.workspaces", "workspaces.currentOnly", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
   "roster.openPrevious", "roster.openNext", "workspace.previous", "workspace.next", "terminal.focusMode", "instance.edit",
   "tabs.next", "tabs.prev", "tabs.nextPage", "tabs.prevPage", "tabs.close",
   ...Array.from({ length: 9 }, (_, i) => `tabs.goto${i + 1}`),
@@ -690,7 +693,7 @@ export function findConflict(chord, context, excludeId = null, isMac = defaultIs
 /** Clashes that involve a stored rebind: pairs of actions whose effective chords
  * collide (findConflict's visibility rule) where at least one side is a user
  * override — e.g. a rebind that a new default now shares. Nothing is ever changed
- * silently; the shell marks the shortcuts button and the editor lists them. */
+ * silently; the shell marks the settings cog and its Keyboard shortcuts… item, and the editor lists them. */
 export function keymapConflicts(isMac = defaultIsMac()) {
   const own = (id) => Object.prototype.hasOwnProperty.call(overrides, id);
   const out = [], seen = new Set();

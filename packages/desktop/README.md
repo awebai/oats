@@ -25,7 +25,8 @@ Flags/env:
 
 `assets/brand/oats-logo.png` is the one source of the app's brand artwork
 (the human-supplied logo, SHA-256 `b1d21d9a…de69e`). Every derived icon —
-the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark — lives
+the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark (the
+OATS mark in the bar at the foot of the sidebar, drawn at 20px) — lives
 in `assets/brand/generated/` and is regenerated from the source by one
 command:
 
@@ -43,13 +44,15 @@ any checked-in icon's pixels stop matching what the source derives.
 
 The shell has three navigation contexts:
 
-- **Active overview** — the home surface: a fitted, zoomable tidy tree of
-  running and idle instances with `parentInstance` spawn relationships. Agent boxes can
+- **Workspace › Machines** (the Active overview, then the Deployments page,
+  before 2026-10-26) — a tab of the Workspace page, before Setup (⌘1 / Ctrl+1): a
+  fitted, zoomable tidy tree of running and idle instances with
+  `parentInstance` spawn relationships, one tab per deployment. Agent boxes can
   be repositioned freely; edges follow live.
 - **Instances** — the shell's single sidebar becomes a compact, recursively
   nested roster. Selecting a running instance opens its direct tmux-attach
   xterm terminal in the main area. Terminal tabs are scoped to this context.
-- **Soul roster** — searchable soul cards with explicit **Spawn** and
+- **Soul roster** (Workspace › Souls, where a window opens) — searchable soul cards with explicit **Spawn** and
   **View brain** actions. Brain and markdown artifacts are scoped to this
   context; the markdown reader is the flagship file surface.
 
@@ -181,7 +184,7 @@ function over what its caller holds:
   for that, its tooltip and the deployment an unattached view opens;
   `choiceMatches` is the TUI switcher's filter (the Desktop's list has none).
   `renderer/workspace-switcher.mjs` draws the sidebar's list from the rows,
-  one line each (the name and the dot: it shows no muted line, no not-live
+  one line each (the instance roster's circle, the name and the needs-input mark: it shows no muted line, no not-live
   mark and no section; its own `rowNames` tells twins apart by team and key,
   never by folder or machine), and keeps what is only its own: the needs-input
   words, the new-window hint and context menu, and the Add dialog (this
@@ -192,11 +195,11 @@ function over what its caller holds:
   be opened in one direction, or null at an end; no wrap. Pure, imports
   nothing, so the page loads it. Each client draws its own rows and opens
   what it answers.
-- **Who waits in a workspace** (the yellow dot). `workspaceChoices`
+- **Who waits in a workspace** (the needs-input mark, the "!" disc). `workspaceChoices`
   carries `waiting` for each served view, rolled up from the instances the
   client holds (`waiting-on-you.mjs` `waitingClaim`, live deployments only):
   no read of its own. The list shows only served views, so nothing reads
-  needs input for a deployment no window serves; unknown or stale is no dot.
+  needs input for a deployment no window serves; unknown or stale is no mark.
 - **This computer's deployments list** (`deployment-list.mjs`, #1390). The
   kernel keeps it (`oats deployments`); `readDeploymentList` reads the answer
   into rows of `{ path, name, state }` and refuses a document it cannot read

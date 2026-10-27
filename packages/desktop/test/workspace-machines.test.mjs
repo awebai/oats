@@ -1,4 +1,4 @@
-// #517: the Setup tab's Machines box — this workspace's registrations with what the last check said,
+// #517: the Setup tab's Registered machines box — this workspace's registrations with what the last check said,
 // one background check per machine per run, Check, Remove (confirmed) and Add a machine.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,7 +39,7 @@ test('lists this workspace\'s machines (name, host, folder, OATS version, reacha
     '/api/server-check': async body => { await gate; return { id: body.id, check: { reachable: true, version: '0.39.0', error: null } }; },
   });
   await settle();
-  assert.equal(u.q('.setup-box-head h4').textContent, 'Machines');
+  assert.equal(u.q('.setup-box-head h4').textContent, 'Registered machines');
   // A solid card (Setup's This computer zone says it is not shared): no scope chip, Add at the end of its head.
   assert.ok(u.ui.element.classList.contains('setup-box'));
   assert.equal(u.q('.setup-scope'), null);

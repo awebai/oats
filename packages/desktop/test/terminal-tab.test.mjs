@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { createTerminalTab } from "../renderer/terminal-tab.mjs";
+import { createTerminalTab, holdTerminalResizes } from "../renderer/terminal-tab.mjs";
 import { handle, opened, ready, confirmed } from './helpers/terminal-wire.mjs';
 import { terminalFailure } from '../../client/terminal-contract.mjs';
 
@@ -608,4 +608,46 @@ test("sync: a reconnect mid-block writes the old lease's held bytes first; the n
   assert.deepEqual(r.writes.map(w => w.text), [HALF, REDRAW], "the old lease's rest is not written; the new lease's block is whole");
   assert.equal(r.clock.pending(), 0);
   await r.tab.close();
+});
+
+// The resizable sidebar: a resize drag (the sidebar's handle) holds the PTY resizes. xterm still resizes every frame; the program
+// hears the size once, when the last hold lets go, after a refit to the final layout.
+test("held resizes: none reaches the program until the last hold lets go, then one per terminal, refitted", async () => {
+  const d = makeDoubles(Promise.resolve(7));
+  let resized, fits = 0, active = true;
+  d.term.onResize = fn => { resized = fn; return { dispose() {} }; };
+  const sent = [];
+  d.desk.termResize = (h, cols, rows) => sent.push(`${h.id}:${cols}x${rows}`);
+  const grow = (cols) => { d.term.cols = cols; resized({ cols, rows: d.term.rows }); };
+  const tab = mk(d, { isActive: () => active, fit: () => { fits++; if (d.term.cols < 100) grow(100); } });
+  await tab.start(); sent.length = 0;
+  grow(81);
+  assert.deepEqual(sent, ["7:81x24"], "unheld, each resize is sent at once");
+  sent.length = 0;
+  const releaseA = holdTerminalResizes(), releaseB = holdTerminalResizes();
+  grow(82); grow(85); grow(90);
+  assert.deepEqual(sent, [], "held: xterm resizes, the program hears nothing");
+  releaseA(); releaseA();
+  assert.deepEqual(sent, [], "still held by the other");
+  releaseB();
+  assert.equal(fits, 1, "one refit to the final layout");
+  assert.deepEqual(sent, ["7:100x24"], "one resize, the final size");
+  sent.length = 0; fits = 0;
+  let release = holdTerminalResizes();
+  d.term.cols = 120; resized({ cols: 120, rows: 24 });
+  release();
+  assert.deepEqual([fits, sent], [1, ["7:120x24"]], "a refit that changes nothing still sends the held size once");
+  sent.length = 0; fits = 0; active = false;
+  release = holdTerminalResizes();
+  d.term.cols = 130; resized({ cols: 130, rows: 24 });
+  release();
+  assert.deepEqual([fits, sent], [0, ["7:130x24"]], "a hidden terminal sends its size without a refit");
+  sent.length = 0;
+  release = holdTerminalResizes();
+  d.term.cols = 140; resized({ cols: 140, rows: 24 });
+  await tab.close();
+  release();
+  assert.deepEqual(sent, [], "a terminal closed meanwhile sends nothing");
+  grow(150);
+  assert.deepEqual(sent, [], "nor after");
 });

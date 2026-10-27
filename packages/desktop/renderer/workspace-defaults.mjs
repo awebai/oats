@@ -70,7 +70,6 @@ export const DEFAULT_SLOTS = Object.freeze([
 
 export const DEFAULTS_COPY = Object.freeze({
   title: 'Workspace defaults',
-  nav: 'Defaults',
   thisWorkspace: 'this workspace',
   every: ['Every soul in ', ' starts with these,'],
   unless: 'unless it turns one off.',

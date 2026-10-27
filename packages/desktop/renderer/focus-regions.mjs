@@ -1,20 +1,28 @@
 // oats desktop — keyboard regions (spec F, Part 4): F6 / Shift+F6 move focus between the
-// window's regions, in order: sidebar nav → instance roster → main → instance panel → back.
+// window's regions, in the sidebar's order top to bottom, then the main area (2026-10-26):
+// workspaces → views (the nav under the list) → instance roster → main → instance panel → back.
 //
 // A region that is hidden (the sidebar while hidden or in focus mode, the panel while closed or when
 // there is nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
-//   nav     the current view's nav item (aria-current), else the first one
-//   roster  the roster's tab stop (the selected row), else the filter
+//   workspaces  the list of workspaces' tab stop (the row last focused, else the current one), else
+//               the heading's Add local workspace…
+//   roster  the roster's tab stop (the selected row), else its first control (Retry after a failed read),
+//           else, for an empty roster, the foot's Spawn instance (its one action; F6 goes on from there as
+//           from the roster)
+//   views   the current view's nav item (aria-current), else the first one
 //   main    the active tab's content (a terminal's input) through the shell's hook, else the
 //           stage's first control
 //   panel   its selected tab (or the first control of a stage's content). A closed panel is out
 //           of the cycle (Spec B): from a terminal, panel.toggle's chord opens it.
-// The tab strip, the split controls and Show sidebar / Show instance panel count as main; the
-// list of workspaces (above the nav item: Shift+Tab) and the sidebar footer (below it: Tab) as nav.
+// The tab strip, the split controls and Show sidebar / Show instance panel count as main. The head's controls
+// (Show only the current workspace, Add local workspace…) count as workspaces. The sidebar's foot (Spawn
+// instance, then the bar: the OATS mark, the sidebar toggle, the settings cog and its menu) is not a region: Tab reaches it, and F6 from there moves on as from between the
+// roster and main (on to main, Shift+F6 back to the roster). The sidebar's width handle (#sidebar-resizer,
+// sidebar-width.mjs), the Tab stop after the foot, counts as the foot.
 
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 
-export const REGIONS = Object.freeze(["nav", "roster", "main", "panel"]);
+export const REGIONS = Object.freeze(["workspaces", "views", "roster", "main", "panel"]);
 
 const TABBABLE = 'button, [href], input, select, textarea, summary, [tabindex]';
 
@@ -51,10 +59,14 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   const app = () => doc.getElementById("app");
   const byId = id => doc.getElementById(id);
   const sidebarShown = () => !app()?.classList.contains("sidebar-hidden") && !app()?.classList.contains("focus-mode") && isShown(byId("sidebar"));
-  const root = name => ({ nav: byId("sidebar"), roster: byId("instance-roster"), main: byId("main"), panel: byId("context-panel") })[name];
+  // The workspaces region: the list and its heading (the heading holds Add local workspace…).
+  const inWorkspaces = el => !!el && (!!byId("ws-list")?.contains(el) || !!byId("ws-add-open")?.parentElement?.contains(el));
+  // The foot and the width handle after it: no region, between the roster and main.
+  const inFoot = el => !!el && (!!byId("nav-foot")?.contains(el) || el === byId("sidebar-resizer"));
 
   function visible(name) {
-    if (name === "nav") return sidebarShown() && isShown(byId("nav"));
+    if (name === "workspaces") return sidebarShown() && isShown(byId("ws-list"));
+    if (name === "views") return sidebarShown() && isShown(byId("nav"));
     if (name === "roster") return sidebarShown() && isShown(byId("instance-roster"));
     if (name === "main") return isShown(byId("main"));
     if (name === "panel") return isShown(byId("context-panel"));
@@ -62,16 +74,20 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   }
 
   function currentItem(name) {
-    if (name === "nav") {
-      const nav = byId("nav");
-      const items = [...(nav?.querySelectorAll("button") || [])].filter(focusable);
+    if (name === "workspaces") {
+      const stop = [...(byId("ws-options")?.querySelectorAll('[tabindex="0"]') || [])].find(focusable);
+      const add = byId("ws-add-open");
+      return stop || (focusable(add) ? add : firstTabbable(byId("ws-list")));
+    }
+    if (name === "views") {
+      const items = [...(byId("nav")?.querySelectorAll("button") || [])].filter(focusable);
       return items.find(b => b.getAttribute("aria-current") === "page") || items[0] || null;
     }
     if (name === "roster") {
       const roster = byId("instance-roster");
       const stop = [...(roster?.querySelectorAll('.ctx-list [tabindex="0"]') || [])].find(focusable);
-      const filter = roster?.querySelector(".ctx-filter");
-      return stop || (focusable(filter) ? filter : firstTabbable(roster));
+      const spawn = byId("sidebar-spawn");
+      return stop || firstTabbable(roster) || (focusable(spawn) ? spawn : null);
     }
     if (name === "panel") {
       const panel = byId("context-panel");
@@ -111,22 +127,31 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
   function regionOfFocus() {
     const active = doc.activeElement;
     if (!active || active === doc.body) return null;
-    if (byId("nav")?.contains(active)) return "nav";
+    if (inWorkspaces(active)) return "workspaces";
     if (byId("instance-roster")?.contains(active)) return "roster";
-    if (byId("sidebar")?.contains(active)) return "nav"; // the list of workspaces, footer tools
+    if (byId("nav")?.contains(active)) return "views";
+    if (inFoot(active)) return null; // the foot is not a region (cycle places it)
+    if (byId("sidebar")?.contains(active)) return "workspaces"; // anything else the sidebar holds sits above the roster
     if (byId("main")?.contains(active)) return "main";
     if (byId("context-panel")?.contains(active)) return "panel";
     return null;
   }
 
-  /** Move to the next (delta 1) or previous (-1) visible region that can take focus. */
+  /** Move to the next (delta 1) or previous (-1) visible region that can take focus. The walk goes
+   * through every region in order from where focus is, skipping the hidden ones, so a hidden anchor
+   * keeps its place: F6 from the foot with the roster hidden (no workspace) goes on to main. */
   function cycle(delta) {
-    const order = REGIONS.filter(visible);
-    if (!order.length) return false;
-    const at = order.indexOf(regionOfFocus());
-    for (let i = 1; i <= order.length; i++) {
-      const index = at < 0 ? (delta > 0 ? i - 1 : order.length - i) : (at + delta * i + order.length * i) % order.length;
-      if (focusRegion(order[index])) return true;
+    if (!REGIONS.some(visible)) return false;
+    // From the foot (below the roster): F6 goes on as from the roster, Shift+F6 back as from main; from an empty
+    // roster's stop there (Spawn instance), Shift+F6 goes back as from the roster.
+    const foot = inFoot(doc.activeElement);
+    const rosterStop = foot && visible("roster") && currentItem("roster") === doc.activeElement;
+    const at = REGIONS.indexOf(foot ? (delta > 0 || rosterStop ? "roster" : "main") : regionOfFocus());
+    const n = REGIONS.length;
+    for (let i = 1; i <= n; i++) {
+      // Outside every region (body, a dialog): the first region F6 meets, or the last for Shift+F6.
+      const index = at < 0 ? (delta > 0 ? i - 1 : n - i) : (((at + delta * i) % n) + n) % n;
+      if (focusRegion(REGIONS[index])) return true;
     }
     return false;
   }
