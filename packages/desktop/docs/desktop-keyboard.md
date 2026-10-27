@@ -247,7 +247,7 @@ lone modifier settles it:
 a screen reader ("Leader: press a key, Esc for the instances list", a visually
 hidden `role="status"`), and the keys after it are listed in the shortcuts
 editor (the leader's `?`). When a key cannot act (no target instance, an act
-the instance's menu would not offer, no other tab, nothing to split), one quiet
+the row's context menu would not offer, no other tab, nothing to split), one quiet
 line at the bottom of the main area says why, and is announced; it stays until
 the next key, click or focus change. It is the only answer such a key gets. The
 rows the TUI marks as terminal rows (`z`, `w`, the tab and split keys) act only
@@ -285,7 +285,7 @@ say why in the same line when they cannot act.
 | `\|`, `-` | split right / split down (`split.vertical`, `split.horizontal`) |
 | Tab, Shift+Tab | focuses the next / previous editor group's active tab, or the group when it is empty, wrapping (`split.focusNextGroup`, `split.focusPrevGroup`). On macOS the previous group has no chord, so Shift+Tab here is its key |
 | `x` | closes the split, every tab kept (`split.close`) |
-| `X`, `R`, `S`, `D` | Stop… / Restart… / Start… / Retire… for the target: the same dialogs and availability as its roster menu |
+| `X`, `R`, `S`, `D` | Stop… / Restart… / Start… / Retire… for the target: the same dialogs and availability as its row's context menu |
 | `n` | Quick Open: pick a soul, then the spawn dialog (`app.quickOpenSouls`) |
 | `N` | the spawn dialog for the target's soul, as Quick Open opens it |
 | `/` | the instance roster's current row (`sidebar.focusFilter`) |
@@ -542,7 +542,7 @@ Actions without a default (bind them in the shortcuts editor): New window
 it), focus mode, focus the active terminal, return to terminal groups,
 explicit themes (`app.theme.light`, `app.theme.solarized`,
 `app.theme.dark`, and `app.theme.host` for This computer), the font picker
-(`app.fontPicker`), and the instance menu's Open in split / Open
+(`app.fontPicker`), and the row context menu's Open in split / Open
 pull request.
 
 Rebinding applies everywhere a chord is shown: tooltips (the sidebar's Spawn
@@ -836,7 +836,7 @@ heading's controls, the nav, a roster row, the foot), the TUI's plain keys work 
 context (`sidebar.key.*`, `SIDEBAR_KEYS`), rebindable and unbindable in the
 shortcuts editor's **Sidebar keys** group, and each does what the same key
 does after the leader. They never fire in an editable field (one there would
-type them) or inside a menu open there (an instance's actions menu, the
+type them) or inside a menu open there (an instance row's context menu, the
 settings cog's menu), and never with focus outside the sidebar.
 
 | Key | Action id | Does |
@@ -1199,8 +1199,9 @@ the rig). "Fixed" marks a gap this change closed.
 | Sidebar nav, under the list of workspaces (Workspace overview, Automations; one under the other) | F6 (current item, the second region); Tab; ⌘2/⌘3 (⌘1: Workspace overview on its Machines tab) | Enter/Space |
 | Roster rows | One roving stop, the selected row, else the first; F6; ⌘F / Alt+F (`sidebar.focusFilter`) and the sidebar's `/` land on it; the leader then Esc; Up/Down/Home/End (and the TUI's `k` `j` `g` `G`), PageUp/PageDown by the rows that fit; Right (`l`) expands, Left (`h`) collapses or goes to the parent; the sidebar keys (see "Sidebar keys"). A collapse never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, ⌘F / Alt+F, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped); an arrow chord the keymap binds is the keymap's, so Alt+Shift+↑/↓ (⌥⌘↑/↓) open the terminal of the row above / below, as from anywhere |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
-| Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
-| Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
+| Row tools: PR link, Start… | Tab from the focused row (shown on focus) | Enter/Space |
+| A row's context menu (Open in split, Open pull request…, Knowledge & capabilities…, Start…, Restart with…, Stop…, Retire instance…; Forget… alone on a row its server no longer lists). The row has no ⋯ button | Shift+F10 or the ContextMenu key on the focused row (under the row); a right-click (at the pointer, and the row is not activated) | Focus on its first act; arrows, Home/End move; Enter/Space choose; Esc or Tab close it, back on the row. While it is held (a stale roster, one of its acts still running, a row that can't be used from here) it opens nothing, the focus stays on the row and the line at the bottom of the main area says why |
+| Start / Restart dialog, lifecycle dialog | From the row, its context menu, the instance panel or the leader | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
 | Sidebar toggle (**Hide the sidebar**, in the foot's bar right after the OATS mark; `aria-expanded`) | Tab, after the roster | Enter/Space: `sidebar.toggle`, focus to Show sidebar |
 | Spawn instance (words alone at the right of the sidebar's foot, a bar named "Sidebar tools", before the cog; its chord in its tooltip) | Tab, after the sidebar toggle; on an empty roster, its one way in: F6, ⌘F / Alt+F (`sidebar.focusFilter`) and the sidebar's `/` land on it (a failed read's Retry first) | Enter/Space run `app.quickOpenSouls` (Quick Open), as its chord does |
 | Settings (the cog at the right end of the sidebar foot's bar; a menu button, `aria-haspopup="menu"`) | Tab, after Spawn instance | Enter/Space or a click open its menu on the first item, ↓ / ↑ on the first / last; in the menu (`role="menu"`: **Theme…**, **Font…**, **Keyboard shortcuts…**, each with its chord, when it has one), placed with its right edge on the cog's, above it when there is no room below, ↑/↓ move and wrap, Home/End, Enter/Space run the item after the menu has closed with focus back on the cog, Esc closes back on the cog, Tab closes |

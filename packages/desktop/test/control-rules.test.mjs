@@ -48,8 +48,7 @@ const markup = `<div id="app"><aside id="sidebar">
   <nav id="nav"><button class="nav-item active" aria-current="page"><span class="icon"></span><span class="label">Workspace overview</span></button><button class="nav-item"><span class="icon"></span><span class="label">Automations</span></button></nav>
   <section id="instance-roster">
     <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
-    <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button>
-      <span class="ctx-row-tools"><button class="ctx-instance-actions">…</button></span></div></div></section>
+    <div class="ctx-list"><div class="ctx-tree-row"><button class="ctx-inst">Row</button></div></div></section>
   <div id="nav-foot"><div id="sidebar-bar" role="group" aria-label="Sidebar tools"><span class="sidebar-brand" aria-hidden="true"></span>
       <button id="sidebar-spawn" type="button">Spawn instance</button>
       <button id="sidebar-toggle" class="side-icon-button icon-button" type="button" aria-label="Hide the sidebar">S</button>
@@ -166,9 +165,6 @@ test("focus: one global 1px inset accent edge and tint replace every 2px ring an
     const selectors = [...css.matchAll(/^[^{}/]*\{/gm)].map(m => m[0]).filter(s => /:focus(?!-visible|-within)/.test(s));
     assert.deepEqual(selectors, [], `${name}: visuals hang off :focus-visible, never :focus`);
   }
-  assert.equal(u.rule(".ctx-instance-actions:hover").background, "var(--surface-2)");
-  assert.equal(u.rule(".ctx-instance-actions:focus-visible").background, "var(--sel)",
-    "the menu trigger, refocused when its menu closes after a click, styles :focus-visible only, with the tint");
 });
 
 test("focus: keyboard focus on plain shell controls paints the tint and the edge", t => {
@@ -179,7 +175,7 @@ test("focus: keyboard focus on plain shell controls paints the tint and the edge
   for (const selector of [".ws-option.ws-other", ".ws-option.ws-current", ".side-icon-button", "#nav .nav-item:not(.active)", "#nav .nav-item.active", "#ws-current-only", "#ws-add-open",
     "#sidebar-toggle", "#sidebar-spawn", "#sidebar-settings", ".sidebar-settings-menu [role=menuitem]", ".ctx-inst", ".tab-trigger", ".tab .close",
     "#tab-actions button", ".ws-suggestion", ".ws-dialog-foot .secondary", ".kb-chord", ".kb-close", ".ws-segmented [aria-pressed=false]",
-    ".ctx-instance-menu button", ".ctx-instance-actions", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
+    ".ctx-instance-menu button", ".lifecycle-close", ".lifecycle-review", ".lifecycle-check", ".oats-view .act:not(.primary):not(.danger)"]) {
     const s = u.focused(selector);
     assert.equal(s.background, "var(--sel)", `${selector} tint`);
     assert.equal(s.outline, "1px solid var(--accent)", `${selector} edge`);

@@ -31,7 +31,18 @@ function fixture(t, stylesheet = css) {
   // Default jsdom disables scripts and external resource loading in shipped HTML.
   const dom = new JSDOM(html);
   t.after(() => dom.window.close());
+  // jsdom has no top-layer API: model only the popover's open/close events (as instance-actions.test.mjs does), and
+  // this window paints nothing: the menu's next-frame placement runs at once.
+  dom.window.requestAnimationFrame ??= cb => { cb(); return 0; };
+  for (const [method, newState] of [["showPopover", "open"], ["hidePopover", "closed"]]) {
+    dom.window.HTMLElement.prototype[method] = function () {
+      const event = new dom.window.Event("beforetoggle");
+      Object.defineProperty(event, "newState", { value: newState });
+      this.dispatchEvent(event);
+    };
+  }
   const doc = dom.window.document;
+  const said = [];
   const style = doc.createElement("style"); style.textContent = stylesheet; doc.head.append(style);
   const rules = [...style.sheet.cssRules];
   const rule = selector => {
@@ -41,7 +52,7 @@ function fixture(t, stylesheet = css) {
   };
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
-    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail, sayInHint: line => said.push(line),
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(), // loading state: a read succeeded
@@ -56,7 +67,9 @@ function fixture(t, stylesheet = css) {
   context.ownsInstanceTarget = target => context.contextInstances.filter(row => sameInstanceActionTarget(target, row, 'A')).length === 1;
   const render = runInNewContext(`${renderSource}\nrenderContextRoster`, context);
   render(roster);
-  return { doc, rules, rule, render, rows: [...doc.querySelectorAll(".ctx-tree-row")],
+  // The row's context menu (#1559): a right-click at the pointer, or Shift+F10 / the Menu key (clientX = clientY = 0).
+  const contextMenu = (el, { x = 0, y = 0 } = {}) => el.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  return { doc, rules, rule, render, said, contextMenu, rows: [...doc.querySelectorAll(".ctx-tree-row")],
     computed: node => dom.window.getComputedStyle(node) };
 }
 
@@ -203,7 +216,7 @@ test("tree connectors (non-layout): lines leave the dots, no disclosure arrows",
   ]);
 });
 
-test("roster DOM contract: named group separators, identity, active state, hidden-but-reachable tools and closed menus", t => {
+test("roster DOM contract: named group separators, identity, active state, hidden-but-reachable tools and closed context menus", t => {
   const u = fixture(t);
   assert.deepEqual([...u.doc.querySelectorAll(".ctx-group")].map(g => [g.getAttribute("role"), g.getAttribute("aria-label"), g.textContent]),
     [["separator", "root, 5 instances", ""], ["separator", "independent, 1 instance", ""]]);
@@ -214,13 +227,15 @@ test("roster DOM contract: named group separators, identity, active state, hidde
     const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").dataset.name;
     assert.equal(button.dataset.treeInstance, `/synthetic/${name}`);
     assert.equal(button.hasAttribute("aria-expanded"), button.dataset.rosterChildren === "1", "only parents announce expansion");
-    const trigger = row.querySelector(".ctx-instance-actions"), menu = row.querySelector(".ctx-instance-menu");
-    assert.equal(trigger.closest(".ctx-row-tools")?.parentElement, row, "tools overlay the row");
-    assert.equal(trigger.getAttribute("aria-haspopup"), "menu");
-    assert.equal(trigger.getAttribute("aria-expanded"), "false");
+    // #1559: no ⋯ trigger; the row's context menu sits beside the row in its wrap, never in its tools (they hide by
+    // visibility, which the menu would inherit). A running or unknown row without a known pull request has no tools.
+    assert.equal(row.querySelector(".ctx-instance-actions"), null, `${name}: no ⋯ trigger`);
+    assert.equal(row.querySelector(".ctx-row-tools"), null, `${name}: nothing overlays the row end`);
+    const menu = row.querySelector(".ctx-instance-menu");
+    assert.equal(menu.parentElement, row, "the menu is the row wrap's own");
     assert.equal(menu.getAttribute("popover"), "auto", "actions remain in the native closed popover");
     assert.equal(menu.getAttribute("role"), "menu");
-    assert.equal(menu.parentElement, trigger.parentElement);
+    assert.equal(menu.dataset.instanceMenuOpen, undefined, "closed until asked");
     assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action),
       button.getAttribute('aria-disabled') === 'true' ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
   }
@@ -236,6 +251,13 @@ test("roster DOM contract: named group separators, identity, active state, hidde
   assert.equal(u.rule(".ctx-meta.ctx-soul-repo").color, "var(--muted)");
   assert.equal(u.rule(".ctx-meta.ctx-soul-repo").background, "", "reference metadata is a plain subline, not a repository pill");
   assert.equal(u.rule(".ctx-meta-repo").background, "");
+  // What tools remain (Start… on a stopped row) overlay the row they belong to; the menu stays beside them, not inside.
+  u.render([...roster, { ...instance("stopped"), running: false }]);
+  const stopped = [...u.doc.querySelectorAll(".ctx-tree-row")].find(row => row.querySelector(".ctx-name").dataset.name === "stopped");
+  assert.equal(stopped.querySelector(".ctx-start").closest(".ctx-row-tools")?.parentElement, stopped, "tools overlay the row");
+  assert.equal(stopped.querySelector(".ctx-row-tools .ctx-instance-menu"), null);
+  assert.equal(stopped.querySelector(".ctx-instance-menu").parentElement, stopped);
+  assert.equal(stopped.querySelector(".ctx-instance-actions"), null, "a stopped row has no ⋯ trigger either");
 });
 
 function assertTools(u) {
@@ -302,9 +324,9 @@ test("running dot stays solid --accent on selected and hovered rows; its ring is
 });
 
 // Spec F audit: an instance whose state is unknown can't open, but its row takes focus
-// (aria-disabled, never disabled) so its tools — the actions menu — stay keyboard-reachable,
+// (aria-disabled, never disabled) so its context menu (Shift+F10, the Menu key) stays keyboard-reachable,
 // and the roster's one tab stop is the selected row (its terminal is the active tab).
-test("keyboard: an unavailable row stays focusable with its tools; the tab stop is the selected row", t => {
+test("keyboard: an unavailable row stays focusable with its context menu; the tab stop is the selected row", t => {
   const u = fixture(t);
   const row = u.rows.at(-1), button = row.querySelector(".ctx-inst");
   assert.equal(button.disabled, false, "never disabled: a disabled button can't take focus");
@@ -312,8 +334,18 @@ test("keyboard: an unavailable row stays focusable with its tools; the tab stop 
   assert.equal(button.getAttribute("aria-description"), "unknown: status unknown");
   button.focus(); assert.equal(u.doc.activeElement, button);
   button.click(); // the fixture fails on any open/start: an unavailable row's activation does nothing
-  const trigger = row.querySelector(".ctx-instance-actions");
-  assert.equal(trigger.disabled, false, "its actions menu is a Tab stop after the row");
+  // Its context menu opens from the keyboard (a key's contextmenu: no pointer) and takes focus; Esc hands it back to the row.
+  const menu = row.querySelector(".ctx-instance-menu");
+  u.contextMenu(button);
+  assert.equal(menu.dataset.instanceMenuOpen, "true", "the unavailable row's menu opens");
+  assert.equal(u.doc.activeElement.closest(".ctx-instance-menu"), menu, "focus is in its menu");
+  assert.equal(u.doc.activeElement.getAttribute("role"), "menuitem", "on its default item");
+  assert.deepEqual(u.said, [], "not held: nothing said");
+  u.doc.activeElement.dispatchEvent(new u.doc.defaultView.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  assert.equal(menu.dataset.instanceMenuOpen, "false");
+  assert.equal(u.doc.activeElement, button, "Esc: focus back on the row");
+  assert.equal(button.getAttribute("aria-disabled"), "true", "the row's own marking is unchanged");
+  assert.equal(button.getAttribute("aria-description"), "unknown: status unknown");
   const stops = [...u.doc.querySelectorAll(".ctx-inst")].filter(b => b.tabIndex === 0);
   assert.deepEqual(stops.map(b => b.dataset.treeInstance), [tree.instanceId(roster[1])], "one tab stop: the selected row");
 });
@@ -340,17 +372,11 @@ test('a row that cannot open says why on its meta line (text, not colour), with 
     assert.equal(button.querySelector('.ctx-meta-repo').textContent, row.repoName, 'the repository on its own side');
     assert.equal(button.getAttribute('aria-disabled'), 'true');
     assert.equal(button.title, sentence); assert.equal(button.getAttribute('aria-description'), sentence);
+    assert.equal(button.closest('.ctx-tree-row').querySelector('.ctx-instance-actions'), null, `${row.instance}: no ⋯ trigger (#1559)`);
   }
   // An addressable foreign row (no saved route here) opens like any other: no reason, no disabled state.
   u.render([remote('foreign', { savedRoute: false })]);
   const foreign = u.doc.querySelector('.ctx-inst');
   assert.equal(foreign.getAttribute('aria-disabled'), null);
   assert.deepEqual([...foreign.querySelector('.ctx-meta').children].map(el => el.textContent), ['dev', 'Build box'], 'the soul alone, then the repository');
-});
-
-test('a row\'s tools stay visible while its actions menu is open: the menu (a top-layer popover inside them) stays clickable once the pointer leaves the row', t => {
-  // In the top layer the row is neither :hover nor :focus-within while the pointer is in the menu. Without this rule the
-  // tools (and the menu, which inherits their visibility) go hidden: the item is not hit and its action refuses to run.
-  const u = fixture(t);
-  assert.equal(u.rule('.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open)').visibility, 'visible');
 });

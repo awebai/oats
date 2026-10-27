@@ -1,7 +1,7 @@
 // What the leader's keys, and the sidebar's plain keys, mean in the Desktop (docs/desktop-keyboard.md,
 // "The leader", "Sidebar keys"): the rows that apply now and their words (renderer/leader-keys.mjs),
 // and what each `does` runs (leader-dispatch.mjs): the target, previous/next over the roster as
-// drawn (the chords'), the workspace moves (the leader's ↑ / ↓), the acts as the row's menu offers them,
+// drawn (the chords'), the workspace moves (the leader's ↑ / ↓), the acts as the row's context menu offers them,
 // N, Esc. Pure: no DOM.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -80,7 +80,7 @@ test("previous/next: the roster as drawn, unopenable rows passed over, no wrap",
   assert.equal(rosterStep(rows, "gone", 1).id, "a", "a target not drawn counts as none");
 });
 
-test("acts: offered exactly as the row's menu offers them, else one line why", () => {
+test("acts: offered exactly as the row's context menu offers them, else one line why", () => {
   assert.deepEqual(actAvailability(inst("a"), "stop"), { ok: true });
   assert.deepEqual(actAvailability(inst("a"), "restart"), { ok: true });
   assert.match(actAvailability(inst("a"), "start").reason, /already running/);
@@ -181,8 +181,8 @@ test("dispatch: an act the menu would not offer runs nothing and says why", () =
 });
 
 
-// The row menu's own block is read from the roster's state (a stale roster, a stale deployment's row),
-// not from a drawn trigger: a target the filter or a collapse leaves undrawn is held the same.
+// The row's context menu's own block is read from the roster's state (a stale roster, a stale deployment's row),
+// not from a drawn row: a target the filter or a collapse leaves undrawn is held the same.
 test("the shell's menu block holds a stale target's acts whether or not its row is drawn", () => {
   assert.match(shellSource, /\n  menuReason: rosterActsHeld,\n/, "the dispatch reads it");
   const stale = { rosterStale: false, deploymentStale: false };

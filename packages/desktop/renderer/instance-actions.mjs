@@ -1,6 +1,8 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. Which acts a row offers, and
  * why it offers none or fewer, is decided by packages/client/instance-acts.mjs; this module draws that answer
- * as the Desktop's menu: its labels and icons, the caller's own items in front, its pending and stale marking. */
+ * as the roster row's context menu (#1559: a right-click, Shift+F10 or the Menu key on the row, as the
+ * workspace row's is; no button is drawn for it): its labels and icons, the caller's own items in front, and
+ * why it opens nothing while it is held (an act in flight, a stale roster, a blocked row). */
 import { instanceId } from "../../client/instance-tree.mjs";
 import { instanceActs } from "../../client/instance-acts.mjs";
 import { iconElement } from "./shell-icons.mjs";
@@ -11,44 +13,40 @@ const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'S
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove', forget: 'close' });
 
-const pending = new Map(); // instance key -> { reason, controls } replaced during an action
+const pending = new Map(); // instance key -> { reason } while an act of its menu runs
 /** A menu label without its trailing ellipsis, for prose ("Knowledge & capabilities…" → "Knowledge & capabilities"). */
 const plainLabel = label => String(label).replace(/…$/, '');
-// A pending action marks the trigger aria-disabled (focus kept, like markStaleControl) with why it waits. Clearing
-// removes only its own marking: a stale-roster marking set over it (another title) stays.
-const markPending = (control, reason) => {
-  control.dataset.pendingAction = 'true'; control.setAttribute('aria-disabled', 'true'); control.title = reason; control.setAttribute('aria-description', reason);
-};
-const clearPending = (control, reason) => {
-  if (control.dataset.pendingAction !== 'true') return;
-  delete control.dataset.pendingAction;
-  if (control.title === reason) { control.removeAttribute('aria-disabled'); control.removeAttribute('title'); control.removeAttribute('aria-description'); }
-};
 
-/** Why `instance`'s menu, drawn for `scope`, waits now (an act of it in flight, its trigger marked
- * pending), or null. Keyed as the menu keys it (scope, identity, incarnation), so a shortcut for the
- * same act is held while the row is filtered or collapsed away too. */
+/** Why `instance`'s menu, drawn for `scope`, waits now (an act of it in flight), or null. Keyed as the menu
+ * keys it (scope, identity, incarnation), so a shortcut for the same act is held while the row is filtered
+ * or collapsed away too. */
 export function pendingActionReason(scope, instance) {
   if (!instance) return null;
   return pending.get(JSON.stringify([scope, instanceId(instance), instance.createdAt ?? null]))?.reason ?? null;
 }
 
-/** Preserve an open menu through the roster's periodic DOM rebuild. */
+/** Preserve an open menu through the roster's periodic DOM rebuild: reopened where it was, on the item it was on. */
 export function captureInstanceActionMenu(root) {
   const open = root.querySelector('[data-instance-menu-open="true"]');
   const key = open?.dataset.instanceMenu;
   const action = root.ownerDocument.activeElement?.dataset.action;
+  const place = open ? { left: open.style.left, top: open.style.top } : null;
   return () => {
     if (!key) return;
     const menu = [...root.querySelectorAll("[data-instance-menu]")].find((m) => m.dataset.instanceMenu === key);
-    menu?.openActionMenu(action);
+    menu?.openActionMenu(action, place);
   };
 }
 
-/** `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`.
+/** The context menu of `row` (the roster row's button, its invoker): the menu element, for the caller to place
+ * beside the row. It opens on the row's `contextmenu` (a right-click, Shift+F10, the Menu key), at the pointer
+ * for a right-click and under the row for a key, on its first act; Esc or Tab close it back on the row.
+ * `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`.
+ * `say(line)` says why the menu opens nothing (it is held: an act of it in flight, `stale`, a blocked row): one line,
+ * announced, and the focus stays on the row. `stale`: the roster's stale reason while it is stale, else null.
  * `openForget(instance)` (#1131): given, a row its host no longer lists (instanceActs answers it `blocked`, key `missing`) offers "Forget…"
  * alone, which opens that confirmation; without it such a row offers nothing, as every unaddressable row. */
-export function instanceActions(doc, instance, { invoke, openLifecycle, openForget, done = () => {}, report = () => {},
+export function instanceActions(doc, instance, { row, invoke, openLifecycle, openForget, done = () => {}, report = () => {}, say = () => {}, stale = null,
   scope = '', owner = () => true, extra = [], dispatch, onMenuState = () => {}, onFocusChange = () => {}, shortcut = () => '' }) {
   const key = JSON.stringify([scope, instanceId(instance), instance.createdAt ?? null]);
   const owns = () => { try { return owner(); } catch { return false; } };
@@ -60,19 +58,10 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
     }
     return true;
   };
-  const wrapper = doc.createElement("span"); wrapper.className = "ctx-actions";
-  const trigger = doc.createElement("button");
-  trigger.type = "button"; trigger.className = "ctx-instance-actions"; trigger.append(iconElement(doc, "more"));
-  trigger.dataset.treeInstance = key; trigger.dataset.treeControl = "actions";
-  trigger.setAttribute("aria-label", `Actions for ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}`);
-  trigger.setAttribute("aria-haspopup", "menu"); trigger.setAttribute("aria-expanded", "false");
   const menu = doc.createElement("div"); menu.className = "ctx-instance-menu"; menu.tabIndex = -1;
   menu.setAttribute("popover", "auto"); menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", `Actions for ${instance.instance}`);
   menu.dataset.instanceMenu = key;
-  // Associate the invoker with the popover: clicking it again must close
-  // the menu, rather than light-dismiss first and immediately reopen it.
-  trigger.popoverTargetElement = menu;
   const items = [];
   const reasonFor = action => { const row = descriptors.find(item => item.action === action); return typeof row?.reason === 'function' ? row.reason() : row?.reason || ''; };
   const syncOptions = () => {
@@ -90,40 +79,56 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
   // listed and reachable, never the default). With none, focus lands on the menu itself and the arrows reach it.
   const defaultItem = () => items.find(item => !item.disabled && item.dataset.secondary !== 'true');
   const offer = instanceActs(instance);
-  // A remote row the kernel does not report addressable has no actions here; the trigger says why. The one
+  // A remote row the kernel does not report addressable has no actions here; the row says why when asked. The one
   // exception is the Desktop's own: a row its host no longer lists offers Forget… (forget-dialog.mjs).
   const forgets = offer.blocked?.code === 'unaddressable' && offer.blocked.key === 'missing' && typeof openForget === 'function';
-  const unrouted = offer.blocked?.code === 'unaddressable' && !forgets;
-  trigger.disabled = unrouted;
-  // A reason's sentence that is the row's own text is said with who made it (speaker-line.mjs).
-  if (unrouted) trigger.title = reasonLine(offer.blocked) ?? '';
-  else if (pending.has(key)) { const { reason, controls } = pending.get(key); markPending(trigger, reason); controls.push({ trigger, owns }); }
+  /** Why the menu opens nothing now, or null: a blocked row (a missing one that offers Forget… is not), an act of it in
+   * flight, a stale roster. A reason's sentence that is the row's own text is said with who made it (speaker-line.mjs). */
+  const heldReason = () => offer.blocked && !forgets ? reasonLine(offer.blocked) || `${instance.instance} can't be used from here.`
+    : pending.get(key)?.reason ?? stale ?? null;
+  const blocked = () => heldReason() !== null;
   const close = (restoreFocus = false) => {
     menu.hidePopover();
-    if (restoreFocus && owns() && visible(trigger)) trigger.focus();
+    if (restoreFocus && owns() && visible(row)) row.focus();
   };
+  // Where it opens (the workspace row's context menu's rule): at the pointer when a right-click on the row opened it,
+  // else (a key: Shift+F10, the Menu key; a rebuild's reopening) under the row's start. Kept inside the window.
+  // `at`: { x, y } the pointer, { left, top } where a rebuild found it open, or null (under the row).
+  let at = null;
   const position = () => {
-    const anchor = trigger.getBoundingClientRect(), size = menu.getBoundingClientRect();
-    const win = doc.defaultView;
-    menu.style.left = `${Math.max(8, Math.min(anchor.right - size.width, win.innerWidth - size.width - 8))}px`;
-    menu.style.top = `${Math.max(8, anchor.bottom + size.height + 8 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - size.height - 4)}px`;
+    const win = doc.defaultView, size = menu.getBoundingClientRect();
+    if (at?.left) { menu.style.left = at.left; menu.style.top = at.top; return; }
+    const box = row.getBoundingClientRect(), x = at ? at.x : box.left + 8, y = at ? at.y : box.bottom;
+    menu.style.left = `${Math.max(8, Math.min(x, win.innerWidth - size.width - 8))}px`;
+    menu.style.top = `${Math.max(8, y + size.height + 8 <= win.innerHeight ? y : y - size.height - (at ? 0 : box.height))}px`;
   };
-  // A stale roster (instance-tree-view.mjs markStaleControl) or a pending action marks the trigger aria-disabled: blocked like `disabled`, focus kept.
-  const blocked = () => trigger.disabled || trigger.getAttribute("aria-disabled") === "true";
-  const open = (action) => {
-    if (blocked() || !visible(trigger) || !owns()) return;
-    menu.showPopover(); position();
+  const open = (action, place = null) => {
+    if (blocked() || !visible(row) || !owns()) return;
+    at = place;
+    if (menu.dataset.instanceMenuOpen !== "true") menu.showPopover();
+    position();
     (items.find((item) => item.dataset.action === action && !item.disabled) || defaultItem() || menu).focus();
   };
   menu.openActionMenu = open;
+  // The row's context menu: the page's own, never the native one (main's Copy/Paste); a right-click opens it and
+  // never activates the row (a secondary button sends no click). A held menu opens nothing and says why.
+  row.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    if (!owns() || !visible(row)) return;
+    const why = heldReason();
+    if (why !== null) { say(why); return; }
+    const box = row.getBoundingClientRect();
+    const atPointer = !!(event.clientX || event.clientY) && event.clientX >= box.left && event.clientX <= box.right
+      && event.clientY >= box.top && event.clientY <= box.bottom;
+    open(undefined, atPointer ? { x: event.clientX, y: event.clientY } : null);
+  });
   // Native popovers provide top-layer placement and outside-click dismissal.
-  // Both native dismissal and explicit close update the trigger's state.
+  // Both native dismissal and explicit close update the menu's state.
   menu.addEventListener("beforetoggle", (event) => {
     const expanded = event.newState === "open";
-    if (expanded && (!owns() || blocked() || !visible(trigger))) { event.preventDefault(); return; }
+    if (expanded && (!owns() || blocked() || !visible(row))) { event.preventDefault(); return; }
     if (expanded) syncOptions();
     menu.dataset.instanceMenuOpen = String(expanded);
-    trigger.setAttribute("aria-expanded", String(expanded));
     for (const item of items) {
       const descriptor = extra.find(row => row.action === item.dataset.action);
       if (descriptor?.actionId) { const hint = item.querySelector('kbd'); hint.textContent = shortcut(descriptor.actionId) || ''; hint.hidden = !hint.textContent; }
@@ -136,20 +141,13 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
       if (owns() && menu.isConnected && menu.dataset.instanceMenuOpen === "true") position();
     });
   });
-  trigger.addEventListener("keydown", (event) => {
-    // An arrow chord the keymap binds (Alt+Shift+↑/↓, ⌘⌥↑/↓: the previous / next instance's terminal;
-    // a rebind) is the keymap's; any other ↑/↓ opens the menu.
-    if (!["ArrowDown", "ArrowUp"].includes(event.key) || keymapTakes(event)) return;
-    // ArrowUp opens on the last act (Retire), unless it is secondary: then as ArrowDown does.
-    const last = items.at(-1);
-    event.preventDefault(); event.stopPropagation(); open(event.key === "ArrowUp" && last?.dataset.secondary !== 'true' ? "retire" : undefined);
-  });
   menu.addEventListener('focusin', () => { if (menu.isConnected) onFocusChange(); });
   menu.addEventListener('focusout', () => doc.defaultView.queueMicrotask(() => { if (menu.isConnected) onFocusChange(); }));
   menu.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { close(true); return; }
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); return; }
-    // As on the trigger: an arrow chord the keymap binds is the keymap's, from an item too.
+    // An arrow chord the keymap binds (Alt+Shift+↑/↓, ⌘⌥↑/↓: the previous / next instance's terminal; a rebind)
+    // is the keymap's, from an item too.
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || keymapTakes(event)) return;
     event.preventDefault(); event.stopPropagation();
     const available = items.filter(item => !item.disabled);
@@ -160,7 +158,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
   });
   async function execute(action) {
     const item = items.find(row => row.dataset.action === action);
-    if (!item || !owns() || !visible(trigger) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
+    if (!item || !owns() || !visible(row) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
     close(true);
     if (action === 'forget') { openForget(instance); return; } // the confirmation sends, never this menu
     if (action === 'stop' || action === 'retire') {
@@ -169,16 +167,12 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
       return; // never fall back to an unguarded invoke('retire')
     }
     const label = plainLabel(descriptors.find(row => row.action === action).label);
-    const entry = { reason: `Waiting for ${label} to finish`, controls: [{ trigger, owns }] };
-    pending.set(key, entry); markPending(trigger, entry.reason);
+    // While it runs, this row's menu (and a menu a rebuild draws for it) opens nothing and says why.
+    const entry = { reason: `Waiting for ${label} to finish` };
+    pending.set(key, entry);
     try { const result = await invoke(action, instance); if (owns()) done(result, action); }
     catch (error) { if (owns()) report(`${label} didn't finish for ${instance.instance}.`, { detail: String(error?.message || error), action, instance }); }
-    finally {
-      if (pending.get(key) === entry) {
-        for (const control of entry.controls) if (control.owns()) clearPending(control.trigger, entry.reason);
-        pending.delete(key);
-      }
-    }
+    finally { if (pending.get(key) === entry) pending.delete(key); }
   }
   // The caller's own items go in front only on a row that offers everything a home normally does: a blocked
   // row has no menu, and a limited one (#802: a home a spawn or a retire left half cleaned; #1247: one being
@@ -205,9 +199,5 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
     items.push(item); menu.append(item);
   }
   syncOptions();
-  // A blocked row has no actions at all: the trigger says why instead of opening an empty menu. A row that offers
-  // Forget… keeps its trigger, and the same title says why that is all it offers.
-  if (offer.blocked) { trigger.disabled = !forgets; trigger.title = reasonLine(offer.blocked) ?? ''; }
-  wrapper.append(trigger, menu);
-  return wrapper;
+  return menu;
 }

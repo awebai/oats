@@ -4,8 +4,8 @@
 // home being retired (the kernel's `retire` running or unknown, an older kernel's bare `retirePending`, this
 // window's own retire in flight) reads "Retiring…", never as a failure, and keeps Retire only in its menu, never
 // as its default. Projections (deployment-data, /api/panel), the shipped roster render (shell.mjs
-// renderContextRoster + pendingSpawnRow) against a stub store, the hover card and the actions menu; no shell
-// startup, HTTP, Electron, CLI or session.
+// renderContextRoster + pendingSpawnRow) against a stub store, the hover card and the row's context menu (#1559:
+// a right-click, Shift+F10 or the Menu key on the row; no ⋯ trigger); no shell startup, HTTP, Electron, CLI or session.
 import test from "node:test";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
@@ -53,11 +53,11 @@ function fixture(t, rows, extra = {}) {
     };
   }
   const doc = dom.window.document;
-  const announced = new Set(), lifecycle = [], opened = [], tips = new Map();
+  const announced = new Set(), lifecycle = [], forgets = [], said = [], opened = [], tips = new Map();
   let painted = [];
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
-    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail, sayInHint: line => said.push(line),
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
@@ -67,9 +67,9 @@ function fixture(t, rows, extra = {}) {
     spawnJobs: { rows: ws => ws === "A" ? rows() : [], announce: id => !announced.has(id) && !!announced.add(id), check() {} },
     tabs: new Map(), activeTab: null, tabOpenIntents: { applyFocus: f => f() },
     // A held row opens and starts nothing (recorded: a throw inside a jsdom listener would not fail the test).
-    // Retire goes to the plan dialog.
+    // Retire goes to the plan dialog, Forget… to its confirmation.
     openTerminalTab: row => opened.push(["terminal", row.instance]), openInstanceStart: row => opened.push(["start", row.instance]),
-    openLifecycleDialog: (...args) => lifecycle.push(args), onRosterRowKey() {},
+    openLifecycleDialog: (...args) => lifecycle.push(args), openForgetDialog: (...args) => forgets.push(args), onRosterRowKey() {},
     api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail,
     ...(extra.context || {}),
   };
@@ -82,11 +82,17 @@ function fixture(t, rows, extra = {}) {
   const wrap = name => row(name).closest(".ctx-tree-row");
   const status = name => tips.get(row(name).dataset.treeInstance)?.().rows.find(([key]) => key === "Status")?.[1];
   const menu = name => [...wrap(name).querySelectorAll("[role=menuitem]")].map(item => item.dataset.action);
-  return { doc, render, list, row, wrap, status, menu, lifecycle, opened, live: () => doc.querySelector("#instance-roster > .ctx-spawn-live") };
+  // The row's context menu: a right-click at the pointer, or a key's (Shift+F10, the Menu key: clientX = clientY = 0).
+  const contextMenu = (name, { x = 0, y = 0 } = {}) => row(name).dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  const key = (el, key) => el.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  return { doc, render, list, row, wrap, status, menu, contextMenu, key, lifecycle, forgets, said, opened, live: () => doc.querySelector("#instance-roster > .ctx-spawn-live") };
 }
 
-// No Start…, no PR link, no actions menu, no Check result: nothing to act on.
-const noTools = (u, name) => assert.equal(u.wrap(name).querySelector(".ctx-row-tools"), null, `${name}: no tools`);
+// No Start…, no PR link, no Check result: nothing overlays the row (and no row has a ⋯ trigger, #1559).
+const noTools = (u, name) => {
+  assert.equal(u.wrap(name).querySelector(".ctx-row-tools"), null, `${name}: no tools`);
+  assert.equal(u.wrap(name).querySelector(".ctx-instance-actions"), null, `${name}: no ⋯ trigger`);
+};
 
 test("projection: spawnInProgress is kept as boolean true only; anything else is dropped without failing the roster", () => {
   const doc = value => ({ root: "/d/agents", agents: [{ name: "dev", dir: "/d/agents/dev",
@@ -210,7 +216,9 @@ for (const [flag, state, hint, hold] of [["rollbackIncomplete", "Spawn didn't fi
     assert.deepEqual(u.menu("dev-q"), ["retire"], "no Inspect, Start, Stop or split");
     assert.equal(u.wrap("dev-q").querySelector("[data-action=retire]").textContent, "Retire instance…");
     assert.equal(u.status("dev-q"), state);
-    u.wrap("dev-q").querySelector(".ctx-instance-actions").click();
+    noTools(u, "dev-q");
+    u.contextMenu("dev-q");
+    assert.equal(u.wrap("dev-q").querySelector(".ctx-instance-menu").dataset.instanceMenuOpen, "true", "its context menu opens");
     u.wrap("dev-q").querySelector("[data-action=retire]").click();
     await new Promise(r => setImmediate(r));
     assert.equal(u.lifecycle.length, 1, "the ordinary plan → apply dialog");
@@ -249,20 +257,38 @@ test("the hover card's Status names a held home; an ordinary row keeps its liven
   assert.equal(status(instance("a", undefined, { running: false })), "stopped");
 });
 
-test("instanceActions: a spawning home has no actions (the trigger says why); a quarantined one Retire only, extras included", t => {
-  const dom = new JSDOM("<body></body>");
+test("instanceActions: a spawning home has no actions (its context menu opens nothing and says why); a quarantined one Retire only, extras included", t => {
+  const dom = new JSDOM("<body></body>", { pretendToBeVisual: true });
   t.after(() => dom.window.close());
+  for (const [method, newState] of [["showPopover", "open"], ["hidePopover", "closed"]]) {
+    dom.window.HTMLElement.prototype[method] = function () {
+      const event = new dom.window.Event("beforetoggle");
+      Object.defineProperty(event, "newState", { value: newState });
+      this.dispatchEvent(event);
+    };
+  }
   const doc = dom.window.document;
   const extra = [{ action: "open-split", label: "Open in split", reason: "" }, { action: "open-pr", label: "Open pull request…", reason: "" }];
-  const spawning = instanceActions(doc, instance("s", undefined, { running: false, spawnInProgress: true }), { extra });
+  const rowFor = () => { const row = doc.createElement("button"); row.className = "ctx-inst"; doc.body.append(row); return row; };
+  const contextMenu = row => row.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  const said = [], spawningRow = rowFor();
+  const spawning = instanceActions(doc, instance("s", undefined, { running: false, spawnInProgress: true }), { row: spawningRow, extra, say: line => said.push(line) });
   assert.equal(spawning.querySelectorAll("[role=menuitem]").length, 0);
-  const trigger = spawning.querySelector(".ctx-instance-actions");
-  assert.equal(trigger.disabled, true); assert.match(trigger.title, /s is setting up its worktree/);
+  spawningRow.focus(); contextMenu(spawningRow);
+  assert.notEqual(spawning.dataset.instanceMenuOpen, "true", "a blocked row's menu opens nothing");
+  assert.equal(said.length, 1); assert.match(said[0], /s is setting up its worktree/, "and says why");
+  assert.equal(doc.activeElement, spawningRow, "focus stays on the row");
+  assert.equal(spawningRow.hasAttribute("aria-disabled") || spawningRow.hasAttribute("title"), false, "the menu marks nothing on the row");
   for (const hold of [{ rollbackIncomplete: true }, { retirePending: true }, { retire: RETIRE_INTERRUPTED }]) {
-    const held = instanceActions(doc, instance("q", undefined, { running: true, ...hold }), { extra });
+    const heldRow = rowFor();
+    const held = instanceActions(doc, instance("q", undefined, { running: true, ...hold }), { row: heldRow, extra, say: line => said.push(line) });
+    heldRow.after(held);
     assert.deepEqual([...held.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action), ["retire"], JSON.stringify(hold));
-    assert.equal(held.querySelector(".ctx-instance-actions").disabled, false);
+    contextMenu(heldRow);
+    assert.equal(held.dataset.instanceMenuOpen, "true", `limited, not held: its menu opens (${JSON.stringify(hold)})`);
+    held.hidePopover();
   }
+  assert.equal(said.length, 1, "nothing said for an open menu");
 });
 
 for (const theme of ["light", "solarized", "dark"]) test(`${theme}: the held line is --muted text, no opacity`, async t => {
@@ -333,22 +359,63 @@ for (const [name, hold] of Object.entries(RETIRING)) {
     assert.deepEqual(u.menu("dev-r"), ["retire"], "no Inspect, Start, Stop, Restart or split");
     const retireItem = u.wrap("dev-r").querySelector("[data-action=retire]");
     assert.equal(retireItem.disabled, false); assert.equal(retireItem.dataset.secondary, "true"); assert.equal(retireItem.autofocus, false);
-    // Opening the menu lands on the menu itself, not on Retire; the arrows reach Retire, which still opens the plan dialog.
-    const trigger = u.wrap("dev-r").querySelector(".ctx-instance-actions"), menu = u.wrap("dev-r").querySelector(".ctx-instance-menu");
-    for (const key of ["ArrowDown", "ArrowUp"]) {
-      trigger.focus();
-      trigger.dispatchEvent(new u.doc.defaultView.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
-      assert.equal(u.doc.activeElement, menu, `${key} on the trigger: focus on the menu, Retire is not the default`);
-      menu.hidePopover();
+    // No terminal tab is open (the fixture's tabs are empty): the row's context menu, from a key (Shift+F10, the Menu key)
+    // or a right-click, lands on the menu itself, not on Retire; Esc hands focus back to the row. The arrows reach
+    // Retire, which still opens the plan dialog.
+    assert.equal(u.wrap("dev-r").querySelector(".ctx-instance-actions"), null, "no ⋯ trigger");
+    const menu = u.wrap("dev-r").querySelector(".ctx-instance-menu");
+    for (const [how, at] of [["a key", {}], ["a right-click", { x: 40, y: 20 }]]) {
+      button.focus(); u.contextMenu("dev-r", at);
+      assert.equal(menu.dataset.instanceMenuOpen, "true", `${how}: opened`);
+      assert.equal(u.doc.activeElement, menu, `${how}: focus on the menu, Retire is not the default`);
+      u.key(menu, "Escape");
+      assert.equal(menu.dataset.instanceMenuOpen, "false"); assert.equal(u.doc.activeElement, button, `${how}: Esc, focus back on the row`);
     }
+    assert.deepEqual(u.opened, [], "a right-click activates nothing"); assert.deepEqual(u.said, [], "a limited row's menu is not held");
     menu.openActionMenu();
     assert.equal(u.doc.activeElement, menu);
     menu.dispatchEvent(new u.doc.defaultView.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
     assert.equal(u.doc.activeElement, retireItem, "reachable");
     retireItem.click(); await new Promise(r => setImmediate(r));
-    assert.equal(u.lifecycle.length, 1); assert.equal(u.lifecycle[0][0], "retire");
+    assert.equal(u.lifecycle.length, 1); assert.equal(u.lifecycle[0][0], "retire"); assert.equal(u.lifecycle[0][1].home, "/synthetic/dev-r");
   });
 }
+
+test("a row its host no longer lists: its context menu offers Forget… alone, which opens the Forget confirmation", async t => {
+  const u = fixture(t, () => []);
+  const gone = { ...instance("gone"), home: "/srv/agents/dev/instances/gone", agentsRoot: "/srv/agents", server: "build", repoName: "Build box",
+    addressable: false, savedRoute: true, missingRemotely: true, running: null };
+  u.render([...roster, gone]);
+  noTools(u, "gone");
+  assert.deepEqual(u.menu("gone"), ["forget"], "Forget… alone");
+  u.row("gone").focus(); u.contextMenu("gone");
+  const menu = u.wrap("gone").querySelector(".ctx-instance-menu");
+  assert.equal(menu.dataset.instanceMenuOpen, "true", "a missing row's menu opens, though the row is blocked"); assert.deepEqual(u.said, []);
+  const forget = u.wrap("gone").querySelector("[data-action=forget]");
+  assert.equal(u.doc.activeElement, forget, "Forget… is its default");
+  forget.click(); await new Promise(r => setImmediate(r));
+  assert.equal(u.forgets.length, 1); assert.equal(u.forgets[0][0].home, gone.home); assert.equal(u.forgets[0][1], "A");
+  assert.deepEqual(u.lifecycle, []); assert.deepEqual(u.opened, []);
+});
+
+test("a right-click on a row opens its context menu and never activates the row: no terminal, no Start", t => {
+  const u = fixture(t, () => []);
+  u.render([...roster, instance("off", undefined, { running: false })]);
+  for (const name of ["root", "off"]) {
+    assert.equal(u.wrap(name).querySelector(".ctx-instance-actions"), null, `${name}: no ⋯ trigger`);
+    u.row(name).focus();
+    const event = new u.doc.defaultView.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 30, clientY: 12 });
+    u.row(name).dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true, `${name}: the page's menu, not the native one`);
+    const menu = u.wrap(name).querySelector(".ctx-instance-menu");
+    assert.equal(menu.dataset.instanceMenuOpen, "true", `${name}: its menu opens`);
+    assert.ok(menu.contains(u.doc.activeElement), `${name}: focus in its menu`);
+    u.key(u.doc.activeElement, "Escape");
+    assert.equal(u.doc.activeElement, u.row(name), `${name}: Esc, back on the row`);
+  }
+  assert.deepEqual(u.opened, [], "neither row opened a terminal or Start");
+  assert.deepEqual(u.said, []);
+});
 
 test("a failed retire with the kernel's message: “Retire failed”, its hint, and the message said after the kernel's words, filtered", async t => {
   const u = fixture(t, () => []);

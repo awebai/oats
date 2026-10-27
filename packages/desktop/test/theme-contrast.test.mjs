@@ -1206,7 +1206,10 @@ for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel
   // The workspace list, always shown: the current row, and another row at rest, with the needs-input dot.
   const team = { id: '/team', name: 'Team', team: { name: 'Organization' } };
   switcher.begin()(team, [team, { id: '/other', name: 'Other', waiting: true }]);
-  const menu = instanceActions(doc, row, { extra: [{ action: 'open-split', label: 'Open in split', reason: 'Choose a terminal destination.' }], invoke: async () => {} }); doc.body.append(menu);
+  // The row's context menu (instance-actions.mjs), invoked from its row: a disabled item with its reason under it.
+  const rowButton = doc.createElement('button'); rowButton.className = 'ctx-inst'; rowButton.dataset.treeInstance = 'dev-1';
+  const rowWrap = doc.createElement('div'); rowWrap.className = 'ctx-tree-row'; rowWrap.append(rowButton); list.append(rowWrap);
+  const menu = instanceActions(doc, row, { row: rowButton, extra: [{ action: 'open-split', label: 'Open in split', reason: 'Choose a terminal destination.' }], invoke: async () => {} }); doc.body.append(menu);
   t.after(() => { panel.dispose(); notifications.dispose(); switcher.dispose(); dom.window.close(); });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
