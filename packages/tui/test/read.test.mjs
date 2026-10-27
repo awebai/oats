@@ -11,7 +11,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
+import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, createResumeTrigger, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
 import { CHANGE_FILES, IDENTITY_BUDGET_MS, KERNEL_BIN, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, startExec } from "../lib/read.mjs";
 import { PANEL_FS } from "../lib/panel.mjs";
 
@@ -493,6 +493,28 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   assert.deepEqual([entries[5].entry.deployment.status, shown(entries[5].entry)], ["observed", [["dev-one", true, "running"]]]);
   assert.deepEqual(entries.map((emitted) => emitted.number), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(collectors(), [2, 2]);
+});
+
+test("a lost session in the kernel's status answer reaches the resume trigger through the real readers: the row keeps sessionEnd, and observed() of the entry's rows starts a sweep (#1559)", async (t) => {
+  const world = makeWorld();
+  const rows = [kernelRow("dev-running", { sessionEnd: "lost" }), kernelRow("dev-lost", { running: false, runtimeState: "stopped", tmux: null, sessionEnd: "lost" }), kernelRow("dev-stopped", { running: false, runtimeState: "stopped", tmux: null, sessionEnd: "stopped" })];
+  world.plan(answering(world, rows, [{ running: true, runtimeState: "running", tmux: { session: "oats", window: "dev-running", socket: null } }, { running: false, runtimeState: "stopped", tmux: null }, { running: false, runtimeState: "stopped", tmux: null }]));
+  const { reader, entries } = reading(t, world);
+  await reader.request();
+  const [{ entry, read }] = entries;
+  assert.equal(read, true);
+  // The status reader and the panel's projection both keep the kernel's sessionEnd.
+  assert.deepEqual(entry.instances.map((row) => [row.instance, row.running, row.sessionEnd]), [["dev-running", true, "lost"], ["dev-lost", false, "lost"], ["dev-stopped", false, "stopped"]]);
+  // What lib/main.mjs hands the shared trigger after a read (entry.instances), with a fake run: the launch sweep,
+  // then, once the floor has passed, a sweep for the lost home that is not running.
+  const cli = { ...world.cli, features: [...world.cli.features, "session-resume"] }, runs = [], readings = [];
+  let now = 0;
+  const trigger = createResumeTrigger({ cli: () => cli, now: () => now, onReading: (reading) => readings.push(reading.kind),
+    run: (asked) => { runs.push(asked); return Promise.resolve({ schemaVersion: 1, ok: true, result: { schemaVersion: 1, plan: false, deployments: [], rows: [] } }); } });
+  await trigger.launch();
+  now += 30_000;
+  await trigger.observed(entry.instances);
+  assert.deepEqual([runs.length, runs.every((asked) => asked === cli), readings], [2, true, ["quiet", "quiet"]], "the launch sweep, then the one the lost row started");
 });
 
 test("the cycle numbers grow strictly, a failed cycle and a void one included", async (t) => {

@@ -1395,21 +1395,21 @@ test("the add of the deployment the run started in, refused while the switcher, 
 // --- Lost sessions resumed (#1559): the kernel's machine sweep, read by the shared reader ---------
 
 /** A summary as the shared readResumeSweep makes one: `rows` of each kind, `totals` counted from them. */
-function resumeSummary({ resumed = [], fresh = [], waiting = [], refused = [], optedOut = [], unswept = [] } = {}) {
-  return { resumed, fresh, waiting, refused, optedOut, unswept, omitted: 0, totals: { resumed: resumed.length, fresh: fresh.length, waiting: waiting.length, refused: refused.length } };
+function resumeSummary({ resumed = [], fresh = [], waiting = [], refused = [], unswept = [] } = {}) {
+  return { resumed, fresh, waiting, refused, unswept, omitted: 0, totals: { resumed: resumed.length, fresh: fresh.length, waiting: waiting.length, refused: refused.length } };
 }
 const resumedRow = (instance, deployment = DEPLOYMENT) => ({ instance, deployment, warnings: [], omitted: 0 });
 
 test("a sweep that resumed sessions is said once, in the line under the sidebar's title: the shared headline, its detail under it, a deployment named as the switcher names it; and the rows are read live", () => {
   const state = stateOf(observed(TREE));
   const other = "/home/u/work/beta";
-  const summary = resumeSummary({ resumed: [resumedRow("acme-dev"), resumedRow("beta-ops", other)], optedOut: ["/srv/quiet"] });
+  const summary = resumeSummary({ resumed: [resumedRow("acme-dev"), resumedRow("beta-ops", other)], unswept: [{ deployment: "/srv/quiet", reason: "unreadable" }] });
   const told = reduce(state, { resumed: { kind: "notice", summary } });
   assert.deepEqual(told.effect, { refresh: { live: true } }, "a live read, so a resumed row reads running");
   assert.deepEqual(told.state.outcome, {
     said: [{ own: "OATS resumed 2 instances whose sessions were lost." }],
     under: ["acme-dev in /srv/deploy: resumed in its own conversation.", "beta-ops in ~/work/beta: resumed in its own conversation.",
-      "Not checked in /srv/quiet: resuming is turned off for this deployment (session.resume: off)."],
+      "Not checked in /srv/quiet: it could not be read."],
   });
   assert.equal(told.state.notice, null);
   assert.deepEqual({ ...told.state, outcome: null }, { ...state }, "nothing else changes");
@@ -1420,6 +1420,8 @@ test("a sweep that resumed sessions is said once, in the line under the sidebar'
   assert.deepEqual(refused.state.outcome.said, [{ own: "OATS could not resume 1 lost session." }]);
   assert.equal(refused.state.outcome.under.at(-1), "OATS says: no tmux");
   assert.deepEqual(refused.effect, { refresh: { live: true } });
+  const lost = reduce(state, { resumed: { kind: "notice", summary: resumeSummary({ refused: [{ instance: "acme-dev", deployment: DEPLOYMENT, reason: "keeps-getting-lost", code: null, message: null }] }) } }).state;
+  assert.match(lost.outcome.under[0], /^acme-dev: keeps losing its session/, "the shared line for a home that keeps getting lost");
   // While the switcher is shown it is held, as the refused add is, and said once a view's list is.
   const held = reduce(press(state, ["w", "w"]).state, { resumed: { kind: "notice", summary } }).state;
   assert.deepEqual([held.outcome, held.notice?.said], [null, [{ own: "OATS resumed 2 instances whose sessions were lost." }]]);
@@ -1428,7 +1430,7 @@ test("a sweep that resumed sessions is said once, in the line under the sidebar'
 
 test("a sweep with nothing to tell reads the rows live and says nothing; a busy machine or a kernel without the sweep does neither; a failed sweep says so with a code of the kernel's form, never what it printed", () => {
   const state = stateOf(observed(TREE));
-  const quiet = reduce(state, { resumed: { kind: "quiet", summary: resumeSummary({ optedOut: ["/srv/quiet"] }) } });
+  const quiet = reduce(state, { resumed: { kind: "quiet", summary: resumeSummary({ unswept: [{ deployment: "/srv/quiet", reason: "unreadable" }] }) } });
   assert.deepEqual([quiet.state, quiet.effect], [state, { refresh: { live: true } }]);
   for (const kind of ["busy", "unsupported"]) {
     const told = reduce(state, { resumed: { kind } });

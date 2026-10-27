@@ -1279,17 +1279,26 @@ lost their sessions. When `oats tui` opens, it asks the kernel to resume
 them: it runs `oats session resume --json`, and the kernel does the rest.
 The kernel looks at every deployment on this computer's list (local
 deployments only, never another machine's) and resumes each lost session as
-it decides; what it does to a session, and when it starts one fresh from its
-briefing instead, is the kernel's rule, written beside the command.
-`oats tui` owns no session: it runs the command and shows a summary.
+it decides. What it does to a session, when it starts one fresh from its
+briefing instead, and when it stops trying for one that keeps losing its
+session, is the kernel's rule, written beside the command. A session lost
+long ago is not resumed automatically, and `oats tui` says nothing about it;
+`oats session start --resume` still brings it back by hand. `oats tui` owns
+no session: it runs the command and shows a summary.
 
 **When it runs.** Once the run has started, whether it started in a
 deployment or in [the switcher](#the-switcher): after the deployment it
 started in has been added to this computer's list (the sweep reads that
 list), and without holding up the first frame or the first read. Then
-again whenever a read of a deployment open in the run shows an instance
-whose session was lost while `oats tui` is open. Never two at a time, and never sooner than
-30 seconds after the last one began. It runs only when the kernel
+again whenever a read of a deployment open in the run shows an instance of
+this computer whose session was lost and that is not running. Never two at
+a time, and never sooner than 30 seconds after the last one began. Not for
+an instance the last sweep could not resume, found was not lost, or left
+because it was lost long ago: such an instance sets off no sweep until a
+later read shows it running or no longer lost, or a sweep resumes it. There
+is no timer and no queue: a read that comes too soon starts nothing, and the
+next read asks again. The rule is the Desktop's
+(`packages/client/session-resume-trigger.mjs`). It runs only when the kernel
 advertises the `session-resume` feature; without it, nothing runs and
 nothing is said.
 
@@ -1300,7 +1309,8 @@ that counts them ("OATS resumed 3 instances whose sessions were lost. 1 of
 them is waiting for you: open its terminal."), and under it a line for each
 instance (waiting for you, could not be resumed, started fresh and why,
 resumed in its own conversation), then the deployments the sweep did not
-check, each named as the switcher names its path. Text from OATS appears
+check, each named as the switcher names its path. A refusal an earlier
+sweep of this run already reported is not said again. Text from OATS appears
 only after "OATS says:". The words are the ones the Desktop uses. The list
 is then read at once, so a resumed instance shows running. Nothing is said
 when nothing was lost, when the sessions were already running, or when
@@ -1312,9 +1322,7 @@ form).
 
 **There is no setting to turn it off.** To keep an instance down, stop it
 with OATS (`X`, or `oats instance stop`): a stopped instance is not lost,
-and the sweep leaves it alone. `session.resume: off` in a deployment's
-`oats-local.yaml` turns the kernel's resuming off for that deployment, for
-every client; a summary names it among the deployments not checked.
+and the sweep leaves it alone.
 
 **Quitting does not stop a sweep.** It is a change, like an act you
 confirmed ([above](#stopping-starting-restarting-and-retiring)): it runs in
