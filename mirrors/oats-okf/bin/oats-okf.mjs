@@ -8,6 +8,7 @@ import { inspect } from '../lib/inspection.mjs';
 import { loadInvocationKnowledgeBinding } from '../lib/binding-wire.mjs';
 import { refuseLegacySettings, removeLegacySettings } from '../lib/legacy-settings.mjs';
 import { writeHarvestPolicy, harvestPolicy } from '../lib/harvest-policy.mjs';
+import { upgradePlan, upgradeApply } from '../lib/upgrade.mjs';
 const HELP=`oats okf status [--home PATH] [--json]
   (spawn-recorded harvest duty: on, off, or unknown; no base/network read)
 oats okf inspect [--home PATH] [--json]
@@ -44,6 +45,19 @@ const NEW_WAY='the working agent follows the compulsory okf-propose skill and ch
 const removed=(what)=>fail('E_REMOVED',`${what} was removed in oats.okf 5.0: ${NEW_WAY}`);
 const args=process.argv.slice(2);
 if(args.includes('--help') || args.includes('-h')) {process.stdout.write(HELP);}
+// okf #106: the upgrade hook reads only the home and its recorded meta, before
+// any settings, binding or invocation check: a 4.x home's recorded harvest
+// keys would refuse it there, and it must answer that home with its remedy.
+else if((process.env.OATS_EVENT || args[0])==='upgrade') {
+  const phase=process.env.OATS_UPGRADE_PHASE,home=resolve(process.env.OATS_INSTANCE_HOME || process.env.OATS_HOME || process.cwd());
+  let answer;
+  try {
+    if(phase==='plan') answer=upgradePlan(home);
+    else if(phase==='apply') answer=upgradeApply(home);
+    else fail('E_USAGE','OATS_UPGRADE_PHASE must be plan or apply');
+  } catch(e) {answer={warning:`oats-okf ${e.code || 'E_OKF'}: ${redactUrls(e.message)}`};process.exitCode=1;}
+  process.stdout.write(JSON.stringify(answer)+'\n');
+}
 else {
   const event=process.env.OATS_EVENT || args[0];
   const hook=['spawn','soul-scaffold'].includes(event);

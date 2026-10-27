@@ -21,7 +21,7 @@ members:
 # decision to trust it; oats-lock.json records its commit and integrity.
 packages:
   oats.framework: v1.15.1
-  oats.okf: v5.3.0
+  oats.okf: v5.5.0
   oats.aweb: v1.32.0
   oats.jira: v1.0.1
   oats.linear: v1.0.1

@@ -67,10 +67,10 @@ test("release alignment rejects stale lock metadata even when all three manifest
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
   for (const cap of MIRROR_PATHS) {
-    assert.equal(json(`${cap}/oats.json`).version, "5.3.0");
-    assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.49.0", `${cap}: OKF 5.3.0 requires the public gone-home event lookup released in 0.49.0; provider CI separately qualifies the real kernel`);
+    assert.equal(json(`${cap}/oats.json`).version, "5.5.0");
+    assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.49.0", `${cap}: OKF 5.5.0 requires the public gone-home event lookup released in 0.49.0; provider CI separately qualifies the real kernel`);
   }
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v5.3.0");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v5.5.0");
   // The getting-started skill writes a workspace file pinning oats.framework only (#1314): that version is the catalog's.
   const gettingStarted = readFileSync(join(ROOT, "skills/oats-getting-started/SKILL.md"), "utf8");
   assert.match(gettingStarted, /^  oats\.framework: v1\.15\.1\b/m, "the getting-started skill shows the catalog's oats.framework version");

@@ -47,12 +47,12 @@ const readAbsolute = path => {
 
 export function proposalSource(task) {
   if ((String(task).match(/^Source:/gm) || []).length > 1) fail('E_SOURCE', 'the proposal has more than one `Source:` line; exactly one names the source');
-  const m = /^Source:\s*instance\s+(\S+?),\s*home\s+(\S+?),\s*soul\s+(\S+?)\s*$/m.exec(task);
-  if (!m) fail('E_SOURCE', 'the task is not an oats.okf 5.0 proposal: it has no `Source: instance <name>, home <path>, soul <name>` line; a harvester is spawned only on a proposal');
-  const [, instance, home, soul] = m;
+  const m = /^Source:[ \t]*instance[ \t]+(\S+?),[ \t]*home[ \t]+(\S+?),[ \t]*soul[ \t]+([^\s,]+)(?:,[ \t]*incarnation[ \t]+([^\s,]+))?[ \t]*\r?$/m.exec(task);
+  if (!m) fail('E_SOURCE', 'the task is not an oats.okf 5.x proposal: use exactly one `Source: instance <name>, home <path>, soul <name>, incarnation <createdAt>` line (legacy lines without incarnation remain supported); a harvester is spawned only on a proposal');
+  const [, instance, home, soul, incarnation] = m;
   if (!NAME.test(instance) || !NAME.test(soul)) fail('E_SOURCE', 'the proposal\'s source instance and soul must be plain names');
   if (!isAbsolute(home)) fail('E_SOURCE', 'the proposal\'s source home must be absolute');
-  return { instance, home: resolve(home), soul };
+  return { instance, home: resolve(home), soul, ...(incarnation === undefined ? {} : { incarnation }) };
 }
 
 export function kernelEvents({ instance, home, deployment }) {
@@ -67,7 +67,7 @@ export function kernelEvents({ instance, home, deployment }) {
   return answer.result;
 }
 
-function sourceHistory({ instance, home }, deployment, events) {
+function sourceHistory({ instance, home }, deployment, events, expectedIncarnation) {
   const history = events({ instance, home, deployment });
   if (history?.eventsApi !== 2 || history.instance !== instance || history.home !== home || history.truncated !== false ||
       history.integrity?.unreadableRows !== 0 || history.integrity?.foreignRows !== 0 ||
@@ -75,8 +75,13 @@ function sourceHistory({ instance, home }, deployment, events) {
       !Array.isArray(history.events)) fail('E_SOURCE', 'source event history is incomplete, ambiguous or mismatched');
   const rows = history.events;
   if (rows.some(r => r.instance !== instance || r.home !== home)) fail('E_SOURCE', 'source event address mismatch');
+  if (!rows.length || rows.some(r => typeof r.incarnation !== 'string' || !r.incarnation)) fail('E_SOURCE', 'no unambiguous source incarnation; source event history has empty or unknown incarnations; stop and report');
   const incarnations = new Set(rows.map(r => r.incarnation));
-  if (!rows.length || rows.some(r => typeof r.incarnation !== 'string' || !r.incarnation) || incarnations.size !== 1) fail('E_SOURCE', 'no unambiguous source incarnation; never choose a reused name');
+  if (expectedIncarnation !== undefined) {
+    if (!incarnations.has(expectedIncarnation)) fail('E_SOURCE', 'the proposal incarnation is absent from source event history');
+    return { history, incarnation: expectedIncarnation };
+  }
+  if (incarnations.size !== 1) fail('E_SOURCE', 'no unambiguous source incarnation; never choose a reused name without an explicit live incarnation; re-propose from the live source with incarnation <createdAt> copied from its instance.json, or from an instance with a fresh name');
   return { history, incarnation: rows[0].incarnation };
 }
 
@@ -114,11 +119,12 @@ export function checkSource({ task = '', deployment, events = kernelEvents } = {
   const recordBytes = readWithin(deployment, join(location.root, 'instance.json'));
   const record = parse(recordBytes, 'source instance record');
   if (record?.instance !== source.instance || record.home !== source.home || (location.incarnation && record.createdAt !== location.incarnation)) fail('E_SOURCE', 'the record does not match the proposal\'s home or retired incarnation');
+  if (source.incarnation !== undefined && source.incarnation !== record.createdAt) fail('E_SOURCE', 'the proposal incarnation does not match the source record createdAt; never substitute another incarnation\'s evidence');
   if (live.length) {
-    // Source carries no expected incarnation. A current home is not evidence
-    // that an older proposal belongs to its replacement at the same address.
-    // Check history on BOTH paths; invalid live records never fall back.
-    const { history, incarnation } = sourceHistory(source, deployment, events);
+    // Only an explicit claim can disambiguate a live reused address. Match it
+    // to both the record and public history; never pick the newest row or
+    // fall back to an older recovery. Legacy and retired inputs stay strict.
+    const { history, incarnation } = sourceHistory(source, deployment, events, source.incarnation);
     if (record.createdAt !== incarnation || history.incarnation !== incarnation) fail('E_SOURCE', 'live source record and event incarnation do not agree');
   }
   const soulBytes = readAbsolute(join(typeof record.soulDir === 'string' ? record.soulDir : '', 'soul.yaml'));
