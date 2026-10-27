@@ -98,7 +98,7 @@ test("rosterGroups relays a validated shape, by the kernel's own read rule: a va
   ]);
   assert.deepEqual(rowOf(kept, "odd-reason").waitingOnYou, { ...CLAIM, reason: null });
   assert.deepEqual(rowOf(kept, "odd-message").waitingOnYou, { ...CLAIM, message: null });
-  assert.deepEqual(rowOf(kept, "long-message").waitingOnYou, { ...CLAIM, message: null });
+  assert.deepEqual(rowOf(kept, "long-message").waitingOnYou, { ...CLAIM, message: `${"x".repeat(199)}…` }, "cut to 200 code points by the same read rule");
   assert.deepEqual(rowOf(kept, "no-message").waitingOnYou, { since: CLAIM.since, producer: "agent", reason: "attention", message: null });
   assert.deepEqual(rowOf(kept, "extra-keys").waitingOnYou, CLAIM, "exactly since, producer, reason, message");
   assert.deepEqual(rowOf(kept, "kernel").waitingOnYou, { ...CLAIM, producer: "kernel" }, "the local read admits kernel, so the relay does");

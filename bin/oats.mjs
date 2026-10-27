@@ -33,7 +33,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -825,6 +825,19 @@ function doctorRetained(ws) {
   const kept = retainedWorktrees(deployment);
   return [retainedRecoveryLines(join(deployment, "agents"), kept), retainedWorktreeLines(kept)].filter((block) => block.length);
 }
+/** The machine's launch configurations file (awebai/oats#1506) as doctor reports it: its path, whether
+ *  it is there, its entries' names and whether it is valid. A broken file is reported, never a failure
+ *  of doctor; the launches it would affect refuse it. */
+function doctorMachineLaunchConfigs() {
+  const file = machineLaunchConfigsFile();
+  try {
+    const machine = machineLaunchConfigs();
+    return { file, present: machine !== null, ok: true, configurations: Object.keys(machine?.configs ?? {}).sort() };
+  } catch (e) {
+    if (e?.code !== "E_LAUNCH_CONFIG_INVALID") throw e;
+    return { file, present: true, ok: false, configurations: [], error: e.message };
+  }
+}
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const agentsRoot = join(dirname(ws.local.path), "agents");
@@ -840,6 +853,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
     information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
+    machineLaunchConfigs: doctorMachineLaunchConfigs(),
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
     warnings: [...hookEvents.warnings, ...(soulName ? [] : doctorCaptureWarnings())],
@@ -877,6 +891,9 @@ async function doctor(dir) {
   doctorVersionSkew(dirname(ws.local.path));
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
+  const machine = doctorMachineLaunchConfigs();
+  console.log("\nThis machine's launch configurations:");
+  console.log(`  ${shortPath(machine.file)}  ${!machine.present ? "(none: no file)" : machine.ok ? (machine.configurations.join(", ") || "(none declared)") : `ERROR: ${terminalText(machine.error)}`}`);
   const agentsRoot = join(dirname(ws.local.path), "agents");
   const localTeams = doctorLocalTeams(ws.local.value);
   for (const p of [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot)].filter(Boolean)) console.log(`\n! ${p.code}: ${p.message}`);
@@ -984,6 +1001,15 @@ function readLaunchConfigsModel(local) {
   const out = Object.create(null); // a name may be "constructor": membership is own only
   for (const [n, e] of Object.entries(map)) out[n] = normalizeLaunchConfig(e);
   return out;
+}
+/** Whether the machine's launch configurations file declares `name`; a broken file declares nothing here
+ *  (the launches it affects refuse it). */
+/** The file a launch configuration of this machine was declared in, from its `source` directory. */
+function launchConfigFile(source) {
+  return source === dirname(machineLaunchConfigsFile()) ? machineLaunchConfigsFile() : join(source, "oats-local.yaml");
+}
+function machineDeclares(name) {
+  try { return Object.hasOwn(machineLaunchConfigs()?.configs ?? {}, name); } catch (e) { if (e?.code === "E_LAUNCH_CONFIG_INVALID") return false; throw e; }
 }
 /** What a GUI or an operator sees of one configuration. Environment values
  *  never leave the file: a literal is answered as {redacted: true} (literals
@@ -1093,10 +1119,10 @@ async function launchConfigCmd() {
     let configurations;
     try { configurations = effective(); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
     if (JSON_MODE) { jsonOk({ context: dir, level, file, selected, configurations }); return; }
-    if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`}`); return; }
+    if (!configurations.length) { console.log(`No launch configurations are declared${file ? ` in ${shortPath(file)}` : ` (no oats-local.yaml in reach of ${dir})`} or in ${shortPath(machineLaunchConfigsFile())}`); return; }
     for (const c of configurations) {
       const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
-      console.log(`${c.name}: ${c.harness}${c.default ? ` (this machine's ${c.harness} default)` : ""}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}`);
+      console.log(`${c.name}: ${c.harness}${c.default ? ` (this machine's ${c.harness} default)` : ""}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""} (from ${shortPath(launchConfigFile(c.source))})${c.shadows.length ? ` (replaces ${c.shadows.map(shortPath).join(", ")}'s)` : ""}`);
     }
     return;
   }
@@ -1142,16 +1168,18 @@ async function launchConfigCmd() {
       const declaredHere = Object.hasOwn(model, name);
       before = declaredHere ? publicLaunchConfig(model[name]) : null;
       if (sub === "remove") {
-        if (!declaredHere) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}`);
+        if (!declaredHere) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}${machineDeclares(name) ? `; it is this machine's, in ${shortPath(machineLaunchConfigsFile())}, which OATS never writes` : ""}`);
         delete model[name];
       } else {
         let written = entry;
         if (keepEnv) {
           // An editor that saw only redacted values keeps the environment of the
           // declared definition of that name: a one-time copy into the complete
-          // replacement entry.
-          const current = declaredHere ? model[name] : undefined;
-          if (!current) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)}, so there is no environment to keep; declare it with env`);
+          // replacement entry. A name only this machine declares keeps the machine
+          // entry's, so the first save of a machine row writes the entry that shadows it.
+          let current = declaredHere ? model[name] : undefined;
+          if (!current) { try { const machine = machineLaunchConfigs()?.configs ?? {}; if (Object.hasOwn(machine, name)) current = machine[name]; } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message, e.details); } }
+          if (!current) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)} or in ${shortPath(machineLaunchConfigsFile())}, so there is no environment to keep; declare it with env`);
           if (Object.keys(current.env || {}).length) written = { ...entry, env: { ...current.env } };
           try { validateLaunchConfig(name, written, `--file ${f}`); } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
         }
@@ -2841,7 +2869,7 @@ function namingLine(naming) {
 function printSpawnPreview(r, { server, soulFetched = false } = {}) {
   // A host before 0.27 names the harness `runtime` (it still answers spawn-preview-2).
   const harness = r.harness ?? r.runtime;
-  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}${r.launchConfigSource ? ` from ${server ? terminalText(r.launchConfigSource) : shortPath(launchConfigFile(r.launchConfigSource))}` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
   // Feature spawn-suggest-name: how the name was chosen.
   { const line = namingLine(r.naming); if (line) console.log(`name: ${line}`); }
   if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");

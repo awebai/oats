@@ -192,7 +192,7 @@ test("doctor on a host with a process scan: no process-scan line, in JSON and te
     const r = fx.cli(["doctor", "--json"]);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const doctor = JSON.parse(r.stdout);
-    assert.deepEqual(Object.keys(doctor), ["schemaVersion", "workspaceApi", "context", "workspace", "workspaceError", "lockFile", "packages", "lockError", "information", "warnings"]);
+    assert.deepEqual(Object.keys(doctor), ["schemaVersion", "workspaceApi", "context", "workspace", "workspaceError", "lockFile", "packages", "lockError", "information", "machineLaunchConfigs", "warnings"]);
     assert.equal(doctor.information.some((line) => line.startsWith("process-scan-unavailable")), false, JSON.stringify(doctor.information));
     const text = fx.cli(["doctor"]);
     assert.equal(text.status, 0, text.stdout + text.stderr);
