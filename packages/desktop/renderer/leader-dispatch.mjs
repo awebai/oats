@@ -17,7 +17,7 @@
      sidebar's list that can be opened, shown in this window as a click on its row shows it (the
      shell's `workspaceStep`, workspace-switcher.mjs `step`); past the last row, the first, and before
      the first, the last; with no other row to show, one line says so;
-   - stop / restart / start / retire: the same availability as the row's actions menu
+   - stop / restart / start / retire: the same availability as the row's context menu
      (packages/client/instance-acts.mjs, and the menu's own block while the roster is stale or an
      act is pending); when the menu would not offer it, nothing runs and one line says why;
    - spawn-another: the target's soul, as Quick Open opens it.
@@ -42,8 +42,8 @@ export function rosterStep(rows, targetId, delta) {
 
 const ACT_WORDS = Object.freeze({ stop: "stopped", restart: "restarted", start: "started", retire: "retired" });
 
-/** Would the row's actions menu offer `verb` for `instance` now? `{ ok: true }`, or `{ reason }` in
- * one line. `menuReason`: the menu's trigger is blocked (a stale roster, an act pending), and why. */
+/** Would the row's context menu offer `verb` for `instance` now? `{ ok: true }`, or `{ reason }` in
+ * one line. `menuReason`: the menu is held (a stale roster, an act pending), and why. */
 export function actAvailability(instance, verb, menuReason = null) {
   const name = instance?.instance || "This instance";
   const offer = instanceActs(instance);
@@ -68,7 +68,7 @@ export function actAvailability(instance, verb, menuReason = null) {
  *   rosterRows()                     [{ id, openable, open() }] as drawn
  *   workspaceStep(delta)             show the workspace before (-1) / after (1) the current one in the list,
  *                                    wrapping; false when there is no other one to show
- *   menuReason(instance)             the row menu's own block, or null
+ *   menuReason(instance)             the row's context menu's own block, or null
  *   openAct(verb, instance)          the menu's dialog for the act (Stop…/Retire… plans, Start…/Restart…)
  *   spawnSoul(instance)              the spawn dialog for the instance's soul, as Quick Open opens it
  *   palette, instances, souls, capabilities, zoom, closeTab, tabPrevious, tabNext, splitRight,

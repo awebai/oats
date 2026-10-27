@@ -102,12 +102,12 @@ test("the leader is wired as one rebindable global action, inert under a modal, 
 
 // The views whose arrow keys are their own give way to the keymap where it binds the chord (the
 // shared Alt+Shift+↑/↓, ⌘⌥↑/↓, or a rebind), never by modifier: an unbound Alt+↑ or ⌘↑ stays theirs.
-// Behaviour: test/roster-keys, spawn-grid-keys and instance-actions; the overview canvas here.
-test("the overview canvas, the Souls grid, the roster tree and the actions trigger ask keymapTakes", () => {
+// Behaviour: test/roster-keys, spawn-grid-keys and instance-actions (the row's context menu); the overview canvas here.
+test("the overview canvas, the Souls grid, the roster tree and the row's context menu ask keymapTakes", () => {
   assert.match(read("renderer/views/hierarchy.mjs"), /if \(!\["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"\]\.includes\(e\.key\) \|\| keymapTakes\(e\)\) return;\n  e\.preventDefault\(\);/);
   assert.match(read("renderer/views/spawn.mjs"), /\["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"\]\.includes\(e\.key\) && keymapTakes\(e\)\) return;/);
   assert.match(read("renderer/roster-keys.mjs"), /if \(named && keymapTakes\(event\)\) return null;/);
-  assert.match(read("renderer/instance-actions.mjs"), /if \(!\["ArrowDown", "ArrowUp"\]\.includes\(event\.key\) \|\| keymapTakes\(event\)\) return;/);
+  assert.match(read("renderer/instance-actions.mjs"), /if \(!\["ArrowDown", "ArrowUp", "Home", "End"\]\.includes\(event\.key\) \|\| keymapTakes\(event\)\) return;/);
   for (const file of ["renderer/views/hierarchy.mjs", "renderer/views/spawn.mjs", "renderer/roster-keys.mjs", "renderer/instance-actions.mjs"]) {
     // The roster's letter guard (`!named && …`: a letter held with Ctrl, Alt or ⌘ is not the tree's) is not about the arrows.
     assert.doesNotMatch(read(file), /(?<!!named && \((?:e|event)\.ctrlKey \|\| )(?:e|event)\.altKey \|\| (?:e|event)\.metaKey\)\) return/, `${file}: no modifier guess`);
