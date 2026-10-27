@@ -32,9 +32,9 @@ function runtime(t, { stored = {}, storage = true } = {}) {
     getItem: key => stored[key] ?? null, setItem: (key, value) => { writes.push([key, value]); stored[key] = String(value); },
     removeItem: key => { delete stored[key]; },
   };
-  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ FONTS, defaultFont, terminalDefaultSize, fontStacks, fontChoices, initFont, setFont, currentFont, onFontChange,
+  const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ FONTS, defaultFont, terminalDefaultSize, terminalFace, fontStacks, fontChoices, initFont, setFont, currentFont, onFontChange,
     fontDraws, fontFallsBack, FONT_FALLBACK_NOTE,
-    terminalTypography, onTerminalTypographyChange, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography })`, context);
+    terminalTypography, onTerminalTypographyChange, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, resetTerminalFontSize })`, context);
   const root = dom.window.document.documentElement;
   const token = name => dom.window.getComputedStyle(root).getPropertyValue(name);
   return { theme, dom, root, token, stored, writes, context };
@@ -51,8 +51,10 @@ test("the two fonts; Omarchy's font is the default on an Omarchy computer and Sy
   assert.ok(Object.isFrozen(theme.FONTS) && theme.FONTS.every(Object.isFrozen));
   assert.equal(theme.defaultFont(true), "omarchy"); assert.equal(theme.defaultFont(false), "system");
   assert.equal(theme.defaultFont(), "system", "before initFont is told otherwise: not Omarchy");
-  // One function of the host for the terminal's size too: JetBrains Mono at 13px on Omarchy, Inconsolata at 15px elsewhere.
-  assert.equal(theme.terminalDefaultSize(true), 13); assert.equal(theme.terminalDefaultSize(false), 15); assert.equal(theme.terminalDefaultSize(), 15);
+  // The terminal's default size is the face's, not the host's (#1571): Omarchy's font at 13px, Inconsolata at 15px.
+  assert.equal(theme.terminalDefaultSize("omarchy"), 13); assert.equal(theme.terminalDefaultSize("bundled"), 15);
+  assert.equal(theme.terminalFace(), "bundled"); assert.equal(theme.terminalDefaultSize(), 15, "before initFont: Inconsolata's");
+  assert.equal(theme.terminalDefaultSize(true), 15, "a host boolean is no face: Inconsolata's");
 });
 
 test("off Omarchy: initFont is System font and the terminal's 15px, with nothing inline and nothing stored; only `true` is Omarchy", t => {
@@ -90,15 +92,94 @@ test("Omarchy: initFont applies Omarchy's font to the UI, its code and the termi
   assert.equal(u.root.dataset.font, "omarchy");
   for (const name of ["--ui-font", "--mono", "--term-font-family"]) assert.equal(stack(u.token(name)), "ui-monospace, monospace", name);
   assert.equal(stack(u.theme.terminalTypography().fontFamily), "ui-monospace, monospace", "new terminals start in it");
-  assert.equal(u.root.style.getPropertyValue("--term-font-size"), "13px", "the size token follows the default");
+  assert.equal(u.theme.terminalFace(), "omarchy");
+  assert.equal(u.root.style.getPropertyValue("--term-font-size"), "13px", "the size token follows the face's default");
   assert.equal(u.theme.terminalTypography().fontSize, 13, "Omarchy's terminal default");
   // A stored size wins; a reset lands on Omarchy's default again.
   u.theme.setTerminalFontSize(17); assert.equal(u.theme.terminalTypography().fontSize, 17);
   u.theme.resetTerminalTypography(); assert.equal(u.theme.terminalTypography().fontSize, 13);
-  // A stored System font beats the Omarchy default; the size default stays Omarchy's.
+  // A stored System font beats the Omarchy default, and its terminals are Inconsolata at Inconsolata's 15px: the size
+  // follows the face, not the host (#1571; 13px Inconsolata on an Omarchy computer was undersized).
   const chosen = runtime(t, { stored: { "oats.desktop.font": "system" } });
   assert.equal(chosen.theme.initFont(false, undefined, OMARCHY), "system"); assert.deepEqual(inlineStacks(chosen), []);
-  assert.equal(chosen.theme.terminalTypography().fontSize, 13);
+  assert.equal(chosen.theme.terminalFace(), "bundled"); assert.equal(chosen.root.getAttribute("style"), null, "nothing inline, the size token neither");
+  assert.equal(chosen.theme.terminalTypography().fontSize, 15);
+});
+
+// #1571: the product owner's Desktop had 15 stored, chosen when the terminals were Inconsolata; JetBrains Mono's
+// advance is 0.6em against Inconsolata's 0.5em, so at 15px Omarchy's font was a fifth larger. A size belongs to its face.
+const SIZE = "oats.desktop.terminal.fontSize", OMARCHY_SIZE = "oats.desktop.terminal.fontSize.omarchy";
+
+test("a stored Inconsolata 15 does not carry over to Omarchy's font: 13px there, 15px again with System font", t => {
+  const u = runtime(t, { stored: { [SIZE]: "15" } });
+  u.theme.initFont(false, () => true, OMARCHY);
+  assert.equal(u.theme.terminalTypography().fontSize, 13, "Omarchy's face, nothing stored for it: its default");
+  u.theme.setFont("system");
+  assert.equal(u.theme.terminalFace(), "bundled"); assert.equal(u.theme.terminalTypography().fontSize, 15, "the stored Inconsolata size");
+  assert.deepEqual(u.writes, [["oats.desktop.font", "system"]], "no migration: nothing written but the choice");
+  assert.equal(u.stored[SIZE], "15", "and nothing deleted");
+});
+
+test("a size set under one face leaves the other's untouched, by every control; each reset forgets the face in effect only", t => {
+  const u = runtime(t);
+  u.theme.initFont(false, () => true, OMARCHY);
+  u.theme.setTerminalFontSize(u.theme.terminalTypography().fontSize - 1); // ⌘- (shell.mjs, verbatim)
+  assert.deepEqual([u.stored[OMARCHY_SIZE], u.stored[SIZE]], ["12", undefined]);
+  u.theme.setFont("system");
+  assert.equal(u.theme.terminalTypography().fontSize, 15, "System font: Inconsolata's default, not Omarchy's 12");
+  u.theme.setTerminalFontSize(u.theme.terminalTypography().fontSize + 2); // ⌘= twice
+  assert.deepEqual([u.stored[OMARCHY_SIZE], u.stored[SIZE]], ["12", "17"]);
+  u.theme.setFont("omarchy");
+  assert.equal(u.theme.terminalTypography().fontSize, 12, "Omarchy's own size comes back");
+  u.theme.resetTerminalFontSize(); // Settings → Terminal's "Reset to default"
+  assert.deepEqual([u.stored[OMARCHY_SIZE], u.stored[SIZE]], [undefined, "17"]); assert.equal(u.theme.terminalTypography().fontSize, 13);
+  u.theme.setTerminalFontSize(20); u.theme.setTerminalFontFamily("Iosevka");
+  u.theme.resetTerminalTypography(); // ⌘0, "Terminal: reset typography"
+  assert.deepEqual([u.stored[OMARCHY_SIZE], u.stored[SIZE], u.stored["oats.desktop.terminal.fontFamily"]], [undefined, "17", undefined],
+    "the face's size and the family; Inconsolata's size stays");
+  u.theme.setFont("system");
+  u.theme.resetTerminalTypography();
+  assert.deepEqual([u.stored[OMARCHY_SIZE], u.stored[SIZE]], [undefined, undefined]); assert.equal(u.theme.terminalTypography().fontSize, 15);
+  // An unreadable size is the face's default, under the face's key.
+  u.theme.setFont("omarchy"); u.theme.setTerminalFontSize("nonsense");
+  assert.deepEqual([u.stored[OMARCHY_SIZE], u.stored[SIZE]], ["13", undefined]);
+});
+
+test("the face: Omarchy's only where its stacks set the terminals' family; macOS, the fallback and a stored family keep the face of the choice", t => {
+  // Omarchy's font chosen off Omarchy (Linux): its face, and its default, wherever it is chosen.
+  const linux = runtime(t, { stored: { "oats.desktop.font": "omarchy", [SIZE]: "15" } });
+  linux.theme.initFont(false, () => true);
+  assert.deepEqual([linux.theme.terminalFace(), linux.theme.terminalTypography().fontSize], ["omarchy", 13]);
+  // macOS: the terminals keep Inconsolata, so its size and default.
+  const mac = runtime(t, { stored: { "oats.desktop.font": "omarchy", [SIZE]: "16", [OMARCHY_SIZE]: "11" } });
+  mac.theme.initFont(true, () => true);
+  assert.deepEqual([mac.theme.terminalFace(), mac.theme.terminalTypography().fontSize], ["bundled", 16]);
+  assert.equal(mac.root.style.getPropertyValue("--term-font-size"), "", "theme.css's 15px token stands");
+  // The fallback: System font's faces, so Inconsolata's size, until the check passes on a later choice.
+  let draws = false;
+  const fallback = runtime(t, { stored: { [SIZE]: "16", [OMARCHY_SIZE]: "11" } });
+  fallback.theme.initFont(false, () => draws, OMARCHY);
+  assert.deepEqual([fallback.theme.terminalFace(), fallback.theme.terminalTypography().fontSize], ["bundled", 16]);
+  fallback.theme.setTerminalFontSize(18);
+  assert.deepEqual([fallback.stored[SIZE], fallback.stored[OMARCHY_SIZE]], ["18", "11"], "stored as Inconsolata's");
+  draws = true; fallback.theme.setFont("omarchy");
+  assert.deepEqual([fallback.theme.terminalFace(), fallback.theme.terminalTypography().fontSize], ["omarchy", 11]);
+  assert.equal(fallback.root.style.getPropertyValue("--term-font-size"), "13px");
+  // A family set with "Terminal: set font family…" wins for the family; the size stays the choice's face's.
+  fallback.theme.setTerminalFontFamily("Iosevka");
+  assert.deepEqual([fallback.theme.terminalFace(), fallback.theme.terminalTypography().fontSize], ["omarchy", 11]);
+  fallback.theme.setFont("system");
+  assert.deepEqual({ ...fallback.theme.terminalTypography() }, { fontFamily: "Iosevka", fontSize: 18 });
+  assert.equal(fallback.root.style.getPropertyValue("--term-font-size"), "", "back to theme.css's token");
+  // Storage-less: each face's default.
+  const none = runtime(t, { storage: false });
+  none.theme.initFont(false, () => true, OMARCHY);
+  assert.equal(none.theme.terminalTypography().fontSize, 13);
+  none.theme.setFont("system"); assert.equal(none.theme.terminalTypography().fontSize, 15);
+  // A stored garbage value: that face's default.
+  const junk = runtime(t, { stored: { [OMARCHY_SIZE]: "big", [SIZE]: "" } });
+  junk.theme.initFont(false, () => true, OMARCHY);
+  assert.equal(junk.theme.terminalTypography().fontSize, 13); junk.theme.setFont("system"); assert.equal(junk.theme.terminalTypography().fontSize, 15);
 });
 
 // The product owner, 2026-10-26, on Omarchy's font: "can we make the instance name font on the sidebar and on the
@@ -267,34 +348,37 @@ function openTerminal(u) {
   return { term, fits, off };
 }
 
-test("open terminals switch family in place and refit (the grid and the PTY size follow); the size, a stored size and a stored family are kept", t => {
+// #1571 changed what a font change does to the size: it was kept (a size was one for both faces); now the open
+// terminals take the new face's size in place, with the family, before the one refit.
+test("open terminals switch family and size in place and refit (the grid and the PTY size follow); each face keeps its stored size, and a stored family is kept", t => {
   assert.ok(tabListener, "the terminal tab's typography listener is where this test reads it");
-  assert.match(tabListener, /term\.options\.fontFamily = next\.fontFamily;[^]*fitTerminal\(term, fit\)/, "family first, then the refit");
-  // Off Omarchy (15px), with Omarchy's font chosen.
+  assert.match(tabListener, /term\.options\.fontFamily = next\.fontFamily;\s+term\.options\.fontSize = next\.fontSize;[^]*fitTerminal\(term, fit\)/,
+    "family and size first, then the refit");
+  // Off Omarchy, with Omarchy's font chosen: its face, at its 13px.
   const u = runtime(t, { stored: { "oats.desktop.font": "omarchy" } });
   u.theme.initFont(false);
   const a = openTerminal(u), b = openTerminal(u);
-  assert.equal(stack(a.term.options.fontFamily), "ui-monospace, monospace");
+  assert.equal(stack(a.term.options.fontFamily), "ui-monospace, monospace"); assert.equal(a.term.options.fontSize, 13);
   u.theme.setFont("system");
   for (const { term, fits } of [a, b]) {
     assert.match(stack(term.options.fontFamily), /^"Inconsolata",/, "the new family, in place");
-    assert.equal(term.options.fontSize, 15, "the size is unchanged");
-    assert.equal(fits.length, 1, "one refit, after the family changed");
+    assert.equal(term.options.fontSize, 15, "and Inconsolata's size");
+    assert.equal(fits.length, 1, "one refit, after the family and size changed");
     assert.match(stack(fits[0]), /^"Inconsolata",/);
   }
   u.theme.setFont("omarchy");
-  assert.equal(stack(a.term.options.fontFamily), "ui-monospace, monospace"); assert.equal(a.fits.length, 2);
-  // Settings → Terminal's size and the zoom are unchanged by a font change.
+  assert.equal(stack(a.term.options.fontFamily), "ui-monospace, monospace"); assert.equal(a.term.options.fontSize, 13); assert.equal(a.fits.length, 2);
+  // A size set in Omarchy's font is Omarchy's: System font shows Inconsolata's, and Omarchy's comes back with it.
   u.theme.setTerminalFontSize(19);
   u.theme.setFont("system");
-  assert.equal(a.term.options.fontSize, 19, "a chosen size stays");
+  assert.equal(a.term.options.fontSize, 15, "Inconsolata's size, not the one chosen for Omarchy's font");
   // A family stored by the palette's "Terminal: set font family…" still wins over the font choice.
   u.theme.setTerminalFontFamily("Iosevka");
   u.theme.setFont("omarchy");
-  assert.equal(a.term.options.fontFamily, "Iosevka");
+  assert.equal(a.term.options.fontFamily, "Iosevka"); assert.equal(a.term.options.fontSize, 19, "Omarchy's chosen size is back");
   u.theme.resetTerminalTypography();
   assert.equal(stack(a.term.options.fontFamily), "ui-monospace, monospace", "reset typography lands on the font choice's family");
-  assert.equal(a.term.options.fontSize, 15);
+  assert.equal(a.term.options.fontSize, 13, "and its face's default");
   a.off(); b.off();
   const fits = a.fits.length; u.theme.setFont("system"); assert.equal(a.fits.length, fits, "a closed terminal hears nothing");
 });
