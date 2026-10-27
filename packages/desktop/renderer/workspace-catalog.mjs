@@ -19,7 +19,7 @@ export const catalogCSS = `
    6px segments, no dividers; the current section is the brand tint, never ink-on-white.
    Scoped to .capability-nav.ws-segmented so it holds whichever order the sheets load in. */
 .capability-nav.ws-segmented { display:inline-flex; align-items:center; flex:none; height:30px; padding:2px; gap:2px; margin:0 0 22px; border:1px solid var(--border); border-radius:8px; background:var(--surface); overflow:visible; }
-.oats-view .capability-nav.ws-segmented button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 12px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .capability-nav.ws-segmented button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 12px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-weight:500; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .capability-nav.ws-segmented button:hover { color:var(--fg); }
 .oats-view .capability-nav.ws-segmented button[aria-current] { background:var(--sel); color:var(--accent); font-weight:650; }
 .capability-nav-count { font:10.5px var(--mono,monospace); }
@@ -29,7 +29,7 @@ export const catalogCSS = `
    when pressed; never ink-on-white. */
 .catalog-filters { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px 10px; min-width:0; max-width:100%; margin:0; padding:0 2px; }
 .catalog-pills { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; min-width:0; max-width:100%; }
-.oats-view .catalog-pills button { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; height:28px; min-height:0; margin:0; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--muted); font:500 12px/1 var(--sans,system-ui); cursor:pointer; box-sizing:border-box; }
+.oats-view .catalog-pills button { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; height:28px; min-height:0; margin:0; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--muted); font-weight:500; font-size:12px; line-height:1; font-family:var(--ui-font,system-ui); cursor:pointer; box-sizing:border-box; }
 .oats-view .catalog-pills button:hover { color:var(--fg); }
 .oats-view .catalog-pills button[aria-pressed=true] { border-color:var(--sel-border); background:var(--sel); color:var(--accent); font-weight:650; }
 /* Keyboard focus: the shell's tint (rule 2) under the global accent edge; the rule above would out-rank the global one. */
@@ -51,7 +51,7 @@ export const catalogCSS = `
 /* Icon tile and kind chip: one tint per kind (7b), a layer always wins so both agree.
    Neutral = a package without a layer. */
 .catalog-tile { display:grid; place-items:center; flex:none; width:32px; height:32px; border-radius:8px; background:var(--chip-bg); color:var(--chip-fg); }
-.catalog-core { display:inline-flex; align-items:center; flex:none; height:18px; padding:0 6px; border-radius:4px; background:var(--chip-bg); color:var(--chip-fg); font:650 10.5px var(--sans,system-ui); white-space:nowrap; }
+.catalog-core { display:inline-flex; align-items:center; flex:none; height:18px; padding:0 6px; border-radius:4px; background:var(--chip-bg); color:var(--chip-fg); font-weight:650; font-size:10.5px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; }
 .catalog-tile[data-tint=slate], .catalog-core[data-tint=slate] { background:var(--soul-slate-bg); color:var(--soul-slate-fg); }
 .catalog-tile[data-tint=sage], .catalog-core[data-tint=sage] { background:var(--soul-sage-bg); color:var(--soul-sage-fg); }
 .catalog-tile[data-tint=mauve], .catalog-core[data-tint=mauve] { background:var(--soul-mauve-bg); color:var(--soul-mauve-fg); }
@@ -70,7 +70,7 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
 .source-chip-name { color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .source-chip-version { white-space:nowrap; }
 .source-chip.boxed { height:24px; padding:0 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface); font-size:11.5px; box-sizing:border-box; }
-.source-note { color:var(--warn); font:600 11px var(--sans,system-ui); white-space:nowrap; }
+.source-note { color:var(--warn); font-weight:600; font-size:11px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; }
 .catalog-used { display:flex; align-items:center; gap:6px; min-width:0; }
 /* Two-letter marks fill their tile: the stack overlaps by 1px only (the --surface border still separates tiles), so no letter hides under the next. */
 .catalog-used-marks { display:flex; flex:none; padding-left:1px; }

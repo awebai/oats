@@ -28,6 +28,12 @@ import { HERDR_REMOVED, terminalFailure, terminalMessage } from './terminal-cont
 
 /** The kernel feature of `session attach --detach-key` (docs/desktop-cli-api.md). */
 export const DETACH_KEY_FEATURE = "session-attach-detach-key";
+/** The kernel feature of `session attach --no-status-line` (lib/session-viewer.mjs, the same
+ *  name): the viewer without its status line, for a client that shows the scroll keys itself. */
+export const NO_STATUS_LINE_FEATURE = "session-attach-no-status-line";
+/** The kernel feature of `sessionViewer.prefixScroll` (lib/session-viewer.mjs, the same name): a
+ *  kernel that lists it has the viewer's own Shift+PageUp, and says whether its viewer takes C-b [. */
+export const PREFIX_SCROLL_FEATURE = "session-attach-prefix-scroll";
 /** The kernel feature under which a roster group's `probe.features` is the host's own list
  *  (docs/desktop-cli-api.md, `probe.features`). Without it that key says nothing. */
 const PROBE_FEATURES_FEATURE = "server-probe-features";
@@ -49,6 +55,26 @@ export function hostDetachKeySupported(cli, group) {
   const probe = group?.probe;
   return detachKeySupported(cli) && lists(cli, PROBE_FEATURES_FEATURE)
     && probe?.ok === true && Array.isArray(probe.features) && probe.features.includes(DETACH_KEY_FEATURE);
+}
+
+/** The viewer's scroll keys a client may name for a tab, `{ shift, prefix }`, from what the tab's
+ *  host's kernel says (docs/desktop-cli-api.md, `session-attach-prefix-scroll`): a kernel that lists
+ *  the feature has Shift+PageUp, and C-b [ too where its `sessionViewer.prefixScroll` is true. A
+ *  kernel without the feature, or one not known, has neither: an older viewer may pass Shift+PageUp
+ *  to the agent. */
+function scrollKeysOf(facts) {
+  const listed = Array.isArray(facts?.features) && facts.features.includes(PREFIX_SCROLL_FEATURE);
+  return { shift: listed, prefix: listed && facts.sessionViewer?.prefixScroll === true };
+}
+/** A tab of this machine: this machine's accepted probe (`cli`, lib/cli-locator.mjs cliRecord). */
+export function localScrollKeys(cli) {
+  return scrollKeysOf(cli?.ok === true ? cli : null);
+}
+/** A tab of another machine: the group's last roster read, when this machine's CLI relays what each
+ *  host lists about itself and that read succeeded; otherwise unknown, so neither key. */
+export function hostScrollKeys(cli, group) {
+  const probe = group?.probe;
+  return scrollKeysOf(lists(cli, PROBE_FEATURES_FEATURE) && probe?.ok === true ? probe : null);
 }
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
@@ -111,13 +137,16 @@ export function remoteTargetKey(remote) {
  *   target     { home } on this machine; { serverId, instance, home } on another (what
  *              `remoteTargetKey` admits, and it refuses as it always did)
  *   detachKey  undefined for none; else a non-empty string, appended as `--detach-key <key>`
+ *   statusLine false for a viewer without its status line, the scroll keys (`--no-status-line`),
+ *              asked only of a CLI that advertises NO_STATUS_LINE_FEATURE: one without it
+ *              shows the line whatever it is asked, so it is asked nothing
  *
  * The client holds no copy of the kernel's key grammar: a key the kernel does not accept is the
  * kernel's refusal. A key for a CLI that does not take one throws `unsupported-detach-key`: a
  * kernel without the feature ignores the flag and opens a viewer with no exit, so the flag is
  * never tried (docs/desktop-cli-api.md). Its message is for a developer; a client decides what it
  * offers with `detachKeySupported`. */
-export function sessionAttachArgv(cli, target, { detachKey } = {}) {
+export function sessionAttachArgv(cli, target, { detachKey, statusLine = true } = {}) {
   let address;
   if (target?.serverId !== undefined) {
     remoteTargetKey(target);
@@ -126,10 +155,11 @@ export function sessionAttachArgv(cli, target, { detachKey } = {}) {
     if (typeof target?.home !== "string" || !target.home.startsWith("/") || target.home.includes("\0")) throw new Error("invalid session home");
     address = ["--home", target.home];
   }
-  if (detachKey === undefined) return ["session", "attach", ...address];
+  const quiet = statusLine === false && Array.isArray(cli?.features) && cli.features.includes(NO_STATUS_LINE_FEATURE) ? ["--no-status-line"] : [];
+  if (detachKey === undefined) return ["session", "attach", ...address, ...quiet];
   if (typeof detachKey !== "string" || !detachKey) throw new TypeError("a detach key is a non-empty string");
   if (!detachKeySupported(cli)) throw Object.assign(new Error(`installed oats ${cli?.version || "unknown"} does not support session attach --detach-key; update the CLI`), { code: "unsupported-detach-key" });
-  return ["session", "attach", ...address, "--detach-key", detachKey];
+  return ["session", "attach", ...address, "--detach-key", detachKey, ...quiet];
 }
 /** The preflight of an attach on another machine, and the viewer to start after it: { binary, args }.
  *
@@ -139,14 +169,14 @@ export function sessionAttachArgv(cli, target, { detachKey } = {}) {
  *   detachKey  as `sessionAttachArgv` takes it. The viewer's arguments are built before the
  *              inspect runs, so a key that cannot be used starts no process; the inspect never
  *              carries the key. */
-export async function prepareRemoteTerm(cli, remote, { exec, run = (binary, args, options) => runTerminalCommand(binary, args, options, exec), signal, current = () => true, detachKey } = {}) {
+export async function prepareRemoteTerm(cli, remote, { exec, run = (binary, args, options) => runTerminalCommand(binary, args, options, exec), signal, current = () => true, detachKey, statusLine } = {}) {
   const check = () => { if (signal?.aborted || !current()) throw Object.assign(new Error('Terminal context changed'), { code: 'E_TERM_CONTEXT_CHANGED' }); };
   check();
   requireRemoteSupport(cli, "session");
   const bin = cli.bin;
   remoteTargetKey(remote);
   const address = ["--server", remote.serverId, "--home", remote.home];
-  const args = sessionAttachArgv(cli, remote, { detachKey });
+  const args = sessionAttachArgv(cli, remote, { detachKey, statusLine });
   check(); // actual execution owner, not only IPC admission
   let stdout;
   try {

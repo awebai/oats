@@ -11,7 +11,7 @@ body { position: relative; overflow: clip; }
 body {
   background: var(--bg);
   color: var(--fg);
-  font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-weight: normal; font-size: 13px; line-height: 1.45; font-family: var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif); /* the font choice: theme.css */
 }
 /* The sidebar's width (sidebar-width.mjs): one custom property, set inline by its handle within 240px and
    min(480px, 45% of the window); 288px until it is moved. */
@@ -43,7 +43,7 @@ body {
    the heading sits where it sat in the 48px bar (its centre 24px down), and the head ends 8px under it. */
 .side-head {
   height: 40px; flex: none; display: flex; align-items: center; box-sizing: border-box;
-  padding: 8px 10px 0 17px; white-space: nowrap;
+  padding: 8px 10px 0 13px; white-space: nowrap;
 }
 .side-kicker { color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
 .shell-icon { display: block; width: 16px; height: 16px; flex: none; }
@@ -70,7 +70,10 @@ body {
    most, then it scrolls inside itself, the current row kept in view. One workspace is one compact row. */
 /* The line under the list is a little bolder than the one before the instances (the product owner, 2026-10-26):
    1.5px, 3 device pixels at 2x. */
-.ws-list { flex: none; padding: 0 8px 6px; border-bottom: 1.5px solid var(--border); }
+/* The sidebar's left inset (the product owner, 2026-10-26: "closer to the left border of the window"): the lists
+   4px from the edge (was 8px), so the rows' circles, the headings (13px) and the foot's mark keep one column, 4px
+   further left; the right side is as before. */
+.ws-list { flex: none; padding: 0 8px 6px 4px; border-bottom: 1.5px solid var(--border); }
 .ws-options { max-height: 276px; overflow-y: auto; scrollbar-width: none; } /* as the roster's: "N more below" says it */
 .ws-options::-webkit-scrollbar { display: none; }
 .ws-group { margin: 0; padding: 0; list-style: none; }
@@ -78,7 +81,7 @@ body {
 .ws-menu-empty[hidden] { display: none; }
 /* A row is one line: the instance roster's circle, the workspace's name, and at the far right the needs-input dot;
    no machine, no state. The circle is the roster's own .ctx-dot, its ring in the row's fill (--row-solid), in the
-   column of the roster's top-level dots (the list's 8px and the row's 10px, as .ctx-list and .ctx-inst). */
+   column of the roster's top-level dots (the list's 4px and the row's 10px, as .ctx-list and .ctx-inst). */
 .ws-option { --row-solid: var(--surface); width: 100%; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 4px 8px 4px 10px; border: 0;
              min-height: 24px; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .ws-option:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
@@ -115,9 +118,9 @@ body {
 #nav { display: flex; flex: none; flex-direction: column; padding: 8px; gap: 1px; }
 /* The foot (2026-10-26): one bar. The OATS mark at the left with the sidebar toggle after it; Spawn instance, a small
    button, at the right before the settings cog. The toggle and the cog are 24px boxes with 14px icons. The mark (20px) centres on
-   the rows' circles (22px in: the foot's 10px, the bar's 2px and half its 20px), the cog in the right-hand column (25px
+   the rows' circles (18px in: the foot's 6px, the bar's 2px and half its 20px), the cog in the right-hand column (25px
    in from the right: the foot's 10px, the bar's 3px and half its 24px). */
-#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 4px 10px;
+#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 4px 10px 4px 6px;
             border-top: 1px solid var(--border); }
 #sidebar-bar { display: flex; align-items: center; gap: 2px; padding: 0 3px 0 2px; }
 #sidebar-bar > .side-icon-button { width: 24px; height: 24px; border-radius: 5px; position: relative; }
@@ -144,13 +147,13 @@ body {
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
-.ctx-head { height: 36px; flex: none; padding: 6px 12px 0 17px; display: flex; align-items: center; gap: 6px;
+.ctx-head { height: 36px; flex: none; padding: 6px 12px 0 13px; display: flex; align-items: center; gap: 6px;
             color: var(--nav-fg); font-size: 13px; font-weight: 500; }
 /* The head reads like the nav items above it (human, 2026-09-26); "● 4 running" only, the full breakdown in its title. */
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
 .ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
-.ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
+.ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px 4px; }
 /* The roster scrolls (the wheel, the touchpad, revealInScrollport for keyboard focus) with no scrollbar,
    like the tab strips: on Linux Chromium draws a heavy classic one beside the rows. */
 .ctx-list { scrollbar-width: none; }
@@ -329,7 +332,8 @@ body {
    meets AA on every row fill, never opacity. */
 .ctx-held-hint { color: var(--muted); font-size: 11.5px; line-height: normal; }
 .ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-.ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; line-height: 15px; }
+/* An instance's name: 12.5px, or the font choice's --name-size (12px in Omarchy's font; theme.mjs fontStacks). */
+.ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--name-size, 12.5px); font-weight: 600; line-height: 15px; }
 .ctx-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Spec E: "New" on a just-spawned row the operator was not taken to: text and a dot, until it is first opened. */
 /* The one visually-hidden utility (#560): read by assistive technology, never painted. Anchored at its
@@ -509,7 +513,8 @@ body {
    never exceeds the design's 280px long-label cap. Under pressure they shrink
    evenly down to --tab-min; below that the strip scrolls. The full name stays in
    the trigger's title and accessible name.
-   --tab-min = 168px, measured live at 12.5px in the active tab's bold: less
+   --tab-min = 168px, measured live at 12.5px in the active tab's bold (System font; Omarchy's font names
+   are 12px, --name-size, so the same px budget holds more of a name): less
    --tab-chrome (51px) the trigger keeps 117px, the 7px status dot and its 8px
    gap, then 102px of name: the start and an ellipsis ("oats-…", 44px) and the
    protected 8-character tail (the widest real one, "awn-flow", is 57px), so a
@@ -521,7 +526,7 @@ body {
   --tab-name-min: 102px; /* the name the floor budgets: --tab-min less --tab-chrome less the dot and its gap (7 + 8) */
   display: flex; flex: 1 1 0px; align-items: center; gap: 8px; min-width: var(--tab-min); max-width: fit-content;
   white-space: nowrap; padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
-  color: var(--muted); font-size: 12.5px;
+  color: var(--muted); font-size: var(--name-size, 12.5px); /* 12px in Omarchy's font (theme.mjs fontStacks) */
 }
 .tab[hidden] { display: none; }
 .tab.active { background: var(--surface); color: var(--fg); box-shadow: inset 0 2px 0 var(--accent); font-weight: 600; }
@@ -573,9 +578,9 @@ body {
    a hidden branch takes no space from the name. */
 .tab-detail { min-width: 0; flex: 1 1 0px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
               margin-left: -8px; padding-left: 8px;
-              font: 400 11px ui-monospace, Menlo, monospace; color: var(--faint); }
+              font-weight: 400; font-size: 11px; line-height: normal; font-family: var(--ui-font, ui-monospace, Menlo, monospace); color: var(--faint); }
 /* The go-to-tab number, last: quiet text like the branch (--faint holds 4.5:1 on --bg, --surface and --sel). */
-.tab-num { flex: none; white-space: nowrap; font: 400 11px ui-monospace, Menlo, monospace; color: var(--faint); }
+.tab-num { flex: none; white-space: nowrap; font-weight: 400; font-size: 11px; line-height: normal; font-family: var(--ui-font, ui-monospace, Menlo, monospace); color: var(--faint); }
 .tab-num[hidden] { display: none; }
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
               margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
@@ -806,12 +811,12 @@ body {
 .kb-row .kb-chord {
   display: flex; align-items: center; padding: 3px 4px;
   border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--fg);
-  font: 12px/1 ui-monospace, monospace; cursor: pointer;
+  font-weight: normal; font-size: 12px; line-height: 1; font-family: var(--ui-font, ui-monospace, monospace); cursor: pointer;
 }
 .kb-row .kb-chord:focus-visible { background: transparent; outline: 1px solid var(--accent); outline-offset: 0; }
 .kb-keys { display: flex; gap: 3px; }
 .kb-keys kbd { min-width: 22px; padding: 3px 6px 2px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px;
-  background: var(--bg); color: var(--fg); font: 11.5px/1.2 ui-monospace, monospace; text-align: center; }
+  background: var(--bg); color: var(--fg); font-weight: normal; font-size: 11.5px; line-height: 1.2; font-family: var(--ui-font, ui-monospace, monospace); text-align: center; }
 .kb-chord:hover kbd, .kb-chord:focus-visible kbd { border-color: var(--accent); }
 .kb-row .kb-chord.kb-unbound { color: var(--faint); font-style: italic; }
 .kb-row .kb-chord.kb-recording { border-color: var(--accent); color: var(--accent); }

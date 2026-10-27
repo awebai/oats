@@ -23,6 +23,7 @@ import { panelErrorCause } from "../../client/deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, currentTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
+  initFont, setFont, currentFont, onFontChange, fontChoices, fontFallsBack,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createInstanceRecency, recencyIdFromTerminalKey } from "./instance-recency.mjs";
@@ -49,7 +50,7 @@ import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { createInstanceColorDialog, instanceColorCSS } from './instance-color-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
-import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
+import { createThemePicker, createFontPicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
@@ -110,6 +111,10 @@ import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
 
 const desk = window.oatsDesktop;
+// The font (Omarchy's font or System font; theme.mjs fontStacks) and the terminal size's default, both
+// defaulting by whether this is an Omarchy computer (main's check, preload's constant), before the first
+// await, so the window's first paint is already in them.
+initFont(navigator.platform.includes("Mac"), undefined, { isOmarchy: desk?.isOmarchy === true });
 // The chord family (keys.json, which main reads; renderer/chord-family.mjs): asked beside the window's
 // start and in place before the window listens to its first key, since the one keydown listener and
 // every terminal's key path are installed below these awaits. A change (the Shortcuts page, another
@@ -2382,6 +2387,7 @@ const palette = createPalette({
     { label: "Theme: choose…", detail: chordDetail("app.themePicker"), run: () => runAction("app.themePicker") },
     { label: "Theme: cycle White / Solarized / Dark / This computer", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
+    { label: "Font: choose…", detail: chordDetail("app.fontPicker"), run: () => runAction("app.fontPicker") },
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
@@ -2492,15 +2498,20 @@ const connections = createConnections({ doc: document, desk,
     const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), fontWeight: terminalFontWeight(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
     const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(mount);
     const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); term.options.fontWeight = terminalFontWeight(); });
-    const offType = onTerminalTypographyChange(value => { term.options.fontSize = value.fontSize; term.options.fontFamily = value.fontFamily; });
-    const observers = new Set();
+    // A size or family change keeps the mount's box, so its ResizeObserver need not fire: the adapter tells its resize
+    // listeners itself, and Connections refits the grid and sends it to the sign-in PTY (forgeAuthResize).
+    const observers = new Set(), resizeListeners = new Set();
+    const offType = onTerminalTypographyChange(value => {
+      term.options.fontSize = value.fontSize; term.options.fontFamily = value.fontFamily;
+      for (const fn of [...resizeListeners]) fn();
+    });
     return {
       get cols() { return term.cols; }, get rows() { return term.rows; },
       write: value => term.write(value), focus: () => term.focus(), fit: () => fit.fit(),
       onData: fn => term.onData(fn), setKeyHandler: fn => term.attachCustomKeyEventHandler(fn),
-      onResize: fn => { const observer = new ResizeObserver(fn); observers.add(observer); observer.observe(mount);
-        return { dispose: () => { observer.disconnect(); observers.delete(observer); } }; },
-      dispose: () => { for (const observer of observers) observer.disconnect(); offTheme(); offType(); term.dispose(); },
+      onResize: fn => { const observer = new ResizeObserver(fn); observers.add(observer); resizeListeners.add(fn); observer.observe(mount);
+        return { dispose: () => { observer.disconnect(); observers.delete(observer); resizeListeners.delete(fn); } }; },
+      dispose: () => { for (const observer of observers) observer.disconnect(); resizeListeners.clear(); offTheme(); offType(); term.dispose(); },
     };
   },
 });
@@ -2610,6 +2621,14 @@ window.addEventListener('pagehide', () => instanceColorDialog.dispose(), { once:
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
   subscribe: onThemeChange, onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn) });
 window.addEventListener('pagehide', () => themePicker.dispose(), { once: true });
+// The font picker (app.fontPicker, the palette's Font: choose…): the same picker over this platform's
+// fonts; a choice goes through setFont, stored per computer and applied in place (open terminals
+// switch family and refit through onTerminalTypographyChange, keeping their state).
+// Its rows are read at each open and on each font notification, so the Omarchy row's fallback note follows
+// the latest fontDraws verdict (fontFallsBack), not the one at start.
+const fontPicker = createFontPicker({ doc: document, fonts: () => fontChoices(navigator.platform.includes("Mac"), fontFallsBack()), current: currentFont, choose: setFont,
+  subscribe: onFontChange, onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn) });
+window.addEventListener('pagehide', () => fontPicker.dispose(), { once: true });
 
 /** The sidebar's way into the instances, never nothing (the roster's filter was that once): the roster's current
  * row (the roving stop), else its first row, else a control the roster shows (Retry, after a failed read), else, on
@@ -2837,6 +2856,7 @@ window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregis
 }));
 // A held chord (key repeat) does nothing: it never opens and closes the picker over and over.
 registerAction({ id: "app.themePicker", label: "Choose a theme…", context: "global", run: (e) => { if (!e?.repeat) themePicker.toggle(); } });
+registerAction({ id: "app.fontPicker", label: "Font: choose…", context: "global", run: (e) => { if (!e?.repeat) fontPicker.toggle(); } });
 registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark / This computer theme", context: "global", run: () => toggleTheme() });
 // Explicit theme choices are rebindable, but add no default keyboard chords.
 THEMES.forEach(({ id, label }) => registerAction({

@@ -217,7 +217,7 @@ not receive.
 *Development fallback.* `development` passes
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
 and needs no managed policy. Claude shows its development-channel prompt, and
-OATS (0.52.0 and later, which this provider requires) confirms that prompt once
+OATS 0.52.0 and later confirm that prompt once
 at launch. `settings.oats.aweb.delivery: session` or
 `settings.oats.aweb.claudeChannelMode: approved` stop the prompt.
 Provider, broker and ordinary agents never send prompt keys.
@@ -320,6 +320,7 @@ minting authority for its canonical T. Run from H, not the caller's worktree.
 | Act | Command | Writes / success / one next step | Error → remedy |
 |---|---|---|---|
 | Inspect | `oats aweb teams --json` | Read-only default/eligible/joined/left facts; success: intended target is identified. Next: selected authorized join or leave. | Unknown label → `/oats-teams` resolves policy, never a guessed team. |
+| Plan a join | `oats aweb join --labels L --plan [--json]` | Read-only: per label, team, root, the setting that chose it (`roots[team]` or `root`) and whether membership was confirmed; no invite or state. Next: the join below. | `refused: …` names why the join would refuse → section 8 LOCAL join. |
 | Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; root failure → section 8 LOCAL join. |
 | Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
 
@@ -388,6 +389,17 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
 | `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
+| `channel-not-connected` (Claude channel homes) | Claude's MCP log for the home's project has no `Channel notifications registered` line since the home's last start, and that start is more than 2 minutes old: the session is not on the aweb channel and hears no mail, even though it shows the channel banner. Usually Claude skipped the plugin because a recent failure was cached in `<CLAUDE_CONFIG_DIR>/mcp-needs-auth-cache.json` (one failed start anywhere on the account makes every Claude launched in the next 15 minutes skip it), or the plugin failed to start | operator: restart the session (`oats session restart --home <home>`) |
+| `channel-connection-pending` (warning) | the home started less than 2 minutes ago and Claude has not registered the channel yet | nobody; it becomes `channel-not-connected` if no registration arrives |
+| `channel-connection-unproven` (warning) | the home has no recorded start (a `--no-launch` spawn) or Claude's log location is unknown on this platform, so registration cannot be checked; the home is never reported on the channel | nobody |
+| `channel-failure-cleared` (start) | a Claude channel start removed Claude's cached recent failure of the aweb-channel plugin, leaving every other entry, so the launch connects | nobody: something failed the plugin within the last 15 minutes |
+| `channel-cache-unrecognized` (start) | the failure cache is not in the shape the provider reads (Claude Code 2.1.300's), so it was left alone | nobody; `channel-not-connected` follows if Claude skips the channel |
+| `channel-cache-changed` (start) | another Claude kept writing the failure cache while the start read it, so it was left alone rather than overwrite that write | nobody; `channel-not-connected` follows if Claude skips the channel |
+| `channel-cache-unchecked` (spawn, start) | the start's Claude config dir is not known: every spawn (the kernel gives hooks no resolved config dir, awebai/oats#1503), or a start whose recorded `CLAUDE_CONFIG_DIR` is not a literal path. The cache was not checked | nobody; `channel-not-connected` follows if Claude skips the channel |
+
+A registered channel still reads `native-receive-unproven`: registration proves
+Claude took the channel for this start, not that the plugin's aweb event stream
+is up.
 
 **Errors from `oats aweb join|leave|roster`:**
 
@@ -464,6 +476,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.26.0, OATS >=0.42, aw >=1.36.33 | `oats aweb resident create <name>` creates or adopts a GLOBAL resident in an existing hosted team from the dashboard's API key, installs its per-user custody unit and records `residents.<name>` ("GLOBAL residents and grant seats" below). One aw client floor, 1.36.33. |
 | Provider 1.26.1, OATS >=0.48 for `resident create` | `resident create` maps the resident's team without `--team-label` (under the team's name) and makes it the default team where there is none; another default is kept and `oats teams default <label>` is printed as the first step. That step moves the whole deployment's default team (every later spawn of a soul without its own default goes to the resident's team), so it is the operator's decision: an agent prints it and asks, and never runs it on its own. A grant seat gets `AWID_REGISTRY_URL` from its resident's identity when that registry is not aw's default. |
 | Provider 1.28.0, OATS >=0.52.0, aw >=1.36.33 | `oats aweb wake install`, `status` and `uninstall` install the host wake broker as a per-user service ("Host wake broker service" below). Readiness warns `claude-channel-mode-default` for a Claude channel home whose mode nobody chose, and checks the broker at soul scope when the spawn will need it (section 7). |
+| Provider 1.32.0, OATS >=0.68.0, aw >=1.36.33 | A stopped seat moves to the locked package with `oats instance upgrade`. Upgrade preserves identity and grant state without host calls; the next start re-registers and renews according to the seat's settings. |
 | Future provider #56 / #60 | Token-only setup and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,

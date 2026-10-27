@@ -837,12 +837,13 @@ test("in the Ctrl+Alt family, under the protocol a terminal's cheat sheet leads 
   const sz = { cols: 120, rows: 40 };
   const terminal = opened(FOUR(), "dev-a", "dev-b", "dev-c");
   const chords = [["Ctrl+Alt+K", "palette", "c"], ["Alt+Shift+Up/Down", "agent", "c"], ["Alt+Shift+Left/Right", "tab", "c"], ["Ctrl+Alt+W", "close", "c"], ["Ctrl+Alt+Z", "zoom", "c"]];
-  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"]];
+  // The leader's three, then the viewer's scroll key, a block of its own.
+  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"], ["Shift+PageUp", "scroll back", "s"]];
   const full = [...chords, ...leader];
   assert.deepEqual(sheetOf(draw(kitty(terminal), sz)), sheetRows(full));
   assert.equal(sheetRows(full)[2], " Alt+Shift+Left/Right tab", "the widest chord whole, its word whole");
   const arrows = chords.filter(([key]) => key.startsWith("Alt+Shift+"));
-  assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows([...leader, ...arrows]), "without the protocol: the leader's three, then the Alt+Shift arrows");
+  assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows([...leader, ...arrows]), "without the protocol: the leader's three and the scroll key, then the Alt+Shift arrows");
   for (let rows = 15; rows < 40; rows++) {
     const got = sheetOf(draw(terminal, { cols: 120, rows })), kept = [...leader, ...arrows];
     while (kept.length > got.length) kept.splice(kept.findLastIndex(([, word]) => word !== "commands"), 1);
@@ -1051,7 +1052,8 @@ test("in the Ctrl+Shift family a terminal's cheat sheet names the Ctrl+Shift cho
   const sz = { cols: 120, rows: 40 };
   const terminal = opened(stateOf(observed(["dev-a", "dev-b", "dev-c", "dev-d"].map((name) => instanceRow("dev", name))), { platform: "linux", keysRead: SHIFT_READ }), "dev-a", "dev-b", "dev-c");
   const chords = [["Ctrl+Shift+K", "palette", "c"], ["Alt+Shift+Up/Down", "agent", "c"], ["Alt+Shift+Left/Right", "tab", "c"], ["Ctrl+Shift+W", "close", "c"], ["Ctrl+Shift+M", "zoom", "c"]];
-  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"]];
+  // The leader's three, then the viewer's scroll key, a block of its own.
+  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"], ["Shift+PageUp", "scroll back", "s"]];
   assert.deepEqual(sheetOf(draw(kitty(terminal), sz)), sheetRows([...chords, ...leader]));
   const arrows = chords.filter(([keys]) => keys.startsWith("Alt+Shift+"));
   assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows([...leader, ...arrows]), "without the protocol: the leader's three, then the Alt+Shift arrows, as under Ctrl+Alt");
@@ -1202,7 +1204,8 @@ test("in the Alt family the help and a terminal's cheat sheet lead with the chor
   const sz = { cols: 120, rows: 40 };
   const terminal = opened(base, "dev-a", "dev-b", "dev-c");
   const chords = [["Alt+K", "palette", "c"], ["Alt+Shift+Up/Down", "agent", "c"], ["Alt+Left/Right", "tab", "c"], ["Alt+W", "close", "c"], ["Alt+Z", "zoom", "c"]];
-  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"]];
+  // The leader's, then the viewer's scroll key, a block of its own (docs/tui.md, "Tabs").
+  const leader = [["Ctrl+\\", "commands", "l"], ["Ctrl+\\ Esc", "the list", "l"], ["Ctrl+\\ Ctrl+\\", "types Ctrl+\\", "l"], ["Shift+PageUp", "scroll back", "s"]];
   assert.deepEqual(sheetOf(draw(terminal, sz)), sheetRows([...chords, ...leader]), "without the protocol: the chords lead");
   assert.deepEqual(sheetOf(draw(kitty(terminal), sz)), sheetRows([...chords, ...leader]), "and under it");
 });

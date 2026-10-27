@@ -381,7 +381,8 @@ test("change the module's entry in a copy: the Desktop's default follows, and ke
 // tab moves, Alt+Shift+←/→ the groups), Ctrl+Alt's keys became an option (CTRL_ALT_MOVED below), and
 // split.focusPrevGroup, workspace.previous and workspace.next are new. Then macOS took ⌥ with an
 // arrow for the moves (the product owner's call, 2026-10-23): ⌥←/→ the tabs, ⌥⇧←/→ the groups, ⌥↑/↓ the workspaces, the
-// same chord as Linux/Windows' Alt family, so one string.
+// same chord as Linux/Windows' Alt family, so one string. The font picker (app.fontPicker, the product
+// owner's call, 2026-10-23) is new: the Desktop's own, with no default chord, shared with no TUI row.
 const DEFAULTS = [
   ["app.leader",{"mac":"Ctrl+X","other":"Ctrl+X"}],
   ["sidebar.key.instances","1"],
@@ -419,6 +420,7 @@ const DEFAULTS = [
   ["app.shortcuts","Mod+,"],
   ["app.themeToggle",null],
   ["app.themePicker",{"mac":"Mod+Shift+Space","other":"Ctrl+Shift+Space"}],
+  ["app.fontPicker",null],
   ["stage.hierarchy","Mod+1"],
   ["stage.spawn","Mod+2"],
   ["stage.automations","Mod+3"],

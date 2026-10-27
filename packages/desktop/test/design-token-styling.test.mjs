@@ -97,7 +97,7 @@ test("visual shell geometry: a 288px sidebar by default, aligned 48px bars, the 
   // first row close under it. 40px, border-box, its 8px top padding: the heading's centre 24px down, where it sat in
   // the 48px bar (8 + 32 / 2), and the head ends 8px under it.
   assert.deepEqual([u.style(".side-head").height, u.style(".side-head").boxSizing], ["40px", "border-box"]);
-  assert.equal(u.style(".side-head").padding, "8px 10px 0px 17px", "the heading's text 17px in, as Instances'");
+  assert.equal(u.style(".side-head").padding, "8px 10px 0px 13px", "the heading's text 13px in, as Instances' (17px before 2026-10-26's closer inset)");
   const headTop = parseFloat(u.style(".side-head").paddingTop), headHeight = parseFloat(u.style(".side-head").height);
   assert.equal(headTop + (headHeight - headTop) / 2, parseFloat(u.rule(':root, [data-theme="dark"]').getPropertyValue("--bar-h")) / 2, "the heading's centre, 24px down");
   assert.equal(u.style(".side-head").paddingLeft, u.cascaded(".roster-head", "padding-left"), "the two headings start on one line");
@@ -158,7 +158,7 @@ test("visual shell geometry: a 288px sidebar by default, aligned 48px bars, the 
   assert.deepEqual([name.flexGrow, name.flexShrink, name.minWidth, name.overflow], ["0", "1", "0px", "hidden"]);
   // The names inherit the sidebar's 13px at the row's weight again (no size or weight of their own), the current one at 650.
   assert.deepEqual([u.rule(".ws-option-name").fontSize, u.rule(".ws-option-name").fontWeight], ["", ""], "no size or weight of its own");
-  assert.match(shell, /^body \{[^}]*font: 13px\/1\.45 /m, "the 13px they inherit");
+  assert.match(shell, /^body \{[^}]*font-size: 13px; line-height: 1\.45; /m, "the 13px they inherit");
   assert.equal(u.style('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650");
   assert.notEqual(u.style('.ws-option:not([aria-current]) .ws-option-name').fontWeight, "650", "another row's name is not bold");
   assert.equal(shell.match(/\.ws-option-(?:meta|line|copy|section)\b|\.ws-check\b|\.ws-open-window\b|\.ws-option \.workspace-avatar/), null, "no mark, machine line, check or button rules");
@@ -172,7 +172,7 @@ test("visual shell geometry: a 288px sidebar by default, aligned 48px bars, the 
   // The Instances heading reads like the nav items above it: 13px at 500 in --nav-fg; the groups 14px apart.
   const roster = u.style(".roster-head");
   assert.deepEqual([roster.height, roster.color, roster.fontSize, roster.fontWeight], ["36px", "var(--nav-fg)", "13px", "500"]);
-  assert.equal(u.cascaded(".roster-head", "padding-left"), "17px");
+  assert.equal(u.cascaded(".roster-head", "padding-left"), "13px");
   assert.equal(u.rule(".ctx-group").height, "14px"); assert.equal(u.rule(".ctx-group:first-child").height, "7px");
   assert.equal(u.get("#ws-deployments"), null);
 });
@@ -195,7 +195,7 @@ test("nav/footer rhythm stays separate from the 48px roster rows", t => {
   // right before the settings cog), under the --border line.
   const foot = u.style("#nav-foot");
   assert.deepEqual([foot.display, foot.flexDirection, foot.flexShrink, foot.marginTop], ["flex", "column", "0", "auto"]);
-  assert.equal(foot.padding, "4px 10px");
+  assert.equal(foot.padding, "4px 10px 4px 6px", "6px on the left (10px before 2026-10-26), so the mark keeps the rows' column");
   assert.equal(u.rule("#nav-foot").gap, "", "one child: no gap");
   assert.equal(u.rule("#nav-foot").borderTop, "1px solid var(--border)", "the foot keeps its one rule above it");
   assert.deepEqual([...u.get("#nav-foot").children].map(el => el.id), ["sidebar-bar"]);
@@ -233,7 +233,8 @@ test("the right-hand column: the workspace rows' needs-input mark and the instan
   assert.equal(u.style(".ctx-head").paddingRight, "12px", "the Instances heading's right padding, as before 2026-10-23");
   assert.equal(u.style(".ws-waiting").marginRight, "2px");
   assert.equal(u.style(".ws-option").paddingRight, "8px");
-  for (const selector of [".ws-list", ".ctx-list"]) assert.deepEqual([u.style(selector).paddingLeft, u.style(selector).paddingRight], ["8px", "8px"], selector);
+  // The product owner, 2026-10-26: the rows closer to the window's left edge, 4px in (8px before); the right as before.
+  for (const selector of [".ws-list", ".ctx-list"]) assert.deepEqual([u.style(selector).paddingLeft, u.style(selector).paddingRight], ["4px", "8px"], selector);
   assert.equal(u.style(".ctx-inst").paddingRight, "8px");
   assert.deepEqual([u.style(".ctx-runtime").width, u.style(".ctx-runtime").height], ["18px", "18px"]);
   // The needs-input mark's size is the switcher's (an svg's width attribute, not a rule): 14px, on a row and on "N more below".
@@ -279,9 +280,9 @@ test("the refreshing Instances heading shows the indicator's words after the cou
 });
 
 // The bar (the product owner, 2026-10-26): [mark][toggle] … [Spawn instance][cog], the foot's one row. The OATS mark's centre on the
-// workspace rows' circles (22px in from the left), the settings cog's in the right-hand column (25px in from the
+// workspace rows' circles (18px in from the left), the settings cog's in the right-hand column (25px in from the
 // right), the sidebar toggle 8px after the mark and Spawn instance 6px before the cog, all computed from the rules.
-test("the bar: the OATS mark on the rows' circles (22px in), the cog in the right-hand column (25px from the right), the toggle 8px after the mark, Spawn instance 6px before the cog", t => {
+test("the bar: the OATS mark on the rows' circles (18px in), the cog in the right-hand column (25px from the right), the toggle 8px after the mark, Spawn instance 6px before the cog", t => {
   const u = fixture(t), px = value => { assert.match(value, /^-?\d+(\.\d+)?px$/, value); return parseFloat(value); };
   const foot = u.style("#nav-foot"), bar = u.style("#sidebar-bar"), brand = u.style(".sidebar-brand"), image = u.style(".sidebar-brand-image");
   const toggle = u.style("#sidebar-toggle"), cog = u.style("#sidebar-settings");
@@ -294,19 +295,19 @@ test("the bar: the OATS mark on the rows' circles (22px in), the cog in the righ
   assert.deepEqual([image.width, image.height, image.display], ["20px", "20px", "block"]);
   for (const button of [toggle, cog]) assert.deepEqual([button.width, button.height], ["24px", "24px"]);
   for (const id of ["#sidebar-toggle", "#sidebar-settings"]) assert.equal(u.doc.defaultView.getComputedStyle(u.get(`${id} .shell-icon`)).width, "14px", `${id}: a 14px icon`);
-  // From the left: the foot's 10px, the bar's 2px and half the mark's 20px. From the right: the foot's 10px, the
+  // From the left: the foot's 6px, the bar's 2px and half the mark's 20px. From the right: the foot's 10px, the
   // bar's 3px and half the cog's 24px. The toggle starts the gap and its own 6px after the mark; Spawn instance ends
   // the gap and its own 4px before the cog.
   const markCentre = px(foot.paddingLeft) + px(bar.paddingLeft) + px(brand.width) / 2;
   const cogCentre = px(foot.paddingRight) + px(bar.paddingRight) + px(cog.width) / 2;
   const toggleLeft = px(foot.paddingLeft) + px(bar.paddingLeft) + px(brand.width) + px(bar.gap) + px(toggle.marginLeft);
   const spawnRight = px(foot.paddingRight) + px(bar.paddingRight) + px(cog.width) + px(bar.gap) + px(u.style("#sidebar-spawn").marginRight);
-  // A workspace row's circle: the list's 8px, the row's 10px, half the 8px circle.
+  // A workspace row's circle: the list's 4px, the row's 10px, half the 8px circle.
   const row = u.style(".ws-option"), circle = u.style(".ws-option .ctx-dot");
   const rowCircle = px(u.style(".ws-list").paddingLeft) + px(row.paddingLeft) + px(circle.width) / 2;
   // The right-hand column: an instance row's harness mark (the list's 8px, the row's 8px, half its 18px).
   const harness = px(u.style(".ctx-list").paddingRight) + px(u.style(".ctx-inst").paddingRight) + px(u.style(".ctx-runtime").width) / 2;
-  assert.deepEqual({ markCentre, rowCircle }, { markCentre: 22, rowCircle: 22 }, "10 + 2 + 10, on 8 + 10 + 4");
+  assert.deepEqual({ markCentre, rowCircle }, { markCentre: 18, rowCircle: 18 }, "6 + 2 + 10, on 4 + 10 + 4");
   assert.deepEqual({ cogCentre, harness }, { cogCentre: 25, harness: 25 }, "10 + 3 + 12, on 8 + 8 + 9");
   assert.equal(toggleLeft - (px(foot.paddingLeft) + px(bar.paddingLeft) + px(brand.width)), 8, "the toggle 8px after the mark");
   assert.equal(spawnRight, 43, "10 + 3 + 24 + 2 + 4: Spawn instance 6px before the cog");

@@ -112,6 +112,81 @@ from a fresh one and follows a change of default, and one where White was
 chosen keeps White. Views use tokens only, scoped under `.oats-view`. Orange
 selection is distinct from error/success.
 
+**The font** (the product owner's call, 2026-10-23) is a choice beside the theme:
+**Omarchy's font**, the default on an Omarchy computer, or **System font**, the faces
+before it and the default everywhere else (2026-10-26). The settings cog's **Font…** and the palette's **Font: choose…**
+(`app.fontPicker`, the Desktop's own, with no default chord and not on
+`TERMINAL_ALLOWLIST`) open the font picker, the theme picker's module over the two fonts: `theme-picker.mjs`
+`createChoicePicker` is the picker (layer, focus containment, Escape, focus
+return), and `createThemePicker` and `createFontPicker` give it their title,
+close label and rows (`theme.mjs` `fontChoices`; on macOS the Omarchy row is
+named **JetBrains Mono**). Both keep the `.theme-picker-*` classes; the overlay
+also carries `.theme-picker-overlay` or `.font-picker-overlay`.
+
+- **What it sets.** `theme.mjs` `fontStacks(font, isMac)` is the custom
+  properties a choice sets inline on the root, and `initFont`, `setFont`,
+  `currentFont` and `onFontChange` switch it as `initTheme` and `setTheme` do the
+  theme. Omarchy's font on Linux and Windows: `--ui-font`, `--mono` and
+  `--term-font-family` are `ui-monospace, monospace` (never the bare `monospace`,
+  whose quirk changes the default size). Chromium on Linux resolves the generic
+  through fontconfig, which is what Omarchy's font is (`omarchy font current` is
+  `fc-match monospace`), so nothing is read from the host and no IPC is added;
+  `ui-monospace` is a macOS face that Chromium elsewhere skips. On Windows the
+  generic is Chromium's own default monospace. On macOS: `--ui-font` and
+  `--mono` are `"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace,
+  SFMono-Regular, Menlo, monospace` (no file is bundled), and the terminals keep
+  Inconsolata. On every platform Omarchy's font also sets `--name-size: 12px`,
+  which an instance's name on its sidebar row (`.ctx-name`) and its tab (`.tab`)
+  read as `font-size: var(--name-size, 12.5px)`: the wider monospace face, a
+  little smaller (the product owner, 2026-10-26). System font sets nothing.
+- **Every UI font rule follows it** by reading `font-family: var(--ui-font,
+  <its own stack>)`, a longhand beside its size, weight and line-height (never
+  inside a `font` shorthand: jsdom drops a shorthand that holds `var()`, so a
+  test would read the parent's values): the body, `.oats-view`, the context panel, the Machines (hierarchy), brain
+  and markdown views, and the rules that once read `var(--sans,system-ui)`, a
+  token nothing defined. The monospace rules do too: code in the markdown view,
+  the context panel's ids, paths and facts, the soul tab's meta and sources, PR
+  chips, team details, the tab hints and numbers, and the terminal search's
+  controls. theme.css never defines `--ui-font`, so with System font each rule
+  is its own stack exactly as before. `test/font-choice.test.mjs` refuses a sans
+  or monospace stack outside that fallback (or a font token: `--mono`,
+  `--term-font-family`).
+- **Stored per computer** under `oats.desktop.font` (like `oatsweb.theme`); a
+  missing or unknown value is `defaultFont()`, and the default is never stored.
+  The shell calls `initFont(isMac, undefined, { isOmarchy })` before its first
+  await, so the first paint is in it. `isOmarchy` is preload's constant
+  `oatsDesktop.isOmarchy` (only `true` counts): main checks Omarchy's presence
+  once with `host-theme.mjs` `omarchyHost` (Linux only; the "This computer"
+  theme's marker, Omarchy's `current/` directory; any error is false) and adds
+  `--oats-host-omarchy` to each window's `additionalArguments`, which preload
+  reads. No IPC channel carries it. It picks `defaultFont()` (Omarchy's font,
+  else System font) and `terminalDefaultSize()` (below), nothing else.
+- **Terminals** switch in place: `applyFont` notifies the terminal typography
+  listeners, and each open terminal sets xterm's `fontFamily` and refits
+  (`fitTerminal`; the PTY follows the grid). The GitHub sign-in terminal
+  (Settings: Connections…) keeps its box when the font changes, so its adapter
+  (shell.mjs `terminalFactory`) tells its resize listeners itself: Connections
+  refits it and sends the new grid to the sign-in PTY (`forgeAuthResize`). A stored terminal family
+  (`oats.desktop.terminal.fontFamily`) still wins, and the size is untouched.
+- **The fallback.** Omarchy's font is used only once its stack draws at a fixed
+  width: `fontDraws(stack)` measures ten i's and ten M's on a canvas, wider than
+  nothing and equal within 1%, at start and on each choice (whichever is
+  chosen, so the picker's note is right in advance). Measured in Chromium on
+  Linux with a private fontconfig: with no monospace font the generic is
+  fontconfig's best match, a proportional sans; a bitmap font is skipped (Skia
+  draws outline fonts only) for the next match, and alone it draws nothing;
+  `document.fonts.check` says yes to all of them. Failing, Omarchy's font sets
+  nothing (System font's faces), the root gets `data-font-fallback="system"`,
+  `fontFallsBack()` is true and the picker's Omarchy row reads
+  `FONT_FALLBACK_NOTE`; the stored choice stays.
+- **Layout.** A monospace UI is wider: the nav's labels, one under the other
+  (Workspace overview, Automations), fit whole in the 264px sidebar either way.
+  Names that already ellipsize (instances, workspaces) ellipsize sooner, and
+  nothing in the sidebar wraps or leaves the right-hand column. A terminal tab
+  shows a name of up to 26 characters whole before its 280px cap; a longer one
+  ellipsizes its head and keeps its tail and close button (measured in
+  Chromium, 2026-10-26).
+
 **This computer.** On a computer with an Omarchy theme, the chrome and every
 terminal (local and remote instances alike: they share the two creation sites)
 take the current Omarchy theme and follow a theme change without a restart.
@@ -214,12 +289,15 @@ Outside Desktop's control: the taste of the host's palette; that an adjusted
 accent or status colour is lighter or darker than the host's; that a program
 painting both text and background is readable but not re-themed.
 
-The default monospace face is **Inconsolata**, bundled (`fonts/`, SIL OFL 1.1;
+The default monospace face of System font, and of the macOS terminals with
+either font, is **Inconsolata**, bundled (`fonts/`, SIL OFL 1.1;
 source, version and checksum in `fonts/README.md`) so it is the same on every
 machine. `theme.css` declares it with `@font-face` (`font-display: block`) and puts
 it first in `--term-font-family` (the terminal) and `--mono` (the UI's code, paths
 and chord hints), ahead of the OS monospace stack. The terminal's default size is
-15px (`--term-font-size`, `TERMINAL_FONT_SIZE`; the operator's decision). A terminal
+`terminalDefaultSize()`: 15px (the operator's decision), and 13px on an Omarchy computer, whose
+terminals are in its font, JetBrains Mono by default (the product owner, 2026-10-26). theme.css seeds
+`--term-font-size: 15px`, and on Omarchy `initFont` sets it inline on the root to 13px. A terminal
 font or size the operator stored (`oats.desktop.terminal.fontFamily`, `…fontSize`)
 still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Settings →
 Terminal's "Reset to default" forgets the size, so the defaults apply again. Every
@@ -449,18 +527,18 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `--fg` on `--sel`); the roster (`#instance-roster`, its top border the line before the instances) under its
   heading, a `.ctx-head` (13px 500 `--nav-fg`, read like the nav items) holding "Instances" and the count,
   with "Refreshing…" after the count when loading.mjs adds it; then the foot (`#nav-foot`, pushed to the
-  bottom, under a `--border` line, 4px 10px), one bar (`#sidebar-bar`, `role="group"` "Sidebar tools"),
+  bottom, under a `--border` line, 4px 10px 4px 6px), one bar (`#sidebar-bar`, `role="group"` "Sidebar tools"),
   `[mark][toggle] … [spawn][cog]`: the OATS mark (`.sidebar-brand`, the generated `sidebar-48.png` drawn at
   20px, decorative: `aria-hidden`, an empty alt, no tab stop); 8px after it the sidebar toggle
   (`#sidebar-toggle`, `sidebar.toggle`, its `aria-expanded` kept by `updateSidebarControls`); then at the right
   end **Spawn instance** (`#sidebar-spawn`, `app.quickOpenSouls`: Quick Open), its words alone (24px tall,
   12px `--muted`, no icon and no fill at rest; the icon buttons' `--surface-2` on hover and `--sel` on keyboard
   focus, in rules of its own) with no hint element, its chord in its title (`applyChordTitles`), and 6px after
-  it the settings cog (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…). The toggle
+  it the settings cog (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Font…, Keyboard shortcuts…). The toggle
   and the cog are 24px `.side-icon-button` boxes with 14px icons. `.side-icon-button` is the sidebar's one icon-button style (box, colours, hover,
   focus), on the head's two buttons and the bar's two. Every `#nav-foot [data-action]` runs its action through
-  the same registry as the keys. The mark centres on the workspace rows' circles, 22px in (the foot's 10px,
-  the bar's 2px, half its 20px), and the cog 25px in from the right edge (the foot's 10px, the bar's 3px, half
+  the same registry as the keys. The mark centres on the workspace rows' circles, 18px in (the foot's 6px,
+  the bar's 2px, half its 20px; the lists' 4px, the row's 10px, half the circle), and the cog 25px in from the right edge (the foot's 10px, the bar's 3px, half
   its 24px). The workspace rows' names are the sidebar's 13px (the current one at 650), the roster's machine
   labels (`.ctx-deployment`) 11px 650 muted capitals, its agent groups 14px apart. The palette has no
   button: it has its own chord, and **Settings: Connections…** in it is Connections' only entry. The
@@ -1637,8 +1715,8 @@ section is the module map.
   by the shell at startup and on window focus; `setKeyboardLayoutMap` for
   tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
 - **sidebar-settings.mjs** — the settings cog's menu (`createSettingsMenu`, `SETTINGS_ITEMS`,
-  `SETTINGS_LABEL`), the cog at the right end of the bar in the sidebar's foot: Theme… (`app.themePicker`) and
-  Keyboard shortcuts… (`app.shortcuts`), each a `role="menuitem"` with its icon and its chord in a `<kbd>` (hidden without
+  `SETTINGS_LABEL`), the cog at the right end of the bar in the sidebar's foot: Theme… (`app.themePicker`),
+  Font… (`app.fontPicker`) and Keyboard shortcuts… (`app.shortcuts`), each a `role="menuitem"` with its icon and its chord in a `<kbd>` (hidden without
   one; `refresh()` reads them again, and the shell calls it from `applyChordTitles`). The instance actions'
   pattern: a native `popover="auto"` with `role="menu"`, the cog its invoker (`aria-haspopup="menu"`,
   `aria-expanded` kept by `beforetoggle`, `aria-controls`), placed as the instance actions' menu (its right

@@ -35,7 +35,11 @@ export function selectedDeployment(env = process.env, explicitDir) {
   }
 }
 
-export function currentJoinRoot(team, home, { env = process.env, query = querySelectedKernel, membership } = {}) {
+export function currentJoinRoot(team, home, options) { return currentJoinRootChoice(team, home, options).root; }
+
+/** The current root for `team` and the setting that chose it: `roots[team]`, or
+ *  the shared `root`. Refuses unless that root proves membership in the team. */
+export function currentJoinRootChoice(team, home, { env = process.env, query = querySelectedKernel, membership } = {}) {
   const fail = cause => { throw new Error(`cannot join team ${team}: ${cause}; check settings.oats.aweb.roots[${JSON.stringify(team)}] in the selected deployment and run oats aweb setup --join <label> --invite-stdin --dir <deployment> --soul <soul> there with an appropriate owner invite`); };
   let deployment, selectedHome;
   try { deployment = selectedDeployment(env); selectedHome = canonical(home); }
@@ -63,7 +67,8 @@ export function currentJoinRoot(team, home, { env = process.env, query = querySe
   if (rows.length !== 1 || rows[0].layer !== 'messaging' || current.layers?.messaging?.id !== 'oats.aweb' || rows[0].compatibility?.ok !== true || !object(rows[0].settings)) fail('current oats.aweb settings or compatibility unavailable');
   const settings = rows[0].settings;
   if (Object.hasOwn(settings, 'roots') && !object(settings.roots)) fail('current roots setting is invalid');
-  const root = object(settings.roots) && Object.hasOwn(settings.roots, team) ? settings.roots[team] : settings.root;
+  const source = object(settings.roots) && Object.hasOwn(settings.roots, team) ? 'roots[team]' : 'root';
+  const root = source === 'roots[team]' ? settings.roots[team] : settings.root;
   let selectedRoot;
   try {
     selectedRoot = canonical(root);
@@ -72,5 +77,5 @@ export function currentJoinRoot(team, home, { env = process.env, query = querySe
   let member = false;
   try { member = membership(selectedRoot, team) === true; } catch { /* no native output in the error */ }
   if (!member) fail(`current root ${selectedRoot} cannot prove membership in this exact team`);
-  return selectedRoot;
+  return { root: selectedRoot, source };
 }

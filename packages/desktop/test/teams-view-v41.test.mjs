@@ -106,9 +106,9 @@ test('the board\'s measures and the shared control rules, in the page\'s own CSS
   assert.match(rule('.computer-teams .ct-card.local'), /border:1px dashed var\(--tree-line\)/);
   // At a narrow board (container under 760px) the actions wrap under the description.
   assert.match(computerTeamsCSS, /@container \(max-width: 759\.98px\) \{\n \.computer-teams \.ct-head \{ grid-template-columns:minmax\(0,1fr\); \}\n \.computer-teams \.ct-head > \.ct-actions \{ grid-column:1; grid-row:auto; justify-content:flex-start; \}/);
-  assert.match(rule('.computer-teams .ct-tag'), /background:var\(--sel\); color:var\(--accent\); font:600 11.5px/, 'rule 1: the selected state is the brand tint');
+  assert.match(rule('.computer-teams .ct-tag'), /background:var\(--sel\); color:var\(--accent\); font-weight:600; font-size:11.5px;/, 'rule 1: the selected state is the brand tint');
   assert.match(rule('.computer-teams .ct-label'), /color:var\(--fg\); font-size:17px; font-weight:700/);
-  assert.match(rule('.oats-view .computer-teams button.ct-open'), /background:none; color:var\(--fg\); font:700 17px\/1.3/, 'the openable label reads as the plain one');
+  assert.match(rule('.oats-view .computer-teams button.ct-open'), /background:none; color:var\(--fg\); font-weight:700; font-size:17px; line-height:1.3;/, 'the openable label reads as the plain one');
   assert.match(rule('.computer-teams .ct-empty'), /padding:16px 18px; border:1px dashed var\(--tree-line\); border-radius:10px; color:var\(--muted\); font-size:13px/);
   assert.match(rule('.oats-view .computer-teams button.ct-link'), /border:0;.*background:none; color:var\(--accent\)/);
   // Rule 2 is the shell's (theme.css :focus-visible): the page adds no focus rule of its own for its buttons.

@@ -30,6 +30,7 @@ import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
 import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
 import { STATUS_WAIT_MS, createPanel } from "../packages/tui/lib/panel.mjs";
+import { tmuxForwardsBoundKey } from "../lib/session-viewer.mjs";
 import { captureRows } from "../packages/tui/lib/term/capture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -39,6 +40,10 @@ const hostTool = (name) => { try { return systemExecutable(name); } catch { retu
 
 // The host's own tools, found before the environment is isolated (PATH is then the fixture's).
 const REAL_TMUX = hostTool("tmux");
+/** Whether this tmux's viewer takes C-b [ (3.3 and later, lib/session-viewer.mjs tmuxForwardsBoundKey),
+ *  as the kernel the TUI runs answers in its version --json `sessionViewer`: the fixture's PATH
+ *  links this tmux. */
+const FORWARDS = REAL_TMUX ? tmuxForwardsBoundKey(execFileSync(REAL_TMUX, ["-V"], { encoding: "utf8", timeout: 10000 })) : false;
 /** The panel makes its keeper's FIFO with the base system's `mkfifo` (packages/tui/lib/panel.mjs,
  *  THE KEEPER), which the fixture's PATH does not link: the host's is linked there for this file. */
 const HOST_MKFIFO = hostTool("mkfifo");
@@ -72,29 +77,14 @@ const attached = () => { try { return lines(tmuxOn(AGENTS, "list-clients", "-F",
 /** Every key table of a server, from the UNFILTERED list: `list-keys -T <table>` prints nothing for
  *  a table that holds exactly one binding. */
 const keyTableNames = (socket) => [...new Set(lines(tmuxOn(socket, "list-keys")).map((line) => /^bind-key\s+(?:-r\s+)?-T\s+(\S+)/.exec(line)?.[1]).filter(Boolean))].sort();
-/** The tables viewers made, the locked table of a viewer with no key included. */
+/** The tables viewers made: every viewer's own, named as its session, and its C-b table,
+ *  `<session>-prefix` (lib/session-viewer.mjs PREFIX_TABLE_SUFFIX), removed with it (#1502 part D). */
 const viewerTables = () => keyTableNames(AGENTS).filter((name) => name.startsWith("oatsview-"));
-/** THE SHARED TABLE. The panel's viewer has no key of its own, and a viewer with no key binds its
- *  keys in the kernel's one table for every such viewer, `oatsview-locked`
- *  (lib/session-viewer.mjs LOCKED_TABLE, bound from VIEWER_BINDINGS), which its cleanup()
- *  leaves by design: it is every keyless viewer's, the Desktop's included, and one
- *  viewer's unbind would strip the others'. So a closed viewer leaves no session and no table of
- *  its own, and that table holds exactly the kernel's viewer bindings, the two mouse keys and the
- *  scrollback key (tmux lists S-PageUp as `S-PPage`), no detach among them. */
-const LOCKED_TABLE = "oatsview-locked";
-const LOCKED_KEYS = ["MouseDrag1Pane", "S-PPage", "WheelUpPane"];
-/** What is wrong with the agents' server's viewer tables after a viewer closed: a table of a
- *  viewer's own, or a shared table that holds anything but the viewer bindings. `seen`: a keyless
- *  viewer ran since the table was last emptied, so the shared table must be there. */
-function viewerTableFaults({ seen = true } = {}) {
-  const faults = [];
-  const own = viewerTables().filter((name) => name !== LOCKED_TABLE);
-  if (own.length) faults.push(`a viewer's own key table is left: ${JSON.stringify(own)}`);
-  const bound = lines(tmuxOn(AGENTS, "list-keys")).filter((line) => new RegExp(`^bind-key\\s+(?:-r\\s+)?-T\\s+${LOCKED_TABLE}\\s`).test(line));
-  const keys = bound.map((line) => /-T\s+\S+\s+(\S+)/.exec(line)?.[1]).sort();
-  if ((seen || bound.length) && JSON.stringify(keys) !== JSON.stringify(LOCKED_KEYS)) faults.push(`${LOCKED_TABLE} binds ${JSON.stringify(keys)}, not the kernel's viewer bindings ${JSON.stringify(LOCKED_KEYS)}`);
-  if (bound.some((line) => /detach/.test(line))) faults.push(`${LOCKED_TABLE} holds a detach: ${JSON.stringify(bound)}`);
-  return faults;
+/** What is wrong with the agents' server's viewer tables after a viewer closed: any table a viewer
+ *  made is left. No viewer shares a table, so a closed one leaves none. */
+function viewerTableFaults() {
+  const left = viewerTables();
+  return left.length ? [`a viewer's key table is left: ${JSON.stringify(left)}`] : [];
 }
 /** After a test, whatever it left on the agents' server: a failed test must not fail the ones after it. */
 function sweepAgents() {
@@ -228,14 +218,23 @@ const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 /** The leader and the palette, which the sheet names first in every focus of the list. */
 const LEAD = `${LEADER} commands   Ctrl+K palette   `;
 const OPEN_HINT = `${LEAD}Enter open   `;
+/** The viewer's scroll key after the leader's (docs/tui.md, "Tabs"): the short form beside the
+ *  terminal, the 30 cells of the sidebar holding one key. */
+const SCROLL = FORWARDS ? "Ctrl+B [ scroll back" : "Shift+PageUp scroll back";
+/** The same in a zoomed terminal's title row, 120 columns wide: both keys fit beside the tab. */
+const ZOOMED_SCROLL = FORWARDS ? "Shift+PageUp or Ctrl+B [ scroll back" : "Shift+PageUp scroll back";
+/** A zoomed terminal's title row ends with the leader's keys and, where it still has room, the scroll
+ *  keys, the first given up: on Linux and Windows the Alt family's chords lead the row, and at these
+ *  120 columns they leave the scroll keys no room; on macOS, with one tab, there are no chords to show. */
+const ZOOMED_KEYS = `${LEADER} commands   ${LEADER} Esc the list${process.platform === "darwin" ? `   ${ZOOMED_SCROLL}` : ""}`;
 /** The whole sheet while the terminal has the focus, with `tabs` tabs open: on Linux and Windows the
  *  Alt family's chords first, as every one is read in any terminal, the protocol or not (docs/tui.md,
  *  "Chords"): the palette, the instance before or after, the tab before or after with two tabs or
- *  more, close and zoom; then the leader, the leader then Esc (the list's focus) and the leader
- *  twice (the leader typed into the terminal). On macOS the TUI's chords are the Alt arrows alone,
+ *  more, close and zoom; then the leader, the leader then Esc (the list's focus), the leader
+ *  twice (the leader typed into the terminal) and the viewer's scroll key. On macOS the TUI's chords are the Alt arrows alone,
  *  so the sheet names the tab before or after, with two tabs or more. */
 const backWith = (tabs) => [...(process.platform === "darwin" ? (tabs > 1 ? ["Alt+Left/Right tab"] : []) : ["Alt+K palette", "Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Left/Right tab"] : []), "Alt+W close", "Alt+Z zoom"]),
-  `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`].join("   ");
+  `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}   ${SCROLL}`].join("   ");
 const BACK = backWith(1);
 /** Whether the tabs carry their numbers: not on macOS, where no chord reaches them (docs/tui.md, "Tabs"). */
 const NUMBERED = process.platform !== "darwin";
@@ -515,7 +514,7 @@ async function tui(term, { tmp = tmpFor() } = {}) {
 // ---- on a terminal ------------------------------------------------------------------------------
 const TMUX_VERSION = REAL_TMUX ? execFileSync(REAL_TMUX, ["-V"], { encoding: "utf8", timeout: 10000 }).trim() : "none";
 
-test(`Enter on the running agent shows its terminal in the panel beside the list, the list still on screen and the cheat sheet naming the leader; c closes it, the detail comes back, and no viewer session and no viewer's own key table is left on the agents' server, the shared one holding only the viewer bindings (${TMUX_VERSION})`, { skip: NO_TMUX }, async (t) => {
+test(`Enter on the running agent shows its terminal in the panel beside the list, the list still on screen and the cheat sheet naming the leader; c closes it, the detail comes back, and no viewer session and no viewer's key table is left on the agents' server (${TMUX_VERSION})`, { skip: NO_TMUX }, async (t) => {
   await agentWindow();
   const term = await terminal(t);
   const run = await tui(term);
@@ -547,7 +546,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   await until(term, () => !run.beside() && run.detailBeside() && viewerSessions().length === 0,
     "the terminal closed: the detail beside the list again, and no viewer session", () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`]);
   assert.equal(run.outcome(), null, "a close the person asked for says nothing");
-  assert.deepEqual(viewerTableFaults(), [], "after its pane was killed no table of the viewer's own is left, and the shared one holds only the kernel's viewer bindings");
+  assert.deepEqual(viewerTableFaults(), [], "after its pane was killed no table of the viewer's own is left");
   assert.equal(agentWindowThere(), true, "the agent keeps running");
   assert.deepEqual(panelWindows(panelSocket(dir)).length, 1, "the panel's server holds its keeper alone");
   await run.ready("after the close");
@@ -573,7 +572,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => run.beside("abcd"), "the panel redrawn with the list focused");
 
   term.press("z");
-  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`${oneTab(NAME)} `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
+  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`${oneTab(NAME)} `) && term.screen()[0].endsWith(ZOOMED_KEYS) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the viewer's scroll keys where they fit, and the agent's screen from the first column, no list and no cheat sheet");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
   await run.back();
@@ -735,7 +734,7 @@ for (const [how, end, expected] of [
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
     await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
     await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`, ...viewerFaults(kept, before)]);
-    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the viewer bindings`);
+    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}`);
     assert.equal(agentWindowThere(), true, `the agent keeps running after ${how}`);
     assert.equal(typed(), "k", "and nothing more reached it");
     if (how === "kill -9") {
@@ -836,7 +835,7 @@ test("kill -9 while the agent prints without pause: the private server is gone, 
   assert.equal(await run.ended("after kill -9"), 137, term.shows());
   await until(term, () => !answers(socket), "the private server's socket to refuse after kill -9 with the agent printing");
   await until(term, () => viewerSessions().length === 0, "no viewer session on the agents' server after kill -9 with the agent printing", () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`]);
-  assert.deepEqual(viewerTableFaults(), [], "no viewer's own key table on the agents' server, and the shared one holds only the viewer bindings");
+  assert.deepEqual(viewerTableFaults(), [], "no viewer's own key table on the agents' server");
   assert.equal(agentWindowThere(), true, "the agent keeps running");
 });
 
@@ -1233,7 +1232,7 @@ for (const [how, end, expected] of [
     await until(term, () => !alive(pid), `the process ${pid} to be gone after ${how}`);
     await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
     await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`, ...viewerFaults(kept, before)], 30000);
-    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the viewer bindings`);
+    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}`);
     assert.equal(agentWindowThere(), true, `the agent keeps running after ${how}`);
     assert.equal(existsSync(socket), how === "kill -9", how === "kill -9" ? "a run killed with no way to clean up leaves its socket for the sweep" : `the socket is removed after ${how}`);
   });
@@ -1305,7 +1304,7 @@ for (const [how, end, expected] of [
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
     await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
     await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`, ...viewerFaults(kept, before)], 30000);
-    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the viewer bindings`);
+    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}`);
     assert.deepEqual(FOUR.filter((name) => !agentWindowThere(name)), [], `every agent keeps running after ${how}`);
     assert.deepEqual(FOUR.map((name) => typed(name)), ["", "", "", ""], "and nothing reached any of them");
     if (how === "kill -9") {
@@ -1319,7 +1318,7 @@ for (const [how, end, expected] of [
 
 test("afterwards no viewer session and no viewer's own key table is on the agents' server, no private server answers, and the terminals' server has the sessions, windows, key bindings and options it had before the first test", { skip: NO_TMUX }, () => {
   assert.deepEqual(viewerSessions(), [], "no oatsview-* session on AGENTS");
-  assert.deepEqual(viewerTableFaults({ seen: false }), [], "no table of a viewer's own on AGENTS, and the shared one, when there, holds only the viewer bindings");
+  assert.deepEqual(viewerTableFaults(), [], "no viewer's key table on AGENTS");
   assert.deepEqual(sessionsOf(AGENTS), [SESSION], "the agents' server holds its own session only");
   for (const tmp of tmps) for (const dir of runDirs(tmp)) assert.equal(answers(panelSocket(dir)), false, `no private server answers in ${dir}`);
   const after = termServer();

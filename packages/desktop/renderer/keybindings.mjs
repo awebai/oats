@@ -177,6 +177,9 @@ export function readKeyboardLayout(nav = globalThis.navigator) {
   return Promise.resolve();
 }
 function macOptionKey(e) {
+  // ⌥Space types a no-break space: the Space key is Space on every layout, so a ⌥ chord with Space
+  // given in the shortcuts editor (the font picker's, say) matches.
+  if (e.code === "Space") return "space";
   const m = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(String(e.code || ""));
   if (!m) return null;
   if (m[2]) return m[2];
@@ -396,6 +399,10 @@ function keymapIn(family) {
     // Super on Linux/Windows (the window manager's) and with ⌘ for Super on macOS, without ⌃: on macOS a
     // chord holding ⌃ never fires in a terminal (matchEvent). xterm.js sends nothing for either chord.
     "app.themePicker": { mac: "Mod+Shift+Space", other: "Ctrl+Shift+Space" },
+    // The font picker (the product owner's call, 2026-10-23) takes no default chord: the palette's
+    // Font: choose… and the settings cog's Font… open it. A chord given in the shortcuts editor works
+    // as the explicit themes' do: in a terminal, only a macOS chord with ⌘ (it is not on TERMINAL_ALLOWLIST).
+    "app.fontPicker": null,
     "stage.hierarchy": "Mod+1",
     "stage.spawn": "Mod+2",
     "stage.automations": "Mod+3",

@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.31.0",
+  "version": "1.32.0",
   "compatibility": {
-    "oats": ">=0.52.0"
+    "oats": ">=0.68.0"
   },
   "layer": "messaging",
   "launchPreview": true,
@@ -129,7 +129,8 @@
       "required": true
     },
     "retire": "bin/oats-aweb.mjs retire",
-    "launch": "bin/oats-aweb.mjs launch"
+    "launch": "bin/oats-aweb.mjs launch",
+    "upgrade": "bin/oats-aweb.mjs upgrade"
   },
   "environment": [
     "AWEB_DELIVERY",

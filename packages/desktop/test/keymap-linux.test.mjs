@@ -92,6 +92,7 @@ test("the shipped table: each changed default resolves per platform and per chor
     "focus.leaveTerminal": ["Mod+Shift+F6", "Mod+Shift+F6"],
     "sidebar.toggle": ["Mod+B", "Ctrl+Shift+B"], "sidebar.focusFilter": ["Mod+F", "Alt+F", "Ctrl+Alt+F", "Ctrl+Alt+F"], "panel.toggle": ["Mod+I", "Ctrl+Shift+I"],
     "app.themeToggle": [null, null], "app.themePicker": ["Mod+Shift+Space", "Ctrl+Shift+Space"], "app.shortcuts": ["Mod+,", "Mod+,"],
+    "app.fontPicker": [null, null],
     "terminal.fontBigger": ["Mod+=", "Mod+="], "terminal.fontSmaller": ["Mod+-", "Mod+-"], "terminal.fontReset": ["Mod+0", "Mod+0"],
     "terminal.copySelection": [null, "Ctrl+Shift+C"],
   };
@@ -507,6 +508,45 @@ test("theme picker: no other default shares either chord", t => {
   setBinding("app.shortcuts", "Ctrl+Shift+Space");
   assert.equal(getBinding("app.shortcuts", false), "Ctrl+Shift+Space");
   assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.shortcuts", "app.themePicker"]]);
+});
+
+// The font picker (app.fontPicker, the product owner's call, 2026-10-23) takes no default chord: the palette's
+// Font: choose… and the settings cog's Font… open it.
+test("font picker: no default chord in any family, on either platform, and the Desktop's own (not a shared chord)", t => {
+  registerAll(t);
+  t.after(() => setChordFamily(DEFAULT_CHORD_FAMILY));
+  assert.equal(CHORDS_READ.some(({ id }) => id === "app.fontPicker"), false, "not read from the TUI's chord table");
+  assert.equal(CHORDS.some(entry => /fontPicker|font-picker/.test(JSON.stringify(entry))), false, "the shared table has no font row");
+  assert.equal(TERMINAL_ALLOWLIST.includes("app.fontPicker"), false, "no default, so no terminal bytes to keep");
+  for (const family of CHORD_FAMILIES) {
+    setChordFamily(family);
+    for (const isMac of [false, true]) {
+      assert.equal(defaultBinding("app.fontPicker", isMac, family), null, `${family}, mac=${isMac}`);
+      assert.equal(getBinding("app.fontPicker", isMac), null, `${family}, mac=${isMac}`);
+      assert.deepEqual(keymapConflicts(isMac), [], `${family}, mac=${isMac}`);
+    }
+  }
+  // Nothing is left on the chord it had: Ctrl+Alt+Shift+Space and ⌥⇧⌘Space are nobody's.
+  for (const insideTerminal of [false, true]) {
+    assert.equal(matchEvent(space({ ctrlKey: true, altKey: true, shiftKey: true }), { isMac: false, insideTerminal }), null, `Linux, terminal=${insideTerminal}`);
+    assert.equal(matchEvent(space({ metaKey: true, altKey: true, shiftKey: true }), { isMac: true, insideTerminal }), null, `macOS, terminal=${insideTerminal}`);
+  }
+});
+
+test("font picker: a chord given in the shortcuts editor works as the explicit themes' do, ⌥ with Space read from the key", t => {
+  registerAll(t);
+  t.after(() => { resetBinding("app.fontPicker"); });
+  setBinding("app.fontPicker", "Ctrl+Alt+Shift+Space");
+  assert.equal(matchEvent(space({ ctrlKey: true, altKey: true, shiftKey: true }), { isMac: false, insideTerminal: false }), "app.fontPicker");
+  assert.equal(matchEvent(space({ ctrlKey: true, altKey: true, shiftKey: true }), { isMac: false, insideTerminal: true }), null,
+    "not from a Linux/Windows terminal: the program keeps its bytes");
+  setBinding("app.fontPicker", "Mod+Alt+Shift+Space");
+  for (const insideTerminal of [false, true]) {
+    // ⌥ with Space types a no-break space on macOS: the key is read from its code, Space.
+    assert.equal(matchEvent(ev("\u00a0", { code: "Space", metaKey: true, altKey: true, shiftKey: true }), { isMac: true, insideTerminal }), "app.fontPicker",
+      `macOS, ⌥'s no-break space, terminal=${insideTerminal}`);
+  }
+  assert.equal(matchEvent(space({ metaKey: true, shiftKey: true }), { isMac: true }), "app.themePicker", "without ⌥ it is the theme picker's");
 });
 
 // Phase 3 (c4d4a391): the palette took Ctrl+Alt+K and Quick Open Ctrl+Alt+P (#1217's Ctrl+Shift+K and

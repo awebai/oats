@@ -138,7 +138,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   assert.equal(u.rule(".ctx-group").height, "14px", "a 14px gap after a group (the product owner, 2026-10-26: as before the 6px of 2026-10-23)");
   assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the head (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
-  assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
+  assert.equal(u.rule(".ctx-name").fontSize, "var(--name-size, 12.5px)", "12.5px, or the font choice's (12px in Omarchy's font)");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
   // The meta line (the product owner, 2026-10-26): the soul in the UI face at the left, the repository in mono at the right.
   assert.equal(u.rule(".ctx-meta.ctx-soul-repo").fontSize, "11.5px", "Inconsolata is narrow: a step up from 10.5 (the operator, 2026-10-02)");

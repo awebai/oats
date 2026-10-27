@@ -269,7 +269,7 @@ sent as text or on stdin, never as paths.
 | `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-name` for `--name`; `spawn-preview-2` for `--preview`; `spawn-suggest-name` for `--suggest-name` on a preview, `spawn-apply-suggest-name` on an apply |
 | `status` | registered workspace | |
 | `retire` | the instance's home | `retire-home` to retire by exact home |
-| `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key` |
+| `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key`; `session-attach-no-status-line` for `attach --no-status-line`, which a host without it ignores |
 | `session start`, `session restart` | the instance's home | `session-start`; `session-restart`; `launch-config` when `--launch-config`, `--harness` or `--yolo` is given |
 | `session upload` | the instance's home | `session-upload` |
 | `okf harvest --instance <name>` | the saved home | `harvest` |
@@ -362,6 +362,11 @@ nothing was sent`. Under `--json` the envelope's `error.details` is
 under `--print`, which otherwise skips it: a printed command must not carry
 a flag its host would ignore.
 
+`--no-status-line` travels as it is, with no probe of its own: a host that
+does not advertise `session-attach-no-status-line` ignores it and shows the
+viewer's status line, which loses nothing
+([execution-targets.md](execution-targets.md#inspect-input-and-attach)).
+
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused
 with `--server`; the remote default applies. `session attach --print` shows
@@ -420,6 +425,9 @@ answer, never a separate `version --json`, kept only when it is a valid list
 of feature names and otherwise `null` (unknown, as from a host before
 0.49.0); a failed probe has no `features` key
 ([the field](desktop-cli-api.md#the-remote-roster-oats-server-roster---json)).
+It relays the host's viewer fact the same way, `probe.sessionViewer`
+(`{prefixScroll}`, feature `session-attach-prefix-scroll`): whether that
+host's viewer takes `C-b [`, or `null` when unknown.
 
 **Harvest** runs the knowledge capability's `okf harvest --json` in the
 instance's saved home on the server and relays its envelope.

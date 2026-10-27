@@ -5,7 +5,7 @@
 // palette's prompt. Built from the Settings dialog's own components (.forge-*).
 import {
   terminalTypography, setTerminalFontSize, resetTerminalFontSize, onTerminalTypographyChange,
-  clampTerminalFontSize, TERMINAL_FONT_SIZE, TERMINAL_FONT_MIN, TERMINAL_FONT_MAX,
+  clampTerminalFontSize, terminalDefaultSize, TERMINAL_FONT_MIN, TERMINAL_FONT_MAX,
 } from "./theme.mjs";
 
 export const settingsTerminalCSS = `
@@ -21,7 +21,7 @@ export const settingsTerminalCSS = `
  * store is injectable so the section is testable without a live renderer. */
 export function createTerminalSettings({ doc, store = {
   read: () => terminalTypography().fontSize, set: setTerminalFontSize, reset: resetTerminalFontSize,
-  subscribe: onTerminalTypographyChange,
+  subscribe: onTerminalTypographyChange, defaultSize: terminalDefaultSize,
 }, chords = {} } = {}) {
   const node = (tag, text, cls) => { const n = doc.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
   const button = (text, label, fn) => { const b = node("button", text); b.type = "button"; if (label) b.setAttribute("aria-label", label); b.addEventListener("click", fn); return b; };
@@ -38,7 +38,9 @@ export function createTerminalSettings({ doc, store = {
   const bigger = button("+", "Increase font size", () => { if (current < TERMINAL_FONT_MAX) store.set(current + 1); });
   const row = node("div", undefined, "term-size");
   row.append(label, smaller, input, unit, bigger);
-  const reset = button(`Reset to default (${TERMINAL_FONT_SIZE})`, undefined, () => store.reset());
+  // A store without a default of its own reads this window's (theme.mjs terminalDefaultSize).
+  const defaultSize = typeof store.defaultSize === "function" ? store.defaultSize : terminalDefaultSize;
+  const reset = button(`Reset to default (${defaultSize()})`, undefined, () => store.reset());
   const actions = node("div", undefined, "forge-actions"); actions.append(reset);
   const keys = [chords.bigger, chords.smaller, chords.reset].every(Boolean) ? ` ${chords.bigger} / ${chords.smaller} / ${chords.reset} change it too.` : "";
   const hint = node("p", `Applies to every open terminal, from ${TERMINAL_FONT_MIN} to ${TERMINAL_FONT_MAX}px.${keys}`, "forge-hint");
@@ -46,7 +48,7 @@ export function createTerminalSettings({ doc, store = {
   card.append(row, actions, hint);
   section.append(title, card);
 
-  let current = TERMINAL_FONT_SIZE;
+  let current = defaultSize();
   function show(size) {
     current = clampTerminalFontSize(size);
     input.value = String(current);

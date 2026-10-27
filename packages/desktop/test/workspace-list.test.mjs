@@ -501,7 +501,7 @@ test("Show only the current workspace: a toggle before Add at the heading, named
   assert.doesNotMatch(headRule, /border(?!-box)/, "no line under the head");
   // 40px tall, its 8px top padding keeping the heading's centre 24px down, the first row close under it.
   assert.match(headRule, /height:\s*40px;/); assert.match(headRule, /box-sizing:\s*border-box;/);
-  assert.match(headRule, /padding:\s*8px 10px 0 17px;/);
+  assert.match(headRule, /padding:\s*8px 10px 0 13px;/);
   assert.match(css.match(/^\.ws-list\s*\{([^}]*)\}/m)[1], /border-bottom:\s*1\.5px solid var\(--border\)/, "the line before the nav, a little bolder than the roster\'s");
   assert.equal(toggle.getAttribute("aria-label"), CURRENT_ONLY_LABEL); assert.equal(toggle.title, CURRENT_ONLY_LABEL);
   assert.equal(toggle.getAttribute("aria-pressed"), "false"); assert.equal(toggle.dataset.action, "workspaces.currentOnly");

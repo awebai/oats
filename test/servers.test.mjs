@@ -15,7 +15,7 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join, resolve } from "node:path";
 
 import { FAILED_SPAWN_BRANCH_LEFT, spawnInstanceAsync } from "../lib/core.mjs";
-import { attachArgv, checkRemoteSupport, hostFeatures, listSnapshots, REMOTE_SNAPSHOT_DIR, resolveRoute, rosterGroups, routeCommand, runRemote, compareSemver, remoteQuote, SERVERS_FILE, snapshotPath, sshArgv, validateServer, writeServers } from "../lib/servers.mjs";
+import { attachArgv, checkRemoteSupport, hostFeatures, hostSessionViewer, listSnapshots, REMOTE_SNAPSHOT_DIR, resolveRoute, rosterGroups, routeCommand, runRemote, compareSemver, remoteQuote, SERVERS_FILE, snapshotPath, sshArgv, validateServer, writeServers } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** This kernel's own features: what a roster relays from a host that runs it (feature server-probe-features). */
@@ -309,7 +309,7 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     assert.equal(out.groups.length, 1);
     const g = out.groups[0];
     assert.equal(g.server, "build"); assert.equal(g.label, "Build box"); assert.equal(g.registrationPresent, true);
-    assert.deepEqual(g.probe, { ok: true, features: KERNEL_FEATURES }, "the host's features, relayed from its status answer");
+    assert.deepEqual(g.probe, { ok: true, features: KERNEL_FEATURES, sessionViewer: { prefixScroll: true } }, "the host's features, relayed from its status answer");
     assert.equal(typeof g.agentsRoot, "string");
     assert.deepEqual(g.souls.map((s) => s.name), ["dev"]);
     assert.equal(g.souls[0].agentsRoot, g.agentsRoot);
@@ -333,7 +333,7 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     out = r.json().result;
     const down = out.groups.find((x) => x.server === "down");
     assert.equal(down.probe.ok, false); assert.equal(typeof down.probe.error.message, "string");
-    assert.equal("features" in down.probe, false, "a remote ok:false carries no features key");
+    assert.equal("features" in down.probe || "sessionViewer" in down.probe, false, "a remote ok:false carries no features and no sessionViewer key");
     assert.deepEqual(down.instances, []); assert.deepEqual(down.souls, []); assert.deepEqual(down.retireFailures, []);
     r = oats(env, ["server", "roster", "--server", "nope", "--json"]);
     assert.equal(r.json().error.code, "E_SERVER_UNKNOWN");
@@ -433,7 +433,7 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     try {
     // An "old" remote: the real kernel, but its version probe carries no features.
     const oldOats = join(base, "old-oats");
-    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":[^}]*//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":\\[[^]]*\\]//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
     chmodSync(oldOats, 0o755);
     let r = oats(env, ["server", "add", "new", "--ssh", "h", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
     r = oats(env, ["server", "add", "old", "--ssh", "h", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
@@ -583,7 +583,7 @@ test("routed spawn --preview (#610): the host's preview, printed as the local on
     process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
     // An "old" host: the real kernel, but its version probe carries no features.
     const oldOats = join(base, "old-oats");
-    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":[^}]*//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":\\[[^]]*\\]//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
     chmodSync(oldOats, 0o755);
     let r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
     r = oats(env, ["server", "add", "old", "--ssh", "old-host", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
@@ -903,6 +903,10 @@ else process.exit(9);
     r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "checkout", runtime: "pi", model: "m1", launchConfig: "fast", launchConfigDefault: true, yolo: false });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.stdout, "preview dev → dev-x on legacy (checkout) harness pi model m1 via launch configuration fast (the server's pi default); nothing was created\n");
+    // A host that names where the configuration was declared: its directory, as the host answered it.
+    r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "checkout", runtime: "pi", model: "m1", launchConfig: "fast", launchConfigSource: "/srv/home/.oats/config", launchConfigDefault: true, yolo: false });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.stdout, "preview dev → dev-x on legacy (checkout) harness pi model m1 via launch configuration fast (the server's pi default) from /srv/home/.oats/config; nothing was created\n");
     assert.equal(existsSync(REMOTE_SNAPSHOT_DIR()), false, "nothing written here");
 
     // A host that spawned although asked for a preview: the apply's lines, and its route, as the apply records it.
@@ -960,12 +964,12 @@ else exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"; fi
     assert.equal(own.status, 0, own.stderr);
     const hostWorkspace = JSON.parse(own.stdout).workspace;
     assert.equal(typeof hostWorkspace.key, "string", "the host reports its workspace identity");
-    assert.deepEqual(groups.current.probe, { ok: true, features: KERNEL_FEATURES });
+    assert.deepEqual(groups.current.probe, { ok: true, features: KERNEL_FEATURES, sessionViewer: { prefixScroll: true } });
     assert.deepEqual(groups.current.workspace, hostWorkspace, "relayed verbatim");
     assert.deepEqual(groups.current.instances, []);
-    assert.deepEqual(groups.older.probe, { ok: true, features: KERNEL_FEATURES });
+    assert.deepEqual(groups.older.probe, { ok: true, features: KERNEL_FEATURES, sessionViewer: { prefixScroll: true } });
     assert.deepEqual(groups.older.workspace, { reachable: true }, "an older host's reachability-only object is relayed as it is");
-    assert.deepEqual(groups.none.probe, { ok: true, features: KERNEL_FEATURES });
+    assert.deepEqual(groups.none.probe, { ok: true, features: KERNEL_FEATURES, sessionViewer: { prefixScroll: true } });
     assert.equal(groups.none.workspace, null, "a host that reports no workspace relays null");
     assert.equal(groups.down.probe.ok, false);
     assert.equal(groups.down.workspace, null, "an unreachable host relays null");
@@ -987,9 +991,12 @@ test("roster (feature server-probe-features): a group's probe relays the host's 
     };
     const withFeatures = (features) => probeOf({ ...status, features });
     const valid = ["retire-home", "a", "0", "x2-y3", "a".repeat(64), "retire-home"];
-    assert.deepEqual(await withFeatures(valid), { ok: true, features: valid }, "relayed as answered: order and a duplicate kept");
-    assert.deepEqual(await probeOf(status), { ok: true, features: null }, "an older host (no key): unknown");
-    assert.deepEqual(await withFeatures([]), { ok: true, features: [] }, "[] is a valid answer, not unknown");
+    assert.deepEqual(await withFeatures(valid), { ok: true, features: valid, sessionViewer: null }, "relayed as answered: order and a duplicate kept");
+    assert.deepEqual(await probeOf(status), { ok: true, features: null, sessionViewer: null }, "an older host (no key): unknown");
+    // Its viewer fact, from the same answer (feature session-attach-prefix-scroll).
+    for (const prefixScroll of [true, false]) assert.deepEqual((await probeOf({ ...status, sessionViewer: { prefixScroll } })).sessionViewer, { prefixScroll });
+    for (const sessionViewer of [null, "yes", { prefixScroll: "true" }, {}]) assert.equal((await probeOf({ ...status, sessionViewer })).sessionViewer, null, JSON.stringify(sessionViewer));
+    assert.deepEqual(await withFeatures([]), { ok: true, features: [], sessionViewer: null }, "[] is a valid answer, not unknown");
     const exactly256 = Array.from({ length: 256 }, (_, i) => `f${i}`);
     assert.deepEqual((await withFeatures(exactly256)).features, exactly256, "256 entries is the limit");
     for (const [why, features] of [
@@ -998,9 +1005,9 @@ test("roster (feature server-probe-features): a group's probe relays the host's 
       ["an empty entry", [""]], ["a leading hyphen", ["-retire"]], ["a trailing hyphen", ["retire-"]], ["a double hyphen", ["retire--home"]],
       ["a 65-character entry", ["a".repeat(65)]], ["257 entries", Array.from({ length: 257 }, (_, i) => `f${i}`)],
       ["one bad entry among good ones (never filtered)", ["retire-home", "session-start", "Bad", "operations"]],
-    ]) assert.deepEqual(await withFeatures(features), { ok: true, features: null }, why);
+    ]) assert.deepEqual(await withFeatures(features), { ok: true, features: null, sessionViewer: null }, why);
     // A failed pull: exactly the error, never a features key.
-    const failed = async (answer) => { const p = await probeOf(answer); assert.equal(p.ok, false); assert.equal("features" in p, false); return p; };
+    const failed = async (answer) => { const p = await probeOf(answer); assert.equal(p.ok, false); assert.equal("features" in p || "sessionViewer" in p, false); return p; };
     assert.equal((await failed(Object.assign(new Error("ssh: connect to host build-host: Connection refused"), { status: 255, stderr: "ssh: connect to host build-host: Connection refused" }))).error.code, "E_SSH");
     assert.deepEqual((await failed({ schemaVersion: 1, ok: false, error: { code: "E_NO_DEPLOYMENT", message: "no deployment" } })).error, { code: "E_NO_DEPLOYMENT", message: "no deployment" }, "a remote ok:false is relayed as today");
     // A success envelope whose result is not an object is unknown too, and never sinks a healthy group.
@@ -1009,10 +1016,15 @@ test("roster (feature server-probe-features): a group's probe relays the host's 
       writeServers({ odd: { sshHost: "odd-host", workspace: "/srv/odd" }, healthy: { sshHost: "healthy-host", workspace: "/srv/healthy" } });
       const exec = async (_bin, argv) => JSON.stringify(argv.join(" ").includes("odd-host") ? answer : { root: "/srv/healthy/agents", agents: [], features: ["session-start"] });
       const groups = Object.fromEntries((await rosterGroups({ io: { execFileAsync: exec, serverId: `pair-${Math.random()}` } })).groups.map((g) => [g.server, g]));
-      assert.deepEqual(groups.odd.probe, { ok: true, features: null }, why);
+      assert.deepEqual(groups.odd.probe, { ok: true, features: null, sessionViewer: null }, why);
       assert.deepEqual(groups.odd.instances, [], why);
-      assert.deepEqual(groups.healthy.probe, { ok: true, features: ["session-start"] }, `${why}: the healthy group survives`);
+      assert.deepEqual(groups.healthy.probe, { ok: true, features: ["session-start"], sessionViewer: null }, `${why}: the healthy group survives`);
     }
+    // The host's viewer fact (feature session-attach-prefix-scroll), relayed the same way: only
+    // { prefixScroll: <boolean> } is relayed, as a copy; anything else, or no key, is null.
+    assert.deepEqual(hostSessionViewer({ sessionViewer: { prefixScroll: true } }), { prefixScroll: true });
+    assert.deepEqual(hostSessionViewer({ sessionViewer: { prefixScroll: false, later: 1 } }), { prefixScroll: false }, "a field it does not know is not relayed");
+    for (const result of [undefined, null, 42, {}, { sessionViewer: null }, { sessionViewer: [] }, { sessionViewer: "yes" }, { sessionViewer: {} }, { sessionViewer: { prefixScroll: "true" } }, { sessionViewer: { prefixScroll: 1 } }]) assert.equal(hostSessionViewer(result), null, JSON.stringify(result));
     // The predicate alone: a result that is not an object, or carries no key, is unknown.
     for (const result of [undefined, null, "features", 42, ["retire-home"]]) assert.equal(hostFeatures(result), null);
     const own = { features: ["a"] };
@@ -1057,7 +1069,7 @@ test("roster: every target is probed at once, each within its own deadline: host
     // In sequence the four would cost 12 s before the healthy host was asked.
     assert.ok(elapsed < 8000, `roster took ${elapsed} ms: the targets were not probed at once`);
     assert.deepEqual(out.groups.map((g) => g.server), [...SLOW, "good"], "registration order, whatever order the probes finished in");
-    assert.deepEqual(out.groups[4].probe, { ok: true, features: KERNEL_FEATURES });
+    assert.deepEqual(out.groups[4].probe, { ok: true, features: KERNEL_FEATURES, sessionViewer: { prefixScroll: true } });
     assert.deepEqual(out.groups[4].souls.map((s) => s.name), ["dev"]);
     for (const g of out.groups.slice(0, 4)) {
       assert.deepEqual(Object.keys(g.probe).sort(), ["error", "ok"], "a failed ssh carries no features key");
@@ -1104,7 +1116,7 @@ test("roster (#1117): a target that never answers fails with its own timeout; th
   const aborted = [];
   const { out, elapsed, groups } = await parallelRoster(["hung", "good"], { "hung-host": hangs(aborted), "good-host": () => statusOf("good") });
   assert.deepEqual(out.groups.map((g) => g.server), ["hung", "good"]);
-  assert.deepEqual(groups.good.probe, { ok: true, features: null });
+  assert.deepEqual(groups.good.probe, { ok: true, features: null, sessionViewer: null });
   assert.deepEqual(groups.good.instances.map((i) => [i.instance, i.running]), [["dev-good", true]]);
   assert.equal(groups.hung.probe.ok, false);
   assert.equal(groups.hung.probe.error.code, "E_SSH");
@@ -1119,7 +1131,7 @@ test("roster (#1117): five targets of which the first four never answer: the fif
   for (const id of hung) answers[`${id}-host`] = neverAnswers;
   const { out, elapsed, groups } = await parallelRoster([...hung, "nactiva"], answers);
   assert.deepEqual(out.groups.map((g) => g.server), [...hung, "nactiva"]);
-  assert.deepEqual(groups.nactiva.probe, { ok: true, features: null });
+  assert.deepEqual(groups.nactiva.probe, { ok: true, features: null, sessionViewer: null });
   assert.deepEqual(groups.nactiva.instances.map((i) => i.instance), ["dev-nactiva"]);
   for (const id of hung) assert.match(groups[id].probe.error.message, new RegExp(`^ssh to ${id}-host timed out: no answer within `), id);
   assert.deepEqual([...new Set(out.groups.filter((g) => !g.probe.ok).map((g) => g.probe.error.code))], ["E_SSH"]);
@@ -1133,7 +1145,7 @@ test("roster (#1117): a target whose ssh fails at once reports its own E_SSH; th
   assert.deepEqual(groups.down.probe, { ok: false, error: { code: "E_SSH", message: "ssh to down-host failed: ssh: connect to host down-host port 22: Connection refused" } });
   assert.deepEqual(groups.down.instances, []);
   for (const id of ["up1", "up2"]) {
-    assert.deepEqual(groups[id].probe, { ok: true, features: null }, id);
+    assert.deepEqual(groups[id].probe, { ok: true, features: null, sessionViewer: null }, id);
     assert.deepEqual(groups[id].instances.map((i) => i.instance), [`dev-${id}`], id);
   }
 });
@@ -1154,7 +1166,7 @@ test("roster (#1117): two registrations of one host are probed at once over the 
   };
   const { groups } = await parallelRoster(["one", "two"], { "shared-host": shared }, { hostOf: () => "shared-host" });
   assert.equal(most, 2, "both calls to the host were in flight together");
-  for (const id of ["one", "two"]) assert.deepEqual(groups[id].probe, { ok: true, features: null }, id);
+  for (const id of ["one", "two"]) assert.deepEqual(groups[id].probe, { ok: true, features: null, sessionViewer: null }, id);
   const control = (argv) => argv.filter((a) => a.startsWith("Control"));
   assert.ok(control(calls[0]).includes("ControlMaster=auto"), "the calls share the per-user control master");
   assert.deepEqual(control(calls[0]), control(calls[1]), "one ControlPath for the host");
@@ -1718,8 +1730,14 @@ test("attachArgv with a detach key: validated before anything is asked of the ho
     const f12 = attachArgv("build", { home, detachKey: "S-F12" }, { ...h.io, skipVersionCheck });
     assert.equal(f12.argv.at(-1), `${plainWord} --detach-key S-F12`);
   }
-  // Without a key nothing changes: no probe where the version check is skipped, the same word.
+  // --no-status-line travels as it is, with or without a key: a host that does not know it
+  // ignores it and shows its status line, so it asks no probe of its own.
   let h = host(["operations", DETACH_FEATURE]);
+  assert.equal(attachArgv("build", { home, statusLine: false }, { ...h.io, skipVersionCheck: true }).argv.at(-1), `${plainWord} --no-status-line`);
+  assert.deepEqual(h.sent, [], "no probe for it");
+  assert.equal(attachArgv("build", { home, detachKey: DETACH_KEY, statusLine: false }, { ...h.io, skipVersionCheck: true }).argv.at(-1), `${keyedWord} --no-status-line`);
+  // Without a key nothing changes: no probe where the version check is skipped, the same word.
+  h = host(["operations", DETACH_FEATURE]);
   assert.equal(attachArgv("build", { home }, { ...h.io, skipVersionCheck: true }).argv.at(-1), plainWord);
   assert.deepEqual(h.sent, []);
   h = host(["operations"]);

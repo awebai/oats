@@ -279,8 +279,8 @@ instance's terminal and press Enter yourself.
 ## Launch configurations
 
 An entry has `harness` (`pi` \| `claude` \| `codex`, required), `executable`
-(a bare name looked up on `PATH`, or a path relative to this deployment
-directory), `args` (literal, no shell), `env` (a literal string, or
+(a bare name looked up on `PATH`, or a path relative to the directory of the
+file that declares it), `args` (literal, no shell), `env` (a literal string, or
 `{ fromEnv: NAME }` resolved on the host at start), `model`, `yolo` and
 `default` (0.32; see [the harness default](#the-harness-default)). A launch
 configuration is a host choice: a soul never names one.
@@ -314,6 +314,63 @@ configuration is a host choice: a soul never names one.
   setup: auto mode, narrow allow rules for the `oats` and `gh` reads,
   `oats spawn` and reading `aw` mail and chat, and what stays gated.
   `yolo` is separate and is meant for isolated machines.
+
+### This machine's launch configurations
+
+`~/.oats/config/launch-configs.yaml` (`$OATS_HOME_DIR/config/` when
+`OATS_HOME_DIR` is set) declares launch configurations for every deployment
+on this machine. The person writes it, or an installer running as the
+person; nothing in OATS writes it.
+
+```yaml
+launch-configs:
+  claude-auto:
+    harness: claude
+    args: ["--permission-mode", "auto"]
+    default: true
+```
+
+- **One key.** The file holds `launch-configs:` and nothing else. Its entries
+  have exactly the schema of the deployment's block and the same checks.
+- **Missing or broken.** A missing file declares nothing. A file that is there
+  but cannot be read, is not valid YAML, is empty, lacks `launch-configs:`,
+  has any other top-level key, or holds an invalid entry is refused
+  (`E_LAUNCH_CONFIG_INVALID`, naming the file). The refusal reaches every
+  listing, preview, spawn and start that reads launch configurations. It is
+  never skipped. `oats doctor` reports the file and does not fail on it.
+- **Precedence, by name.** Each deployment reads the machine's entries under
+  its own. A deployment entry with the same name replaces the machine's
+  whole: no field of the machine's entry is kept. Its `shadows` names the
+  machine file. With no deployment in reach, the machine's entries alone
+  apply.
+- **Precedence, for the default.** The [harness default](#the-harness-default)
+  is per harness. A deployment's `default: true` for a harness wins over the
+  machine's: the machine's entry for that harness stays listed, but not as
+  default. The machine's default applies when the deployment declares none
+  for that harness. Two defaults for one harness within one file are refused,
+  as in the deployment.
+- **`source`** is the directory an entry was declared in: the deployment
+  directory, or `~/.oats/config`. A relative `executable` resolves against
+  it.
+- **Where it shows.**
+  - `oats launch-config list` (and `--json`) gives each entry's `source` and
+    `shadows`.
+  - `oats spawn --preview` names the machine file when it supplied the
+    configuration; the JSON carries `launchConfigSource`.
+  - `oats doctor --json` reports the file under `machineLaunchConfigs`:
+    `file`, `present`, `ok`, `configurations` (the names) and, when broken,
+    `error`.
+- **Writes.** `oats launch-config set|remove` writes only the deployment's
+  `oats-local.yaml`. Setting a name the machine also declares adds a
+  deployment entry that shadows it, and removing that entry uncovers the
+  machine's again. Desktop's launch-configuration editor writes the same
+  way: saving a row whose source is the machine file writes a deployment
+  entry of that name, which then shadows the machine's.
+- **Homes.** A spawn records the configuration as it was, the machine's like
+  the deployment's (`launchConfigSource` is the directory it came from). A
+  start or restart runs the recorded recipe; a later edit of either file
+  reaches a home only through `--launch-config <name>`, `--reselect-launch`
+  or a respawn.
 
 ### The harness default
 
