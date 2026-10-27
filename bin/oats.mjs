@@ -5121,8 +5121,8 @@ Usage:
                                             recorded launch as is; fresh on TASK.md when none is
                                             found (docs/execution-targets.md#resume-after-a-shutdown)
   oats session resume [--deployment <dir>]   resume every lost session of this computer's
-      [--plan] [--json]                     deployments (one sweep per machine; session.resume:
-                                            off opts a deployment out); --plan starts nothing
+      [--plan] [--json]                     deployments (one sweep per machine; at most 3 resumes
+                                            of a home per boot); --plan starts nothing
   oats session restart --home <abs-home>     stop the running harness (SIGTERM, bounded wait,
       [same flags] [--stop-grace <s>]        never escalated) and start it again in place under
                                             the same lock; a stop that is not observed is

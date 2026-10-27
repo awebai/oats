@@ -6,8 +6,11 @@
   own harness conversation (Claude `--resume`, pi `--session`) with the launch
   it recorded and a one-line resume notice as its prompt. Running instances
   are left alone; instances stopped with OATS, or whose harness ended by
-  itself, stay stopped. One sweep runs per machine (`E_RESUME_BUSY`); a
-  refused resume is reported again, not retried, in the same boot. The
+  itself, stay stopped: stopping with OATS is the only way to keep an instance
+  down. One sweep runs per machine (`E_RESUME_BUSY`); a refused resume is
+  reported again, not retried, in the same boot; and a home is started by
+  sweeps at most 3 times in a boot, then reported `keeps-getting-lost` until
+  the next boot (on Linux and macOS, which have a boot to count in). The
   clients run it when they open, in a later change. See
   [Resume after a shutdown](../execution-targets.md#resume-after-a-shutdown).
 - `oats session start --resume --home <abs>`: one home's resume. It refuses a
@@ -17,9 +20,6 @@
   the [Desktop CLI API](../desktop-cli-api.md#resume-a-lost-session---resume).
 - `sessionEnd` (`lost`, `stopped`, `exited`) on `oats status --json` rows of
   launched instances that do not run.
-- `session.resume: auto | off` in `oats-local.yaml` opts a deployment out of
-  the sweep ([configuration](../configuration.md#the-file)). OATS 0.68 and
-  older refuse the key.
 
 ## Changed
 

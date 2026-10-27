@@ -153,7 +153,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 | `instance-suggest-name` | `oats instance suggest-name --soul <soul> (--task <t> \| --task-file <f>) [--harness claude\|pi] [--model <m>] [--launch-config <n>] --json`: the name a `--suggest-name` spawn of `<soul>` would get, chosen on this machine for a spawn that may land on another, not made unique ([A name for a spawn elsewhere](#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)). Local only: `--server` is `E_BAD_ARGS`. Gate on the local probe; without it, the spawn goes unnamed (numbered, or named where it lands) | |
 | `spawn-apply-suggest-name` | `--suggest-name` on a spawn apply, without `--preview`: the apply names the instance as a preview's `--suggest-name` would, on the machine that spawns, and its result carries `naming` ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)). Routed, the host needs the feature (`E_REMOTE_INCOMPATIBLE`, nothing sent): gate on the host's `probe.features` and don't send the flag to a host without it | |
-| `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`; `oats-local.yaml` `session.resume`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
+| `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -4528,7 +4528,12 @@ leaves nothing of its own in the home: the private file each of the two
 writes goes through (`.oats-stop.json.tmp-<pid>`,
 `.oats-stop-receipt.<key>.json.<pid>.tmp`) is removed when its write or its
 rename fails. Before 0.53.0 each apply on a full disk left both there,
-empty.
+empty. With no record of the stop, the instance then reads
+[`sessionEnd: "lost"`](#row-session-end), and a resume sweep would start it
+again: stop it once more when the disk has space (a stop of an instance that
+reads `lost` records the stop, signalling nothing). The exit marker of the
+harness's window (0.69) is not the stop's: the window's shell writes it when
+the harness ends, and on a full disk its write fails too.
 
 In 0.52.0 a stop whose claim could not be written for one of those five
 codes was refused like the others, before anything was signalled
@@ -6037,8 +6042,8 @@ answer is the ordinary start answer plus one object:
   (`E_SESSION_RUNNING`, `E_SESSION_START_BUSY`, `E_SESSION_UNKNOWN`,
   `E_LAUNCH_LEGACY` for a home with no recipe, `E_LAUNCH_ENV_MISSING`, …); a
   development-channel prompt that stops it is `E_SPAWN_INCOMPLETE` with
-  `details.launchPrompts`, unchanged. `session.resume: off` does not apply:
-  it governs the sweep only.
+  `details.launchPrompts`, unchanged. A start by hand is neither bounded
+  nor counted by the sweep's 3 resumes per home per boot.
 - What is persisted is the ordinary launch: `instance.json` `command`, the
   pending receipt and the recipe never carry the selector or the notice, so a
   later ordinary start opens a fresh conversation.
@@ -6064,7 +6069,6 @@ whatever the rows say:
   "plan": false,
   "deployments": [
     { "deployment": "/abs/dep", "state": "ok", "swept": true },
-    { "deployment": "/abs/other", "state": "ok", "swept": false, "reason": "opted-out" },
     { "deployment": "/abs/gone", "state": "missing", "swept": false, "reason": "not-ok" }
   ],
   "rows": [
@@ -6076,11 +6080,10 @@ whatever the rows say:
 
 - **`deployments[]`**: one entry per deployment considered, sorted by path.
   `state` is the list's state of it (`ok`, `missing`, `not-a-deployment`,
-  `unreadable`). `swept: false` has a `reason`: `opted-out`
-  (`session.resume: off`, [configuration](configuration.md#the-file)),
-  `not-ok` (its state is not `ok`) or `unreadable` (its configuration or its
-  status could not be read; `code` and `message` then). An opted-out
-  deployment's homes are not listed.
+  `unreadable`). `swept: false` has a `reason`: `not-ok` (its state is not
+  `ok`) or `unreadable` (its status could not be read; `code` and `message`
+  then). Nothing opts a deployment out: stopping an instance with OATS is
+  the only way to keep it down.
 - **`rows[]`**: one row per home that is lost (whatever its outcome),
   running (`already-running`) or unknown (`skipped`, `unknown`); stopped,
   exited and never-launched homes are not listed. Fields: `deployment`,
@@ -6096,17 +6099,21 @@ whatever the rows say:
   | `already-running` | none |
   | `skipped` | `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`: it stopped or started between the read and the start) |
   | `blocked` | `resume-confirmation` (Claude's resume-cost dialog: the session runs and waits for its human), `launch-prompt` (`code` `E_SPAWN_INCOMPLETE`, with `launchPrompts`: the session is kept) |
-  | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start: reported again with that `code` and `message`, nothing started) |
+  | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start: reported again with that `code` and `message`, nothing started), `keeps-getting-lost` (sweeps started this home 3 times in this boot and it was lost again each time: nothing started, no `code`, a `message` that says so; a sweep tries it again after the next boot, or a person starts it by hand) |
 
 - `--plan`: the same shape with `"plan": true`; nothing is started, no lock
   taken, no note written. A lost home's outcome is the prediction: `resumed`
   (with `sessionId`) or `fresh` with its reason, `refused` for a noted
-  refusal or a home with no recipe. Clients should not call `--plan` on open.
+  refusal, a home sweeps started 3 times in this boot, or a home with no
+  recipe. Clients should not call `--plan` on open.
 - **One sweep per machine.** A second sweep while one runs answers
   `E_RESUME_BUSY` through the standard failure envelope
   (`{"schemaVersion":1,"ok":false,"error":{"code":"E_RESUME_BUSY","message":"…"}}`,
   exit 1); nothing was started, and a client shows no notice. The lock and
-  the per-boot note are kernel-private, not a contract.
+  the per-boot note (refusals, and each home's count of sweep starts that
+  launched something: `resumed`, `fresh`, `blocked`) are kernel-private,
+  not a contract. Without a boot id (neither Linux nor macOS) nothing is
+  noted or counted.
 - Errors: `E_RESUME_BUSY`; `E_BAD_ARGS` (`--deployment` that is not a
   deployment directory, `--server`, an unknown flag or an argument); without
   `--deployment`, the list's own errors (`E_DEPLOYMENTS_INVALID`,

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeLaunchCommand, parseLaunchCommand, renderLaunchCommand, renderLaunchRecipe, RESUME_NOTICE, startInstanceSession } from "../lib/core.mjs";
 import { readStartExited, sessionEndOf } from "../lib/session-end.mjs";
-import { acquireResumeLock, bootId, noteRefusals, readRefusalNote, resumeSessions, resumeStateDir, rowFromStart } from "../lib/session-resume.mjs";
+import { acquireResumeLock, bootId, noteSweep, readBootNote, resumeSessions, resumeStateDir, rowFromStart } from "../lib/session-resume.mjs";
 
 const scratch = (t) => { const d = mkdtempSync(join(tmpdir(), "oats-resume-")); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
 const write = (home, name, value) => writeFileSync(join(home, name), typeof value === "string" ? value : JSON.stringify(value));
@@ -145,18 +145,22 @@ test("the machine lock: one sweep at a time; a dead owner's lock, or another boo
   acquireResumeLock({ boot: "boot-1" })();
 });
 
-test("the per-boot note: refusals only, replaced in another boot, nothing kept without a boot id", (t) => {
+test("the per-boot note: refusals and each home's count of sweep starts, replaced in another boot, nothing kept without a boot id", (t) => {
   oatsHome(t);
   const a = { home: "/d/agents/s/instances/a", startId: "s1", code: "E_LAUNCH_ENV_MISSING", message: "m", at: "2026-10-27T10:00:00.000Z" };
-  noteRefusals([a], "boot-1");
-  assert.deepEqual(readRefusalNote("boot-1").refused, [a]);
-  assert.deepEqual(readRefusalNote("boot-2").refused, [], "another boot's note is no note");
-  noteRefusals([{ ...a, startId: "s2" }], "boot-1");
-  assert.deepEqual(readRefusalNote("boot-1").refused.map((r) => r.startId), ["s2"], "a home's entry is replaced");
-  noteRefusals([{ ...a, home: "/d/agents/s/instances/b" }], "boot-2");
-  assert.deepEqual(readRefusalNote("boot-2").refused.map((r) => r.home), ["/d/agents/s/instances/b"], "another boot's note is replaced whole");
+  const b = "/d/agents/s/instances/b";
+  noteSweep({ refusals: [a], launched: [b] }, "boot-1");
+  assert.deepEqual(readBootNote("boot-1"), { bootId: "boot-1", refused: [a], resumes: { [b]: 1 } });
+  assert.deepEqual(readBootNote("boot-2"), { bootId: "boot-2", refused: [], resumes: {} }, "another boot's note is no note");
+  noteSweep({ refusals: [{ ...a, startId: "s2" }], launched: [b] }, "boot-1");
+  noteSweep({ launched: [b, a.home] }, "boot-1");
+  const note = readBootNote("boot-1");
+  assert.deepEqual(note.refused.map((r) => r.startId), ["s2"], "a home's refusal is replaced");
+  assert.deepEqual(note.resumes, { [b]: 3, [a.home]: 1 }, "each launch counts once more, by home");
+  noteSweep({ launched: [b] }, "boot-2");
+  assert.deepEqual(readBootNote("boot-2"), { bootId: "boot-2", refused: [], resumes: { [b]: 1 } }, "another boot's note is replaced whole");
   rmSync(resumeStateDir(), { recursive: true });
-  noteRefusals([a], null);
+  noteSweep({ refusals: [a], launched: [b] }, null);
   assert.equal(existsSync(resumeStateDir()), false, "no boot id: nothing written");
 });
 

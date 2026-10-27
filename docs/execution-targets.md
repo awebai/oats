@@ -1112,7 +1112,9 @@ deployment in this computer's list
 ([workspaces.md](workspaces.md#this-computers-deployments)), each in its own
 harness conversation, with the launch it recorded. OATS Desktop and `oats
 tui` run it once when they open. Running instances are left alone; instances
-stopped with OATS, or whose harness ended by itself, stay stopped.
+stopped with OATS, or whose harness ended by itself, stay stopped. Stopping an
+instance with OATS is the only way to keep it down: nothing opts a deployment
+or an instance out of the sweep.
 
 #### How a session's end is read
 
@@ -1186,20 +1188,25 @@ A resume answers no prompt that an ordinary start does not:
 
 `oats session resume` reads this computer's list of deployments and never
 writes it, and skips a deployment `oats deployments remove` took out of it;
-`--deployment <dir>` sweeps one directory, listed or not. Per deployment it skips
-one whose `oats-local.yaml` says `session.resume: off`
-([configuration](configuration.md#the-file)), then starts each lost home with
-`--resume` in that home's own deployment scope, at most 4 at once. `--plan`
-says what it would do and starts nothing. Its answer is in
+`--deployment <dir>` sweeps one directory, listed or not. It starts each lost
+home with `--resume` in that home's own deployment scope, at most 4 at once.
+`--plan` says what it would do and starts nothing. Its answer is in
 [desktop-cli-api.md](desktop-cli-api.md#the-machine-sweep-oats-session-resume).
 
 - One sweep runs per machine: a second one answers `E_RESUME_BUSY`. A lock
   left by a process that is gone, or by another boot, is taken over.
 - A refused resume is not retried in the same boot: a later sweep reports it
-  again (`refused-this-boot`) and starts nothing. The boot is the boot id on
-  Linux and the boot time on macOS; elsewhere every sweep tries again. A home
-  that resumed and is lost again in the same boot is resumed again.
-- The lock and the refusal note live in `session-resume/` under
+  again (`refused-this-boot`) and starts nothing.
+- A home is started by sweeps at most 3 times in a boot. A home lost again
+  after each resume (a harness that crashes the host or its terminal server,
+  say) is then reported `keeps-getting-lost` and not started again until the
+  next boot; start it by hand to try now. Every sweep start that launched
+  something counts (resumed, fresh or blocked), by home; a refused, skipped or
+  busy one does not. `oats session start --resume` run by hand is neither
+  bounded nor counted.
+- The boot is the boot id on Linux and the boot time on macOS. Elsewhere there
+  is no boot: nothing is noted or counted, and every sweep tries again.
+- The lock and the per-boot note live in `session-resume/` under
   `~/.oats` (`$OATS_HOME_DIR` when set). Both are kernel-private, not a
   contract.
 - Local only: a client does not resume a server's instances. A server runs

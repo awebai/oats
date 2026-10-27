@@ -1,15 +1,13 @@
 // Session resume (#1559) on real tmux: the fixture's own `oats` server in a private TMUX_TMPDIR,
 // stand-in harnesses (one node script, named by absolute path in each deployment's launch
 // configurations) that record the argv and environment they were started with, write a transcript
-// where their harness would (Claude's projects, pi's sessions), and idle. Three deployments in one
-// machine registry: A and C differ in their launch configurations, B opts out
-// (`session.resume: off`).
+// where their harness would (Claude's projects, pi's sessions), and idle. Two deployments in one
+// machine registry, A and C, differ in their launch configurations.
 //
 // The homes are started, one is stopped with OATS, one ends on its own (`exit 0`), and the tmux
 // server is killed. `oats session resume --json` then brings back the lost ones in their own
 // conversations (asserted on the argv the stand-ins received), under their own deployment's launch
-// configuration; the stopped and the exited ones are not listed; B's home is not started; a second
-// sweep reports `already-running` and starts nothing; a refusal is reported again in the same boot
+// configuration; the stopped and the exited ones are not listed; a second sweep reports `already-running` and starts nothing; a refusal is reported again in the same boot
 // (`refused-this-boot`) without a second start; a held lock answers E_RESUME_BUSY.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,19 +24,33 @@ const hasTmux = !spawnSync("tmux", ["-V"], { stdio: "ignore" }).error;
 const TMUX = { skip: !hasTmux && "tmux is not installed" };
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
-const base = fixtureBase("oats-resume-");
-const restoreEnvironment = hasTmux ? isolateSessionEnvironment(base) : () => {};
-const socket = hasTmux ? oatsSocket() : null;
-const oatsHome = join(base, "oats-home");
-const records = join(base, "argv");
-mkdirSync(records, { recursive: true });
+// The fixture, made in test.before and removed in test.after (docs/implementation.md, "Tests and
+// gates"): the directory, the isolated environment with its private tmux server, the stand-in, the
+// deployments and the machine's registry.
+let base, socket, oatsHome, records, standIn, machine;
+let restoreEnvironment = () => {};
+const deployments = {};
+/** Deployments a test makes for itself: their homes run on the one server, so they are removed with
+ *  the others, once it is gone. */
+const later = [];
+const config = (harness, mark, extra = {}) => ({ harness, executable: standIn, env: { RESUME_MARK: mark, STANDIN_HARNESS: harness,
+  ...(harness === "claude" ? { CLAUDE_CONFIG_DIR: join(base, `claude-${mark}`) } : harness === "pi" ? { PI_CODING_AGENT_DIR: join(base, `pi-${mark}`) } : { CODEX_HOME: join(base, `codex-${mark}`) }), ...(extra.env ?? {}) }, args: extra.args ?? [] });
 
-// The stand-in harness. Its argv, RESUME_MARK and RESUME_SECRET go to <records>/<instance>.<n>.json.
-// A fresh launch (no --resume / --session) writes a transcript whose cwd is the home, unless
-// NO_TRANSCRIPT is set. `exit-now` in the home: it ends at once with status 0. `show-dialog` in the
-// home: a resumed launch paints Claude's resume-cost dialog; otherwise it paints Claude's banner.
-const standIn = join(base, "stand-in");
-writeFileSync(standIn, `#!${process.execPath}
+test.before(() => {
+  if (!hasTmux) return;
+  base = fixtureBase("oats-resume-");
+  restoreEnvironment = isolateSessionEnvironment(base);
+  socket = oatsSocket();
+  oatsHome = join(base, "oats-home");
+  records = join(base, "argv");
+  mkdirSync(records, { recursive: true });
+
+  // The stand-in harness. Its argv, RESUME_MARK and RESUME_SECRET go to <records>/<instance>.<n>.json.
+  // A fresh launch (no --resume / --session) writes a transcript whose cwd is the home, unless
+  // NO_TRANSCRIPT is set. `exit-now` in the home: it ends at once with status 0. `show-dialog` in the
+  // home: a resumed launch paints Claude's resume-cost dialog; otherwise it paints Claude's banner.
+  standIn = join(base, "stand-in");
+  writeFileSync(standIn, `#!${process.execPath}
 const { existsSync, mkdirSync, realpathSync, renameSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { randomUUID } = require("node:crypto");
@@ -66,30 +78,26 @@ process.stdout.write(resumed && existsSync(join(home, "show-dialog"))
 setInterval(() => {}, 1 << 30);
 `, { mode: 0o755 });
 
-const config = (harness, mark, extra = {}) => ({ harness, executable: standIn, env: { RESUME_MARK: mark, STANDIN_HARNESS: harness,
-  ...(harness === "claude" ? { CLAUDE_CONFIG_DIR: join(base, `claude-${mark}`) } : harness === "pi" ? { PI_CODING_AGENT_DIR: join(base, `pi-${mark}`) } : { CODEX_HOME: join(base, `codex-${mark}`) }), ...(extra.env ?? {}) }, args: extra.args ?? [] });
-const deployments = hasTmux ? {
-  A: v2Deployment({ name: "a", local: { "launch-configs": { "claude-a": config("claude", "dep-a", { args: ["--from-a"] }), "pi-a": config("pi", "dep-a"), "codex-a": config("codex", "dep-a"), "exit-a": config("claude", "dep-a", { env: { EXIT_NOW: "1", NO_TRANSCRIPT: "1" } }) } } }),
-  B: v2Deployment({ name: "b", local: { session: { resume: "off" }, "launch-configs": { "claude-b": config("claude", "dep-b") } } }),
-  C: v2Deployment({ name: "c", local: { "launch-configs": {
+  deployments.A = v2Deployment({ name: "a", local: { "launch-configs": { "claude-a": config("claude", "dep-a", { args: ["--from-a"] }), "pi-a": config("pi", "dep-a"), "codex-a": config("codex", "dep-a"), "exit-a": config("claude", "dep-a", { env: { EXIT_NOW: "1", NO_TRANSCRIPT: "1" } }) } } });
+  deployments.C = v2Deployment({ name: "c", local: { "launch-configs": {
     "claude-c": config("claude", "dep-c", { args: ["--from-c"], env: { NO_TRANSCRIPT: "1" } }),
-    "needs-src": config("claude", "dep-c", { env: { RESUME_SECRET: { fromEnv: "RESUME_TEST_SRC" } } }) } } }),
-} : {};
-// One machine: one OATS_HOME_DIR, whose registry lists the three deployments.
-const machine = { OATS_HOME_DIR: oatsHome };
-if (hasTmux) {
+    "needs-src": config("claude", "dep-c", { env: { RESUME_SECRET: { fromEnv: "RESUME_TEST_SRC" } } }) } } });
+  // One machine: one OATS_HOME_DIR, whose registry lists the two deployments.
+  machine = { OATS_HOME_DIR: oatsHome };
   mkdirSync(join(oatsHome, "config"), { recursive: true });
   writeFileSync(join(oatsHome, "config", "deployments.json"), JSON.stringify({ schemaVersion: 1, imports: {},
     deployments: Object.values(deployments).map((fx) => ({ path: fx.dep, addedAt: "2026-10-27T00:00:00.000Z", via: "cli" })) }, null, 2) + "\n");
-}
+});
 
-/** Deployments a test makes for itself: their homes run on the one server, so they are removed with
- *  the others, once it is gone. */
-const later = [];
+// The private server is killed first, so each fixture's check that nothing still works in it holds;
+// the directory is removed whatever failed before.
 test.after(() => {
-  try { if (hasTmux) execFileSync("tmux", ["-u", "-S", socket, "kill-server"], { stdio: "ignore" }); } catch { /* gone */ }
-  restoreEnvironment();
-  for (const fx of [...Object.values(deployments), ...later]) fx.cleanup();
+  if (!base) return;
+  try { execFileSync("tmux", ["-u", "-S", socket, "kill-server"], { stdio: "ignore" }); } catch { /* gone */ }
+  let failed;
+  for (const fx of [...Object.values(deployments), ...later]) { try { fx.cleanup(); } catch (e) { failed ??= e; } }
+  try { restoreEnvironment(); } finally { rmSync(base, { recursive: true, force: true }); }
+  if (failed) throw failed;
 });
 
 /** The stand-in's records of `instance`, oldest first. */
@@ -115,8 +123,8 @@ async function startHome(fx, home, name, extra = {}) {
   await waitUntil(() => launches(name).length > 0, `${name}'s stand-in to run`);
 }
 
-test("after the tmux server dies, the sweep resumes the lost homes in their own conversations, under their own deployment's launch configuration; stopped, exited and opted-out homes stay as they are", TMUX, async () => {
-  const { A, B, C } = deployments;
+test("after the tmux server dies, the sweep resumes the lost homes in their own conversations, under their own deployment's launch configuration; stopped and exited homes stay as they are", TMUX, async () => {
+  const { A, C } = deployments;
   const homes = {};
   // A: lost ones of each harness, one stopped with OATS, one that ends on its own, one launched by
   // spawn itself (its window's marker and startId), one that will stop at the resume-cost dialog.
@@ -128,9 +136,7 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   await waitUntil(() => launches("a6").length > 0, "a6's stand-in, launched by spawn, to run");
   const spawned = readJson(join(homes.a6, "instance.json"));
   assert.match(spawned.startId ?? "", /^[0-9a-f-]{36}$/, "spawn records the start id of its launch");
-  // B (opted out) and C (its own launch configurations).
-  homes.b1 = await spawnHome(B, "b1", "claude-b");
-  await startHome(B, homes.b1, "b1");
+  // C: its own launch configurations.
   homes.c1 = await spawnHome(C, "c1", "claude-c");
   homes.c2 = await spawnHome(C, "c2", "needs-src", { env: { RESUME_TEST_SRC: "s3cret" } });
   await startHome(C, homes.c1, "c1");
@@ -158,7 +164,6 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   const rowsA = statusRows(A);
   assert.deepEqual(Object.fromEntries(Object.entries(rowsA).map(([n, r]) => [n, [r.running, r.sessionEnd]])),
     { a1: [false, "lost"], a2: [false, "stopped"], a3: [false, "exited"], a4: [false, "lost"], a5: [false, "lost"], a6: [false, "lost"], a7: [false, "lost"] });
-  assert.equal(statusRows(B).b1.sessionEnd, "lost");
 
   // Exited and stopped homes are refused one by one, before anything starts.
   for (const name of ["a2", "a3"]) {
@@ -187,10 +192,10 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   const answer = envelope.result;
   assert.deepEqual([answer.schemaVersion, answer.plan], [1, false]);
   assert.deepEqual(answer.deployments, [
-    { deployment: A.dep, state: "ok", swept: true }, { deployment: B.dep, state: "ok", swept: false, reason: "opted-out" }, { deployment: C.dep, state: "ok", swept: true },
+    { deployment: A.dep, state: "ok", swept: true }, { deployment: C.dep, state: "ok", swept: true },
   ].sort((x, y) => (x.deployment < y.deployment ? -1 : 1)));
   const rows = Object.fromEntries(answer.rows.map((r) => [r.instance, r]));
-  assert.deepEqual(Object.keys(rows).sort(), ["a1", "a4", "a5", "a6", "a7", "c1", "c2"], "stopped, exited and opted-out homes are not listed");
+  assert.deepEqual(Object.keys(rows).sort(), ["a1", "a4", "a5", "a6", "a7", "c1", "c2"], "stopped and exited homes are not listed");
   for (const r of answer.rows) {
     assert.deepEqual(Object.keys(r).slice(0, 4), ["deployment", "instance", "home", "outcome"]);
     if (r.warnings !== undefined) assert.ok(Array.isArray(r.warnings) && r.warnings.length && r.warnings.every((w) => typeof w === "string"), JSON.stringify(r.warnings));
@@ -219,8 +224,6 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   assert.deepEqual(last("c1").args, ["--from-c", "--", "@TASK.md"], "C's home under C's launch configuration, fresh (R2)");
   assert.equal(last("c1").mark, "dep-c");
   assert.equal(before("c2"), counts.c2, "a refused start launched nothing");
-  assert.equal(before("b1"), counts.b1, "the opted-out deployment's home was not started");
-  assert.equal(statusRows(B).b1.sessionEnd, "lost", "and still reads lost");
 
   // What is persisted stays the ordinary launch: instance.json, the pending receipt and the recipe.
   for (const name of ["a1", "a4"]) {
@@ -326,4 +329,53 @@ test("`session resume --deployment <dir>` sweeps that deployment alone, register
   assert.deepEqual(swept.rows.map((r) => [r.instance, r.outcome]), [["d2", "resumed"]]);
   await waitUntil(() => launches("d2").length === counts.d2 + 1, "d2's stand-in to run again");
   assert.deepEqual([launches("d1").length, launches("d3").length], [counts.d1, counts.d3], "the stopped homes were not started");
+});
+
+test("a home lost again after each resume is started by sweeps at most 3 times in a boot, then answered keeps-getting-lost, predicted by --plan; a start by hand is not counted; another boot starts it again", { skip: TMUX.skip || (!bootId() && "this host has no boot id: nothing is counted") }, async () => {
+  const E = v2Deployment({ name: "e", local: { "launch-configs": { "claude-e": config("claude", "dep-e") } } });
+  later.push(E);
+  const home = await spawnHome(E, "e1", "claude-e");
+  await startHome(E, home, "e1");
+  const notePath = join(oatsHome, "session-resume", "note.json");
+  const count = () => (existsSync(notePath) ? readJson(notePath).resumes?.[home] : undefined);
+  const lose = async () => {
+    const { tmux } = readJson(join(home, "instance.json"));
+    execFileSync("tmux", ["-u", tmux.socket.includes("/") ? "-S" : "-L", tmux.socket, "kill-window", "-t", `${tmux.session}:${tmux.window}`], { stdio: "ignore" });
+    await waitUntil(() => statusRows(E).e1.sessionEnd === "lost", "e1 to read lost");
+  };
+  const sweep = (...flags) => ok(cli(E, ["session", "resume", "--deployment", E.dep, ...flags, "--json"]), `sweep ${flags.join(" ")}`).rows;
+  assert.equal(count(), undefined, "a start by hand is not counted");
+
+  for (let n = 1; n <= 3; n++) {
+    await lose();
+    const runs = launches("e1").length;
+    assert.deepEqual(sweep().map((r) => [r.instance, r.outcome]), [["e1", "resumed"]], `sweep ${n}`);
+    await waitUntil(() => launches("e1").length === runs + 1, `e1's stand-in to run after sweep ${n}`);
+    assert.equal(count(), n, `sweep ${n} is counted`);
+  }
+
+  // A resume by hand is neither bounded nor counted.
+  await lose();
+  let runs = launches("e1").length;
+  assert.equal(ok(cli(E, ["session", "start", "--resume", "--home", home, "--json"]), "start --resume by hand").resume.resumed, true);
+  await waitUntil(() => launches("e1").length === runs + 1, "e1's stand-in to run after the start by hand");
+  assert.equal(count(), 3);
+
+  // The fourth sweep: predicted, then answered, and nothing started.
+  await lose();
+  runs = launches("e1").length;
+  const keeps = (r) => { assert.deepEqual([r.instance, r.outcome, r.reason, r.code], ["e1", "refused", "keeps-getting-lost", undefined]); assert.match(r.message, /resumed 3 times in this boot/); };
+  const [predicted] = sweep("--plan");
+  keeps(predicted);
+  const [answered] = sweep();
+  keeps(answered);
+  assert.equal(launches("e1").length, runs, "nothing was started");
+  assert.equal(count(), 3);
+  assert.equal(statusRows(E).e1.sessionEnd, "lost");
+
+  // Another boot's count is no count.
+  writeFileSync(notePath, JSON.stringify({ ...readJson(notePath), bootId: "another-boot" }));
+  assert.deepEqual(sweep().map((r) => [r.instance, r.outcome]), [["e1", "resumed"]]);
+  await waitUntil(() => launches("e1").length === runs + 1, "e1's stand-in to run in the new boot");
+  assert.deepEqual(readJson(notePath).resumes, { [home]: 1 }, "the note of this boot, the count started again");
 });

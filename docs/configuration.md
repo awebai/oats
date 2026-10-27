@@ -31,7 +31,6 @@ host:
   name: ana-laptop                           # which workspace triggers and schedules run here
 session:                                     # terminal defaults for NEW launches on this host (0.31)
   tmuxSession: oats-agents                   # the tmux session new tmux instances open in
-  resume: auto                               # bring back lost sessions after a reboot (0.69); off: never
 triggers:
   disabled: [platform/nightly-review]
 schedules:
@@ -67,7 +66,6 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `defaultTeam` | This deployment's default team: a label of a local or shared team, under the same condition as `teams`. A soul's own default in the workspace's `souls:` wins over it; it wins over the workspace's `defaultTeam`. The first `oats teams add` sets it (unless `--no-default`); `oats teams default <label>` changes it, and `--if-absent` / `--expect <label>` change it only where there is no effective default / it is that label. |
 | `souls.disabled` | Souls not run on this machine; a spawn is refused with `E_SOUL_DISABLED`. A bare name disables every soul of that name; `<package>/<soul>` or `<member>/<soul>` disables one. It is for a soul that must not run here (broken, or not for this machine), with the reason in a comment; it is not a gate for souls without a `launch:`, which take the host default like any launch nobody named (see [Launch preferences](#launch-preferences)). |
 | `session.tmuxSession` | The tmux session new tmux instances open their windows in (0.31). Absent: `OATS_TMUX_SESSION`, else `PI_AGENTS_TMUX_SESSION` (the pre-0.31 variable), else `oats-agents`. `session: { tmuxSession: pi-agents }` keeps the pre-0.31 layout. `oats inspect --json` reports it as `session`. |
-| `session.resume` | `auto` (the default) or `off` (0.69, #1559). Whether `oats session resume`, the sweep a client runs when it opens, brings back this deployment's instances whose session was lost after a shutdown, a reboot or a crash ([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown)). `off`: the sweep skips this deployment and reports it `opted-out`; `oats session start --resume` still works per home. OATS 0.68 and older refuse the key (`E_WORKSPACE_SCHEMA`). |
 | `host.name` | This machine's name. A workspace trigger or schedule runs only on the host named by its `runsOn` ([schedules.md](schedules.md)). |
 | `automations.trust` | The workspace triggers and schedules (`<member>/<id>`) this host agrees to run, or `"*"` for every one the workspace places here (0.30). Absent or empty: none runs. See [Who runs workspace automations](#who-runs-workspace-automations). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |
