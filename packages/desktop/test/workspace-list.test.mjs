@@ -461,9 +461,10 @@ test("moves faster than a switch go on from the pick on its way, not from what i
   s.controller.begin()(A, [A, B, C]); await tick();
   assert.equal(s.controller.step(1), true); assert.equal(s.controller.step(1), true);
   assert.deepEqual(s.calls.selected, [B.id, C.id], "two presses, two moves");
-  assert.equal(s.controller.step(1), false, "C is the last");
-  assert.equal(s.controller.step(-1), true);
-  assert.deepEqual(s.calls.selected, [B.id, C.id, B.id]);
+  assert.equal(s.controller.step(1), true, "from C, the pick on its way, past the last row: the first (from A, what is shown, it would be B)");
+  assert.deepEqual(s.calls.selected, [B.id, C.id, A.id]);
+  assert.equal(s.controller.step(-1), true, "from A, the pick on its way, before the first row: the last");
+  assert.deepEqual(s.calls.selected, [B.id, C.id, A.id, C.id]);
 });
 
 test("the latest pick wins: the current row picked while another pick is on its way supersedes it; a refused pick leaves none", async (t) => {
