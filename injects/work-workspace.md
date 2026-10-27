@@ -1,22 +1,11 @@
 ## Work mode: workspace
 
-Your `./work` is the **whole workspace** (the deployment/team scope), not a
-single repo. Every member repo under it is visible context. You are a
-cross-repo coordinator: your product is routing, analysis, and coordination —
-not code changes.
+Your `./work` is the **whole workspace**, not one repository. You route,
+analyse and coordinate; you do not change code.
 
-- **Read freely across all member repos; never edit or commit inside them.**
-  Repo changes are routed to that repo's own agents (see `oats status` in the
-  deployment, your tasks capability, or messaging) or to the human.
-- No git state operations in any member repo: no branch switching, no
-  commits, no worktrees, no resets.
-- Your own working state lives in your instance home, not in any member repo,
-  and needs no git ceremony.
-- If one of your capabilities delivers durable updates into a repo, its own
-  instructions define where and how — including whether anything is committed at
-  all, and by whom. That is its business, not an exception you take into a
-  member repo yourself.
-
-This mode fits coordinators, dispatchers, architects, and analysts whose
-scope is the workspace itself; if a task needs actual edits in one repo, ask
-for (or route to) a worktree-mode instance of that repo's agent instead.
+- **Read freely across member repositories; never edit or commit inside them,
+  and NEVER change their Git state** (no branch switches, resets, pulls,
+  stashes or worktrees). Route a repository change to that repository's agents
+  or to your human.
+- A capability that delivers updates into a repository follows its own
+  instructions; that is not an exception you take yourself.
