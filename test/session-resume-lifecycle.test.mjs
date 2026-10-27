@@ -250,6 +250,30 @@ test("one claim for every spelling of a home: a resume of H/., of H through a li
   }
 });
 
+for (const action of ["stop", "upgrade"]) {
+  test(`a link changed after the resume took its claim does not move the start: a resume of L -> A, L then pointed at B whose ${action} holds its claim, resumes A and starts nothing at B`, TMUX, async (t) => {
+    const f = fixture(t);
+    const a = await f.lostHome(`a-${action}`), b = await f.lostHome(`b-${action}`);
+    const link = join(f.fx.base, "home-link");
+    symlinkSync(a.home, link);
+    const claim = await f.claim(b, action);
+    const run = await heldOnClaim(f, a, ["session", "start", "--resume", "--home", link, "--json"], "resume");
+    try {
+      rmSync(link);
+      symlinkSync(b.home, link);
+      run.release("claimed");
+      const r = await run.done;
+      assert.equal(r.timedOut.length, 0, r.stdout + r.stderr);
+      const answer = JSON.parse(r.stdout);
+      assert.deepEqual([answer.ok, answer.result?.home], [true, a.home], r.stdout + r.stderr);
+      await waitUntil(() => f.launches(a.name) === 2, "A's resumed harness to start", 30000);
+      assert.equal(f.launches(b.name), 1, "nothing was started at B");
+      assert.equal(readFileSync(b.lock, "utf8"), claim, `B's ${action} claim is as it was`);
+      assert.deepEqual(f.claimFiles(a), [], "the resume released A's claim");
+    } finally { await run.finish(); }
+  });
+}
+
 test("an upgrade that took the claim and wrote its partial receipt after the sweep read the row: the start is busy, not a partial upgrade; the row is skipped lifecycle-busy, nothing is noted or judged", TMUX, async (t) => {
   const f = fixture(t);
   const i = await f.lostHome("late-upgrade");
