@@ -6,11 +6,11 @@ host that comes from it.
 
 ## Upgrading to the latest version
 
-The latest version is **OATS 0.69.0** ([release notes](release-notes/v0.69.0.md)).
-The 0.69.0 Desktop accepts OATS CLIs `>=0.26.0 <0.70.0`.
+The latest version is **OATS 0.69.1** ([release notes](release-notes/v0.69.1.md)).
+The 0.69.1 Desktop accepts OATS CLIs `>=0.26.0 <0.70.0`.
 
 **First, read the `## Upgrade` section of every release after yours, up to
-0.69.0,** in the [release notes](release-notes/): it says what to do before
+0.69.1,** in the [release notes](release-notes/): it says what to do before
 the CLI changes, and what else must change with it (the Desktop, another
 tool, a package pin). [Coming from an older version](#coming-from-an-older-version)
 names the releases that ask for more than the steps below. `oats version`
@@ -19,8 +19,8 @@ prints the version you have.
 Then, on each host:
 
 ```sh
-                                     # 0. where the Desktop is installed: Desktop 0.69.0 first
-npm install -g @awebai/oats@0.69.0   # 1. the CLI
+                                     # 0. where the Desktop is installed: Desktop 0.69.1 first
+npm install -g @awebai/oats@0.69.1   # 1. the CLI
 oats update                          # 2. in each deployment: the plan, then it asks before it runs
 oats doctor                          # 3. in the same deployment
 ```
@@ -166,8 +166,10 @@ of the Desktop and the CLI, and an optional package pin. A change a script
 must follow is in its release's Upgrade section whether or not it is listed
 here.
 
-- **[0.69.0](release-notes/v0.69.0.md#upgrade):** the Desktop first, then the
-  CLI: a 0.68 Desktop refuses a 0.69 CLI. Every host that shares a workspace
+- **[0.69.1](release-notes/v0.69.1.md#upgrade):** 0.69.0 was tagged but never
+  published; 0.69.1 carries all of it, so follow
+  [0.69.0's Upgrade section](release-notes/v0.69.0.md#upgrade): the Desktop
+  first, then the CLI: a 0.68 Desktop refuses a 0.69 CLI. Every host that shares a workspace
   runs OATS 0.68.0 or later before any of them syncs to oats.aweb 1.32.0.
 - **[0.68.0](release-notes/v0.68.0.md#upgrade):** the Desktop first, then the
   CLI: a 0.67 Desktop refuses a 0.68 CLI. The catalog pins new package versions; after `oats sync`, a stopped
