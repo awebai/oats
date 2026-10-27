@@ -114,6 +114,11 @@
 //     <features> when present, so its presence stays frozen and a new feature
 //     edits no golden; test/cli-json-contract.test.mjs pins its value (status
 //     `features` deep-equals version `features`).
+//   - status.json `sessionViewer` (feature session-attach-prefix-scroll): this
+//     host's tmux fact, `prefixScroll` true on tmux 3.3 and later, so it differs
+//     by host. It is replaced by the string <sessionViewer> when present, so its
+//     presence stays frozen and not the host's tmux; test/cli-json-contract.test.mjs
+//     pins its value against fixture tmux binaries.
 //
 // The stub retire hook deliberately reports itself through its returned `meta`
 // rather than by writing a file into the instance home. A file written after the
@@ -542,6 +547,7 @@ function orderStatus(stdout) {
   doc.agents.sort(byKey("name"));
   for (const a of doc.agents) (a.instances || []).sort(byKey("instance"));
   if (Object.hasOwn(doc, "features")) doc.features = "<features>";
+  if (Object.hasOwn(doc, "sessionViewer")) doc.sessionViewer = "<sessionViewer>";
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
 
