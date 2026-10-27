@@ -320,7 +320,7 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / ↓ | the same | the same | yes (a named exception, principle 2) |
 | Show the previous / next workspace of the list (`workspace.previous`, `workspace.next`; the leader's ↑ ↓) | ⌥↑ / ⌥↓ | Alt+↑ / Alt+↓ | none (the leader): Alt+↑ / ↓ are the program's | none (the leader) | yes |
 | Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Alt+Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
-| Spawn instance: choose a soul in Workspace (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | the same | yes |
+| Souls: choose a soul to spawn (Workspace › Souls) (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | the same | yes |
 | Close tab (`tabs.close`) | ⌘W | Alt+W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
 | Next / previous tab of the active tab's strip, wrapping; split, the focused group's (`tabs.next`, `tabs.prev`) | ⌃Tab / ⌃⇧Tab | Ctrl+Tab / Ctrl+Shift+Tab | the same | the same | yes |
 | Next / previous tab, second chord (`tabs.nextPage`, `tabs.prevPage`; the leader's → ←) | ⌥→ / ⌥← | Alt+→ / Alt+← | Alt+Shift+→ / Alt+Shift+← | Alt+Shift+→ / Alt+Shift+← | yes (in Ctrl+Alt and Ctrl+Shift, a named exception, principle 2) |

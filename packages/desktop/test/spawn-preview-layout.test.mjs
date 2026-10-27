@@ -95,8 +95,8 @@ test('type and rhythm: labels 11.5px muted, values 12.5px fg at line-height ≥1
   const rule = selector => spawnDialogCSS.match(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`, 'm'))?.[1] ?? '';
   assert.match(rule('.spawn-preview-facts'), /font-size:12\.5px; line-height:1\.5; color:var\(--fg\)/);
   assert.match(rule('.spawn-preview-facts dt'), /color:var\(--muted\); font-size:11\.5px;/);
-  assert.match(rule('.spawn-preview-name'), /color:var\(--fg\); font:650 13\.5px\/1\.45 var\(--mono,monospace\)/);
-  assert.match(rule('.spawn-preview-home'), /color:var\(--muted\); font:11\.5px\/1\.45 var\(--mono,monospace\)/);
+  assert.match(rule('.spawn-preview-name'), /color:var\(--fg\); font-weight:650; font-size:13\.5px; line-height:1\.45; font-family:var\(--mono,monospace\)/);
+  assert.match(rule('.spawn-preview-home'), /color:var\(--muted\); font-weight:normal; font-size:11\.5px; line-height:1\.45; font-family:var\(--mono,monospace\)/);
   assert.match(rule('.spawn-preview'), /container:spawn-preview \/ inline-size/);
   const narrow = spawnDialogCSS.match(/@container spawn-preview \(max-width:299px\) \{([\s\S]*?)\n\}/);
   assert.ok(narrow, 'a container query on the preview column');

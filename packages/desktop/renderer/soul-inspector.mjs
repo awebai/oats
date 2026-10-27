@@ -143,7 +143,7 @@ ${soulTeamsHereCSS}
 .inspector-content h3 { margin:var(--section-gap) 0 var(--title-gap); font-size:10.5px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; }
 .inspector-content p { line-height:1.5; }
 .inspector-content .muted { color:var(--muted); }
-.inspector-content pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 var(--mono,monospace); }
+.inspector-content pre { white-space:pre-wrap; overflow-wrap:anywhere; font-weight:normal; font-size:12px; line-height:1.6; font-family:var(--mono,monospace); }
 .inspector-facts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:8px 12px; font-size:12px; }
 .inspector-facts dt { color:var(--muted); overflow-wrap:anywhere; }
 .inspector-facts dd { margin:0; overflow-wrap:anywhere; }

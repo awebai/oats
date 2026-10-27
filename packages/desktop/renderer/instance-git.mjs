@@ -13,7 +13,7 @@ export const instanceGitCSS = `
 .instance-git .git-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .instance-git .git-head { display:flex; align-items:center; gap:10px; min-width:0; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .instance-git .git-head h3 { margin:0; font:inherit; color:inherit; }
-.instance-git .git-head-count { margin-left:-4px; letter-spacing:0; text-transform:none; font:10.5px var(--mono,monospace); color:var(--muted); }
+.instance-git .git-head-count { margin-left:-4px; letter-spacing:0; text-transform:none; font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); color:var(--muted); }
 .instance-git .git-head-count:empty { display:none; }
 .instance-git .git-head-aside { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:500; }
 .instance-git .git-head-aside:empty { display:none; }
@@ -32,7 +32,7 @@ export const instanceGitCSS = `
 .instance-git .git-facts { display:flex; flex-direction:column; gap:8px; min-width:0; }
 .instance-git .git-facts:empty { display:none; }
 .instance-git .git-branch-card { display:flex; flex-direction:column; gap:3px; padding:10px 12px; }
-.instance-git .git-branch-line { display:flex; align-items:center; gap:7px; min-width:0; font:600 12.5px var(--mono,monospace); }
+.instance-git .git-branch-line { display:flex; align-items:center; gap:7px; min-width:0; font-weight:600; font-size:12.5px; line-height:normal; font-family:var(--mono,monospace); }
 .instance-git .git-branch-line .shell-icon { flex:none; color:var(--muted); }
 .instance-git .git-branch { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .instance-git .git-ahead, .instance-git .git-upstream { color:var(--muted); white-space:nowrap; }
@@ -42,7 +42,7 @@ export const instanceGitCSS = `
 .instance-git .git-branch-card .git-note { padding-left:21px; font-size:11.5px; }
 .instance-git .git-files { display:flex; flex-direction:column; min-width:0; }
 .instance-git .git-files.git-card { overflow:hidden; }
-.instance-git button.git-file { display:flex; align-items:center; gap:9px; width:100%; min-height:32px; margin:0; padding:8px 12px; box-sizing:border-box; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; text-align:left; font:12px/1.35 var(--mono,monospace); }
+.instance-git button.git-file { display:flex; align-items:center; gap:9px; width:100%; min-height:32px; margin:0; padding:8px 12px; box-sizing:border-box; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; text-align:left; font-weight:normal; font-size:12px; line-height:1.35; font-family:var(--mono,monospace); }
 .instance-git button.git-file:last-child { border-bottom:0; }
 .instance-git button.git-file:hover:not(:disabled):not([aria-pressed=true]) { background:var(--surface-2); }
 .instance-git button.git-file[aria-pressed=true] { background:var(--sel); color:var(--fg); }
@@ -66,8 +66,8 @@ export const instanceGitCSS = `
 .instance-git .git-seg { display:inline-block; max-width:100%; overflow-wrap:anywhere; }
 .instance-git .git-diff:empty { display:none; }
 .instance-git .git-diff { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
-.instance-git .git-diff h4 { margin:0; font:600 11.5px var(--mono,monospace); overflow-wrap:anywhere; }
-.instance-git .git-patch { margin:0; max-height:420px; overflow:auto; white-space:pre; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--fg); font:11.5px/1.5 var(--mono,monospace); }
+.instance-git .git-diff h4 { margin:0; font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
+.instance-git .git-patch { margin:0; max-height:420px; overflow:auto; white-space:pre; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--fg); font-weight:normal; font-size:11.5px; line-height:1.5; font-family:var(--mono,monospace); }
 .instance-git .git-add { color:var(--ok); }
 .instance-git .git-remove { color:var(--danger); }
 .instance-git .git-hunk { color:var(--accent); }
@@ -123,7 +123,7 @@ export const instanceGitCSS = `
 .instance-git .forge-preview[hidden] { display:none; }
 .instance-git .forge-preview .forge-actions { padding:0; }
 .instance-git .forge-preview-lead { margin:0; color:var(--fg); font-size:12px; line-height:1.45; }
-.instance-git .forge-preview-text { max-height:260px; overflow:auto; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:11.5px/1.5 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.instance-git .forge-preview-text { max-height:260px; overflow:auto; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font-weight:normal; font-size:11.5px; line-height:1.5; font-family:var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
 .instance-git .forge-preview-seg { display:block; }
 .instance-git .forge-preview-seg + .forge-preview-seg { margin-top:4px; }
 `;

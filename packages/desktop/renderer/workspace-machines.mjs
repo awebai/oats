@@ -28,7 +28,7 @@ export const machinesCSS = `
 .machine-cell { color:var(--fg); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .machine-cell.name { font-size:14px; font-weight:600; }
 .machine-cell.muted { color:var(--muted); font-size:12px; }
-.machine-cell.mono { font:13px var(--mono,monospace); }
+.machine-cell.mono { font-weight:normal; font-size:13px; line-height:normal; font-family:var(--mono,monospace); }
 /* Reachable: a check and a muted word; not reachable: the warn chip (the error is its title); not checked
    and checking…: muted words. */
 .machine-state { justify-self:start; display:inline-flex; align-items:center; gap:5px; color:var(--muted); font-size:12px; }
