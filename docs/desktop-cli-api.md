@@ -6052,6 +6052,15 @@ answer is the ordinary start answer plus one object:
 - Refused `E_RESUME_NOT_LOST` when the home did not lose its session
   (`stopped`, `exited`, never launched), read under the start lock before
   any launch hook runs; nothing was started.
+- Refused `E_LAUNCH_ENV_CHANGED` when a `{fromEnv}` value differs from the
+  one the start it brings back ran with (checked after `E_LAUNCH_ENV_MISSING`):
+  the message names the variables, sorted, never a value; nothing was
+  started. A home with no record of its last start's values (last started
+  by an earlier kernel, or a record that does not read) is resumed, and
+  `warnings` carries once `<instance>'s launch environment could not be
+  verified this once (it was last started before OATS recorded it); its
+  next start records it` ([The launch environment a resume runs
+  under](execution-targets.md#the-launch-environment-a-resume-runs-under)).
 - Every refusal of an ordinary start answers as it does there
   (`E_SESSION_RUNNING`, `E_SESSION_START_BUSY`, `E_SESSION_UNKNOWN`,
   `E_LAUNCH_LEGACY` for a home with no recipe, `E_LAUNCH_ENV_MISSING`, …); a
@@ -6133,9 +6142,11 @@ whatever the rows say:
 - `--plan`: the same shape with `"plan": true`; nothing is started, no lock
   taken, no note written, no loss answered (its own status read records what
   it sees, as any local status read does). A lost home's outcome is the prediction: `resumed`
-  (with `sessionId`) or `fresh` with its reason, `refused` for a noted
-  refusal, a home sweeps started 3 times in this boot, or a home with no
-  recipe. Clients should not call `--plan` on open.
+  (with `sessionId`) or `fresh` with its reason (and the launch-environment
+  warning a start would give), `refused` for a noted refusal, a home sweeps
+  started 3 times in this boot, a home with no recipe, or a launch reference
+  the start would refuse (`E_LAUNCH_ENV_MISSING`, `E_LAUNCH_ENV_CHANGED`,
+  from the sweep's environment). Clients should not call `--plan` on open.
 - **One sweep per machine.** A second sweep while one runs answers
   `E_RESUME_BUSY` through the standard failure envelope
   (`{"schemaVersion":1,"ok":false,"error":{"code":"E_RESUME_BUSY","message":"…"}}`,
