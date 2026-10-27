@@ -12,9 +12,9 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, createResumeTrigger, displayLine, heldHome, pendingEntry, prepareRemoteTerm, runResumeSweep, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig, loadKeys } from "./config.mjs";
-import { ACT_WORDS, LIST_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
+import { ACT_WORDS, LIST_WORDS, RESUME_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, resumeObservation, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -72,6 +72,11 @@ export function parseArgs(argv) {
 
 /** The label of a change to this computer's deployments list (an add or a remove), for the line after leaving. */
 const LIST_CHANGE = Object.freeze({ verb: "list" });
+/** The labels of the kernel's machine sweep (`oats session resume --json`): the one the run starts as it
+ *  opens (RESUME_LAUNCH), which usually finds nothing lost and is not named after leaving, and one a read
+ *  that showed a lost session started (RESUME_CHANGE), which is starting sessions and is named. */
+const RESUME_LAUNCH = Object.freeze({ verb: "resume", launch: true });
+const RESUME_CHANGE = Object.freeze({ verb: "resume" });
 /** Why a call to this computer's deployments list has no answer at all: it threw before the kernel
  *  could answer. The shared adapter's own code for a kernel call that failed (deployment-list-cli.mjs). */
 const NOT_ASKED = Object.freeze({ code: "E_CLI_FAILED", message: "the kernel could not be asked" });
@@ -94,10 +99,11 @@ function errorLines(error) {
  *  can answer them. `deploymentList` is the shared cliDeploymentList (this computer's deployments
  *  list, through the kernel: awebai/oats#1390), and `startExec` the exec it is handed before the
  *  terminal is taken; replaceable so a test can answer the list. `loadKeys` reads keys.json, the
- *  chord family (lib/config.mjs), replaceable so no test reads a user's file. */
+ *  chord family (lib/config.mjs), replaceable so no test reads a user's file. `createResumeTrigger`
+ *  is the shared trigger of the kernel's machine sweep (packages/client session-resume-trigger.mjs). */
 const EFFECTS = Object.freeze({ loadConfig, loadKeys, findDeployment, probeKernel, createReader, createIdentityReads, deploymentList: cliDeploymentList, startExec, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
-  createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
+  createCapabilityCatalog, createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction, createResumeTrigger });
 
 /** The timers a run lends the shared spawn: the apply's deadline and its grace (the boundary's
  *  `applyTimer`), the boundary's wait for an answer (`timer`) and the transaction's polls
@@ -214,7 +220,13 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  covers nothing, whatever entry it kept. */
   function entered(event) {
     heard(event);
-    if (event.read === true && state.numbers.get(event.id) === event.number) retires.landed(event.number, (t) => !t.server && t.workspace === event.id);
+    if (event.read !== true || state.numbers.get(event.id) !== event.number) return;
+    retires.landed(event.number, (t) => !t.server && t.workspace === event.id);
+    // The rows of the view that holds it, with its deployments of this machine: a lost row of one of those
+    // sweeps again; another machine's row never does (the shared trigger's locality).
+    if (ended) return;
+    const { rows, localDeploymentIds } = resumeObservation(state, event.id, clock());
+    resume.observed(rows, { localDeploymentIds });
   }
   /** An event of the roster read: taken, then an outcome covers the rows of each machine it reached
    *  (a read that failed marks every machine not reached, and covers none). */
@@ -234,6 +246,27 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     getRoster: () => ({ remote: state.remote, memory: state.memory, notes: state.notes }),
     onEntry: entered, onRoster: rostered,
     files: { ...CHANGE_FILES, dir: runDir },
+  });
+  // LOST SESSIONS RESUMED (docs/tui.md, "Resuming lost sessions"; #1559): the kernel's machine sweep,
+  // `oats session resume --json`, which resumes every lost session of every local deployment of this
+  // computer. The shared trigger decides when: once the run has started (`launch`, after the add of the
+  // deployment it started in has settled, so the sweep's registry holds it), then whenever a read of a
+  // served deployment shows a row of a deployment of this machine whose session was lost (`observed`,
+  // given the view's rows and its local deployment ids: lib/model.mjs resumeObservation), never two at
+  // a time nor more often than its floor, and only with a kernel that has the sweep. The TUI decides nothing of what
+  // resumes. The sweep is a change of the run (the reader's changeExec: detached, its output in files,
+  // never signalled), which outlives the TUI; what it did goes to the store as `{ resumed }`. The first
+  // sweep the trigger runs is the one `launch` started (`observed` starts none before it, nor while one is
+  // in flight): labelled RESUME_LAUNCH, it is let go in silence on the way out; every later one is named.
+  let sweeps = 0;
+  const resume = effects.createResumeTrigger({
+    cli: () => probe.cli,
+    run: (cli) => {
+      const label = sweeps++ === 0 ? RESUME_LAUNCH : RESUME_CHANGE;
+      return runResumeSweep(cli, { exec: (bin, argv, options, callback) => reader.changeExec(bin, argv, { ...options, label }, callback), env });
+    },
+    now,
+    onReading: (reading) => heard({ resumed: reading }),
   });
   // THE TABS AND THE SPLIT (docs/tui.md, "Tabs", "Splits"): the terminals open in the panel, at
   // most the store's TAB_LIMIT across its groups. `viewers` maps each tab's instanceId to its
@@ -521,10 +554,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   }
   /** The deployment the run started in (from where it was started, or `--dir`), added to the list
    *  once, as the TUI's: best effort. A failure opens nothing less, and is said once, in the line
-   *  under the sidebar's title. A row opened from the switcher is on the list already. */
+   *  under the sidebar's title. A row opened from the switcher is on the list already. Settles once
+   *  the add has, whatever it answered; at once without one. */
   function listStart(path) {
-    if (!listing) return;
-    Promise.resolve()
+    if (!listing) return Promise.resolve();
+    return Promise.resolve()
       .then(() => effects.deploymentList(probe.cli, { action: "add", path, via: "tui" }, { exec: listChange, env }))
       .then((answer) => { if (!answer.ok) heard({ notListed: answer.reason }); }, () => heard({ notListed: NOT_ASKED }));
   }
@@ -813,7 +847,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // The run's directory goes last, made for whichever of the two needed it first: the reader
     // removes it only when it wrote a change there, and one it cannot remove (a change still
     // writing) stays.
-    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
+    // The machine sweep in flight is let go with the other changes: its answer is no longer shown.
+    onEnd() { ended = true; resume.dispose(); spawnTimers.end(); dismiss(confirmation?.n); panel.end(); identities.stop(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
   /** A preflight under way when the process stops: given up, and the store told. Its state alone is
@@ -855,7 +890,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // At the wait's end what the key parser kept as a possible beginning of the answer is read as typed.
   if (kb === "asking" && !ended) kbTimer = setTimer(() => { kbTimer = null; guard.attempt(() => { const released = parser.giveUp(); answered(null); if (released.length && !typing()) act(released); watchEscape(); }); }, Math.max(0, answerBy - now()));
   guard.attempt(() => { if (!ended) Promise.resolve(reader.start()).catch(() => {}); });
-  if (found.ok) guard.attempt(() => { if (!ended) listStart(found.deployment); });
+  // The machine sweep, once the add of the deployment the run started in has settled (a start in the
+  // switcher has none): after the first frame and the first read cycle have begun, never before them.
+  let added = Promise.resolve();
+  if (found.ok) guard.attempt(() => { if (!ended) added = listStart(found.deployment); });
+  added.then(() => { if (!ended) guard.attempt(() => { resume.launch(); }); });
   // Once a run, at the start: the identities of this computer's listed deployments, the list read first
   // when the run did not read it before the terminal was taken.
   guard.attempt(() => { if (!ended) { if (listedAtStart) identify(); else readList({ identify: true }); } });
@@ -869,9 +908,10 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   if (kbTimer !== null) clearTimer(kbTimer);
   // After the alternate screen is left, so the message stays on the screen the user returns to.
   // One line per change still running, to a terminal or a file only; the status never depends on it.
-  const running = reader.changes?.() ?? [];
+  // The sweep the run started as it opened is no change of the person's, and usually finds nothing: none.
+  const running = (reader.changes?.() ?? []).filter(({ label }) => label !== RESUME_LAUNCH);
   if (running.length && effects.tellable(stderr)) {
-    try { stderr.write(running.map(({ label }) => `${label === LIST_CHANGE ? LIST_WORDS.leaving : ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
+    try { stderr.write(running.map(({ label }) => `${label === LIST_CHANGE ? LIST_WORDS.leaving : label === RESUME_CHANGE ? RESUME_WORDS.leaving : ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
   }
   if (end.error !== undefined) stderr.write(`oats: \`oats tui\` stopped on an internal error; the terminal was restored\n${errorLines(end.error).map((line) => `  ${line}\n`).join("")}`);
   return end.status;

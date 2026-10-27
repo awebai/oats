@@ -62,7 +62,7 @@ import { kernelNode, stableNode } from "../lib/stable-node.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance as resolveInstanceForCli, setInstanceColor, setInstanceBackground, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
+import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance as resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } from "../lib/retire-output.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
@@ -74,7 +74,7 @@ import { SESSION_RESUME_FEATURE } from "../lib/session-resume-contract.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "background", "check", "clear", "composed-skills", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-background", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "self", "skills", "suggest-name", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "background", "check", "clear", "composed-skills", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-background", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "same-work", "self", "skills", "suggest-name", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
@@ -110,7 +110,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade", "session-attach-no-status-line", "session-attach-prefix-scroll", "instance-suggest-name", "spawn-apply-suggest-name", SESSION_RESUME_FEATURE, "instance-background"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade", "session-attach-no-status-line", "session-attach-prefix-scroll", "instance-suggest-name", "spawn-apply-suggest-name", SESSION_RESUME_FEATURE, "instance-background", "instance-same-work"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1411,8 +1411,8 @@ async function instanceCmd() {
   if (sub === "upgrade") return instanceUpgradeCmd(name, bail);
   if (sub === "waiting" || sub === "attention") return instanceWaitingCmd(sub, bail);
   if (sub === "suggest-name") return instanceSuggestNameCmd(bail);
-  const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json] | oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json] | oats instance background <instance> on|off [--home <abs>] [--dir <d>] [--json]";
-  if (!["git", "diff", "stop", "events", "color", "background"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
+  const usage = "usage: oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] [--json] | oats instance attention [--message <text>] [--clear] [--json] | oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json] | oats instance color <instance> (<color> | --clear) [--home <abs>] [--dir <d>] [--json] | oats instance background <instance> on|off [--home <abs>] [--dir <d>] [--json] | oats instance same-work <instance> on|off [--home <abs>] [--dir <d>] [--json]";
+  if (!["git", "diff", "stop", "events", "color", "background", "same-work"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
   dropAmbientRoot();
   if (sub === "events") {
     // K7: typed producer events, bounded window; nothing inferred.
@@ -1482,6 +1482,25 @@ async function instanceCmd() {
       const r = setInstanceBackground(dirFlag(), root, name, { home: homeOpt, background: words[0] === "on" });
       if (JSON_MODE) { jsonOk(r); return; }
       console.log(`${r.instance}: ${r.background ? "background" : "not background"}${r.changed ? "" : " (unchanged)"}`);
+      return;
+    } catch (e) {
+      return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { candidates: e.candidates } : e.details);
+    }
+  }
+  if (sub === "same-work") {
+    // Feature instance-same-work: presentation only, so no plan; addressed as color addresses an instance.
+    const homeOpt = flag("home");
+    if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const sameWorkUsage = "usage: oats instance same-work <instance> on|off [--home <abs>] [--dir <d>] [--json]";
+    // The words after the instance that are not a flag or the value of --home or --dir: exactly one, on or off.
+    const words = [];
+    for (let i = 3; i < args.length; i++) { if (args[i] === "--home" || args[i] === "--dir") i++; else if (!args[i].startsWith("--")) words.push(args[i]); }
+    if (words.length !== 1 || !["on", "off"].includes(words[0])) return bail("E_BAD_ARGS", `give on or off; ${sameWorkUsage}`);
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return lifecycleFail(e, "E_NO_ROOT"); }
+    try {
+      const r = setInstanceSameWork(dirFlag(), root, name, { home: homeOpt, on: words[0] === "on" });
+      if (JSON_MODE) { jsonOk(r); return; }
+      console.log(`${r.instance}: same work ${r.sameWork ? "on" : "off"}`);
       return;
     } catch (e) {
       return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { candidates: e.candidates } : e.details);
@@ -2842,7 +2861,7 @@ const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false
  *  host through `--server`, whose route reads it. `--max-age` reaches here only on a preview or an
  *  apply bound by --expect-decision: the dispatch allow-list (maxAgeRefusal) refuses it otherwise. */
 const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "max-age", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
-const SPAWN_SWITCHES = new Set(["allow-child-spawns", "background", "json", "no-background", "no-child-spawns", "no-launch", "no-yolo", "preview", "suggest-name", "yolo"]);
+const SPAWN_SWITCHES = new Set(["allow-child-spawns", "background", "json", "no-background", "no-child-spawns", "no-launch", "no-yolo", "preview", "same-work", "suggest-name", "yolo"]);
 /** `--suggest-name` (features spawn-suggest-name, spawn-apply-suggest-name): a preview's or an apply's,
  *  with no --name, --purpose or --expect-decision. The kernel refuses the same (core.mjs spawnBody); the
  *  CLI says it before anything is read or sent. */
@@ -2915,7 +2934,7 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before anything is resolved or written
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>|--suggest-name] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--background|--no-background] [--model <m>] [--branch <b>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>|--suggest-name] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--same-work] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--harness pi|claude|codex] [--backend tmux] [--yolo|--no-yolo] [--background|--no-background] [--model <m>] [--branch <b>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect, including root discovery.
   // Local souls (local-agents/) are gone with the workspace model: a soul is a member
@@ -3109,6 +3128,8 @@ async function spawnCmd() {
       prepared,
       purpose: flag("purpose"), ...(nameFlag !== undefined ? { name: String(nameFlag) } : {}), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
+      // Feature instance-same-work: the kernel binds it to the parent the new home records, or refuses.
+      ...(args.includes("--same-work") ? { sameWork: true } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
       // An attached instance's repository is the repository of the tree it is attached to (derived by the kernel).
@@ -5172,6 +5193,9 @@ Usage:
       [--relation child|sibling|parent|unrelated]  anchor with --relative-to (except unrelated);
       [--relative-to <instance>]            default: unrelated, top-level
       [--relative-root <agents-root>]       disambiguates same-named anchors
+      [--same-work]                         record that the new instance does the same work as
+                                            its parent; clients draw the parent line for it
+                                            (needs a relation that records a parent)
       [--work worktree|checkout|attached|workspace|directory]  override the soul's work mode
       [--work-dir <owner-work>]             attached: the owner's work tree (always a child)
       [--branch <b>] [--base <ref>]          worktree branch and starting ref;
@@ -5357,6 +5381,10 @@ Usage:
   oats instance background <instance> on|off [--home <abs>] [--json]
                                              whether clients list the instance under
                                              Background, presentation only
+  oats instance same-work <instance> on|off [--home <abs>] [--json]
+                                             record that this instance does the same work as
+                                             its parent (on needs a recorded parent); clients
+                                             draw the parent line for it; off removes it
   oats instance suggest-name --soul <soul> (--task <t> | --task-file <f>) [--harness claude|pi]
       [--model <m>] [--launch-config <n>] [--dir <d>] [--json]
                                              a name for a spawn of <soul> (only a name: it gives

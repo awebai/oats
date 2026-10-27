@@ -1043,9 +1043,12 @@ control.
   cluster's roots and each parent's children the same way, and, with several
   deployments, each deployment's section by its most recent instance. So a
   child focused after its parent lifts the parent's group and the parent above
-  its siblings. A child always stays under its parent. Instances never focused
-  keep the sidebar's order (name), after the rest; with no record at all the
-  palette lists exactly the sidebar's order. Groups form again after ordering
+  its siblings. A child always stays under its parent. Under one parent, the
+  children its line joins come first (#1577, below) and the rest after them,
+  and focus orders each part on its own: a child the line does not join stays
+  after the joined ones however recently it was focused. Instances never focused
+  keep the sidebar's order (name), after the rest of their part; with no record
+  at all the palette lists exactly the sidebar's order. Groups form again after ordering
   by the sidebar's rule, so an instance focused a minute ago is not held behind
   a stale run of independent ones. The sidebar roster keeps its stable name
   order; only the palette is ordered by focus.
@@ -1072,6 +1075,9 @@ control.
   `treeGuides`, `renderer/instance-tree-view.mjs`, and the same `.ctx-guide`
   rules): the dotted line joining the roots of one group (sibling links) on the
   dot column, and the solid parent→child elbows and pass-throughs to its right.
+  As in the sidebar, a solid line joins only a child that draws its parent line
+  (`drawsParentLine`, `packages/client/same-work.mjs`, #1577), and those
+  children are listed first under their parent, by recency within each part.
   Its dot is the sidebar's state dot: running, stopped or unknown. A context row
   keeps its lines; only its text is dimmed.
 - **Relations in words.** A nested row's option reads "…, under <parent>" and an

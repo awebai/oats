@@ -25,7 +25,7 @@ import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, rea
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { leaderPairs } from "./helpers/leader-pairs.mjs";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { markStopped, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
 import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
@@ -160,6 +160,9 @@ async function launchedAgent(name) {
   const tmux = { session: SESSION, window: name, socket: AGENTS };
   writeFileSync(join(home, "instance.json"), JSON.stringify({ ...spawned, tmux, command: "true", launched: true }, null, 2) + "\n");
   writeFileSync(baselineOf(home), JSON.stringify({ ...readJson(baselineOf(home)), runtime: { launched: true, tmux } }, null, 2) + "\n", { mode: 0o600 });
+  // A window a test kills is a lost session to the kernel, which the TUI's machine sweep would take up
+  // and say something of: these tests are not about resuming, so the home reads stopped once its window goes.
+  markStopped(home);
   return home;
 }
 // The agent is alpha unless a name is given (the agents beside it: "four agents, four tabs" below).

@@ -16,7 +16,7 @@
 // fixture's own, never the operator's. Inside a session environment (isolateSessionEnvironment, which
 // must be installed first) that environment's TMUX_TMPDIR is used, so both name one `oats` server.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -128,6 +128,18 @@ export function forceEnvironment(owner, name, build) {
   };
   try { setProcessEnvironment(build()); } catch (e) { end(); throw e; }
   return end;
+}
+
+/** Record `home`'s last session as stopped by OATS, as `oats instance stop` leaves it: a stop receipt
+ *  (`.oats-stop.json`, lib/session-end.mjs) naming the home's current start. A launched home that does
+ *  not run then reads `sessionEnd: stopped`, not `lost`, so a client's machine sweep (`oats session
+ *  resume`, which `oats tui` and the Desktop run when they open and when a read shows a lost session)
+ *  leaves it alone: for a test that is not about resuming lost sessions. A start after it makes the
+ *  home's session its own again. */
+export function markStopped(home) {
+  const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  const startId = typeof meta.startId === "string" && meta.startId ? meta.startId : null;
+  writeFileSync(join(home, ".oats-stop.json"), `${JSON.stringify({ instance: meta.instance ?? null, at: new Date().toISOString(), stop: {}, retained: [], startId })}\n`);
 }
 
 /**

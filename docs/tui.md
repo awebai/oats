@@ -178,7 +178,10 @@ while a terminal is open); under 80 columns it has the whole width.
   order, from the same code. It is in name order, by each group's top
   instance, so starting or stopping an instance moves nothing. An instance
   that others were spawned from has them indented under it, and keeps its
-  place when it gains or loses one. An empty row stands between each run
+  place when it gains or loses one. Under one parent, the instances that do
+  its work (the kernel's `sameWork`, from an OATS with `instance-same-work`)
+  come first, then the others, each part in name order, as the Desktop lists
+  them. An empty row stands between each run
   of instances related to no other and the group before or after it. The
   indent alone says which instance is under which: no mark is drawn for
   it. A row whose instances are folded away (`h`) says how many after its
@@ -1272,6 +1275,78 @@ The exit status never depends on it.
   there can leave `.oats-stop-pending.json` in the agent's home, and then
   the agent can be started but not stopped while that file exists.
 
+## Resuming lost sessions
+
+After a shutdown, a reboot or a crash, the instances that were running have
+lost their sessions. When `oats tui` opens, it asks the kernel to resume
+them: it runs `oats session resume --json`, and the kernel does the rest.
+The kernel looks at every deployment on this computer's list (local
+deployments only, never another machine's) and resumes each lost session as
+it decides. What it does to a session, when it starts one fresh from its
+briefing instead, and when it stops trying for one that keeps losing its
+session, is the kernel's rule, written beside the command. A session lost
+long ago is not resumed automatically, and `oats tui` says nothing about it;
+`oats session start --resume` still brings it back by hand. `oats tui` owns
+no session: it runs the command and shows a summary.
+
+**When it runs.** Once the run has started, whether it started in a
+deployment or in [the switcher](#the-switcher): after the deployment it
+started in has been added to this computer's list (the sweep reads that
+list), and without holding up the first frame or the first read. Then
+again whenever a read of a deployment open in the run shows an instance of
+this computer whose session was lost and that is not running (another
+machine's instances shown in the same workspace never count). Never two at
+a time, and never sooner than 30 seconds after the last one began. After a
+sweep that a read started, every instance it was started for waits until it
+changes (it runs, or it is no longer lost); so does an instance any sweep
+could not resume, found was not lost, or left because it was lost long ago.
+Such an instance sets off no sweep until a later read shows it running or no
+longer lost, or a sweep resumes it. There
+is no timer and no queue: a read that comes too soon starts nothing, and the
+next read asks again. The rule is the Desktop's
+(`packages/client/session-resume-trigger.mjs`). It runs only when the kernel
+advertises the `session-resume` feature; without it, nothing runs and
+nothing is said.
+
+**What it says.** When the sweep resumed an instance, started one fresh,
+left one waiting for you or could not resume one, the line under the list
+of workspaces says so once, as it says any other line there: a headline
+that counts them ("OATS resumed 3 instances whose sessions were lost. 1 of
+them is waiting for you: open its terminal."), and under it a line for each
+instance (waiting for you, could not be resumed, started fresh and why,
+resumed in its own conversation), then the deployments the sweep did not
+check, each named as the switcher names its path, then what OATS said
+about this computer as a whole. A refusal an earlier sweep of this run
+already reported is not said again, nor is something about this computer
+that an earlier line of this run said. Text from OATS appears
+only after "OATS says:". The words are the ones the Desktop uses. The list
+is then read at once, so a resumed instance shows running. Nothing is said
+when nothing was lost, when the sessions were already running, or when
+another sweep holds the machine (another `oats tui`, OATS Desktop, or
+`oats session resume` run by hand). A sweep that fails says
+`OATS could not resume lost sessions (<code>).`, with the kernel's code and
+nothing else it printed (with no code when there is none of the kernel's
+form).
+
+**There is no setting to turn it off.** To keep an instance down, stop it
+with OATS (`X`, or `oats instance stop`): a stopped instance is not lost,
+and the sweep leaves it alone.
+
+**Quitting does not stop a sweep.** It is a change, like an act you
+confirmed ([above](#stopping-starting-restarting-and-retiring)): it runs in
+a session of its own, writes its answer to files of its own, and is never
+signalled by `oats tui`. Quitting while it runs leaves it to finish. The
+sweep that runs as `oats tui` opens is let go without a word: it runs at
+every start and usually finds nothing lost. One that a read of a lost
+session started is starting sessions, and one line is printed after the
+screen is left, on standard error, when that is a terminal or a file:
+
+    oats: the resume of lost sessions is still running; `oats status` shows the instances.
+
+`S` and `R` are unchanged: a start or restart from `oats tui` starts the
+instance as it was last launched, and never resumes a conversation. Only
+the sweep resumes.
+
 ## Spawning an agent
 
 `n` spawns an agent of a soul of the open workspace, on this machine, with
@@ -2340,6 +2415,10 @@ with the Desktop (`packages/client/`).
 
   An add and a remove are changes: `oats tui` never ends one, and one still
   running as it leaves is named in one line after the screen is left.
+- **The kernel's machine sweep**, `oats session resume --json`, by the same
+  kernel, from `/`, with no time limit: when the run starts, and when a
+  read shows a lost session ([Resuming lost sessions](#resuming-lost-sessions)).
+  It is a change, as an add is.
 - **The workspace of each row of that list the run has not opened** is
   one more read, `oats status --dir <path> --json` with `--max-age 60`, by
   the same kernel ([the switcher](#the-switcher)): at the start, when the
@@ -2649,7 +2728,9 @@ alone. The next run removes the directory that is left, with its `tmux`,
   server, session, window or pane. Its probe only lists panes. An agent's
   own session is started, ended or restarted only by the kernel's commands
   of an act you confirmed
-  ([above](#stopping-starting-restarting-and-retiring)), and an agent's
+  ([above](#stopping-starting-restarting-and-retiring)) and by the kernel's
+  machine sweep, which resumes lost sessions
+  ([above](#resuming-lost-sessions)), and an agent's
   terminal is opened by `oats session attach`, which makes its own viewer
   session on the agents' tmux server and removes it. The one tmux server
   `oats tui` runs is its own private one
@@ -2660,11 +2741,12 @@ alone. The next run removes the directory that is left, with its `tmux`,
   ([above](#what-it-reads-and-what-it-runs)), and a spawn's empty task file
   ([above](#what-it-reads-and-what-it-runs)). The processes it starts are
   the reads above, when you open an agent its private tmux server and the
-  viewers in it, one for each tab, and the acts you confirm. No read, server or viewer
+  viewers in it, one for each tab, the acts you confirm and the kernel's
+  machine sweep. No read, server or viewer
   outlives it on every way out a process can handle; after SIGKILL a read
   in flight runs to its own end, and the private server and its viewers end
-  by themselves. An act you confirmed is never ended by `oats tui`: it runs
-  to its own end. A spawn is ended only at its deadline, while `oats tui`
+  by themselves. An act you confirmed, and the machine sweep, are never
+  ended by `oats tui`: each runs to its own end. A spawn is ended only at its deadline, while `oats tui`
   runs ([above](#what-it-reads-and-what-it-runs)): never on the way out,
   and never after it.
 - It **changes this computer's list of deployments only through the
