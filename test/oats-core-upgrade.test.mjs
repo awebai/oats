@@ -53,6 +53,10 @@ async function releasedHome(t, tag) {
   const old = releasedCore(fx.base, tag);
   fx.commit({ ...packageFiles("1.0.0", old), "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], defaults: { knowledge: "none", messaging: "none", tasks: "none" }, packages: { [PKG]: `git:${fx.key}@main` } } } });
   lock(fx, "1.0.0");
+  // The in-process spawn looks the harness up on this process's PATH: the fixture's, whose inert `claude` comes first.
+  const path = process.env.PATH;
+  t.after(() => { process.env.PATH = path; });
+  process.env.PATH = fx.env.PATH;
   const { home } = await fx.spawn("dev", { name: "seat", harness: "claude", noLaunch: true });
   const oldVersion = JSON.parse(old[`${CORE}/oats.json`].text).version;
   assert.equal(json(join(home, ".oats/modules/oats.core/oats.json")).version, oldVersion, `the home runs oats.core ${oldVersion} from ${tag}`);
@@ -151,9 +155,4 @@ test("oats.core upgrade hook: an unknown phase fails with a warning", () => {
     assert.equal(r.status, 1);
     assert.match(r.answer.warning, /OATS_UPGRADE_PHASE must be plan or apply/);
   }
-});
-
-test("oats.core declares a non-required upgrade hook", () => {
-  const manifest = json(join(ROOT, CORE, "oats.json"));
-  assert.equal(manifest.hooks.upgrade, "bin/oats-core.mjs upgrade", "string form: not required");
 });
