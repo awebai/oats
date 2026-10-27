@@ -14,8 +14,10 @@
     which panes, with the kernel's sentence.
   - Desktop: a terminal opened on such a window starts on the agent's pane,
     wherever the focus was, so typing goes to the agent and never into a
-    forgotten prompt. Click the other pane to use it. In the TUI, and in
-    Desktop for another machine, the kernel's viewer does the same.
+    forgotten prompt. In the TUI, and in Desktop for another machine, the
+    kernel's viewer does the same. A click doesn't select a pane in these
+    terminals, so a terminal opened after the split can't reach the prompt:
+    the agent closes the prompt and opens it again while you watch.
   - Desktop: a pull request's **Send N threads to <instance>** pastes into
     the agent's pane, as the kernel names it, never the window's active pane. When the kernel can't
     tell which pane is the agent's, nothing is pasted.
