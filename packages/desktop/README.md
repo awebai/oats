@@ -95,6 +95,22 @@ The shell has three navigation contexts:
   the same directory, then a rename), and sends plain state to every window
   (`chord-family:get`, `chord-family:set`, `chord-family:changed`). The kernel
   never reads the file. `renderer/chord-family.mjs` is its page side.
+- `session-resume-launch.mjs` — lost sessions resumed: main holds one shared
+  trigger per app launch (`packages/client/session-resume-trigger.mjs`, its
+  probe the served CLI's through `settledCli`). It is launched after the
+  startup's deployments-list step settles, and shown each accepted
+  `/api/panel` reply's `instances` with the reply's local deployment ids
+  (`localDeploymentIds`) in the `api` handler, under the same epoch and
+  transition check as the workspaces update. The sweep's child is
+  detached and file-backed (`packages/client/session-resume-cli.mjs`), so
+  quitting never cancels it; nothing in `shutdown()` touches it. Each
+  `notice` reading's summary is queued (at most 10, the oldest dropped) and
+  every live window told (`session-resume:ready`); a window takes the whole
+  queue (`session-resume:take`). A `failed` reading is one log line with its
+  code. `renderer/resume-notice.mjs` is its page side: each summary a sticky
+  `app` entry of the notification center, grouped past three, which a
+  workspace switch keeps
+  ([When Desktop opens](../../docs/desktop-instance-start.md#when-desktop-opens)).
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.
 - `renderer/views/*.mjs` — feature views per the shared contract:
@@ -218,6 +234,21 @@ function over what its caller holds:
   feature. Each client puts the four states into its own words; the Desktop's
   are in `renderer/workspace-switcher.mjs`
   ([desktop-deployment-model.md](docs/desktop-deployment-model.md#this-computers-deployments-list)).
+- **The session resume sweep** (`session-resume-trigger.mjs`,
+  `session-resume-cli.mjs`, `session-resume.mjs`). `createResumeTrigger` holds
+  the clients' shared rule for when a sweep runs: once at launch, then on a
+  roster read that shows a local lost session not yet settled, single flight,
+  30 s apart, and reporting a standing refusal once.
+  `runResumeSweep` runs `oats session resume --json` (feature
+  `session-resume`, cwd `/`, instance variables scrubbed, no deadline) through
+  `file-output-exec.mjs` `execFileToFiles`: execFile's signature, the child in
+  a session of its own, its stdout and stderr unlinked files read back from
+  the client's own descriptors, never signalled, so the change outlives the
+  client. `readResumeSweep` reads the answer into a summary of facts,
+  `resumeSummaryFact` decodes it at a boundary and `resumeNotice` puts it in
+  the clients' words; warnings are cut by position (`boundedWarnings`, shared
+  with `launchFlagIgnored`) and kernel text appears only after "OATS says:"
+  ([desktop-cli-api.md](../../docs/desktop-cli-api.md#how-the-clients-run-the-sweep)).
 
 It holds the souls a deployment offers and one soul's inspection: the spawn
 catalog (`soul-catalog.mjs`, over the holding rules of `keyed-catalog.mjs`),

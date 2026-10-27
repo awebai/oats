@@ -154,21 +154,38 @@ export const FLAG_IGNORED_BYTES = FLAG_IGNORED_UNITS * 6 + 256;
  * The fact is `{reason, warnings, omitted}`. `reason` is the one value the notice has a clause for, else
  * null. `warnings` is the answer's warnings in the order given, each as one display line: the withheld
  * marker for one the filter withholds, and no line for an entry with nothing to show. None is picked,
- * matched or dropped by its words: no client looks for the kernel's sentence among them. Lines are kept in
- * order while both bounds hold: FLAG_IGNORED_WARNINGS lines, FLAG_IGNORED_UNITS units in total. The first
- * line that does not fit and every line after it are left out, and no line is cut inside; the first line
- * always fits (a display line is at most MAX_DISPLAY_LINE units). `omitted` counts the lines left out, 0
- * when none. An entry with nothing to show was never a line and is not counted. */
+ * matched or dropped by its words: no client looks for the kernel's sentence among them. The cut is
+ * boundedWarnings's. */
 export function launchFlagIgnored(answer) {
   if (!record(answer) || !record(answer.launchPrompts) || answer.launchPrompts.status !== 'flag-ignored') return null;
-  const lines = Array.isArray(answer.warnings) ? answer.warnings.map(w => displayLine(w)).filter(line => line !== null) : [];
+  return { reason: answer.launchPrompts.reason === 'channels-unavailable' ? 'channels-unavailable' : null, ...boundedWarnings(answer.warnings) };
+}
+/** An answer's raw `warnings` as `{warnings, omitted}`: one display line per entry, in order, the withheld
+ * marker for one the filter withholds and no line for an entry with nothing to show (not an array: no
+ * lines). Lines are kept in order while both bounds hold: FLAG_IGNORED_WARNINGS lines, FLAG_IGNORED_UNITS
+ * units in total. The first line that does not fit and every line after it are left out, and no line is cut
+ * inside; the first line always fits (a display line is at most MAX_DISPLAY_LINE units). `omitted` counts
+ * the lines left out, 0 when none; an entry with nothing to show was never a line and is not counted. By
+ * position only, never by words. Shared by launchFlagIgnored and the session-resume reader. */
+export function boundedWarnings(raw) {
+  const lines = Array.isArray(raw) ? raw.map(w => displayLine(w)).filter(line => line !== null) : [];
   const warnings = [];
   let units = 0;
   for (const line of lines) {
     if (warnings.length === FLAG_IGNORED_WARNINGS || units + line.length > FLAG_IGNORED_UNITS) break;
     warnings.push(line); units += line.length;
   }
-  return { reason: answer.launchPrompts.reason === 'channels-unavailable' ? 'channels-unavailable' : null, warnings, omitted: lines.length - warnings.length };
+  return { warnings, omitted: lines.length - warnings.length };
+}
+/** Whether `{warnings, omitted}` could be boundedWarnings's answer as it crossed a boundary: display lines
+ * within both bounds, `omitted` a non-negative safe integer, above 0 only where a cut can have happened
+ * (beside a full list, or beside lines that leave no room for another of MAX_DISPLAY_LINE units). */
+export function boundedWarningsValid(warnings, omitted) {
+  if (!Array.isArray(warnings) || warnings.length > FLAG_IGNORED_WARNINGS || !warnings.every(cleanLine)
+    || !Number.isSafeInteger(omitted) || omitted < 0) return false;
+  const units = warnings.reduce((sum, line) => sum + line.length, 0);
+  return units <= FLAG_IGNORED_UNITS
+    && !(omitted > 0 && warnings.length < FLAG_IGNORED_WARNINGS && units <= FLAG_IGNORED_UNITS - MAX_DISPLAY_LINE);
 }
 /** The fact above as it crossed a boundary: the same fact, or undefined. Exactly the three keys; `reason`
  * the one known value or null; `warnings` display lines within both bounds; `omitted` a non-negative safe
@@ -177,12 +194,7 @@ export function launchFlagIgnored(answer) {
  * one fact and never what carried it. Idempotent: the reader's own answer decodes to itself. */
 export function flagIgnoredFact(v) {
   if (!record(v) || Object.keys(v).length !== 3 || !['reason', 'warnings', 'omitted'].every(k => Object.hasOwn(v, k))
-    || v.reason !== null && v.reason !== 'channels-unavailable'
-    || !Array.isArray(v.warnings) || v.warnings.length > FLAG_IGNORED_WARNINGS || !v.warnings.every(cleanLine)
-    || !Number.isSafeInteger(v.omitted) || v.omitted < 0) return undefined;
-  const units = v.warnings.reduce((sum, line) => sum + line.length, 0);
-  if (units > FLAG_IGNORED_UNITS
-    || v.omitted > 0 && v.warnings.length < FLAG_IGNORED_WARNINGS && units <= FLAG_IGNORED_UNITS - MAX_DISPLAY_LINE) return undefined;
+    || v.reason !== null && v.reason !== 'channels-unavailable' || !boundedWarningsValid(v.warnings, v.omitted)) return undefined;
   return { reason: v.reason, warnings: [...v.warnings], omitted: v.omitted };
 }
 /** The notice for the fact, `{headline, detail?}`, or null when `fact` is not one. `instance` is the name
