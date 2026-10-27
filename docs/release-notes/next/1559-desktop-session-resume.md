@@ -9,7 +9,7 @@
   or could not be resumed, a notice says so and stays until you dismiss it.
   Its Details name each instance and what happened to it, and say which
   deployments were not checked. An instance that keeps losing its session is
-  named once, and OATS stops resuming it until the computer restarts. More
+  named once, and OATS stops resuming it until you start it yourself. More
   than three notices fold into one. Nothing lost means no notice. Quitting
   Desktop while the sessions are being resumed does not cut that short
   ([desktop-instance-start.md](../desktop-instance-start.md#when-desktop-opens)).

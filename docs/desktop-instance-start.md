@@ -278,17 +278,17 @@ several clients safe. It runs only when the installed OATS CLI advertises the
 
 **The notice.** When a sweep resumed an instance, started one fresh, left one
 waiting for you or could not resume one, one window shows a notice that stays
-until you dismiss it. Switching that window's workspace does not take it
-away. The headline counts them ("OATS resumed 3 instances whose sessions were
-lost. 1 of them is waiting for you: open its terminal."). Its Details list
-each instance, in this order: those waiting for you (at a launch prompt, or to
+until you dismiss it. Switching that window's workspace does not take it away.
+The headline counts them ("OATS resumed 3 instances whose sessions were lost.
+1 of them is waiting for you: open its terminal."). Its Details list each
+instance, in this order: those waiting for you (at a launch prompt, or to
 choose how to resume it: open its terminal), those that could not be resumed,
 those that started fresh and why, then those resumed in their own
 conversation. An instance that keeps losing its session is listed with those
-that could not be resumed: the kernel stops resuming it until the computer
-restarts. The deployments the sweep did not check are listed after them. Text
-from OATS appears only after "OATS says:", as a quote. The Details show at
-most 100 instances, then say how many more there are.
+that could not be resumed: the kernel stops resuming it, and it stays down
+until you start it yourself. The deployments the sweep did not check are
+listed after them. Text from OATS appears only after "OATS says:", as a quote.
+The Details show at most 100 instances, then say how many more there are.
 
 Each sweep with something to report gives a notice of its own. An instance
 that could not be resumed is reported once: a later sweep that finds it the

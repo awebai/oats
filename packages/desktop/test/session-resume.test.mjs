@@ -342,9 +342,9 @@ test('notice: every detail line, in order: waiting, refused, fresh, resumed, uns
     `OATS says: ${DETAIL_WITHHELD}`,
     'x3: could not be resumed. It was refused earlier since this computer started, so OATS did not try again.',
     'x4: could not be resumed.',
-    "x5: keeps losing its session; it won't be resumed again until this computer restarts.",
+    "x5: keeps losing its session, so OATS stopped resuming it: start it yourself once it's fixed.",
     'OATS says: lost 3 times since boot',
-    "x6: keeps losing its session; it won't be resumed again until this computer restarts.",
+    "x6: keeps losing its session, so OATS stopped resuming it: start it yourself once it's fixed.",
     'f1: started fresh from its briefing, no saved conversation was found.',
     'f2: started fresh from its briefing, OATS has no record of where its conversations are kept.',
     "f3: started fresh from its briefing, resuming this harness's conversations isn't supported yet.",
@@ -368,13 +368,13 @@ test('notice: keeps-getting-lost: its own line in place of "could not be resumed
   assert.ok(REFUSED_REASONS.includes('keeps-getting-lost'));
   const alone = notice([keeps()]);
   assert.deepEqual(alone, { headline: 'OATS could not resume 1 lost session.',
-    detail: "k: keeps losing its session; it won't be resumed again until this computer restarts." });
+    detail: "k: keeps losing its session, so OATS stopped resuming it: start it yourself once it's fixed." });
   const said = notice([keeps({ message: 'resumed 3 times since boot' })]);
-  assert.deepEqual(lines(said), ["k: keeps losing its session; it won't be resumed again until this computer restarts.", 'OATS says: resumed 3 times since boot']);
+  assert.deepEqual(lines(said), ["k: keeps losing its session, so OATS stopped resuming it: start it yourself once it's fixed.", 'OATS says: resumed 3 times since boot']);
   const mixed = notice([resumedRow('a'), keeps({ deployment: B }), refusedRow('x', { reason: 'start-refused' })]);
   assert.equal(mixed.headline, 'OATS resumed 1 instance whose session was lost. 2 could not be resumed.');
   assert.deepEqual(lines(mixed), [
-    "k in ~/work/team: keeps losing its session; it won't be resumed again until this computer restarts.",
+    "k in ~/work/team: keeps losing its session, so OATS stopped resuming it: start it yourself once it's fixed.",
     'x in ~/agents: could not be resumed.', 'a in ~/agents: resumed in its own conversation.']);
   assert.deepEqual(resumeSummaryFact(summaryOf([keeps()])).refused, [{ instance: 'k', deployment: A, reason: 'keeps-getting-lost', code: 'E_RESUME_REFUSED', message: null }]);
 });

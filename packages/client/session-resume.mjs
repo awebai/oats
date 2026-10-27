@@ -243,7 +243,7 @@ const FRESH_WHY = {
 };
 const UNSWEPT_WHY = { 'not-ok': "its deployment isn't ready.", unreadable: 'it could not be read.' };
 const THIS_BOOT = ' It was refused earlier since this computer started, so OATS did not try again.';
-const KEEPS_LOST = "keeps losing its session; it won't be resumed again until this computer restarts.";
+const KEEPS_LOST = "keeps losing its session, so OATS stopped resuming it: start it yourself once it's fixed.";
 /** A refused row's line: `keeps-getting-lost` says why in place of "could not be resumed.". */
 const refusedLine = r => r.reason === 'keeps-getting-lost' ? KEEPS_LOST
   : `could not be resumed.${r.reason === 'refused-this-boot' ? THIS_BOOT : ''}`;
