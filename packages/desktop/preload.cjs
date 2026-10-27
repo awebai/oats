@@ -66,6 +66,17 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
     return () => ipcRenderer.removeListener("chord-family:changed", fn);
   },
 
+  /** Lost sessions resumed (session-resume-launch.mjs). The pending summaries, an array, oldest first ([]
+   * when none), each taken once: the take clears them. The renderer decodes each again (resumeSummaryFact)
+   * before use. */
+  takeResumeNotice: () => ipcRenderer.invoke("session-resume:take"),
+  /** Sent on each new summary: take them (takeResumeNotice). No payload crosses; returns an unsubscribe. */
+  onResumeNoticeReady: (cb) => {
+    const fn = () => cb();
+    ipcRenderer.on("session-resume:ready", fn);
+    return () => ipcRenderer.removeListener("session-resume:ready", fn);
+  },
+
   /** Runtime workspace switcher (privileged; renderer modal is the UX layer). */
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),

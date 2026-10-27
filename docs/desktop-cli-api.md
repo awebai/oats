@@ -6272,6 +6272,129 @@ stored file); a remote upload adds `server`, `instance` and `stderr?`. Errors:
 sha256 mismatch; the remote file is left), `E_SESSION_UNKNOWN`,
 `E_REMOTE_INCOMPATIBLE`.
 
+### How the clients run the sweep
+
+The kernel's machine sweep, `oats session resume --json`
+([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown)), is
+run by a client when it opens and again when its rosters show a lost session
+([When Desktop opens](desktop-instance-start.md#when-desktop-opens)). The
+clients share one trigger, one runner and one reader, so the Desktop and the
+TUI decide, run and read it the same way.
+
+**The trigger**, `createResumeTrigger({ cli, run, read, now, onReading })`
+(`packages/client/session-resume-trigger.mjs`), holds the rule:
+
+- `launch()` arms it and runs the launch sweep, with no floor. A client calls
+  it once, after anything the sweep reads is in place (the Desktop: after the
+  startup deployments-list step). `observed()` does nothing before it.
+- `observed(rows, { localDeploymentIds })` is given each roster's instance
+  rows as the client reads them, with the ids of that read's local
+  deployments (the Desktop: `instances` of each accepted `/api/panel` reply,
+  and `localDeploymentIds(reply)`, its `deployments[]` entries with
+  `local: true`). It starts a sweep only when none is in flight, at least
+  `RESUME_MIN_INTERVAL_MS` (30 s) has passed since the last sweep that ran
+  started, and `lostLocalHomes(rows, localDeploymentIds)` names a home that
+  is not settled. Locality is the roster's, by deployment id: a row is local
+  only when its `deployment.id` (the panel's tag) is one of the local ids. A
+  remote deployment's row, a row with no tag, and every row when no ids are
+  given are not local; a client never acts on another host's loss.
+  `lostLocalHomes` keeps a local row's absolute `home` when its `sessionEnd`
+  says the session was lost and it is not running; it is the one place that
+  reads `sessionEnd`'s meaning. There is no timer and no queue.
+- After a sweep that a status read started completes (quiet or a notice),
+  every instance it was started for waits until it changes: it runs, or it is
+  no longer lost. A busy, failed or unsupported sweep, or a plan, settles
+  nothing. A home a read releases while the sweep runs is settled by neither
+  the snapshot nor the answer: that read is newer. A home
+  is also settled when a sweep could not resume it, found it was not lost, or
+  skipped it because the kernel had not seen it running recently. A sweep
+  that resumed it, started it fresh, left it waiting for you or found it
+  running unsettles it, and so does a later roster row that is running or not
+  lost. So a home that cannot be resumed costs at most one sweep after the
+  launch's. Which rows mean which is read in `session-resume.mjs` alone
+  (`sweepSettlement`, `sweepCompleted`).
+- `cli()` gives the accepted probe or null, or a promise of either, and is
+  asked at each would-be start: the sweep runs only when `resumeSupported`
+  holds. When it does not, nothing runs and the floor does not move.
+- Before reading an answer, it drops each `refused` row whose
+  `(home, reason, code)` an earlier sweep of this trigger already reported,
+  so a standing refusal is reported once. A home released (above) forgets its
+  reported refusals: refused again after it recovered, it is news. Every other
+  row is kept. The same goes for the result's own `warnings` (about the host):
+  one a notice of this trigger showed is left out of later answers by its
+  exact string, for the whole run; one only a quiet sweep carried stays news.
+- `onReading(reading)` is called for every finished sweep, whatever the
+  reading. `launch()` and `observed()` never throw or reject; a `run` that
+  rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings
+  and cancels nothing: a sweep in flight runs to its end.
+
+The Desktop's main process queues each `notice` reading's summary (at most
+10, the oldest dropped first) and tells every live window
+(`session-resume:ready`). A window takes the whole queue
+(`session-resume:take`, behind the trusted-frame guard) and posts each summary
+as its own notice.
+
+**The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):
+
+- It runs only when the probe is accepted, its `bin` is absolute and its
+  `features` list `session-resume` (`resumeSupported`). Otherwise it runs
+  nothing and answers `E_CLI_UNAVAILABLE` or `E_RESUME_FEATURE`. Nothing falls
+  back.
+- The argv is exactly `session resume --json`, with no `--deployment`, no
+  `--plan` and no `--server`. The working directory is `/`, so the kernel
+  resolves no deployment from the client's own. The environment is the
+  client's, without what Desktop's packaging adds (`cliEnvironment`) and without
+  the instance variables (`withoutInstanceVariables`,
+  `packages/client/kernel-environment.mjs`): a client started inside an
+  instance's pane must not scope the sweep to that instance. `OATS_HOME_DIR`
+  passes through.
+- It sets no deadline. The sweep runs in a process session of its own, and its
+  stdout and stderr are files, not pipes: `execFileToFiles`
+  (`packages/client/file-output-exec.mjs`) unlinks them right after the spawn
+  and reads them back from its own descriptors. Neither the client's exit nor
+  a signal to it reaches the sweep, and nothing is left on disk. A caller that
+  passes its own exec must keep those three properties: detached, file-backed,
+  and never signalling the child.
+- It answers the kernel's envelope: the result at exit 0, and an `ok:false`
+  envelope whatever the exit (`E_RESUME_BUSY` exits 1). Otherwise it answers
+  a code of its own, with no message: `E_CLI_OUTPUT_LIMIT` (more than 4 MiB),
+  `E_CLI_PROTOCOL` (no envelope), `E_CLI_FAILED` (a nonzero exit without an
+  `ok:false` envelope, or an exec that throws). No stderr and no exception text
+  reaches the answer.
+
+**The reader**, `readResumeSweep` (`packages/client/session-resume.mjs`),
+gives one of five readings: `unsupported` (nothing ran), `busy`
+(`E_RESUME_BUSY`), `failed` with a code, `quiet`, or `notice` with a summary.
+A plan answer (`plan: true`) is quiet.
+
+- The summary is facts: per row its instance, its deployment and its outcome's
+  reason, never a word of the kernel's text. `already-running` and `skipped`
+  rows are counted nowhere. A notice exists only when a row is `resumed`,
+  `fresh`, `blocked` or `refused`. Unchecked deployments are lines inside such
+  a notice, never a notice on their own; a deployment the kernel reports as
+  `opted-out` (an older kernel) reads as unchecked, with no reason.
+- It is tolerant. A row without a string `instance` and `deployment`, with an
+  unknown `outcome`, or whose name the display filter withholds or empties, is
+  dropped. An unknown `reason` under a known outcome is read as no reason and
+  worded generically. A refusal's `code` is kept only when it matches
+  `^E_[A-Z0-9_]{1,64}$`.
+- The result's own `warnings`, about the host and not one home, are the
+  summary's `host` (`{warnings, omitted}`, always present), kept and cut as a
+  row's are (below). They never make a notice alone; a notice shows them after
+  the unchecked deployments, under "OATS says about this computer:".
+- A row's `warnings` are kept whole and in order, each as one display line
+  (`displayLine`), and cut by position only, at the bounds of
+  `launchFlagIgnored` (16 lines, 4096 UTF-16 units; `boundedWarnings`,
+  `packages/client/launch-prompt-outcome.mjs`). No warning is picked, matched
+  or dropped by its words.
+- A refused row's `message` is the kernel's prose. It is shown only after
+  "OATS says:", attributed, through the display filter, and never matched.
+- The summary keeps at most 100 rows, in the answer's order, and counts the
+  rest. The headline counts the real totals. `resumeSummaryFact` is the
+  summary's decoder at a boundary (the Desktop's main process hands it to a
+  window over IPC), and `resumeNotice` writes the headline and the Details in
+  the clients' own words.
+
 ### Launch configurations
 
 ```text

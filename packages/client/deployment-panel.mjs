@@ -108,6 +108,9 @@ export function panelInstance(i) {
     ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
     // #802: a spawn setting up its worktree (deployment-data.mjs keeps it as true only).
     ...(i.spawnInProgress === true ? { spawnInProgress: true } : {}),
+    // Session resume: how the last session ended, as deployment-data.mjs validated it (SESSION_ENDS); absent stays
+    // absent. The resume trigger reads it (session-resume-trigger.mjs lostLocalHomes).
+    ...(i.sessionEnd !== undefined ? { sessionEnd: i.sessionEnd } : {}),
     ...(i.captured ? { captured: true } : {}),
     // Needs input (PR K): the validated claim (or null, unknown) as status reported it; absent stays absent.
     // The client's liveness is merged before projection, so running/runtimeState beside it are the probe's.

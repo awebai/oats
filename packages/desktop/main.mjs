@@ -57,6 +57,8 @@ import { validWorkspaceId } from "./renderer/workspace-id.mjs";
 import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
+import { createResumeNotices, createResumeWiring, installResumeHandlers, sendToLiveWindows } from "./session-resume-launch.mjs";
+import { createResumeTrigger, localDeploymentIds } from "../client/session-resume-trigger.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -375,6 +377,17 @@ async function listOnComputer(path) {
   if (failure) console.error(`oats-desktop: could not list ${path} on this computer: ${failure.code}: ${failure.message}`);
   return failure;
 }
+// Lost sessions resumed (session-resume-launch.mjs, ../client/session-resume-trigger.mjs): one trigger per app
+// launch, armed by the primary instance's startup only, after its deployments-list step settles, then asked
+// again by each accepted /api/panel reply (the api handler). Its sweeps' children are detached and file-backed:
+// shutdown() never touches them, and the trigger is never disposed at quit.
+const resumeNotices = createResumeNotices();
+const resumeTrigger = createResumeWiring({
+  createTrigger: createResumeTrigger, cli: () => settledCli(readServedCli, { attempts: 60 }), notices: resumeNotices,
+  broadcast: () => sendToLiveWindows(BrowserWindow.getAllWindows(), "session-resume:ready"),
+  error: (line) => console.error(line),
+});
+installResumeHandlers({ ipc: ipcMain, guard, notices: resumeNotices });
 // Where Add workspace → Browse… opens next (picker-default-path.mjs): the
 // parent of the workspace most recently added or opened, across launches.
 const LAST_WORKSPACE_PARENT_FILE = () => join(app.getPath("userData"), "last-workspace-parent.json");
@@ -669,9 +682,14 @@ ipcMain.handle("api", async (e, pathname, opts) => {
       ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_PLAN_CHANGED', { status: mutation ? 'unknown' : 'unavailable' }) : forgeFailure('E_CONNECTION_CHANGED');
   // Remote discovery can finish after startup. Accept the same server-owned
   // choices the menu receives, without adding requests to workspace polling.
-  if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && route === 'panel' && Array.isArray(json?.workspaces)) {
-    allowedWs = servedSelectors(json.workspaces);
-    noteServed(json.workspaces);
+  if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && route === 'panel') {
+    if (Array.isArray(json?.workspaces)) {
+      allowedWs = servedSelectors(json.workspaces);
+      noteServed(json.workspaces);
+    }
+    // The session resume trigger reads the same accepted reply's instance rows, with the reply's own local
+    // deployments: a row is local only by its deployment id (a remote server's rows never count).
+    if (Array.isArray(json?.instances)) void resumeTrigger.observed(json.instances, { localDeploymentIds: localDeploymentIds(json) });
   }
   return { ok: r.ok, status: r.status, body: json };
   } catch (error) {
@@ -1078,8 +1096,11 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
     if (serverHost.owned() && startupSet.write) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), startupSet.open);
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
-  // This computer's deployments list (#1390): the one-time import, then the launch's own deployment.
-  void startupDeploymentList(launchedPath).catch((e) => console.error(`oats-desktop: ${e?.message || e}`));
+  // This computer's deployments list (#1390): the one-time import, then the launch's own deployment. Then,
+  // whether it succeeded or failed, the session resume trigger is armed with the launch's sweep (it reads the
+  // registry the import fills).
+  void startupDeploymentList(launchedPath).catch((e) => console.error(`oats-desktop: ${e?.message || e}`))
+    .finally(() => resumeTrigger.launch());
   // Window activity: visibility flips that are not focus flips, hooked on
   // every window BEFORE the first one exists (focus/blur are app-level below).
   app.on("browser-window-created", (_event, win) => {

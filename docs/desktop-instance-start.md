@@ -241,3 +241,85 @@ child remains running; a fallback shell or dead pane is stopped. Errors that
 prevent a reliable observation remain unknown. A row that records a Herdr
 target (Herdr was removed in 0.31.0) is never observed: it shows the kernel's
 `E_HERDR_REMOVED` text, and Open and Start are disabled.
+
+## When Desktop opens
+
+After a shutdown, a reboot or a crash, the instances that were running have
+lost their sessions. OATS Desktop asks the kernel to resume them: it runs
+`oats session resume --json`
+([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown)), and
+the kernel does the rest. The kernel looks
+at every deployment on this computer's list (local deployments only, never a
+server's) and resumes each lost session as it decides. What the kernel does to
+a session, when it starts one fresh from its briefing instead, and when it
+stops trying for one that keeps losing its session, is the kernel's rule,
+written beside the command. A session lost long ago is not resumed
+automatically, and Desktop says nothing about it; `oats session start
+--resume` still brings it back by hand. Desktop owns no session: it runs the
+command, waits for the answer and shows a summary. There is no switch to turn
+it off.
+
+**When it runs.** Once when Desktop opens, after Desktop has imported its
+saved workspaces into this computer's deployments list, because the sweep
+reads that list. After that, whenever Desktop reads a roster that shows an
+instance of a local deployment, as the roster names its deployments, whose
+session was lost and that is not running, and only then:
+
+- at most one sweep at a time, and at least 30 seconds after the last one
+  started (the one at launch counts);
+- after a sweep that a status read started, every instance it was started
+  for waits until it changes (it runs, or it is no longer lost); so does an
+  instance any sweep could not resume, found was not lost, or left because it
+  was lost long ago. Such an instance does not set off another sweep until a
+  later roster shows it running or no longer lost, or a sweep resumes it;
+- never for another machine's instances.
+
+There is no timer and no queue: a read that comes too soon starts nothing,
+and the next read asks again. A new window, a workspace switch, a restarted
+backend or Desktop coming to the front start nothing on their own. The rule
+is shared with the TUI (`packages/client/session-resume-trigger.mjs`), and
+the kernel's machine lock and its record of this boot make running it from
+several clients safe. It runs only when the installed OATS CLI advertises the
+`session-resume` feature. Without it, nothing runs and nothing is said.
+
+**The notice.** When a sweep resumed an instance, started one fresh, left one
+waiting for you or could not resume one, one window shows a notice that stays
+until you dismiss it. Switching that window's workspace does not take it away.
+The headline counts them ("OATS resumed 3 instances whose sessions were lost.
+1 of them is waiting for you: open its terminal."). Its Details list each
+instance, in this order: those waiting for you (at a launch prompt, or to
+choose how to resume it: open its terminal), those that could not be resumed,
+those that started fresh and why, then those resumed in their own
+conversation. An instance that keeps losing its session is listed with those
+that could not be resumed: the kernel stops resuming it, and it stays down
+until you start it yourself. The deployments the sweep did not check are
+listed after them. Text from OATS appears only after "OATS says:", as a quote.
+The Details show at most 100 instances, then say how many more there are.
+
+Each sweep with something to report gives a notice of its own. An instance
+that could not be resumed is reported once: a later sweep that finds it the
+same way leaves it out, and says nothing if that was all it found. Once it has
+been resumed, or shown running or no longer lost, a later refusal is reported
+again. More than three notices fold into one entry, "N notices about resumed
+sessions". Desktop keeps the last 10 notices no window has shown yet, so a
+window that opens after a sweep has finished still gets them, and only one
+window ever shows each. Closing that window loses it.
+
+OATS can also warn about this computer rather than one instance (how the
+sessions it resumes are run on this machine, say). Such a warning is shown
+once each time Desktop runs, in the next notice, after the deployments, under
+"OATS says about this computer:". A warning alone never makes a notice.
+
+There is no notice when nothing was lost, when the sessions were already
+running, when another sweep holds the machine (another Desktop, the TUI, or
+`oats session resume` run by hand), or when the only thing to report is a
+deployment that was not checked. A sweep that fails writes one line with its
+code to Desktop's log, and shows nothing.
+
+**Quitting does not stop a sweep.** The sweep runs in a process session of its
+own, and writes its answer to files rather than to Desktop. Quitting Desktop,
+or Desktop crashing, while it runs leaves it to finish. Its answer is then
+not shown.
+
+How the clients run the command and read its answer is in
+[desktop-cli-api.md](desktop-cli-api.md#how-the-clients-run-the-sweep).
