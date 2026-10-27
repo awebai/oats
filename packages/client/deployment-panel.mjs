@@ -119,6 +119,8 @@ export function panelInstance(i) {
     ...(i.waitingOnYou !== undefined ? { waitingOnYou: i.waitingOnYou } : {}),
     // Feature instance-color: the row's colour as instanceColor reads it, present only when it is one.
     ...(instanceColor(i) !== null ? { color: instanceColor(i) } : {}),
+    // Feature instance-background (#1579): exactly true, else absent (instance-tree.mjs backgroundPlacement).
+    ...(i.background === true ? { background: true } : {}),
     team: i.team || null,
   };
 }

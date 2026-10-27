@@ -135,7 +135,7 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const mirroredVersion = readJson(join(payload, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${mirroredVersion}`, "okf mirror and packed official catalog version drift");
-  assert.equal(mirroredVersion, "5.3.0");
+  assert.equal(mirroredVersion, "5.5.0");
   // The PACKED tarball's catalog carries this release's provider pins, each equal to the checkout's mirror of it.
   for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.32.0"], ["oats.engineering", "oats-developer", "1.15.0"], ["oats.cloning", "oats-cloning", "1.0.1"], ["oats.apps", "oats-folio", "1.0.0"], ["oats.apps", "oats-library", "1.0.0"]]) {
     const mirrored = readJson(join(repo, "mirrors", slug, "oats.json")).version;
@@ -376,7 +376,7 @@ try {
   assert.equal(meta.modules["oats.okf"].from.package, "oats.okf");
   const okfRow = meta.capabilities.find((c) => c.id === "oats.okf");
   assert.ok(okfRow, "instance.json.capabilities lists oats.okf");
-  assert.deepEqual([...okfRow.hooks].sort(), ["soul-scaffold", "spawn"], "5.0 has no retire capture hook");
+  assert.deepEqual([...okfRow.hooks].sort(), ["soul-scaffold", "spawn", "upgrade"], "5.x has no retire capture hook; 5.4.0 adds the upgrade hook");
   assert.equal(meta.capabilityMeta?.["oats.okf"], undefined, "the spawn hook creates no external custody or compensation debt");
   assert.equal(okfRow.settings?.["bindings-file"], bindings, "effective settings come from oats-local.yaml");
   const okfModule = join(probeHome, ".oats/modules/oats.okf");

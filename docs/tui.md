@@ -240,6 +240,27 @@ while a terminal is open); under 80 columns it has the whole width.
   own deployment, and a name that is no instance there, or two of them, is
   not shown. From 80 columns up it stands beside the sidebar; on a narrower
   terminal `Tab` opens it as a page over the whole screen.
+- **Background instances** ([#1579](https://github.com/awebai/oats/issues/1579))
+  are listed apart, as in the Desktop's sidebar. An instance whose
+  `background` is on (`oats instance background`, or its soul's default at
+  spawn) leaves the list, and so do the instances below it, whatever their
+  own setting. They stand under one heading at the very end of the list:
+  `▸ Background 3` (`>` in ASCII), the word in bold and the count dim. The
+  heading starts closed in every run, and stays as you leave it for each
+  workspace while the TUI runs. It can be selected: `Enter` or `Space`
+  opens or closes it, `Right` opens it (on an open one, goes to its first
+  row) and `Left` closes it. Open (`▾`), its rows form their own tree, with
+  the deployments' headings in a view of two or more; a background instance
+  whose parent is in the list above is a top row there. While one of its
+  instances needs input, open or closed, the heading carries `Needs input`
+  at its right edge in the roll-up's look (only the `!` on a narrow row),
+  and the help's count of instances that need input counts it. A filter
+  shows the matching background rows with the section open, without
+  changing whether it is kept open, and the heading then counts the
+  matches. The movement keys pass over the rows of a closed section, and
+  showing a background instance's terminal from the palette leaves the
+  section as it was. The palette lists every instance. Without OATS's
+  `instance-background` feature every instance stays in the list.
 - **Opening an agent.** `Enter` on an instance that runs opens its terminal
   beside the sidebar, where the detail was, as a tab: see
   [Open an agent's terminal](#open-an-agents-terminal) and [Tabs](#tabs).
@@ -1674,8 +1695,9 @@ from every focus, an agent's terminal included: the agent never gets them.
 | `Up` `k`, `Down` `j` | move the selection; with the detail focused, scroll it |
 | `g` `Home`, `G` `End` | first row, last row |
 | `PageUp`, `PageDown` | one page |
-| `Left` `h` | fold the instances below the row away; on a row with none, or already folded, go to its parent |
-| `Right` `l` | show them again; on a row already open, go to its first child |
+| `Left` `h` | fold the instances below the row away; on a row with none, or already folded, go to its parent (from a top row of the Background section, its heading); on the Background heading, close it |
+| `Right` `l` | show them again; on a row already open, go to its first child; on the Background heading, open it, or go to its first row |
+| `Enter`, `Space` | on the Background heading, open or close it |
 | `Tab` | move between the list and the detail; under 80 columns, open and close the detail page |
 | `/` | filter |
 | `r` | read now |
@@ -1704,8 +1726,8 @@ from every focus, an agent's terminal included: the agent never gets them.
 | `Ctrl+Z` | suspends: the shell gets the terminal back as it was; `fg` returns, redraws and reads at once |
 | `Ctrl+L` | redraws the whole screen, and sets the terminal's modes again if something reset them |
 
-The selection stands on instances only, and in the switcher on its rows: a
-heading, a reason and a note are passed over. What stands above the first
+The selection stands on instances and the Background heading only, and in
+the switcher on its rows: any other heading, a reason and a note are passed over. What stands above the first
 instance or under the last one comes into view with it. When a movement key
 has no instance to go to (the selection is on the first or the last one, or
 the list has none), it scrolls the list instead, so the rows after the last
@@ -2557,6 +2579,7 @@ with the Desktop (`packages/client/`).
 | To | Run |
 |---|---|
 | start an agent with another harness or model | `oats session start --home <home>` with its options |
+| move an instance into or out of the background | `oats instance background <name> on\|off` |
 | spawn an agent on another machine | `oats spawn <soul> --server <id>` |
 | spawn an agent with another harness, model or task | `oats spawn <soul>` with its options |
 | see a capability's skills and files | `oats capabilities show <name>` |

@@ -185,7 +185,7 @@ export function previewSelector(v) {
   return exact(v, ['soul', 'agentsRoot']) && name(v.soul) && absolute(v.agentsRoot) ? { soul: v.soul, agentsRoot: v.agentsRoot } : null;
 }
 export function previewChoices(v) {
-  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'harness', 'model', 'launchConfig', 'backend', 'yolo', 'relation', 'identity', 'join'])) return null;
+  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'harness', 'model', 'launchConfig', 'backend', 'yolo', 'background', 'relation', 'identity', 'join'])) return null;
   // --name (exact, unprefixed; feature spawn-name) and --purpose are mutually exclusive.
   if (Object.hasOwn(v, 'purpose') && Object.hasOwn(v, 'name')) return null;
   const out = {};
@@ -198,6 +198,9 @@ export function previewChoices(v) {
   // The only work override the Desktop offers: a checkout soul in a worktree.
   if (Object.hasOwn(v, 'work')) { if (v.work !== 'worktree') return null; out.work = 'worktree'; }
   if (Object.hasOwn(v, 'yolo')) { if (typeof v.yolo !== 'boolean') return null; out.yolo = v.yolo; }
+  // Run in background (feature instance-background, #1579): present only when the dialog's switch differs from the
+  // soul's declared default; the kernel then records the instance's own flag (--background / --no-background).
+  if (Object.hasOwn(v, 'background')) { if (typeof v.background !== 'boolean') return null; out.background = v.background; }
   // Messaging identity (decision 27; feature spawn-provider-payload): sent to
   // the soul's messaging provider as --provider <cap> identity.mode=… — there
   // is no kernel flag. `provider` is the capability the preview reported on
@@ -243,6 +246,7 @@ export function choiceArgv(choices, cli) {
   for (const [k, flag] of [['purpose', '--purpose'], ['name', '--name'], ['work', '--work'], ['branch', '--branch'], ['base', '--base'], ['harness', harnessFlag(cli)], ['launchConfig', '--launch-config'], ['backend', '--backend']]) if (choices[k] !== undefined) argv.push(flag, choices[k]);
   if (choices.model.kind !== 'inherit') argv.push('--model', choices.model.kind === 'native-default' ? '@native-default' : choices.model.value);
   if (choices.yolo !== undefined) argv.push(choices.yolo ? '--yolo' : '--no-yolo');
+  if (choices.background !== undefined) argv.push(choices.background ? '--background' : '--no-background');
   if (choices.relation.kind !== 'unrelated') argv.push('--relation', choices.relation.kind, '--relative-to', choices.relation.anchor.instance, '--relative-root', choices.relation.anchor.agentsRoot);
   if (choices.identity) {
     argv.push('--provider', choices.identity.provider, `identity.mode=${choices.identity.mode}`);
@@ -362,6 +366,12 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
   // name is then not known to be the one a `--name` preview would give.
   const naming = Object.hasOwn(v, 'naming') ? namingOf(v.naming) : undefined;
   if (naming === null) return null;
+  // Feature instance-background (#1579): `background`, always present on a kernel with the feature (absent: an older
+  // one, which offers no switch), agrees with the decision, which binds `effective.background: true` exactly when it
+  // is true; `backgroundFrom` ("flag" or "soul", absent when neither declared it) says who chose it.
+  const background = Object.hasOwn(v, 'background') ? v.background : undefined;
+  if (background !== undefined && typeof background !== 'boolean' || (background === true) !== (e.background === true)
+    || Object.hasOwn(v, 'backgroundFrom') && (background === undefined || !['flag', 'soul'].includes(v.backgroundFrom))) return null;
   // Only reports carry `problem`: a preview that would hit one refuses with the error instead.
   if (Object.hasOwn(v, 'launch') && (launch === undefined || launch.problem !== null || launch.effective.harness !== e.harness || launch.effective.model !== e.model
     || launch.effective.launchConfig !== e.launchConfig)) return null;
@@ -374,6 +384,7 @@ export function previewData(v, expected, { composedFrom = false } = {}) {
     ...(defaultTeam !== undefined ? { defaultTeam } : {}), ...(launch ? { launch } : {}),
     ...(launchPromptAnswers ? { launchPromptAnswers } : {}),
     ...(naming ? { naming } : {}),
+    ...(background !== undefined ? { background, ...(Object.hasOwn(v, 'backgroundFrom') ? { backgroundFrom: v.backgroundFrom } : {}) } : {}),
     // Capability warnings (0.49.0): the kernel's message strings, tolerant and idempotent (a malformed list reads as none,
     // never refuses the preview); absent on an older kernel. Shown only: the apply binds nothing on them.
     ...(Object.hasOwn(v, 'warnings') ? { warnings: previewWarningsOf(v.warnings) } : {}) };

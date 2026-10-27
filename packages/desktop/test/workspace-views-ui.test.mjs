@@ -106,9 +106,10 @@ function roster(t, instances, deployments, said = []) {
   return doc.querySelector(".ctx-list");
 }
 
-test("source pin: the shell's roster groups through rosterSections with the shown view's deployments", () => {
+test("source pin: the shell's roster groups through the shared sections (sidebarSections, over rosterSections) with the shown view's deployments", () => {
   assert.ok(renderSource);
-  assert.match(renderSource, /rosterSections\(instances, visible, contextDeployments, DESKTOP_TERMS\)/);
+  // #1579: the main tree and the Background section, each rosterSections over its rows (roster-sections.mjs sidebarSections).
+  assert.match(renderSource, /sidebarSections\(instances, visible, contextDeployments, DESKTOP_TERMS,/);
   assert.match(shellSource, /contextDeployments = panelDeployments\(panel\);/);
 });
 

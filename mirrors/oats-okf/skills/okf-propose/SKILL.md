@@ -99,7 +99,7 @@ repository. Use this form:
 ```markdown
 # OKF proposal: <one-line claim>
 
-Source: instance <your instance name>, home <your instance home>, soul <your soul's name>
+Source: instance <your instance name>, home <your instance home>, soul <your soul's name>, incarnation <your instance.json createdAt>
 
 ## What
 <Claim, one concept each; name its owned node.>
@@ -116,8 +116,23 @@ refined or contradicted, cited with their accepted commit. State limits.>
 ```
 
 Use **exactly one** `Source:` line, filled from your instance's identity.
-It is a pointer for the harvester to verify against deployment records,
-never authority. The optional `## Backing notes` section lists one
+Copy `createdAt` verbatim from your home's `instance.json` into `incarnation`;
+it is not the proposal date, a session start time or a newly generated ID.
+Do not edit the record. The hook matches it exactly against the live record
+and public event history, so a current proposal can use a reused instance
+name without taking another incarnation's evidence. It is a consistency
+pointer, never proof of authorship or authority.
+
+Legacy lines without `, incarnation <createdAt>` still work only when the
+source's event history has one known incarnation. If a reused name refuses,
+re-judge the claims and named notes in the current instance and write a new
+proposal with its incarnation, or re-propose from an instance with a fresh
+name. Never stamp an old proposal with a replacement's `createdAt` to bypass
+the refusal. A mismatch, incomplete/unknown history or invalid live record
+still refuses; no fallback to older recovery. Retired-source capture still
+requires a single known incarnation, even with the new line.
+
+The optional `## Backing notes` section lists one
 `- notes/<file>.md` per note, relative to your home. Only those named notes
 are read; the harvester does not browse your entire home or transcript.
 
@@ -216,5 +231,6 @@ Keep backing notes until that harvester retires. Retirement recovery can
 supply the source evidence before capture; do not dispose of that recovery
 before capture. After a successful capture, the snapshot is independent of
 the source home and recovery. This preserves evidence; it does not itself
-control the harvester session's lifetime. The proposal, source checks,
-snapshot and review flow are unchanged from oats.okf 5.1.0.
+control the harvester session's lifetime. The explicit live-incarnation check
+extends the 5.1.0 source checks; snapshotting, opt-out and review flow are
+unchanged.

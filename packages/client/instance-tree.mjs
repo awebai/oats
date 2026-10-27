@@ -122,11 +122,14 @@ export function instanceSiblings(instances) {
  * Returns [{ key, instances: [{...instance, depth}] }] with clusters ranked by
  * their first ROOT in the roster's order (`rosterOrder`), never by another member (#1262): a bundle sits where
  * its root sits, and gaining or losing a child, or a start or a stop, moves nothing. A cluster without a root
- * (a malformed cycle) ranks by its first member in that order. */
-export function clusterInstances(instances, { links = instanceLinks } = {}) {
+ * (a malformed cycle) ranks by its first member in that order.
+ * `roster` (optional): the full roster `instances` is a part of (#1579: one section of it). Names resolve over it,
+ * so a part never turns an ambiguous name into a false unique one, and a link that resolves to a row outside the
+ * part is no edge: such a row is a root of its part, as a row whose parent is gone. Without it, `instances`. */
+export function clusterInstances(instances, { links = instanceLinks, roster = instances } = {}) {
   const byId = new Map(instances.map((i) => [instanceId(i), i]));
   const byName = new Map();
-  for (const i of instances) {
+  for (const i of roster) {
     if (!byName.has(i.instance)) byName.set(i.instance, []);
     byName.get(i.instance).push(i);
   }
@@ -141,7 +144,7 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
     }
     for (const other of links(i)) {
       const oid = resolveLinkId(i, other, byName);
-      if (!oid || oid === id) continue;
+      if (!oid || oid === id || !adj.has(oid)) continue; // a link out of these rows draws nothing
       adj.get(id).add(oid);
       adj.get(oid).add(id);
     }
@@ -506,12 +509,13 @@ export function visibleClusters(allInstances, visibleInstances, { links = instan
  * `lastFocus` (Map<instanceId, time>, optional; the command palette's, #1383): the full roster's clusters are
  * ordered by last focus (`recencyOrder`) before the groups form by the same rule, so a run is the consecutive
  * single clusters of that order, keyed by its first member there. What is visible still decides only which rows
- * are listed, never the order. Without it, the roster's own order (the sidebar's and the TUI's). */
-export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks, lastFocus } = {}) {
+ * are listed, never the order. Without it, the roster's own order (the sidebar's and the TUI's).
+ * `roster` (optional): the full roster `allInstances` is a part of, as for `clusterInstances`. */
+export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks, lastFocus, roster = allInstances } = {}) {
   const visibleIds = new Set(visibleInstances.map((i) => instanceId(i)));
   const groups = [];
   let place = 0, run = null;
-  const clusters = clusterInstances(allInstances, { links });
+  const clusters = clusterInstances(allInstances, { links, roster });
   for (const c of lastFocus instanceof Map ? recencyOrder(clusters, lastFocus) : clusters) {
     const shown = { ...c, instances: c.instances.filter((i) => visibleIds.has(instanceId(i))) };
     if (c.instances.length > 1) {
@@ -524,6 +528,44 @@ export function rosterGroups(allInstances, visibleInstances, { links = instanceL
     if (shown.instances.length) run.clusters.push(shown);
   }
   return groups.filter((g) => g.clusters.length);
+}
+
+/** The kernel feature that reports a row's `background` (#1579). */
+export const BACKGROUND_FEATURE = "instance-background";
+
+/** The rows the Background section holds (#1579; Pepe, 2026-10-27): a row whose own `background` is exactly
+ * `true`, or one with such an ancestor in its `parentInstance` chain among the rows present (resolved by
+ * identity, resolveLinkId over the FULL roster, cycle-safe; a parent that resolves to nothing ends the chain).
+ * So a background row's children stay under it whatever their own value. Placement only: a row's own flag is
+ * read, never changed (no inheritance). `enabled`: the CLI lists `instance-background`; without it the set is
+ * empty whatever a row carries (a stray field is ignored). Returns Set<instanceId>. */
+export function backgroundPlacement(instances, enabled) {
+  const out = new Set();
+  if (!enabled) return out;
+  const byId = new Map(instances.map((i) => [instanceId(i), i]));
+  const byName = new Map();
+  for (const i of instances) {
+    if (!byName.has(i.instance)) byName.set(i.instance, []);
+    byName.get(i.instance).push(i);
+  }
+  const known = new Map(); // instanceId -> placed in Background
+  for (const row of instances) {
+    // Walk up until a background row, a row already decided, the top, or a cycle; every row walked shares the answer.
+    const path = [], seen = new Set();
+    let cursor = row, placed = false;
+    while (cursor) {
+      const id = instanceId(cursor);
+      if (known.has(id)) { placed = known.get(id); break; }
+      if (seen.has(id)) break;
+      seen.add(id); path.push(id);
+      if (cursor.background === true) { placed = true; break; }
+      const pid = cursor.parentInstance ? resolveLinkId(cursor, cursor.parentInstance, byName) : null;
+      cursor = pid ? byId.get(pid) : null;
+    }
+    for (const id of path) known.set(id, placed);
+  }
+  for (const [id, placed] of known) if (placed) out.add(id);
+  return out;
 }
 
 /** Whether an item remains visible under VS Code-style collapsed ancestors.

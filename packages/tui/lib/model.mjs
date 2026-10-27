@@ -7,7 +7,7 @@
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
   TERMS, panelData, localDeploymentIds, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
-  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor, instanceDisplayName,
+  hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, rosterSectionKey, sidebarSections, backgroundPlacement, BACKGROUND_FEATURE, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor, instanceDisplayName,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
   openAct, deployments as heldDeployments, localScrollKeys, hostScrollKeys, attachExit, preflightFailure, kernelLines,
@@ -141,6 +141,15 @@ function markOf(row) {
  *  map (views/souls.mjs SOUL_COLOURS), or null: which colour a row shows is the shared rule (instanceColor). */
 const rowColour = (row) => SOUL_COLOURS[instanceColor(row)] ?? null;
 
+/** The id the Background section's heading is selected by (#1579): it stands in `state.selected` as an
+ *  instance's id does, so the movement keys stop on it. No instanceId can be it: a home and an agents root
+ *  are paths, an instance's name is made of letters, digits and `-`, and none starts with NUL. */
+export const BACKGROUND_ID = "\u0000background";
+/** Whether the Background section of workspace `open` is drawn open in `state`: closed in every new run,
+ *  and kept for the run per workspace as `collapsed` is (by `state.open`): `state.background` holds the
+ *  ones open. */
+export const backgroundOpen = (state) => state.background.has(state.open);
+
 /** The key prefix of each run of instances related to no other, as the shared grouping names it
  *  (`independent:<id>`). Read by key, not by label: a cluster whose root is named `independent` has that
  *  label too, and its key is `cluster:<n>:independent`. */
@@ -160,22 +169,31 @@ function build(state, at) {
   // The filter: the text typed after `/`, or the exact soul filter the Souls view's `i` sets
   // (`soul`: the names an instance's soul may carry), matched by the shared walk all the same.
   const query = state.filter.query, soul = state.filter.soul ?? null, filtering = query.trim() !== "" || soul !== null;
-  // The section (deployment) each row is drawn in, read from the shared split itself: the
-  // sections of all rows. A collapse hides, and rolls up, only rows of its own section, as in the
-  // Desktop: a parent's name can resolve to a row of another deployment of the view.
-  // `ordered`: every row in that order, whatever is filtered or folded (the palette's).
-  const sectionOf = new Map(), ordered = [];
-  for (const part of rosterSections(instances, instances, deployments, TERMS)) for (const group of part.groups) for (const cluster of group.clusters) for (const row of cluster.instances) { sectionOf.set(instanceId(row), part.deployment?.id ?? null); ordered.push(row); }
-  const section = (row) => sectionOf.get(instanceId(row)) ?? null;
+  // `ordered`: every row in the shared order of the whole roster, whatever is filtered, folded or in the
+  // Background section (the lists of a soul's instances read it).
+  const ordered = [];
+  for (const part of rosterSections(instances, instances, deployments, TERMS)) for (const group of part.groups) for (const cluster of group.clusters) ordered.push(...cluster.instances);
+  // The rows the Background section holds (#1579), the shared placement's: only when this run's kernel
+  // lists the feature; without it a row's `background` is ignored and nothing below changes.
+  const placement = backgroundPlacement(instances, Array.isArray(state.cli?.features) && state.cli.features.includes(BACKGROUND_FEATURE));
+  // The section each row is drawn in, as the shared key says it: its deployment's, in the main tree or in
+  // the Background section. A collapse hides, and rolls up, only rows of its own section, as in the
+  // Desktop: a parent's name can resolve to a row of another deployment of the view, or of the other part.
+  const section = rosterSectionKey(deployments, placement);
   // Each instance's siblings by explicit link, both ends, as the shared home resolves them (#1312):
-  // asked of each section's full roster on its own, whatever is filtered or folded, so a name never
-  // resolves to an instance of another deployment, nor a dropped row makes an ambiguous name unique.
-  const bySection = new Map();
-  for (const row of instances) { const key = section(row); if (!bySection.has(key)) bySection.set(key, []); bySection.get(key).push(row); }
+  // asked of each deployment's full roster on its own, whatever is filtered, folded or in the Background
+  // section, so a name never resolves to an instance of another deployment, nor a row of the other part
+  // left out makes an ambiguous name unique. The key without a placement is the deployment's alone.
+  const deploymentOf = rosterSectionKey(deployments), bySection = new Map();
+  for (const row of instances) { const key = deploymentOf(row); if (!bySection.has(key)) bySection.set(key, []); bySection.get(key).push(row); }
   const siblings = new Map([...bySection.values()].flatMap((own) => [...instanceSiblings(own)]));
   const matched = soul !== null ? filterInstanceTree(instances, soul.name, (row) => soul.names.includes(row.agent)) : filterInstanceTree(instances, query);
   const visible = matched.filter((i) => instanceVisibleInTree(i, instances, state.collapsed, state.open, filtering, { section }));
-  const sections = rosterSections(instances, visible, deployments, TERMS);
+  const stale = (row) => rowStale(row, deployments);
+  // The main tree's sections, and the Background section after them, each a tree of its own (the shared
+  // sidebarSections). A filter draws the section open, so its matches show, and changes nothing stored;
+  // the heading counts the rows the filter leaves in it.
+  const { main: sections, background } = sidebarSections(instances, visible, deployments, TERMS, { placement, open: backgroundOpen(state) || filtering, listed: matched, stale });
   // How many instances each collapse folds away under its row: every descendant of the row in its
   // own section, as the shared walk finds them when it is asked with that collapse alone (so a
   // fold further down hides none of them from the count). A filter folds nothing away.
@@ -186,7 +204,6 @@ function build(state, at) {
     const alone = new Set([key]);
     folded.set(instanceId(row), instances.filter((other) => !instanceVisibleInTree(other, instances, alone, state.open, false, { section })).length);
   }
-  const stale = (row) => rowStale(row, deployments);
   const primary = primaryDeployment(deployments), said = deploymentState(primary);
   const live = primary !== null && said.key === "live";
   // The time of the read the screen shows: the cycle's own (`generatedAt`), never
@@ -200,6 +217,23 @@ function build(state, at) {
   // given, every cluster's members in order, with one gap at every boundary between a run of single
   // instances and a cluster, both ways (#1262).
   const parts = [], rows = [];
+  const drawn = (part, background = false) => {
+    if (text(part.label)) {
+      parts.push(heading(part.deployment, part.label));
+      if (text(part.deployment.note)) parts.push({ kind: "sentence", value: part.deployment.note });
+    }
+    let previous = null; // whether the group drawn last was a run of single instances
+    for (const group of part.groups) {
+      // A gap at every boundary between a run of single instances and a cluster, both ways (#1262).
+      const singles = group.key.startsWith(SINGLES);
+      if (previous !== null && singles !== previous) parts.push({ kind: "gap" });
+      previous = singles;
+      for (const cluster of group.clusters) for (const row of cluster.instances) {
+        const item = { kind: "row", row, id: instanceId(row), depth: Number.isInteger(row.depth) ? row.depth : 0, ...(background ? { background: true } : {}) };
+        parts.push(item); rows.push(item);
+      }
+    }
+  };
   const heading = (deployment, label, path = null) => {
     const its = deploymentState(deployment), up = its.key === "live";
     // A machine's rows are what it reported at the last roster read: that time stands on its
@@ -212,31 +246,26 @@ function build(state, at) {
       readAt: read !== readAt ? read : null,
     };
   };
-  for (const part of sections) {
-    if (text(part.label)) {
-      parts.push(heading(part.deployment, part.label));
-      if (text(part.deployment.note)) parts.push({ kind: "sentence", value: part.deployment.note });
-    }
-    let previous = null; // whether the group drawn last was a run of single instances
-    for (const group of part.groups) {
-      // A gap at every boundary between a run of single instances and a cluster, both ways (#1262).
-      const singles = group.key.startsWith(SINGLES);
-      if (previous !== null && singles !== previous) parts.push({ kind: "gap" });
-      previous = singles;
-      for (const cluster of group.clusters) for (const row of cluster.instances) {
-        const item = { kind: "row", row, id: instanceId(row), depth: Number.isInteger(row.depth) ? row.depth : 0 };
-        parts.push(item); rows.push(item);
-      }
-    }
-  }
+  for (const part of sections) drawn(part);
   // A deployment of the view that is not live and has no row is in no section: it is named
-  // after them, with its state, and its reason on rows of its own.
+  // after them, with its state, and its reason on rows of its own. One whose rows are all in the
+  // Background section has its heading there while the section is open; closed, it is named here, so
+  // that it is not reached is still said.
+  const held = new Set(background?.sections.map((part) => part.deployment?.id) ?? []);
   if (multi) for (const deployment of deployments) {
     const its = deploymentState(deployment);
-    if (its.key === "live" || sections.some((part) => part.deployment?.id === deployment.id)) continue;
+    if (its.key === "live" || sections.some((part) => part.deployment?.id === deployment.id) || held.has(deployment.id)) continue;
     parts.push(heading(deployment, deployment.machine, deployment.label));
     if (text(its.detail)) parts.push({ kind: "sentence", value: its.detail });
     if (text(deployment.note)) parts.push({ kind: "sentence", value: deployment.note });
+  }
+  // The Background section (#1579), after the whole main tree: its heading, which can be selected and
+  // opens and closes it (lib/store.mjs), and while it is open its own tree, drawn as the main one is,
+  // with a heading per deployment in a view of two or more. Its rows wait as any row does; the heading
+  // says that one of them waits, open or closed.
+  if (background !== null) {
+    parts.push({ kind: "background", id: BACKGROUND_ID, open: background.open, count: background.count, waiting: background.waiting });
+    for (const part of background.sections) drawn(part, true);
   }
   // The roster read failed and no answer has arrived yet: there is no machine to say it.
   // It is about no row above it: an empty row sets it apart when something stands there.
@@ -247,6 +276,7 @@ function build(state, at) {
   const status = panel?.deployment?.status ?? null;
   const local = panel !== null && !!panel.deployment;
   const counted = runtimeCounts(instances);
+  // Every row of the workspace that waits, the Background section's too, open or closed (#1579).
   const waiting = instances.filter((row) => waitingClaim(row, { stale: stale(row) })).length;
   const withheld = Array.isArray(panel?.deployment?.withheld) ? panel.deployment.withheld.length : 0;
   // The machines of the view other than this one, each once, and whether a deployment of this
@@ -258,6 +288,9 @@ function build(state, at) {
   const observed = panel !== null && !gone && (local ? status === "observed" : live || instances.length > 0);
   return {
     panel, gone, instances, ordered, deployments, multi, parts, rows, filtering, stale, section, siblings, live, observed, folded,
+    // What the selection stands on, in drawn order: the instances' rows and the Background heading.
+    stops: parts.filter((part) => part.id !== undefined),
+    placement, background,
     below: waitingRollup(instances, state.collapsed, state.open, { filtering, stale, section }),
     status,
     workspace: text(panel?.workspace?.name) ? panel.workspace.name : "",
@@ -285,7 +318,8 @@ function build(state, at) {
     // Why no instance is listed. "none" is a statement about the deployment, so it is made only
     // of one that was read: a machine that is not live and has no row kept is not known to have
     // none (it is not `observed`), and its notice is all there is to say.
-    empty: status === "pending" ? "reading" : !observed ? null : !instances.length ? "none" : !rows.length ? "nomatch" : null,
+    // A Background heading is something listed: every instance in a closed section is no "nomatch".
+    empty: status === "pending" ? "reading" : !observed ? null : !instances.length ? "none" : !parts.some((part) => part.id !== undefined) ? "nomatch" : null,
     // As wide as the widest word among all the rows of the list, so the column does not move
     // while the list scrolls.
     wordWidth: Math.min(WORD_MAX, rows.reduce((widest, { row }) => Math.max(widest, textWidth(displayLine(wordOf(row, state.ascii)) ?? "")), 0)),
@@ -296,10 +330,11 @@ function build(state, at) {
 export const ROSTER_FAILED = "Other machines were not read.";
 
 /** The list as rows of the screen for a pane `cols` wide: every part on one row, a sentence on
- *  as many as it needs. An item is null (an empty row), an instance (`{ row, id, depth }`, the
- *  only kind that can be selected), `{ heading }`, `{ line }` (one row of a sentence, safe text),
- *  `{ own }` (the TUI's words) or `{ empty }` (why no instance is listed). `index`: an
- *  instance's id to its place. */
+ *  as many as it needs. An item is null (an empty row), an instance (`{ row, id, depth }`), the
+ *  Background heading (`{ kind: "background", id: BACKGROUND_ID, open, count, waiting }`): the two
+ *  kinds that can be selected, both with an `id`; `{ heading }`, `{ line }` (one row of a sentence,
+ *  safe text), `{ own }` (the TUI's words) or `{ empty }` (why no instance is listed). `index`: the
+ *  id of what can be selected to its place. */
 function flatten(base, cols, ascii) {
   const items = [];
   const room = Math.max(1, cols - SENTENCE_INDENT - 1);
@@ -307,7 +342,7 @@ function flatten(base, cols, ascii) {
   if (base.empty) items.push({ empty: base.empty }, ...(base.parts.length ? [null] : []));
   for (const part of base.parts) {
     if (part.kind === "gap") items.push(null);
-    else if (part.kind === "row") items.push(part);
+    else if (part.kind === "row" || part.kind === "background") items.push(part);
     else if (part.kind === "heading") items.push({ heading: part });
     else if (part.kind === "own") items.push({ own: part.words });
     else for (const line of shownLines(part.value, room, SENTENCE_ROWS, { ascii })) items.push({ line });
@@ -319,11 +354,11 @@ function flatten(base, cols, ascii) {
  *  from read it again without asking the shared home again (its grouping walks the whole roster
  *  for each row). The state's values are never changed in place, so their identity says whether
  *  they changed. The flattening for the last width asked is kept beside it. */
-const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "cli", "home", "retiring", "ascii"];
+const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "background", "cli", "home", "retiring", "ascii"];
 let kept = null;
 /** The roster of a state: the rows in drawn order and what the sidebar's title says, for a list pane
  *  `cols` wide. Only `items` and `index` depend on the width; `rows`, the instances in drawn
- *  order, do not. `at` stamps a machine's panel before any roster outcome was taken, which
+ *  order, and `stops`, those and the Background heading (what the selection stands on), do not. `at` stamps a machine's panel before any roster outcome was taken, which
  *  never shows; it is passed on. */
 export function roster(state, at = new Date(0).toISOString(), cols = ANY_WIDTH) {
   const same = kept && MADE_FROM.every((name) => kept.state[name] === state[name]) && kept.state.filter.query === state.filter.query && kept.state.filter.soul === state.filter.soul;
@@ -363,6 +398,16 @@ function listRow(state, r, item) {
     waiting: waitingClaim(item.row, { stale: r.stale(item.row) }) !== null,
     folded: closed ? r.folded.get(item.id) ?? 0 : 0,
     below: closed ? r.below.get(item.id)?.length ?? 0 : 0,
+  };
+}
+
+/** The Background section's heading as its row draws it (#1579): open or closed, how many rows the
+ *  section holds (those a filter leaves), whether one of them waits (said by the needs-input tag,
+ *  open or closed), and the selection, as an instance row has it. */
+function backgroundRow(state, item) {
+  return {
+    kind: "background", id: item.id, open: item.open, count: item.count, waiting: item.waiting,
+    selected: item.id === state.selected, cursor: item.id === state.selected && state.focus !== "workspaces",
   };
 }
 
@@ -984,15 +1029,19 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
   }
   const selected = state.selected === null ? -1 : r.index.get(state.selected) ?? -1;
   // What the detail and Enter read of the selected row is worked out once per paint.
-  const row = selected >= 0 ? r.items[selected].row : null, acts = row ? instanceActs(row) : null;
+  // The Background heading selected is no instance: it has no detail and nothing to open.
+  const row = selected >= 0 ? r.items[selected].row ?? null : null, acts = row ? instanceActs(row) : null;
   const decision = row ? openDecision(state, row, acts) : null;
   // The window holds the selection, unless the list was scrolled away from it on purpose.
   const win = windowOf({ top: state.top, count: r.items.length, height: page, keep: state.loose ? -1 : selected });
   return {
     ...common, under,
-    list: r.items.slice(win.top, win.top + win.size).map((item) => (item?.id !== undefined ? { kind: "row", ...listRow(state, r, item) } : item)),
+    list: r.items.slice(win.top, win.top + win.size).map((item) => (item?.kind === "background" ? backgroundRow(state, item) : item?.id !== undefined ? { kind: "row", ...listRow(state, r, item) } : item)),
     above: win.above, below: win.below, wordWidth: r.wordWidth,
-    detail: selected >= 0 ? detailOf(state, r, r.items[selected], now, acts) : null,
+    detail: row !== null ? detailOf(state, r, r.items[selected], now, acts) : null,
+    // The Background heading selected (#1579): whether Enter opens the section or closes it (the cheat
+    // sheet); null while a filter is on, which draws it open and lets it change nothing.
+    onBackground: !r.filtering && selected >= 0 && r.items[selected].kind === "background" ? (r.items[selected].open ? "open" : "closed") : null,
     // Enter opens the selected agent's terminal now, or (`onTerminal`) goes to the one open on it.
     openable: decision?.open === true && state.opening === null,
     onTerminal: row !== null && state.terminal !== null && state.terminal.id === instanceId(row),

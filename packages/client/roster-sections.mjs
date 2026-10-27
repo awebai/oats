@@ -6,6 +6,7 @@
  * and a row carries `deployment: { id }`. Nothing is derived from a host name or a path beyond the
  * display label. A view with one deployment has one section and no heading. */
 import { rosterGroups, instanceId } from './instance-tree.mjs';
+import { waitingClaim } from './waiting-on-you.mjs';
 import { machineLabelParts } from './deployment-label.mjs';
 import { requireTerms } from './client-terms.mjs';
 
@@ -54,14 +55,17 @@ export const rowStale = (row, deployments) => {
  * `[{ deployment|null, label|null, groups }]`, a group being `{ key, label, clusters }` as before.
  * `lastFocus` (Map<instanceId, time>, optional; the command palette's, #1383): each section's groups follow
  * last focus (rosterGroups), and the sections are ordered by the latest focus over each one's full roster,
- * most recent first, then the panel's order. Without it, the panel's order (the sidebar's and the TUI's). */
-export function rosterSections(instances, visible, deployments, terms, { lastFocus } = {}) {
+ * most recent first, then the panel's order. Without it, the panel's order (the sidebar's and the TUI's).
+ * `roster` (optional; #1579): the full roster `instances` is a part of (the main tree's rows or the Background
+ * section's, `sidebarSections`). Names resolve over its rows of the same deployment, and a relation to a row outside
+ * `instances` is none: that row's relatives are roots here. Without it, `instances`. */
+export function rosterSections(instances, visible, deployments, terms, { lastFocus, roster = instances } = {}) {
   requireTerms(terms, 'rosterSections');
   const recency = lastFocus instanceof Map ? { lastFocus } : {};
-  const groupsOf = (all, shown) => rosterGroups(all, shown, recency); // the relation groups the palette lists too
-  if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible) }];
+  const groupsOf = (all, shown, whole) => rosterGroups(all, shown, { ...recency, roster: whole }); // the relation groups the palette lists too
+  if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible, roster) }];
   const sectionOf = splitByDeployment(deployments);
-  const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabelParts(deployments, terms);
+  const all = sectionOf(instances), shown = sectionOf(visible), whole = sectionOf(roster), labels = machineLabelParts(deployments, terms);
   const label = ({ machine, tail }) => (tail ? `${machine} · ${tail}` : machine);
   const sections = deployments.map(d => ({ deployment: d, parts: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }));
   if (recency.lastFocus) {
@@ -77,7 +81,47 @@ export function rosterSections(instances, visible, deployments, terms, { lastFoc
     });
   }
   return sections.filter(s => s.shown.length)
-    .map(s => ({ deployment: s.deployment, label: label(s.parts), machine: s.parts.machine, tail: s.parts.tail, groups: groupsOf(s.all, s.shown) }));
+    .map(s => ({ deployment: s.deployment, label: label(s.parts), machine: s.parts.machine, tail: s.parts.tail, groups: groupsOf(s.all, s.shown, whole.get(s.deployment.id)) }));
+}
+
+/** The section a row is painted in (#482, #1579), as a key: its deployment's, in the main tree or in the
+ * Background section (`placement`: instance-tree.mjs `backgroundPlacement`). A collapse hides, and rolls up,
+ * only rows of its own section: give it as `section` to `instanceVisibleInTree` and `waitingRollup`. Two rows
+ * are in one section exactly when their keys are equal; the key says nothing else. */
+export function rosterSectionKey(deployments, placement = new Set()) {
+  const ids = Array.isArray(deployments) ? new Set(deployments.map(d => d?.id)) : new Set();
+  const primary = primaryDeployment(deployments)?.id ?? null;
+  return row => {
+    const id = rowDeployment(row);
+    const deployment = isMultiDeployment(deployments) ? (id && ids.has(id) ? id : primary) : null;
+    return `${placement.has(instanceId(row)) ? 'background' : 'main'}\u0000${deployment ?? ''}`;
+  };
+}
+
+/** The sidebar's roster and the TUI's (#1579): the main tree's sections, then the Background section.
+ * `instances`: the full roster; `visible`: the rows a filter and a collapse leave (instanceVisibleInTree, given
+ * `rosterSectionKey` as its section); `placement`: instance-tree.mjs `backgroundPlacement`.
+ * Options: `open`, whether the Background section is drawn open (the client's stored state, or a filter that is
+ * on: a filter shows its matches without changing what is stored); `listed`, the rows the filter leaves (all rows
+ * when nothing is filtered), which the heading counts; `stale(row)`, the client's held-stale test.
+ * Returns `{ main, background }`. `main` is `rosterSections` over the rows outside the section. `background` is
+ * null when no listed row is in the section (no heading is drawn), else `{ count, open, waiting, sections }`:
+ * `count` the listed rows in it, `waiting` whether any row in it waits (waitingClaim; open or closed, a filtered
+ * one included), and `sections` its own tree, `rosterSections` over its rows (with the machine sub-headings in a
+ * view of two or more deployments), empty while closed. Each part is a tree of its own: a relation to a row of the
+ * other part is none (a background row whose parent is in the main tree is a root of the Background section), and
+ * names still resolve over the full roster. The palette never asks this: it lists every row. */
+export function sidebarSections(instances, visible, deployments, terms, { placement = new Set(), open = false, listed = instances, stale = () => false } = {}) {
+  requireTerms(terms, 'sidebarSections');
+  const inside = row => placement.has(instanceId(row));
+  const main = rosterSections(instances.filter(r => !inside(r)), visible.filter(r => !inside(r)), deployments, terms, { roster: instances });
+  const rows = instances.filter(inside), count = listed.filter(inside).length;
+  if (!count) return { main, background: null };
+  return { main, background: {
+    count, open: !!open,
+    waiting: rows.some(row => waitingClaim(row, { stale: stale(row) }) !== null),
+    sections: open ? rosterSections(rows, visible.filter(inside), deployments, terms, { roster: instances }) : [],
+  } };
 }
 
 /** `rows → Map<deployment id, rows>` over the given deployments; an unknown or missing deployment

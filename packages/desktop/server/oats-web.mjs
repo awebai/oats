@@ -69,6 +69,8 @@ import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { createSpawnPreview } from '../../client/spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceColorRequest, instanceColorNotRun } from './instance-color.mjs';
+import { instanceBackgroundRequest, instanceBackgroundNotRun } from './instance-background.mjs';
+import { rereadsRoster } from './instance-record.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { createSpawnApplyBoundary, ANSWER_WITHIN_MS } from '../../client/spawn-apply.mjs';
@@ -280,7 +282,7 @@ function spawnErrorPayload(e) {
 
 /** Execution-server spawn only (`--server`). A local spawn is always the
  * preview-bound prepare → apply of packages/client/spawn-apply.mjs. */
-async function spawnAgent({ agent, agentsRoot, task, purpose, name: instanceName, suggestName, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, name: instanceName, suggestName, relation, relativeTo, relativeRoot, harness, backend, model, yolo, background, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   const server = String(serverId);
@@ -319,6 +321,12 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, name: instanceName
     if (instanceName || purpose !== undefined && purpose !== null && purpose !== "") throw Object.assign(new Error("A spawn named from its task takes no name or purpose"), { code: "E_BAD_ARGS" });
     if (!cliState.features?.includes(APPLY_SUGGEST_FEATURE)) throw Object.assign(new Error("Update OATS to have the other machine name the instance from its task"), { code: "cli-no-apply-suggest-name" });
   }
+  // Run in background (#1579): this computer's CLI must know the flag to forward it; the host's own feature is the
+  // route's check (E_REMOTE_INCOMPATIBLE), which the dialog reads first (it offers the switch only where the host lists it).
+  if (background !== undefined) {
+    if (typeof background !== "boolean") throw Object.assign(new Error("Invalid background"), { code: "E_BAD_ARGS" });
+    if (!cliState.features?.includes("instance-background")) throw Object.assign(new Error("Update OATS to run an instance on another machine in the background"), { code: "cli-no-instance-background" });
+  }
   if (launchConfig !== undefined) {
     if (!cliState.features?.includes("launch-config")) throw Object.assign(new Error("Update OATS to choose a launch configuration"), { code: "cli-no-launch-config" });
     locator.requireRemoteSupport(cliState, "launch-config");
@@ -354,6 +362,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, name: instanceName
     harness: harness ? String(harness) : undefined, harnessFlag: harnessFlag(cliState),
     backend: backend ? String(backend) : undefined,
     yolo,
+    ...(background !== undefined ? { background } : {}),
     launchConfig,
     model: model ? String(model) : undefined,
     server,
@@ -1275,9 +1284,17 @@ const server = createServer(async (req, res) => {
         return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
     }
-    // An instance's colour (feature instance-color, #1421 §2): `oats instance color`, local or routed to the row's
-    // host. POST, so the Origin guard above covers it. A change re-reads the roster at once, so every dot follows.
-    if (path === '/api/instance-color' && req.method === 'POST') {
+    // A field of an instance's own record (instance-record.mjs): its colour (feature instance-color, #1421 §2:
+    // `oats instance color`) and whether it runs in the background (feature instance-background, #1579: `oats
+    // instance background`), local or routed to the row's host. POST, so the Origin guard above covers them. A change,
+    // or an outcome not known, re-reads the roster at once, so every dot and section follows.
+    // Each route its boundary and its "nothing ran" answer, for a request that is not even a request. Resolved here, in
+    // the handler, by path: the handler is the unit tests evaluate (workspace-views-fixture.mjs HANDLER), and only the
+    // route asked names its boundary.
+    const instanceRecord = req.method !== 'POST' ? undefined
+      : path === '/api/instance-color' ? { request: instanceColorRequest, notRun: instanceColorNotRun }
+      : path === '/api/instance-background' ? { request: instanceBackgroundRequest, notRun: instanceBackgroundNotRun } : undefined;
+    if (instanceRecord) {
       try {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
         const request = await readStrictBody(req, 4096);
@@ -1285,14 +1302,13 @@ const server = createServer(async (req, res) => {
           const workspace = deployments(held()).find(w => w.id === url.searchParams.get('ws'));
           return { workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(), instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
-        const result = await instanceColorRequest(request, getContext);
-        // A change, or an outcome not known (the record may have changed), reads the roster again at once.
-        if ((result.status === 'ok' && result.changed) || result.status === 'unknown') {
+        const result = await instanceRecord.request(request, getContext);
+        if (rereadsRoster(result)) {
           try { if (getContext().workspace?.remote) void remoteLoop.request(); else observeMutation(url.searchParams.get('ws')); }
           catch { /* a refresh must not erase the answer */ }
         }
         return send(res, 200, result);
-      } catch { return send(res, 400, instanceColorNotRun('E_BAD_ARGS')); }
+      } catch { return send(res, 400, instanceRecord.notRun('E_BAD_ARGS')); }
     }
     if (path === '/api/instance-lifecycle' && req.method === 'POST') {
       try {

@@ -9,8 +9,10 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { treeConnectors, treeGuides } from "../renderer/instance-tree-view.mjs";
 import { paletteRows } from "../renderer/palette.mjs";
-import { clusterInstances, filterInstanceTree, instanceVisibleInTree, collapseKey, instanceId } from "../../client/instance-tree.mjs";
+import { clusterInstances, filterInstanceTree, instanceVisibleInTree, collapseKey, instanceId, backgroundPlacement } from "../../client/instance-tree.mjs";
 import { withParentGate } from "../../client/same-work.mjs";
+import { sidebarSections } from "../../client/roster-sections.mjs";
+import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 /** A row of a host that declares the feature (the panel's stamp, panel-views.mjs deploymentPanel). */
 const known = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, sameWorkKnown: true, ...extra });
@@ -127,4 +129,25 @@ test("the palette draws the sidebar's lines over the same order, and says nothin
   assert.equal(guides.getAttribute("aria-hidden"), "true");
   assert.equal(guides.children.length, 0, "the unjoined child's guides are empty");
   dom.window.close();
+});
+
+// #1577 with #1579: the sidebar's main tree and its Background section are separate trees (roster-sections.mjs
+// sidebarSections), so no parent line crosses between them; inside the Background section the lines and the order
+// under a parent follow the same-work rule as anywhere else.
+test("sections: no parent line crosses into the Background section; inside it, lines and order follow sameWork", () => {
+  const all = [
+    known("lead"), known("dev-a", { parentInstance: "lead", sameWork: true }),
+    known("bg", { parentInstance: "lead", sameWork: true, background: true }),
+    known("bg-y", { parentInstance: "bg" }), known("bg-x", { parentInstance: "bg", sameWork: true }), known("bg-z", { parentInstance: "bg", sameWork: true }),
+  ];
+  const placement = backgroundPlacement(all, true);
+  const { main, background } = sidebarSections(all, all, [], DESKTOP_TERMS, { placement, open: true });
+  const rows = (sections) => sections.flatMap((s) => s.groups.flatMap((g) => g.clusters.map((c) => c.instances)));
+  const drawn = (sections) => Object.assign({}, ...rows(sections).map((items) => lines(items, all)));
+  assert.deepEqual(rows(main.length ? main : []).flat().map((i) => [i.instance, i.depth]), [["lead", 0], ["dev-a", 1]]);
+  assert.deepEqual(drawn(main), { lead: ["down@0"], "dev-a": ["elbow@0"] }, "lead's line ends at dev-a: bg, flagged, is in the other section");
+  assert.deepEqual(rows(background.sections).flat().map((i) => [i.instance, i.depth]), [["bg", 0], ["bg-x", 1], ["bg-z", 1], ["bg-y", 1]],
+    "bg is a root of the Background section; under it the flagged children come first");
+  assert.deepEqual(drawn(background.sections), { bg: ["down@0"], "bg-x": ["elbow@0", "line@0"], "bg-z": ["elbow@0"], "bg-y": [] },
+    "no line from bg to lead; bg's line ends at its last joined child, bg-y keeps its indent");
 });

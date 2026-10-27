@@ -23,7 +23,7 @@ import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { BACKGROUND_FILE, RECORD_MAX, readInstanceBackground, writeInstanceBackground } from "../lib/instance-background.mjs";
 import { disposableHomeRootProblem } from "../lib/capability-contract.mjs";
-import { KERNEL_HOME_RECEIPTS, retirePendingMarkerPath, storedTreeDigest } from "../lib/core.mjs";
+import { KERNEL_HOME_RECEIPTS, lifecycleClaimRefusals, retireClaimPath, retirePendingMarkerPath, storedTreeDigest } from "../lib/core.mjs";
 import { REMOTE_SNAPSHOT_DIR, routeCommand } from "../lib/servers.mjs";
 
 function okResult(r, what) {
@@ -281,6 +281,30 @@ test("oats instance background refuses a bad value, resolves as instance color d
   assert.equal(readInstanceBackground(spawned.home), false, "nothing was written");
   rmSync(marker);
   assert.equal(okResult(fx.cli(["instance", "background", name, "on", "--json"]), "after").background, true);
+});
+
+test("beside a held lifecycle claim, oats instance background says the background was not changed, as instance color says its colour was not (the docs' words)", (t) => {
+  // The builders, beside a live retire: each verb in its own words, and never another verb's.
+  const holder = { action: "retire", pid: 4242, processStart: "proc:start", nonce: "a".repeat(32), at: "2026-10-27T10:00:00.000Z" };
+  for (const [arriving, words] of [["instance background", "the background was not changed"], ["instance color", "the colour was not changed"]]) {
+    const refusals = lifecycleClaimRefusals(arriving, "w1", "/h/w1", "/h/w1/.lock");
+    for (const e of [refusals.busy(holder, null, "/h/w1/.lock"), refusals.unreadableClaim("/h/w1/.lock")]) {
+      assert.match(e.message, new RegExp(`; ${words} — `), `${arriving}: ${e.message}`);
+      assert.doesNotMatch(e.message, /nothing was done/, arriving);
+    }
+  }
+  // The command itself: a file at the home's claim path that reads as no claim refuses before any write.
+  const fx = v2Deployment({ t });
+  const spawned = okResult(fx.cli(["spawn", "dev", "--purpose", "r", "--no-launch", "--json"]), "spawn");
+  const lock = retireClaimPath(spawned.home);
+  mkdirSync(dirname(lock), { recursive: true });
+  writeFileSync(lock, "not a claim");
+  const e = refused(fx.cli(["instance", "background", spawned.instance, "on", "--json"]), "beside a claim");
+  assert.equal(e.code, "E_LIFECYCLE_BUSY");
+  assert.match(e.message, /is not a readable claim; the background was not changed — /);
+  assert.equal(readInstanceBackground(spawned.home), false, "nothing was written");
+  rmSync(lock);
+  assert.equal(okResult(fx.cli(["instance", "background", spawned.instance, "on", "--json"]), "after").background, true);
 });
 
 test("routed spawn --background / --no-background need a host that advertises instance-background: refused before the spawn is sent, else the flag travels", () => {

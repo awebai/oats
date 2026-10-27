@@ -182,6 +182,19 @@ body {
 .ctx-deployment-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A path tail is case-sensitive: never uppercased or letter-spaced with the machine label. */
 .ctx-deployment-path { text-transform: none; letter-spacing: normal; }
+/* The Background section's heading (#1579), at the very end of the list: the machine heading's type, its whole
+   line a disclosure button (a chevron that turns down while open, the word, the count of its rows) and, while a
+   row in it waits, the roll-up's Needs input pill at its end. The button paints only the shared hover and focus
+   fills (--surface-2, and --sel through :focus-visible), on which --muted holds AA; the pill paints its own. */
+.ctx-background { margin-top: 16px; }
+.ctx-background-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; margin: 0 -4px; padding: 4px;
+  appearance: none; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-transform: inherit;
+  letter-spacing: inherit; text-align: left; cursor: pointer; }
+.ctx-background-toggle:hover { background-color: var(--surface-2); }
+.ctx-background-chevron { flex: none; width: 12px; height: 12px; }
+.ctx-background-toggle[aria-expanded="true"] > .ctx-background-chevron { transform: rotate(90deg); }
+.ctx-background-count { flex: none; font-variant-numeric: tabular-nums; }
+.ctx-background-attn { margin-left: auto; text-transform: none; letter-spacing: normal; }
 /* One instance row: a 48px box, 18px per level; the row (not the button)
    carries hover/selection so it spans the indent like the design. Its
    background fills 44px, clipped inside 2px transparent borders top and

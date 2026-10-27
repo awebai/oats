@@ -33,9 +33,10 @@ Two limits hold throughout:
 ## 1. Read the proposal
 
 Read TASK.md fully. It should give:
-- exactly one line `Source: instance <name>, home <path>, soul <name>` (two
-  or more `Source:` lines are ambiguous: STOP and report; the spawn hook
-  already refuses them);
+- exactly one line `Source: instance <name>, home <path>, soul <name>, incarnation <createdAt>`
+  (legacy lines without the incarnation are also supported when the source
+  is unambiguous; two or more `Source:` lines are ambiguous: STOP and report;
+  the spawn hook already refuses them);
 - what is proposed, why, and the evidence;
 - optionally, a `## Backing notes` section with one `- notes/<path>.md`
   entry per note (relative to the source's home), and task refs. This is the
@@ -66,18 +67,23 @@ and its SHA-256 with `source.json` `proposalSha256` before using it.
 The code has already established these facts:
 
 1. **The instance record**: a single live record whose instance and home
-   match Source, with complete public event history for the same single
-   incarnation as its `createdAt`. A replacement at an old address refuses,
-   even while live: an old proposal must never capture the replacement's
-   notes. When that home is gone, use only the completed recovery named
+   match Source, with complete public event history. An explicit Source
+   incarnation must equal the record's `createdAt` verbatim, the history's
+   current incarnation, and an incarnation present in its rows. Other known
+   incarnations may coexist: the hook matches, never chooses the newest.
+   Without an explicit incarnation, history must hold only one. Mismatches
+   refuse, so an old proposal cannot capture a replacement's notes.
+   When that home is gone, use only the completed recovery named
    by the kernel's `retired` event through `oats instance events` (OATS
    >=0.49.0). The event address and incarnation, `recovery.json` sourceHome
    and instance, and the copied `instance.json` must agree. The recovery
    must be under that agent's `instances/.oats-retirement/recovery/`.
    The recorded `afterHooks.home` selects `after-hooks/home`; otherwise
-   `home` is used. An arbitrary recovery directory, reused/ambiguous
-   incarnation, incomplete event history or missing copy is refused. An
-   invalid live record never falls back to older authority.
+   `home` is used. Retired capture still requires a single known incarnation,
+   and any explicit Source incarnation must match the copied record too.
+   An arbitrary recovery directory, reused retired source, unknown incarnation,
+   incomplete event history or missing copy is refused. An invalid or
+   incarnation-mismatched live record never falls back to older authority.
 2. **The soul**: the record's `soulDir` supplied `soul.yaml` and `okf.json`.
    Its name matches Source; its soul opt-out (`knowledge: { harvest: off }`)
    and recorded soul-origin opt-out both refuse. Legacy manifest defaults

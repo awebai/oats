@@ -1569,7 +1569,7 @@ export async function doSpawn(s, fields) {
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? fields.relativeTo : undefined,
       relativeRoot: relation !== "unrelated" ? (fields.relativeRoot || undefined) : undefined,
-      yolo: fields.yolo, backend: fields.backend || undefined, harness: fields.harness || undefined,
+      yolo: fields.yolo, background: fields.background, backend: fields.backend || undefined, harness: fields.harness || undefined,
       model: fields.model || undefined, launchConfig: fields.launchConfig || undefined, wake: fields.wake,
     });
     if (!owns()) return;
