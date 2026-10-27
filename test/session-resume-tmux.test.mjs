@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { RESUME_NOTICE, stopInstanceSession } from "../lib/core.mjs";
 import { readStartExited } from "../lib/session-end.mjs";
@@ -24,6 +24,7 @@ import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { agentScopeWarning, isAgentScopeWarning } from "../lib/tmux-server-scope.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
+import { START_ENV_FILE, START_ENV_KEY_FILE, launchEnvUnverifiedWarning } from "../lib/start-env.mjs";
 
 const hasTmux = !spawnSync("tmux", ["-V"], { stdio: "ignore" }).error;
 /** The PATH this file was started with: the isolated environment (test.before) keeps a small one. */
@@ -194,8 +195,8 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   const plan = ok(cli(A, ["session", "resume", "--plan", "--json"]), "plan");
   assert.equal(plan.plan, true);
   const planned = Object.fromEntries(plan.rows.map((r) => [r.instance, [r.outcome, r.reason ?? r.sessionId ?? null]]));
-  assert.deepEqual(planned, { a1: [OUTCOME.RESUMED, ids.a1], a4: [OUTCOME.RESUMED, ids.a4], a5: [OUTCOME.FRESH, FRESH_REASON.RESUME_UNPROVEN], a6: [OUTCOME.RESUMED, ids.a6], a7: [OUTCOME.RESUMED, ids.a7], c1: [OUTCOME.FRESH, FRESH_REASON.NO_CONVERSATION], c2: [OUTCOME.RESUMED, planned.c2?.[1]] });
-  assert.match(planned.c2[1], /^[0-9a-f-]{36}$/, "c2's refusal comes at its start: a plan reads the conversation only");
+  assert.deepEqual(planned, { a1: [OUTCOME.RESUMED, ids.a1], a4: [OUTCOME.RESUMED, ids.a4], a5: [OUTCOME.FRESH, FRESH_REASON.RESUME_UNPROVEN], a6: [OUTCOME.RESUMED, ids.a6], a7: [OUTCOME.RESUMED, ids.a7], c1: [OUTCOME.FRESH, FRESH_REASON.NO_CONVERSATION], c2: [OUTCOME.REFUSED, ROW_REASON.START_REFUSED] });
+  assert.equal(plan.rows.find((r) => r.instance === "c2").code, "E_LAUNCH_ENV_MISSING", "a plan predicts the start's refusal of an unset reference");
   assert.deepEqual([existsSync(join(oatsHome, "session-resume", "lock")), existsSync(join(oatsHome, "session-resume", "note.json"))], [false, false], "a plan takes no lock and writes no note");
   const judgements = (fx) => Object.fromEntries(Object.entries(readSeen(join(fx.dep, "agents")).homes).map(([home, r]) => [home.split("/").pop(), r.judgedBy?.outcome ?? null]));
   assert.deepEqual(Object.values(judgements(A)).filter(Boolean), [], "a plan judges no loss");
@@ -294,11 +295,35 @@ test("a home launched by spawn whose harness exits on its own retires without a 
   await waitUntil(() => readStartExited(home) !== null, "the exit marker of spawn's window");
   assert.deepEqual(readStartExited(home), { startId, status: 0 });
   assert.equal(statusRows(A).r1.sessionEnd, SESSION_END.EXITED);
+  // The spawn's launch recorded its launch environment (none to digest) after the baseline.
+  assert.deepEqual(readJson(join(home, START_ENV_FILE)), { startId, digests: {} });
+  assert.equal(statSync(join(home, START_ENV_KEY_FILE)).size, 32);
   const retired = cli(A, ["retire", "r1", "--json"]);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(home), false, "the home is gone");
   const recovery = join(dirname(home), ".oats-retirement", "recovery");
   assert.deepEqual(existsSync(recovery) ? readdirSync(recovery).filter((e) => e.includes("r1-")) : [], [], "no recovery copy");
+});
+
+test("a retire that keeps a recovery copy of a launched home leaves its launch environment's key and record out of it: work is kept, no key material leaves the home", TMUX, async () => {
+  const { A } = deployments;
+  const home = ok(cli(A, ["spawn", "dev", "--name", "r2", "--launch-config", "exit-a", "--json"]), "spawn r2").home;
+  await waitUntil(() => readStartExited(home) !== null, "r2's harness to end");
+  assert.ok(existsSync(join(home, START_ENV_FILE)) && existsSync(join(home, START_ENV_KEY_FILE)), "premise: the spawn recorded");
+  const key = readFileSync(join(home, START_ENV_KEY_FILE));
+  // Work the retire must keep, and a temporary file a cut-short write left.
+  writeFileSync(join(home, "NOTES.md"), "kept\n");
+  writeFileSync(join(home, `${START_ENV_FILE}.tmp-1-abc`), "partial");
+  const retired = cli(A, ["retire", "r2", "--json"]);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(home), false, "the home is gone");
+  const recovery = join(dirname(home), ".oats-retirement", "recovery");
+  const copies = readdirSync(recovery).filter((e) => e.includes("r2-"));
+  assert.equal(copies.length, 1, `one recovery copy: ${copies}`);
+  const copied = join(recovery, copies[0], "home");
+  assert.equal(readFileSync(join(copied, "NOTES.md"), "utf8"), "kept\n", "the work is kept");
+  assert.deepEqual(readdirSync(copied).filter((n) => n.startsWith(".oats-start-env")), [], "no key, record or temporary file of them");
+  assert.deepEqual(filesHolding(recovery, key), [], "the key's bytes are in no recovered file");
 });
 
 test("`session resume --deployment <dir>` sweeps that deployment alone, registered or not; a deployment removed from the registry is not swept; a stop of a lost home, and of an exited home from before 0.69, records the stop and keeps it stopped", TMUX, async () => {
@@ -605,4 +630,123 @@ test("a sweep of 3 homes on a host whose harnesses get no scope of their own say
   // A plan starts nothing and says nothing of the host.
   const plan = ok(cli(K, ["session", "resume", "--deployment", K.dep, "--plan", "--json"], host), "the plan");
   assert.equal(Object.hasOwn(plan, "warnings"), false);
+});
+
+/** Every file under `dir`, links not followed, that holds `needle` (a string's UTF-8 bytes, or bytes). */
+function filesHolding(dir, needle) {
+  const found = [], want = Buffer.isBuffer(needle) ? needle : Buffer.from(needle);
+  const walk = (d) => { for (const e of readdirSync(d)) { const p = join(d, e), st = lstatSync(p); if (st.isDirectory()) walk(p); else if (st.isFile() && readFileSync(p).includes(want)) found.push(p); } };
+  walk(dir);
+  return found;
+}
+
+test("a resume starts only under the launch environment its last start recorded: a changed fromEnv value is refused by name (start, sweep and plan); the same value resumes; a home with no record, or a corrupt one, resumes with one warning and is recorded; an ordinary start records the new value; no value is ever written", TMUX, async () => {
+  const L = v2Deployment({ name: "l", local: { "launch-configs": { "secret-l": config("claude", "dep-l", { env: { RESUME_SECRET: { fromEnv: "RESUME_TEST_L" } } }) } } });
+  later.push(L);
+  const SENTINEL = "sentinel-7f3a9c-launch-value", CHANGED = "sentinel-changed-41b2";
+  const same = { RESUME_TEST_L: SENTINEL }, changed = { RESUME_TEST_L: CHANGED };
+  const answers = [];
+  const run = (args, extra) => { const r = cli(L, args, extra); answers.push(r.stdout, r.stderr); return r; };
+  const homes = {};
+  // l1 and l2 started by `session start`; l3 launched by its spawn.
+  for (const name of ["l1", "l2"]) {
+    homes[name] = await spawnHome(L, name, "secret-l", { env: same });
+    ok(run(["session", "start", "--home", homes[name], "--json"], same), `start ${name}`);
+  }
+  homes.l3 = await spawnHome(L, "l3", "secret-l", { launch: true, env: same });
+  await waitUntil(() => ["l1", "l2", "l3"].every((n) => launches(n).length === 1), "the stand-ins to run");
+  assert.equal(launches("l1")[0].secret, SENTINEL, "premise: the pane got the value");
+  const record = (name) => readJson(join(homes[name], START_ENV_FILE));
+  for (const name of ["l1", "l2", "l3"]) {
+    const r = record(name);
+    assert.equal(r.startId, readJson(join(homes[name], "instance.json")).startId, `${name}'s record is its start's`);
+    assert.deepEqual(Object.keys(r.digests), ["RESUME_TEST_L"]);
+    assert.match(r.digests.RESUME_TEST_L, /^[0-9a-f]{64}$/);
+    const key = statSync(join(homes[name], START_ENV_KEY_FILE));
+    assert.deepEqual([key.size, key.mode & 0o777], [32, 0o600]);
+  }
+  const l1Digest = record("l1").digests.RESUME_TEST_L;
+  const running = statusRows(L);
+  for (const name of ["l1", "l2", "l3"]) assert.equal(running[name].running, true);
+  for (const name of ["l1", "l2", "l3"]) killWindow(homes[name]);
+  await waitUntil(() => { const r = statusRows(L); return ["l1", "l2", "l3"].every((n) => r[n].sessionEnd === SESSION_END.LOST); }, "the three to read lost");
+
+  // l2 has no record (a home last started by an earlier kernel); l3's does not read.
+  rmSync(join(homes.l2, START_ENV_FILE));
+  writeFileSync(join(homes.l3, START_ENV_FILE), "{ not json");
+
+  // The plan, under the changed value: l1 refused by name, l2 and l3 resumed with the warning.
+  const plan = ok(run(["session", "resume", "--deployment", L.dep, "--plan", "--json"], changed), "plan");
+  const planned = Object.fromEntries(plan.rows.map((r) => [r.instance, r]));
+  assert.deepEqual([planned.l1.outcome, planned.l1.reason, planned.l1.code], [OUTCOME.REFUSED, ROW_REASON.START_REFUSED, "E_LAUNCH_ENV_CHANGED"]);
+  assert.match(planned.l1.message, /\(RESUME_TEST_L\)/);
+  for (const name of ["l2", "l3"]) assert.deepEqual(planned[name].warnings, [launchEnvUnverifiedWarning(name)], `${name}: predicted with its warning`);
+  assert.equal(existsSync(join(homes.l2, START_ENV_FILE)), false, "a plan writes no record");
+  assert.equal(readFileSync(join(homes.l3, START_ENV_FILE), "utf8"), "{ not json", "nor rewrites one");
+
+  // The sweep, under the changed value: l1 refused, nothing launched for it; l2 and l3 resume, once
+  // warned, and are recorded for their new start.
+  const sweep = ok(run(["session", "resume", "--deployment", L.dep, "--json"], changed), "sweep");
+  const rows = Object.fromEntries(sweep.rows.map((r) => [r.instance, r]));
+  assert.deepEqual([rows.l1.outcome, rows.l1.reason, rows.l1.code], [OUTCOME.REFUSED, ROW_REASON.START_REFUSED, "E_LAUNCH_ENV_CHANGED"]);
+  assert.equal(rows.l1.message, "this home's launch environment changed since its last start (RESUME_TEST_L); nothing was started: start it yourself to use the new values");
+  for (const name of ["l2", "l3"]) {
+    assert.equal(rows[name].outcome, OUTCOME.RESUMED, JSON.stringify(rows[name]));
+    assert.deepEqual(rows[name].warnings, [launchEnvUnverifiedWarning(name)]);
+    assert.equal(readEvents(homes[name]).events.filter((e) => e.kind === "launch-warning" && e.data.message === launchEnvUnverifiedWarning(name)).length, 1, `${name}: one event`);
+    assert.equal(record(name).startId, readJson(join(homes[name], "instance.json")).startId, `${name} is recorded for its new start`);
+  }
+  await waitUntil(() => launches("l2").length === 2 && launches("l3").length === 2, "l2 and l3 to run again");
+  assert.equal(launches("l1").length, 1, "l1 was not launched");
+  assert.equal(record("l1").digests.RESUME_TEST_L, l1Digest, "a refusal records nothing");
+
+  // By hand, under the value l1 was started with: it resumes.
+  const resumed = ok(run(["session", "start", "--resume", "--home", homes.l1, "--json"], same), "resume l1");
+  assert.equal(resumed.resume.resumed, true);
+  assert.equal((resumed.warnings ?? []).includes(launchEnvUnverifiedWarning("l1")), false);
+  await waitUntil(() => launches("l1").length === 2, "l1 to run again");
+  assert.equal(launches("l1")[1].secret, SENTINEL);
+
+  // Once recorded, l2's next resume is verified: no warning.
+  killWindow(homes.l2);
+  await waitUntil(() => statusRows(L).l2.sessionEnd === SESSION_END.LOST, "l2 lost again");
+  const again = ok(run(["session", "start", "--resume", "--home", homes.l2, "--json"], changed), "resume l2 again");
+  assert.equal((again.warnings ?? []).includes(launchEnvUnverifiedWarning("l2")), false, "said once");
+
+  // An ordinary start never compares: under a new value it starts, and records that value.
+  killWindow(homes.l1);
+  await waitUntil(() => statusRows(L).l1.sessionEnd === SESSION_END.LOST, "l1 lost again");
+  ok(run(["session", "start", "--home", homes.l1, "--json"], changed), "ordinary start of l1");
+  await waitUntil(() => launches("l1").length === 3, "l1 to run a third time");
+  assert.equal(launches("l1")[2].secret, CHANGED);
+  assert.equal(record("l1").startId, readJson(join(homes.l1, "instance.json")).startId);
+  assert.notEqual(record("l1").digests.RESUME_TEST_L, l1Digest, "the new value's digest");
+
+  // No value anywhere: not in a home (events, instance.json, receipts, the record), not in an answer.
+  for (const name of ["l1", "l2", "l3"]) for (const value of [SENTINEL, CHANGED]) assert.deepEqual(filesHolding(homes[name], value), [], `${name} holds no value`);
+  for (const value of [SENTINEL, CHANGED]) assert.equal(answers.some((text) => text.includes(value)), false, "no answer holds a value");
+});
+
+test("a resume runs the launch its last start chose: the launch configuration, its executable and args, the model and yolo of `session start --launch-config <c> --model <m> --yolo`", TMUX, async () => {
+  const O = v2Deployment({ name: "o", local: { "launch-configs": { "plain-o": config("claude", "dep-o-plain"), "chosen-o": config("claude", "dep-o", { args: ["--from-o"] }) } } });
+  later.push(O);
+  const home = await spawnHome(O, "o1", "plain-o");
+  ok(cli(O, ["session", "start", "--home", home, "--launch-config", "chosen-o", "--model", "claude-opus-5-5", "--yolo", "--json"]), "start o1 under its choice");
+  await waitUntil(() => launches("o1").length === 1, "o1 to run");
+  const chosen = launches("o1")[0];
+  assert.equal(chosen.mark, "dep-o");
+  await waitUntil(() => statusRows(O).o1.running === true, "a status to see o1 run");
+  killWindow(home);
+  await waitUntil(() => statusRows(O).o1.sessionEnd === SESSION_END.LOST, "o1 lost");
+  const sweep = ok(cli(O, ["session", "resume", "--deployment", O.dep, "--json"]), "sweep");
+  assert.equal(sweep.rows[0].outcome, OUTCOME.RESUMED, JSON.stringify(sweep.rows));
+  await waitUntil(() => launches("o1").length === 2, "o1 to run again");
+  const back = launches("o1")[1];
+  assert.equal(back.mark, "dep-o", "the chosen configuration's environment");
+  for (const word of ["--dangerously-skip-permissions", "--from-o"]) assert.ok(back.args.includes(word), `${word}: ${back.args}`);
+  assert.equal(back.args[back.args.indexOf("--model") + 1], chosen.args[chosen.args.indexOf("--model") + 1], "the model");
+  assert.ok(chosen.args.includes("--model"), `premise: ${chosen.args}`);
+  const { tmux } = readJson(join(home, "instance.json"));
+  const paneCommand = execFileSync("tmux", ["-u", "-S", tmux.socket, "display-message", "-p", "-t", `${tmux.session}:${tmux.window}`, "#{pane_start_command}"], { encoding: "utf8" });
+  assert.ok(paneCommand.includes(standIn), "the configuration's executable");
 });

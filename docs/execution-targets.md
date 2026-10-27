@@ -769,7 +769,8 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   its receipt, a pending start). A launch hook that does not declare
   `launchPreview` has already run by then, and a warning it returned is
   already a `launch-warning` event of the home, as before any other late
-  refusal of a start (`E_SESSION_RUNNING`, `E_LAUNCH_ENV_MISSING`). Nothing
+  refusal of a start (`E_SESSION_RUNNING`, `E_LAUNCH_ENV_MISSING`,
+  `E_LAUNCH_ENV_CHANGED`). Nothing
   undoes what that hook did, and there is nothing to clean up: a launch hook
   may do idempotent provider registration on a real start and no more
   ([capabilities.md](capabilities.md)), so the next start repeats it
@@ -1222,6 +1223,43 @@ went): the ordinary fresh start on `TASK.md`, answered `resumed: false` with
 the reason. **Codex is never resumed yet:** a Codex home takes that fresh
 start, reason `resume-unproven`, until a Codex resume is proven end to end on
 a signed-in host.
+
+#### The launch environment a resume runs under
+
+A resume starts only under the `{fromEnv: SRC}` values the start it brings
+back ran with. Every start that renders a recipe, the spawn's own launch
+included, records them. A resume compares them, after the check that every
+reference is set (`E_LAUNCH_ENV_MISSING`, which comes first):
+
+- **A changed value** refuses the resume before anything is launched:
+  `E_LAUNCH_ENV_CHANGED`, "this home's launch environment changed since its
+  last start (`<NAMES>`); nothing was started: start it yourself to use the
+  new values". Only the names are given, sorted, never a value. The sweep
+  reports it like any refused start (`refused`, `start-refused`, the code).
+  An ordinary Start or Restart never compares: it starts under the values it
+  finds and records them.
+- **No record to compare with.** A home last started by an earlier kernel,
+  or one whose record does not read, is resumed with one warning: "`<instance>`'s
+  launch environment could not be verified this once (it was last started
+  before OATS recorded it); its next start records it". That start records
+  it, so the warning is given once.
+- **The environment is the one the resume runs in.** OATS Desktop runs with
+  the desktop session's environment, not your shell's: a `fromEnv` variable
+  exported only in a shell profile is not set there, so the Desktop's sweep
+  refuses that home (`E_LAUNCH_ENV_MISSING`) while `oats tui` run from that
+  shell resumes it. Put the variable in the session's environment, or use a
+  literal in the launch configuration.
+- **A command you typed into the window is not resumed.** A resume runs the
+  instance's OATS launch, with the launch configuration, model and yolo its
+  last start chose. Put a custom command in a launch configuration.
+
+The record is two kernel-private files in the home, not a contract:
+`.oats-start-env.json` holds, for one start, a keyed one-way digest
+(HMAC-SHA256) of each referenced value, and `.oats-start-env.key` (mode 0600)
+holds the key. A value, which may be a credential, is never written, and the
+key never leaves the home: a retire's recovery copy of the home leaves both
+files out. Writing the record never fails a start. A start
+that could not write it leaves its resume to the warning above.
 
 #### Prompts a resume meets
 
