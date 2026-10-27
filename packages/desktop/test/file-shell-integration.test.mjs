@@ -33,8 +33,9 @@ import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { THEMES } from "../renderer/theme.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 import * as treeShared from "../../client/instance-tree.mjs";
+import * as sameWork from "../../client/same-work.mjs";
 import * as treeView from "../renderer/instance-tree-view.mjs";
-const tree = { ...treeShared, ...treeView };
+const tree = { ...treeShared, ...treeView, ...sameWork }; // the renderer's client imports, shipped
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as markdown from "../renderer/views/markdown.mjs";
@@ -88,7 +89,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   const c = {
     document, window: dom.window, navigator, console, ...keys, THEMES,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
-    instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
+    instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {}, sayInHint() {},
     settingsMenu: { refresh() {} }, // applyChordTitles refreshes the settings cog's chords (sidebar-settings.test.mjs covers it)
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, contextRosterEl: null,
@@ -179,7 +180,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     control(instance, control = "terminal") {
       const terminal = [...document.querySelectorAll("[data-tree-instance][data-tree-control=terminal]")]
         .find(el => el.dataset.treeInstance === tree.instanceId(instance));
-      // The row's actions trigger is the other logical roster control.
+      // Or another of the row's logical roster controls (its data-tree-control).
       return control === "terminal" ? terminal : terminal?.closest(".ctx-tree-row")?.querySelector(`[data-tree-control="${control}"]`);
     },
     seed(title = "Existing terminal") { return s.addTab({ title, key: `term:${c.workspace}:${title}`, kind: "terminal" }).id; },
@@ -277,7 +278,9 @@ test("keyboard collapse and expand of a root leave the selected row under the sa
   assert.deepEqual(headers(), open, "expanding changes neither");
 });
 
-for (const picker of ["palette", "quickOpen", "palette→quickOpen"]) for (const control of ["terminal", "actions"]) {
+// The row's terminal is its one logical control here (#1559: the ⋯ trigger, data-tree-control "actions", is gone; the
+// row's context menu opens on the row itself).
+for (const picker of ["palette", "quickOpen", "palette→quickOpen"]) for (const control of ["terminal"]) {
   test(`${picker} cancellation restores replaced composite-identity ${control}, not its remote same-name twin`, async t => {
     const s = shell(t); s.roster(roster);
     const original = s.control(twin, control); original.focus();

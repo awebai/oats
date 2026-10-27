@@ -43,11 +43,33 @@ test("Pi native option precedence, relative and tilde paths are retained as loca
   assert.deepEqual(historicalSessionRoots(f.home).pi, [join(f.base, "actual")]);
 });
 
+test("a resumed Pi launch's bare --session id records the session directory; a path-valued --session is refused", t => {
+  const f = fixture(t), env = { HOME: f.user }, id = "0b9ac3e2-6f1d-4c1e-9a55-1f2e3d4c5b6a";
+  const agentSessions = join(f.user, ".pi", "agent", "sessions");
+  for (const args of [["--session", id], [`--session=${id}`], ["--session", id.slice(0, 8)]]) {
+    assert.deepEqual(nativeLaunchLocations("pi", { cwd: f.home, env, args }), [agentSessions], args.join(" "));
+  }
+  assert.deepEqual(nativeLaunchLocations("pi", { cwd: f.home, env, args: ["--session-dir", "../dir", "--session", id] }), [join(f.base, "dir")]);
+  assert.deepEqual(nativeLaunchLocations("pi", { cwd: f.home, env: { ...env, PI_CODING_AGENT_SESSION_DIR: "../env" }, args: [`--session=${id}`] }), [join(f.base, "env")]);
+  for (const value of ["./x.jsonl", "/abs/x.jsonl", "~/x.jsonl", "sub/x", "x.jsonl", ".hidden"]) {
+    assert.throws(() => nativeLaunchLocations("pi", { cwd: f.home, env, args: ["--session", value] }), /explicit Pi/, value);
+    assert.throws(() => nativeLaunchLocations("pi", { cwd: f.home, env, args: [`--session=${value}`] }), /explicit Pi/, value);
+  }
+  for (const args of [["--session"], ["--session="], ["--session", "--session-dir", "x"], ["--session", "-c"]]) {
+    assert.throws(() => nativeLaunchLocations("pi", { cwd: f.home, env, args }), /invalid native --session/, args.join(" "));
+  }
+  initializeNativeHistory(f.home);
+  const start = prepareNativeStart(f.home, "pi");
+  recordNativeStart(f.home, start, "pi", ["--session", id], env);
+  assert.deepEqual(historicalSessionRoots(f.home).pi, [agentSessions]);
+  assert.equal(readFileSync(join(nativeHistoryPath(f.home), `${start}.json`), "utf8").includes(id), false, "the session id is not custody");
+});
+
 test("unsupported explicit Pi session leaves custody pending; recorder never invents a default root", t => {
   const f = fixture(t);
   initializeNativeHistory(f.home);
   const id = prepareNativeStart(f.home, "pi");
-  assert.throws(() => recordNativeStart(f.home, id, "pi", ["--session", "private-source"], { HOME: f.user }), /explicit Pi/);
+  assert.throws(() => recordNativeStart(f.home, id, "pi", ["--session", "./private-source.jsonl"], { HOME: f.user }), /explicit Pi/);
   assert.throws(() => historicalSessionRoots(f.home), /pending/);
   assert.equal(readFileSync(join(nativeHistoryPath(f.home), `${id}.json`), "utf8").includes("private-source"), false);
 });

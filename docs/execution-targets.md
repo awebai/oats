@@ -58,8 +58,17 @@ exists. A fallback shell reads `running: false` with `runtimeState: "shell"`;
 a retained dead pane also reads `false`. A wrapper shell with a live non-shell
 descendant still reads `true`. Status shares session inspection's pane rule,
 with one batched pane read per socket/session and one lazy process scan across
-all panes that need it. A recorded server or pane that cannot be read gives
-`running: null` with `runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
+all panes that need it. It reads the agent's pane alone, so a window with
+another pane reads as one without it
+([which pane is the agent's](#which-pane-is-the-agents)). A recorded server or
+pane that cannot be read gives `running: null` with `runtimeState:
+"unreachable"`, and so do a window where OATS cannot tell which pane is the
+agent's and a session that holds two windows of the instance's name, each
+with its reason as `runtimeError`. A local status read (0.69)
+also records, in a kernel-private file of this machine beside the resume
+sweep's per-boot note, what it saw of each home, for the sweep alone; it
+never changes the answer, and a status routed with `--server` records nothing
+here ([Which losses come back](#which-losses-come-back)). The environment variables are read when the spawn runs, and `oats
 inspect --json` reports the session a new spawn would open in as `session`
 (`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
 session it would open in, on the OATS tmux server (`E_INSTANCE_NAME_TAKEN`); a
@@ -68,6 +77,47 @@ after the default moved, or on another tmux server, does not block it. Session
 commands target each home's exact recorded window, so the two never mix. The
 receipt records the session, window and socket. The spawn result prints the
 attach command.
+
+<a id="which-pane-is-the-agents"></a>
+#### Which pane is the agent's
+
+An agent's window can hold more than one pane: a person or a tool can split
+it, as oats.setup's no-echo prompt does. Status and every session command act
+on one pane of the window, the agent's.
+
+- **The mark.** Whenever OATS creates or respawns the agent's pane (a spawn's
+  window, a start's or restart's new window, a restart in place), it sets the
+  tmux pane option `@oats-agent` on it, its value the instance name, which is
+  the window's name. It is set in the launch's own tmux call, and a mark that
+  cannot be set does not fail the launch. Pane options exist from tmux 3.0.
+  The mark is internal: it is what OATS sets, not an interface for other
+  tools.
+- **The rule.** In a window with one pane, that pane is the agent's, marked or
+  not. With several, it is the pane marked with the instance's name; when
+  none is, the unmarked pane with the lowest pane id (`%N`, tmux's creation
+  order: the window's own pane comes before any split of it). A pane marked
+  with another instance's name is never the agent's.
+- **A window launched by an earlier kernel** has no mark: it resolves to its
+  lowest pane id until the next start or restart marks it.
+- **When OATS cannot tell** (two or more panes marked with the instance's
+  name, or several panes and none unmarked or marked with it), status reads
+  `running: null` with `runtimeState: "unreachable"` and one of these
+  sentences as `runtimeError`, and `session inspect`, `session input` (wakes
+  included), `session attach`, stop and restart refuse with the same sentence:
+
+  ```text
+  the window has 2 panes marked as <name>'s agent pane (%3, %7); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance
+  the window has 2 panes and none is <name>'s agent pane (%2, %7); close the panes that aren't, or close the window and start the instance
+  ```
+
+- **Everything else is the agent's pane alone.** The fallback-shell,
+  dead-pane and descendant rule judges it alone, and a `paneId` in an answer
+  is its id; the
+  other panes never make the instance unknown. Input and wakes paste into it
+  even when the person's focus is in another pane. Stop signals only the
+  processes under it, and a restart in place respawns it and marks it. The
+  size inspect reports stays the window's. The viewer shows the whole window
+  ([attach](#inspect-input-and-attach)).
 
 <a id="the-oats-tmux-server"></a>
 #### The OATS tmux server
@@ -246,8 +296,10 @@ user manager's default slice, wherever the server is:
   `env` or `true` is not in `/usr/bin` or `/bin`, or the pane's environment
   cannot be read, the harness is launched exactly as before, and the answer's
   `warnings` (spawn, session start and restart), and a `launch-warning`
-  event, say once `the agent's harness runs in the OATS tmux server's cgroup,
-  not a scope of its own: <reason>`. A pane whose server has no
+  event once the launch is recorded (a launch refused after the check leaves
+  none), say once `the agent's harness runs in the OATS tmux server's cgroup,
+  not a scope of its own: <reason>`. The sweep (`oats session resume`) says
+  it once in its own `warnings`, not in each row. A pane whose server has no
   `XDG_RUNTIME_DIR` or bus (a server started where none was set, a user
   without lingering) fails the check. Off Linux, on a Linux host not booted
   with systemd (a container's own init, another init system: no user manager
@@ -717,7 +769,8 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   its receipt, a pending start). A launch hook that does not declare
   `launchPreview` has already run by then, and a warning it returned is
   already a `launch-warning` event of the home, as before any other late
-  refusal of a start (`E_SESSION_RUNNING`, `E_LAUNCH_ENV_MISSING`). Nothing
+  refusal of a start (`E_SESSION_RUNNING`, `E_LAUNCH_ENV_MISSING`,
+  `E_LAUNCH_ENV_CHANGED`). Nothing
   undoes what that hook did, and there is nothing to clean up: a launch hook
   may do idempotent provider registration on a real start and no more
   ([capabilities.md](capabilities.md)), so the next start repeats it
@@ -889,6 +942,8 @@ saved route that records `herdrPath` still loads; the field is ignored.
 |---|---|
 | `oats spawn <soul> [--no-launch]` | Creates the home and launches the harness. `--no-launch` creates the home only. |
 | `oats session start --home <abs>` | Starts a stopped or never-launched instance again in its existing home. |
+| `oats session start --resume --home <abs>` | Starts an instance whose session was lost again, in its own last conversation ([Resume after a shutdown](#resume-after-a-shutdown)). |
+| `oats session resume [--deployment <dir>] [--plan]` | Resumes every lost session of this machine's deployments ([Resume after a shutdown](#resume-after-a-shutdown)). |
 | `oats session restart --home <abs>` | Stops the running harness and starts it again in place. |
 | `oats instance stop <instance> --plan` / `--apply` | Stops the harness and keeps home, work and launch recipe. |
 | `oats retire <instance>` | Ends the session and retires the instance ([souls-and-instances.md](souls-and-instances.md#retire)). |
@@ -906,7 +961,9 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   run every check before anything starts. `--model` replaces the recorded model
   for this and later starts.
 - A live harness is refused (`E_SESSION_RUNNING`). A fallback shell or a dead
-  pane is reused in place. A missing window, or one whose tmux server cannot
+  pane is reused in place: the agent's pane is respawned and marked, and the
+  window's other panes are left as they are
+  ([which pane is the agent's](#which-pane-is-the-agents)). A missing window, or one whose tmux server cannot
   be reached, is created again on the OATS tmux server, and the start warns when that is
   not the server the home recorded ([Existing instances](#existing-instances)).
   A server whose socket file is missing counts as gone only when no process
@@ -916,7 +973,7 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   is refused (`E_INSTANCE_RETIRING`).
 
 `session restart` takes the same flags. It sends SIGTERM to the harness and
-its children, waits `--stop-grace <seconds>` (default 20, at most 300), then
+its children, the processes under the agent's pane, waits `--stop-grace <seconds>` (default 20, at most 300), then
 starts in place. It never escalates: a harness still running is reported
 (`E_SESSION_STOP_FAILED`) and nothing is launched.
 
@@ -1084,7 +1141,8 @@ bounded authority. A prompt receipt does not assert receive readiness.
 children and uncommitted work, with a `planRevision`. `--apply --plan-revision
 <rev> --idempotency-key <key>` stops the instance and its recorded children
 first (`--no-recursive` stops only the instance), with the same bounded
-SIGTERM. Restart the instance later with `oats session start` or
+SIGTERM, sent only to the processes under the agent's pane
+([which pane is the agent's](#which-pane-is-the-agents)). Restart the instance later with `oats session start` or
 `oats session restart`. An instance whose recorded tmux socket file is
 missing while a process works in its home, or the process scan cannot run,
 is not reported idle: its result is `E_SESSION_UNAVAILABLE` and nothing is
@@ -1093,6 +1151,226 @@ claim of every instance it stops, the one a retire holds (OATS 0.52.0): one
 that meets a retire of any of them answers `E_INSTANCE_RETIRING`, one that
 meets another stop `E_LIFECYCLE_BUSY`, before anything is stopped
 ([the table](desktop-cli-api.md#lifecycle-pairs)).
+
+**Stop an instance with OATS to keep it stopped** (Desktop's Stop, `oats
+instance stop`): the stop's record names the start it ended, and a resume
+never brings that start back. A stop of an instance that already reads
+`lost` signals nothing and records the stop all the same, so the instance
+stays stopped (on a full disk it cannot, and it stays `lost`). A tmux window
+killed by hand, or a harness killed by a signal, leaves no such record and
+reads as lost ([Resume after a shutdown](#resume-after-a-shutdown)).
+
+### Resume after a shutdown
+
+After a shutdown, a reboot or a crash (OATS 0.69, #1559), `oats session
+resume` brings back every instance session that OATS saw alive and then lost
+([Which losses come back](#which-losses-come-back)), on every deployment in
+this computer's list
+([workspaces.md](workspaces.md#this-computers-deployments)), each in its own
+harness conversation, with the launch it recorded. OATS Desktop and `oats
+tui` run it once when they open. Running instances are left alone; instances
+stopped with OATS, or whose harness ended by itself, stay stopped. Stopping an
+instance with OATS is the only way to keep it down: nothing opts a deployment
+or an instance out of the sweep.
+
+#### How a session's end is read
+
+A launched home that does not run reads one of three ends, `sessionEnd` on
+its status row ([desktop-cli-api.md](desktop-cli-api.md#row-session-end)),
+for its current start (`startId` in `instance.json`):
+
+| What the home holds for its current start | `sessionEnd` | Resumed |
+|---|---|---|
+| a stop's record that names it (or, a record from before 0.69, written after the start) | `stopped` | no |
+| an exit marker that names it with an exit status below 128 (`/exit`, Ctrl-C handled by the harness, its own error), or the marker of a kernel before 0.69 | `exited` | no: the row offers Start, as before |
+| an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | when the sweep can vouch for the loss ([below](#which-losses-come-back)) |
+| neither (the host went down, or the tmux server died under the live harness) | `lost` | when the sweep can vouch for the loss |
+
+The window a spawn or a start makes writes the exit marker,
+`.oats-start-exited`, when the harness exits; `oats instance stop` writes its
+record, `.oats-stop.json`. Both are kernel-private files of the home, not a
+contract: read `sessionEnd`. A shutdown kills the window's shell with the
+harness, so a lost session leaves no marker. A home spawned before 0.69 and
+never restarted since names no start: it reads `stopped` only after a stop,
+and otherwise `lost`, also when its harness ended by itself. It comes back only
+when OATS saw it running since the upgrade, so one that ended before the
+upgrade stays down, and one that ends by itself after it comes back once
+(stop it with OATS to keep it down). Its next start records the markers.
+
+#### What a resume runs
+
+`oats session start --resume --home <abs>` runs the recorded recipe as an
+ordinary start does: the same locks and checks, the same harness, model,
+launch configuration, environment and yolo, and the launch hooks again under
+the settings captured at spawn (which is how a messaging capability's
+delivery comes back). It refuses a home that did not lose its session
+(`E_RESUME_NOT_LOST`) and a launch choice (`E_BAD_ARGS`). Two things differ:
+
+- **The conversation.** The newest transcript whose recorded cwd is the home
+  itself, written since the home was created, in the locations its
+  native-record receipts name: Claude gets `--resume <id>`, pi `--session
+  <id>`. "Since the home was created" keeps an earlier instance of the same
+  name, at the same path, out. Only the window runs the selector:
+  `instance.json`, the pending receipt and the recipe keep the ordinary
+  launch, so a later Start opens a fresh conversation.
+- **The prompt.** In place of the task prompt the harness gets one line:
+  "OATS resumed this session after it was lost (the host restarted or its
+  terminal server ended). Continue from where you were." A harness cut off
+  mid-turn would otherwise wait for someone to type.
+
+No conversation found (never filed, deleted, or no receipt names where it
+went): the ordinary fresh start on `TASK.md`, answered `resumed: false` with
+the reason. **Codex is never resumed yet:** a Codex home takes that fresh
+start, reason `resume-unproven`, until a Codex resume is proven end to end on
+a signed-in host.
+
+#### The launch environment a resume runs under
+
+A resume starts only under the `{fromEnv: SRC}` values the start it brings
+back ran with. Every start that renders a recipe, the spawn's own launch
+included, records them. A resume compares them, after the check that every
+reference is set (`E_LAUNCH_ENV_MISSING`, which comes first):
+
+- **A changed value** refuses the resume before anything is launched:
+  `E_LAUNCH_ENV_CHANGED`, "this home's launch environment changed since its
+  last start (`<NAMES>`); nothing was started: start it yourself to use the
+  new values". Only the names are given, sorted, never a value. The sweep
+  reports it like any refused start (`refused`, `start-refused`, the code).
+  An ordinary Start or Restart never compares: it starts under the values it
+  finds and records them.
+- **No record to compare with.** A home last started by an earlier kernel,
+  or one whose record does not read, is resumed with one warning: "`<instance>`'s
+  launch environment could not be verified this once (it was last started
+  before OATS recorded it); its next start records it". That start records
+  it, so the warning is given once.
+- **The environment is the one the resume runs in.** OATS Desktop runs with
+  the desktop session's environment, not your shell's: a `fromEnv` variable
+  exported only in a shell profile is not set there, so the Desktop's sweep
+  refuses that home (`E_LAUNCH_ENV_MISSING`) while `oats tui` run from that
+  shell resumes it. Put the variable in the session's environment, or use a
+  literal in the launch configuration.
+- **A command you typed into the window is not resumed.** A resume runs the
+  instance's OATS launch, with the launch configuration, model and yolo its
+  last start chose. Put a custom command in a launch configuration.
+
+The record is two kernel-private files in the home, not a contract:
+`.oats-start-env.json` holds, for one start, a keyed one-way digest
+(HMAC-SHA256) of each referenced value, and `.oats-start-env.key` (mode 0600)
+holds the key. A value, which may be a credential, is never written, and the
+key never leaves the home: a retire's recovery copy of the home leaves both
+files out. Writing the record never fails a start. A start
+that could not write it leaves its resume to the warning above.
+
+#### Prompts a resume meets
+
+A resume answers no prompt that an ordinary start does not:
+
+- A development-channel confirmation stops a resume as it stops a start
+  ([Launch prompt outcomes](#launch-prompt-outcomes)): the session is kept and
+  the sweep reports it `blocked`. The approved channel route shows no prompt.
+- **Claude's resume-cost dialog.** On some plans Claude can ask, on the first
+  message after resuming a long, inactive conversation, whether to resume it
+  from a summary or in full. Nothing documented turns it off or answers it,
+  and the choice is the person's: **OATS sends no key.** After a resumed
+  Claude launch the kernel watches the pane for at most 20 seconds, and stops
+  earlier once the session shows itself working. When it recognises the dialog
+  the start still succeeds, answers `waiting: "resume-confirmation"`, and the
+  client says the instance is waiting for its person to choose: open its
+  terminal. The dialog is recognised by its option labels, taken from Claude
+  Code's strings and documentation (`lib/launch-prompt-fixtures/README.md`);
+  a screen it does not recognise is not a block.
+
+#### Which losses come back
+
+The sweep resumes a lost home only when OATS can vouch for the loss, from
+what its own reads of that home saw (`oats status`, OATS Desktop and `oats
+tui` reading it, and the sweep's own read). All four must hold:
+
+1. OATS saw the home running for its current start.
+2. No earlier sweep answered this loss. A sweep answers each lost home once,
+   whatever it did with it (resumed, started fresh, blocked, refused or
+   skipped). A status read never uses a loss up, and `--plan` answers none.
+3. OATS first saw it not running less than 24 hours ago.
+4. Within one boot, OATS first saw it not running less than 24 hours after it
+   last saw it running. Across a reboot this one does not apply.
+
+Any other lost home is reported `skipped`, `not-seen-recently`, with the
+reason, and nothing is started; its status row still reads `sessionEnd:
+lost`, and `oats session start --resume --home <abs>` run by hand still
+resumes it. So:
+
+- a harness killed by an out-of-memory kill at 02:00 and seen by a status at
+  02:01 comes back at a 09:00 sweep;
+- a computer off for two weeks brings back what ran when it went down, at the
+  first client that opens;
+- a tmux server that crashed overnight brings its instances back at the
+  morning's first client;
+- **an agent killed outside OATS (closed from tmux, or killed by a signal)
+  comes back within 24 hours: only `oats instance stop` keeps it down;**
+- a loss first seen a day ago or more, or a session that died before any read
+  of OATS saw it run, stays down.
+
+Two limits follow from reading only what OATS saw:
+
+- **After upgrading to 0.69**, open OATS Desktop or `oats tui`, or run `oats
+  status`, once before you restart the computer, or nothing from before the
+  upgrade comes back.
+- A whole boot with no OATS read leaves that boot unknown: what ran in it and
+  was lost there is not resumed.
+
+Without a boot id (neither Linux nor macOS: both have one), clause 4 applies
+to every loss and the 3-resumes-per-boot guard (below) is off.
+
+**Status records what it sees.** Every local listing of a deployment's
+instances (`oats status`, and every command that lists them) records, per
+home, its current start, when it was last seen running, when it was first
+seen not running, the boot of each, and whether a sweep answered the loss. It
+goes in a kernel-private file, one per deployment,
+`session-resume/seen/<16 hex>.json` under `~/.oats` (`$OATS_HOME_DIR` when
+set), beside the sweep's per-boot note; it is not a contract. Writing it never
+changes what status answers, prints nothing, and is skipped when nothing
+changed: a running home's last look is rewritten at most every 10 minutes in
+a boot. A record that cannot be read counts as empty, which resumes nothing,
+and is rewritten whole; one that cannot be written is left as it is. A status
+routed to another machine with `--server` records nothing on this one.
+`oats session resume --plan` records what its own read sees, as any status
+read does, and answers no loss. The three figures are constants of the
+kernel (`lib/session-seen.mjs`).
+
+#### The sweep
+
+`oats session resume` reads this computer's list of deployments and never
+writes it, and skips a deployment `oats deployments remove` took out of it;
+`--deployment <dir>` sweeps one directory, listed or not. It starts each lost
+home it can vouch for with `--resume` in that home's own deployment scope, at
+most 4 at once. What it answers a lost home, the first that applies: not
+seen recently; refused this boot; keeps getting lost; started.
+`--plan` says what it would do and starts nothing. Its answer is in
+[desktop-cli-api.md](desktop-cli-api.md#the-machine-sweep-oats-session-resume).
+
+- One sweep runs per machine: a second one answers `E_RESUME_BUSY`. A lock
+  left by a process that is gone, or by another boot, is taken over.
+- A loss is answered once: whatever a sweep did with it (resumed, refused,
+  skipped or blocked), no later sweep starts it again, in this boot or after
+  a reboot; a later sweep reports it `not-seen-recently`. A refused resume is
+  never retried automatically: it is also noted for the boot, and reported
+  `refused-this-boot` should that answer be lost.
+- A home is started by sweeps at most 3 times in a boot. A home lost again
+  after each resume (a harness that crashes the host or its terminal server,
+  say) is then reported `keeps-getting-lost`, and that loss is answered: no
+  sweep starts it again, after a reboot either. Start it by hand: its next
+  loss is a new one, with a new count in each boot. Every sweep start that launched
+  something counts (resumed, fresh or blocked), by home, as soon as that start
+  has answered, so a sweep killed while other starts run has counted it; a
+  refused, skipped or busy one does not. `oats session start --resume` run by hand is neither
+  bounded nor counted.
+- The boot is the boot id on Linux and the boot time on macOS. Elsewhere there
+  is no boot: nothing is noted or counted, and every sweep tries again.
+- The lock, the per-boot note and the record of what status saw live in
+  `session-resume/` under `~/.oats` (`$OATS_HOME_DIR` when set). All three
+  are kernel-private, not a contract.
+- Local only: a client does not resume a server's instances. A server runs
+  `oats session resume` itself.
 
 ### Inspect, input and attach
 
@@ -1107,12 +1385,17 @@ oats session attach --home /abs/home --detach-key 'C-\'
   harness, `shell` for a fallback shell,
   `stopped` for an absent or dead terminal, or `not-launched`. An unavailable
   backend is an error (`E_SESSION_UNAVAILABLE`), never a stopped result.
+  When the window is there, it also reports `paneId`, the tmux id (`%N`) of
+  the agent's pane ([which pane is the agent's](#which-pane-is-the-agents)),
+  a retained dead pane included.
   With feature `session-inspect-size` in `oats version --json`, a present
   terminal also reports `size: { cols, rows }`: positive integer window width
   and height in cells. The kernel reads tmux's `window_width` and
   `window_height` in the same call as the pane identity, so a viewer can open
   its PTY at the window's current size without constructing a tmux target.
-  Split windows remain refused. `size` is absent when `present` is false,
+  A window with several panes still reports the window's size; one where
+  OATS cannot tell which pane is the agent's is refused
+  ([which pane is the agent's](#which-pane-is-the-agents)). `size` is absent when `present` is false,
   including a retained dead pane. Malformed dimensions are an
   `E_SESSION_UNAVAILABLE` error containing `invalid tmux pane response`.
   `session inspect --server <id> --home <home> --json` relays the execution
@@ -1143,8 +1426,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
   for input, nor that it consumed a wake, and it does not prove which
   executable runs if a process inside the pane was replaced. When the backend
   cannot be read, a required process-table read for an explicitly labelled
-  shell fails, or the pane answer is
-  malformed or split, inspect is an error as before, never `running: false`.
+  shell fails, the pane answer is
+  malformed, or OATS cannot tell which of the window's panes is the agent's,
+  inspect is an error as before, never `running: false`.
   That includes a tmux server that is gone (`no server running on` its
   socket, as after a reboot): status reads that row as `running: false`, and
   inspect answers `E_SESSION_UNAVAILABLE`. Wherever inspect answers, its
@@ -1170,8 +1454,10 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `details.fields`.
 - **input** sends UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
   NUL) as exactly one bracketed paste followed by exactly one Enter. The text
-  is never run by a shell. Existing endpoint authority, fallback-shell,
-  stopped-session and split-window checks still refuse before input.
+  is never run by a shell. Existing endpoint authority, fallback-shell and
+  stopped-session checks, and a window where OATS cannot tell which pane is
+  the agent's, still refuse before input. The text goes to the agent's pane
+  (`paneId`), even when the person's focus is in another pane of the window.
 
   Before Enter, a size-based floor (200 ms plus 3 ms per KiB) and read-only
   settling polls share one **monotonic 2-second observation budget**, starting
@@ -1199,7 +1485,14 @@ oats session attach --home /abs/home --detach-key 'C-\'
   operations, not model processing. Broker delivery/ack policy and harness
   acceptance evidence remain separate contracts.
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
-  session linked to the agent's window alone.
+  session linked to the agent's window alone. The viewer shows the whole
+  window, every pane. When the window has more than one pane, the viewer
+  selects the agent's pane before its client attaches, so typing goes to the
+  agent. The viewer has no key or click that moves to another pane: a pane
+  split off while a viewer is open is the active one, and takes its keys,
+  until it closes. A window where OATS cannot tell
+  which pane is the agent's is refused
+  ([which pane is the agent's](#which-pane-is-the-agents)).
   Closing the viewer leaves the agent running. When the agent's window ends
   (for example, the instance is stopped or retired), the viewer ends too: it
   sets tmux's `detach-on-destroy on` for its own session, so a server
@@ -1451,10 +1744,13 @@ removed with the home.
 
 Spawn writes `TASK.md` in the home: the instance's name, soul, home and work
 tree, followed by the `--task` or `--task-file` text, or a note to await
-instructions when no task is given. Every launch, including `session start`
-and `restart`, opens a new harness conversation on `TASK.md`. The instance
-resumes its work from its own state files, as its knowledge capability
-prescribes.
+instructions when no task is given. Every launch, `session start` and
+`restart` included, opens a fresh harness conversation on `TASK.md`, **except a
+resume** ([Resume after a shutdown](#resume-after-a-shutdown)), which continues
+the instance's own last conversation with a one-line resume notice. This
+replaces the earlier rule that every start, without exception, opened a new
+conversation (OATS 0.69, #1559). In a fresh conversation the instance resumes
+its work from its own state files, as its knowledge capability prescribes.
 
 The task's text never travels on a command line, where any local user could
 read it in the process list:

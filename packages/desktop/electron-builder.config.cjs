@@ -48,6 +48,7 @@ module.exports = {
     "login-path.mjs",
     "host-theme.mjs",
     "chord-family.mjs",
+    "session-resume-launch.mjs",
     "server/**/*",
     "renderer/**/*",
     // Only the sidebar mark ships as a file; the platform icons are wired

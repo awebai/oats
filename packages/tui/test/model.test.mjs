@@ -130,8 +130,9 @@ const unsupportedText = (row) => {
   const reason = instanceActs(row).acts.find((act) => act.verb === "start")?.reason ?? null;
   return reason?.code === "unsupported-session" ? reason.sentence : null;
 };
-/** A sentence of the terminal check's own, as it answers for a probe that failed (tmux-status.mjs). */
-const CHECK_FAILED = "Instance window has multiple panes; check its terminal before starting";
+/** A sentence of the terminal check's own, as it answers for a probe that failed (tmux-status.mjs): a
+ *  window with two panes marked as the agent's, so it can't tell which is (#1569). */
+const CHECK_FAILED = "the window has 2 panes marked as odd's agent pane (%3, %7); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance";
 /** The collector's documented answer for the rows `collector` leaves out (`observeLiveness`
  *  again). Before anything else, a row whose session backend OATS no longer has is never probed:
  *  it reads unsupported, with that text and no tmux. And a probed row whose check fails reads
@@ -188,6 +189,25 @@ test("the roster is the Desktop's: the rows of its instance-tree test keep paren
   assert.deepEqual(items.slice(7).map((item) => item[1]), [0, 0]);
   assert.equal(items.length, 9);
   assert.deepEqual(drawnOrder(state), sharedOrder(state));
+});
+
+test("under one parent the flagged children come first, by name within each part, when the CLI declares instance-same-work (#1577)", () => {
+  const rows = [
+    ["lead", {}], ["a-dev", { parentInstance: "lead" }], ["b-dev", { parentInstance: "lead", sameWork: true }],
+    ["c-dev", { parentInstance: "lead", sameWork: "true" }], ["d-dev", { parentInstance: "lead", sameWork: true }],
+    ["d-rev", { parentInstance: "d-dev", sameWork: true }], ["solo", { sameWork: true }],
+  ].map(([name, extra]) => instanceRow("dev", name, extra));
+  const cli = { ...CLI, features: Object.freeze([...CLI.features, "instance-same-work"]) };
+  const order = (state) => roster(state).items.map((item) => item && [item.row.instance, item.depth]);
+  const declared = stateOf(observed(rows, { cli }), { cli });
+  assert.deepEqual(order(declared), [
+    ["lead", 0], ["b-dev", 1], ["d-dev", 1], ["d-rev", 2], ["a-dev", 1], ["c-dev", 1], null, ["solo", 0],
+  ], "flagged first (b, d), then the rest (a, and c whose \"true\" is no flag); a flagged root keeps its place");
+  assert.deepEqual(drawnOrder(declared), sharedOrder(declared), "the order is the shared rosterGroups'");
+  // Without the feature every child draws its line, as today: the order is today's, by name.
+  assert.deepEqual(order(stateOf(observed(rows))), [
+    ["lead", 0], ["a-dev", 1], ["b-dev", 1], ["c-dev", 1], ["d-dev", 1], ["d-rev", 2], null, ["solo", 0],
+  ]);
 });
 
 test("a cluster whose root is named `independent` is a cluster: the gaps stand around it, expanded and collapsed (#1262)", () => {

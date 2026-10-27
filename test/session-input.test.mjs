@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
-import { createSessionPaneInspector, inputSessionTarget, inspectSessionTarget } from "../lib/session-input.mjs";
+import { AGENT_PANE_OPTION, createSessionPaneInspector, inputSessionTarget, inspectSessionTarget, resolveAgentPane } from "../lib/session-input.mjs";
 const target = { backend: "tmux", socket: "/tmp/original.sock", session: "oats", window: "agent" };
 // The fake tmux answers each look at the pane (pane size, capture-pane, pane
 // size, in one call) from `screen({ enters, captures })`: a string at 80x24,
@@ -88,7 +88,10 @@ test("1381: dead, malformed, split and other labelled panes retain their observa
     assert.deepEqual(inspect([`%12\t0\t${command}\t123`]), { backend: "tmux", present: true, state: "unknown", paneId: "%12" });
   }
   assert.throws(() => inspect(["garbage"]), /invalid tmux pane response/);
-  assert.throws(() => inspect(["%12\t0\tunset\t123", "%13\t0\tunset\t456"]), /multiple panes/);
+  // A split window (#1569): its agent's pane is judged alone, here the unmarked one with the lowest
+  // id, dead; when the agent's pane cannot be told, the observation is refused.
+  assert.deepEqual(inspect(["%13\t0\tunset\t456", "%12\t1\tunset\t123"]), { backend: "tmux", present: false, state: "stopped", paneId: "%12" });
+  assert.throws(() => inspect(["%12\t0\tunset\t123\tdev-1", "%13\t0\tunset\t456\tdev-1"], { name: "dev-1" }), /^Error: the window has 2 panes marked as dev-1's agent pane/);
   assert.throws(() => inspect(["%12\t0\tzsh\tbad"]), /no pane process id/);
 });
 function receipt(io, result, verified) {
@@ -119,7 +122,8 @@ test("tmux submits literal multiline input using bracketed paste and one Enter a
     "display-message", "-p", "-t", "%12", "#{pane_width}x#{pane_height}"]);
 });
 test("tmux refuses fallback shells, dead panes and ambiguous split windows", () => {
-  for (const out of ["%1\t0\tzsh\t123", "%1\t1\tcodex", "%1\t0\tcodex\n%2\t0\tpi"]) {
+  // Ambiguous (#1569): two panes marked as this window's agent pane, or only another instance's.
+  for (const out of ["%1\t0\tzsh\t123", "%1\t1\tcodex", "%1\t0\tcodex\t11\tagent\n%2\t0\tpi\t12\tagent", "%1\t0\tcodex\t11\tother\n%2\t0\tpi\t12\tother"]) {
     const io = fixture(out);
     assert.throws(() => inputSessionTarget(target, "wake", io));
     assert.equal(io.calls.length, 1);
@@ -385,7 +389,7 @@ test("inspect size is read with the pane identity in one tmux call", () => {
     backend: "tmux", present: true, state: "unknown", paneId: "%12", size: { cols: 137, rows: 43 },
   });
   assert.deepEqual(io.calls.map(c => c.args), [["list-panes", "-t", "=oats:=agent", "-F",
-    "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\t#{window_width}\t#{window_height}"]]);
+    "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\t#{window_width}\t#{window_height}\t#{@oats-agent}"]]);
 });
 
 test("inspect size rejects malformed dimensions with the existing pane-response error", () => {
@@ -403,4 +407,162 @@ test("inspect omits size for absent and retained dead panes", () => {
     assert.equal(result.present, false);
     assert.equal(Object.hasOwn(result, "size"), false);
   }
+});
+
+// ---- the agent's pane in a window with other panes (#1569) --------------------------------------
+
+const TWICE = "the window has 2 panes marked as dev-1's agent pane (%3, %7); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance";
+const NONE = "the window has 2 panes and none is dev-1's agent pane (%3, %7); close the panes that aren't, or close the window and start the instance";
+const panesOf = (...specs) => specs.map(([paneId, mark = ""]) => ({ paneId, mark }));
+test("1569: resolveAgentPane: one pane is the agent's; of several, the one marked with the name, else the unmarked pane with the lowest id; never another instance's", () => {
+  assert.equal(AGENT_PANE_OPTION, "@oats-agent");
+  assert.deepEqual(resolveAgentPane([], "dev-1"), { pane: null });
+  for (const mark of ["", "dev-1", "dev-2"]) {
+    const [only] = panesOf(["%4", mark]);
+    assert.equal(resolveAgentPane([only], "dev-1").pane, only, `one pane, marked ${JSON.stringify(mark)}: the element itself`);
+  }
+  // The marked pane, wherever it is listed and whatever its id.
+  for (const panes of [panesOf(["%3"], ["%7", "dev-1"]), panesOf(["%7", "dev-1"], ["%3"]), panesOf(["%3", "dev-2"], ["%7", "dev-1"], ["%1"])]) {
+    assert.equal(resolveAgentPane(panes, "dev-1").pane.paneId, "%7", JSON.stringify(panes));
+  }
+  // No mark: the lowest id, by number (%9 before %10), whatever the listing's order.
+  assert.equal(resolveAgentPane(panesOf(["%10"], ["%9"]), "dev-1").pane.paneId, "%9");
+  assert.equal(resolveAgentPane(panesOf(["%9"], ["%10"]), "dev-1").pane.paneId, "%9");
+  // Another instance's mark is never the agent's, even on the lowest id.
+  assert.equal(resolveAgentPane(panesOf(["%1", "dev-2"], ["%5"]), "dev-1").pane.paneId, "%5");
+  // Cannot tell: two marked with the name, or no candidate at all. Ids ascending, by number.
+  assert.deepEqual(resolveAgentPane(panesOf(["%7", "dev-1"], ["%3", "dev-1"]), "dev-1"), { error: TWICE });
+  assert.deepEqual(resolveAgentPane(panesOf(["%7", "dev-1"], ["%3", "dev-1"], ["%1"]), "dev-1"), { error: TWICE }, "two marked: an unmarked pane does not settle it");
+  assert.deepEqual(resolveAgentPane(panesOf(["%7", "dev-2"], ["%3", "dev-3"]), "dev-1"), { error: NONE });
+  assert.match(resolveAgentPane(panesOf(["%10", "x"], ["%9", "x"], ["%100", "x"]), "dev-1").error, /^the window has 3 panes and none is dev-1's agent pane \(%9, %10, %100\);/);
+  // Every other field of a pane is carried along.
+  const pane = { paneId: "%2", mark: "dev-1", fields: ["%2"] };
+  assert.equal(resolveAgentPane([{ paneId: "%1", mark: "" }, pane], "dev-1").pane, pane);
+});
+
+test("1569: the inspector judges the agent's pane alone in a split window", () => {
+  const inspect = createSessionPaneInspector({ exec(binary) {
+    assert.equal(binary, "ps");
+    // %3's shell 300 has only a shell below it; %7's shell 700 runs an editor.
+    return "300 1 zsh\n301 300 -zsh\n700 1 zsh\n701 700 vim\n";
+  } });
+  const live = (paneId) => ({ backend: "tmux", present: true, state: "unknown", paneId });
+  // One pane is the agent's, whatever its mark.
+  assert.deepEqual(inspect(["%7\t0\tcodex\t700"], { name: "dev-1" }), live("%7"));
+  assert.deepEqual(inspect(["%7\t0\tcodex\t700\tdev-2"], { name: "dev-1" }), live("%7"));
+  // The marked pane, listed first or second (the active pane is not asked).
+  assert.deepEqual(inspect(["%7\t0\tcodex\t700\tdev-1", "%3\t0\tvim\t300\t"], { name: "dev-1" }), live("%7"));
+  assert.deepEqual(inspect(["%3\t0\tvim\t300\t", "%7\t0\tcodex\t700\tdev-1"], { name: "dev-1" }), live("%7"));
+  // No mark: the lowest id, numerically.
+  assert.deepEqual(inspect(["%10\t0\tvim\t300", "%9\t0\tcodex\t700"], { name: "dev-1" }), live("%9"));
+  // Another instance's mark is never chosen; only such panes: cannot tell.
+  assert.deepEqual(inspect(["%1\t0\tvim\t300\tdev-2", "%5\t0\tcodex\t700\t"], { name: "dev-1" }), live("%5"));
+  assert.throws(() => inspect(["%7\t0\tcodex\t700\tdev-2", "%3\t0\tcodex\t300\tdev-3"], { name: "dev-1" }), (e) => e.message === NONE);
+  // Two marked with the name: cannot tell.
+  assert.throws(() => inspect(["%7\t0\tcodex\t700\tdev-1", "%3\t0\tcodex\t300\tdev-1"], { name: "dev-1" }), (e) => e.message === TWICE);
+  // The agent's pane dead beside a live one: stopped.
+  assert.deepEqual(inspect(["%3\t0\tvim\t300\t", "%7\t1\tcodex\t700\tdev-1"], { name: "dev-1" }), { backend: "tmux", present: false, state: "stopped", paneId: "%7" });
+  // The agent's pane a fallback shell beside a pane that runs something: shell. The other pane's
+  // processes (vim under 700) are not the agent's.
+  assert.deepEqual(inspect(["%3\t0\tzsh\t300\tdev-1", "%7\t0\tzsh\t700\t"], { name: "dev-1" }), { backend: "tmux", present: true, state: "shell", paneId: "%3" });
+  assert.deepEqual(inspect(["%3\t0\tzsh\t300\t", "%7\t0\tzsh\t700\tdev-1"], { name: "dev-1" }), live("%7"), "and the other way round: a live descendant under the agent's pane");
+  // A malformed row anywhere in the window is a malformed answer.
+  assert.throws(() => inspect(["%3\t0\tcodex\t300\tdev-1", "garbage"], { name: "dev-1" }), /^Error: invalid tmux pane response$/);
+});
+
+test("1569: inspection reads the mark last in the one list-panes call, with and without size, and counts the panes when asked", () => {
+  const io = fixture("%12\t0\tvim\t123\t\n%13\t0\tcodex\t124\tagent\n");
+  assert.deepEqual(inspectSessionTarget(target, io), { backend: "tmux", present: true, state: "unknown", paneId: "%13" });
+  assert.deepEqual(io.calls.map((c) => c.args), [["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\t#{@oats-agent}"]]);
+  assert.deepEqual(inspectSessionTarget(target, io, { includePanes: true }), { backend: "tmux", present: true, state: "unknown", paneId: "%13", panes: 2 });
+  assert.deepEqual(inspectSessionTarget(target, fixture("%12\t0\tcodex\t123\t\n"), { includePanes: true }), { backend: "tmux", present: true, state: "unknown", paneId: "%12", panes: 1 });
+  const sized = fixture("%12\t0\tvim\t123\t137\t43\t\n%13\t0\tcodex\t124\t137\t43\tagent\n");
+  assert.deepEqual(inspectSessionTarget(target, sized, { includeSize: true, includePanes: true }), {
+    backend: "tmux", present: true, state: "unknown", paneId: "%13", size: { cols: 137, rows: 43 }, panes: 2,
+  });
+  // A row without the mark (a pane listed before the option existed) is an unmarked pane.
+  assert.deepEqual(inspectSessionTarget(target, fixture("%12\t0\tcodex\t123\t137\t43\n"), { includeSize: true }).size, { cols: 137, rows: 43 });
+});
+
+test("1569: input into a split window goes to the agent's pane alone", () => {
+  const io = fixture("%12\t0\tvim\t123\t\n%13\t0\tcodex\t124\tagent\n");
+  const result = inputSessionTarget(target, "wake", io);
+  assert.equal(result.paneId, "%13");
+  assert.equal(result.submitted, true);
+  assert.deepEqual(named(io, "paste-buffer")[0].args.slice(-2), ["-t", "%13"]);
+  assert.deepEqual(named(io, "send-keys").map((c) => c.args), [["send-keys", "-t", "%13", "Enter"]]);
+  assert.equal(io.calls.some((c) => c.args.includes("%12")), false, "the other pane is never addressed");
+});
+
+// Stop (lib/core.mjs harnessProcesses, stopHarness) in a window `dev-1` split in two: %2, unmarked
+// and the lower id, runs vim under its shell 200; %3, marked as dev-1's, runs the harness under its
+// shell 300. Only %3's descendants are ever signalled.
+const SPLIT = { backend: "tmux", socket: "/tmp/original.sock", session: "oats", window: "dev-1" };
+const HARNESS_ROWS = "#{pane_id}\t#{pane_pid}\t#{@oats-agent}";
+/** `inspected`: what the window's inspection reads (`exited`, once the signalled processes are gone);
+ *  `listed`: what the signalling step's own list-panes reads. `kill` records each signal; a signalled
+ *  process is gone from then on. */
+function splitHost({ inspected, exited = inspected, listed }) {
+  const table = ["200 1 200 zsh", "201 200 201 vim", "300 1 300 zsh", "301 300 301 claude", "302 301 301 node"];
+  const gone = new Set(), signalled = [], reads = { harness: 0, ps: 0 };
+  const exec = (binary, args) => {
+    const rows = table.filter((row) => !gone.has(Number(row.split(" ")[0])));
+    if (binary === "ps") {
+      reads.ps++;
+      if (args[1] === "pid=,ppid=,pgid=,comm=") return rows.join("\n") + "\n";
+      assert.equal(args[1], "pid=,ppid=,comm=");
+      return rows.map((row) => { const [pid, ppid, , comm] = row.split(" "); return `${pid} ${ppid} ${comm}`; }).join("\n") + "\n";
+    }
+    assert.equal(binary, "tmux");
+    assert.deepEqual(args.slice(0, 3), ["-u", "-S", SPLIT.socket]);
+    assert.deepEqual(args.slice(3, 6), ["list-panes", "-t", "=oats:=dev-1"], "only the window's panes are read");
+    if (args.at(-1) === HARNESS_ROWS) { reads.harness++; return listed; }
+    return gone.size ? exited : inspected;
+  };
+  const kill = (pid, signal) => {
+    if (gone.has(pid)) throw Object.assign(new Error(`kill ESRCH ${pid}`), { code: "ESRCH" });
+    if (signal !== 0) { signalled.push([pid, signal]); gone.add(pid); }
+    return true;
+  };
+  return { io: { exec }, kill, signalled, reads };
+}
+const RUNNING = "%2\t0\tvim\t200\t\n%3\t0\tclaude\t300\tdev-1\n";
+const AT_PROMPT = "%2\t0\tvim\t200\t\n%3\t0\tzsh\t300\tdev-1\n";
+const LISTED = "%2\t200\t\n%3\t300\tdev-1\n";
+
+test("1569: harnessProcesses and stopHarness signal only the agent's pane's processes, never a split's", async () => {
+  const { harnessProcesses, stopHarness } = await import("../lib/core.mjs");
+  const host = splitHost({ inspected: RUNNING, exited: AT_PROMPT, listed: LISTED });
+  assert.deepEqual(harnessProcesses(SPLIT, host.io), [
+    { pid: 301, ppid: 300, pgid: 301, comm: "claude", depth: 1 },
+    { pid: 302, ppid: 301, pgid: 301, comm: "node", depth: 2 },
+  ]);
+  assert.deepEqual(harnessProcesses(SPLIT, host.io, { paneId: "%3" }).map((r) => r.pid), [301, 302], "the pane the caller inspected");
+  const receipt = stopHarness(SPLIT, { io: host.io, kill: host.kill, sleep() {} });
+  assert.deepEqual(host.signalled, [[301, "SIGTERM"], [302, "SIGTERM"]], "the harness and its child, topmost first; nothing under %2");
+  assert.deepEqual(receipt.requested.map((r) => r.pid), [301, 302]);
+  assert.equal(receipt.exited, true);
+  assert.equal(receipt.state, "shell");
+});
+
+test("1569: a window whose agent's pane cannot be told, or whose agent's pane changed since it was inspected, is never signalled", async () => {
+  const { harnessProcesses, stopHarness } = await import("../lib/core.mjs");
+  const refused = (message) => (e) => e.code === "E_SESSION_UNKNOWN" && e.message === message;
+  for (const [listed, sentence] of [
+    ["%2\t200\tdev-1\n%3\t300\tdev-1\n", "the window has 2 panes marked as dev-1's agent pane (%2, %3); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance"],
+    ["%3\t300\tdev-2\n%2\t200\tdev-3\n", "the window has 2 panes and none is dev-1's agent pane (%2, %3); close the panes that aren't, or close the window and start the instance"],
+  ]) {
+    const host = splitHost({ inspected: RUNNING, listed });
+    assert.throws(() => harnessProcesses(SPLIT, host.io), refused(`${sentence}; nothing was signalled`));
+    assert.equal(host.reads.ps, 0, "no process is even looked for");
+  }
+  // Inspected as %3; by the signal the agent's pane is %4 (a restart in a new pane), or gone.
+  for (const [listed, now] of [["%3\t300\t\n%4\t400\tdev-1\n", "%4"], ["", "gone"]]) {
+    const host = splitHost({ inspected: RUNNING, listed });
+    assert.throws(() => stopHarness(SPLIT, { io: host.io, kill: host.kill, sleep() {} }), refused(`the agent's pane was %3 and is now ${now}; nothing was signalled`));
+    assert.deepEqual(host.signalled, []);
+    assert.equal(host.reads.harness, 1);
+  }
+  // A malformed pane id in the signalling step's read.
+  assert.throws(() => harnessProcesses(SPLIT, splitHost({ inspected: RUNNING, listed: "300\n" }).io), refused("invalid tmux pane response"));
 });

@@ -10,8 +10,13 @@ import { runInNewContext } from 'node:vm';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
 import { soulRows } from '../../client/soul-rows.mjs';
-import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
+import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData, SESSION_ENDS } from '../../client/deployment-data.mjs';
 import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
+import { panelData } from '../../client/panel-views.mjs';
+import { createRemoteIdentityStore } from '../server/remote-identity.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
+import { lostLocalHomes, localDeploymentIds } from '../../client/session-resume-trigger.mjs';
+import { loadViews, identity as viewIdentity, observed as viewObserved, row as viewRow, remoteRow as viewRemoteRow, group as viewGroup, A as VA, B as VB, V_OATS } from './helpers/workspace-views-fixture.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
 const old = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
@@ -143,4 +148,74 @@ test('observeDeployment keeps waitingOnYou only when the CLI advertises waiting-
   assert.equal(Object.hasOwn(await observeWith(undefined, instance), 'waitingOnYou'), false, 'no feature list: dropped');
   const { waitingOnYou: _w, ...bare } = instance;
   assert.equal(Object.hasOwn(await observeWith(['waiting-on-you'], bare), 'waitingOnYou'), false, 'absent is never synthesized');
+});
+
+/* Session resume: `sessionEnd` on a status row is one of SESSION_ENDS exactly, dropped otherwise without failing
+   the roster, and reaches /api/panel's instance rows, where the shared resume trigger reads it. */
+const ENDS = Object.values(SESSION_ENDS);
+const withEnd = value => { const doc = structuredClone(fx('status')); doc.agents.find(a => a.instances.length).instances[0].sessionEnd = value; return doc; };
+
+test('status: sessionEnd is kept when one of SESSION_ENDS; any other value is dropped, never fatal; absence stays absent', () => {
+  assert.deepEqual(SESSION_ENDS, { lost: 'lost', stopped: 'stopped', exited: 'exited' });
+  assert.ok(Object.isFrozen(SESSION_ENDS));
+  for (const end of ENDS) assert.equal(firstRow(withEnd(end)).sessionEnd, end, end);
+  for (const bad of ['LOST', 'lost ', 'crashed', '', null, true, 1, ['lost'], { lost: true }]) {
+    const row = firstRow(withEnd(bad));
+    assert.equal(Object.hasOwn(row, 'sessionEnd'), false, JSON.stringify(bad));
+    assert.equal(row.instance, firstRow(fx('status')).instance, 'the row is kept');
+  }
+  assert.equal(Object.hasOwn(firstRow(fx('status')), 'sessionEnd'), false, 'a status without the field adds nothing');
+});
+
+test('status → /api/panel: sessionEnd travels with the instance; absent stays absent', async () => {
+  const roster = deploymentStatusData(withEnd(SESSION_ENDS.lost), DEPLOYMENT);
+  const row = roster.agents.flatMap(a => a.instances)[0];
+  assert.equal(panelInstance({ ...row, agentsRoot: roster.root }).sessionEnd, SESSION_ENDS.lost);
+  // Through the server's own observeDeployment, as /api/panel serves its entry.
+  const instance = { instance: 'dev-a', agent: 'dev', home: '/d/agents/dev/instances/dev-a' };
+  for (const end of ENDS) assert.equal((await observeWith(['desktop-facts'], { ...instance, sessionEnd: end })).sessionEnd, end, end);
+  const bare = await observeWith(['desktop-facts'], instance);
+  assert.equal(Object.hasOwn(bare, 'sessionEnd'), false, 'absent is never synthesized');
+  // And /api/panel's answer (panel-views.mjs panelData, the route's call) over that entry keeps it on the row.
+  const lost = await observeWith(['desktop-facts'], { ...instance, sessionEnd: SESSION_ENDS.lost });
+  const store = createRemoteIdentityStore({ file: null });
+  const held = { ctxs: ['/d'], snapshot: { byWs: new Map([['/d', { deployment: { status: 'observed', root: '/d/agents', withheld: [] }, instances: [lost, { ...bare, instance: 'dev-b' }],
+    generatedAt: '2026-10-03T10:00:00.000Z', observedAt: '2026-10-03T10:00:00.000Z' }]]) }, remoteGroups: [],
+    remembered: { get: id => store.get(id), note: id => store.note(id), all: () => store.all(), observe() {} },
+    rosterAnswered: true, rosterFailure: null, cli: { ok: true, bin: '/oats', features: [] }, observing: new Set(), remoteCollecting: false, home: '/h', at: '2026-10-03T10:00:00.000Z' };
+  assert.match(source, /path === "\/api\/panel"\) return send\(res, 200, panelData\(held\(\), asked, DESKTOP_TERMS\)\)/, 'the route serves panelData');
+  const rows = panelData(held, '/d', DESKTOP_TERMS).instances;
+  assert.deepEqual(rows.map(r => [r.instance, r.sessionEnd]), [['dev-a', SESSION_ENDS.lost], ['dev-b', undefined]]);
+  assert.equal(Object.hasOwn(rows[1], 'sessionEnd'), false);
+});
+
+test('end to end: a lost row of a local deployment, through the real readers and panelData, is named by lostLocalHomes with the reply\'s local ids; a remote deployment\'s lost row, a running or a not-lost row is not', () => {
+  /** The oats view as /api/panel serves it (panelData over the server's held, helpers/workspace-views-fixture.mjs): local A,
+   * whose rows are the status fixture read by the real readers (deploymentStatusData → rosterRows) with its instance's
+   * sessionEnd and running set, local B, and the remote altair whose row also reads lost. */
+  const FAR = '/home/juan/oats';
+  const panelOf = (sessionEnd, running) => {
+    const raw = JSON.stringify(fx('status')), captured = dirname(fx('status').root);
+    const doc = JSON.parse(raw.split(captured).join(VA)), instance = doc.agents.find(a => a.instances.length).instances[0];
+    Object.assign(instance, { sessionEnd, running });
+    const rows = rosterRows(deploymentStatusData(doc, VA), { features: [] });
+    const far = viewGroup('altair:a1', 'altair', FAR, viewIdentity(), [viewRemoteRow('far-a', FAR, { sessionEnd: SESSION_ENDS.lost, running: false })]);
+    const byWs = new Map([[VA, viewObserved(VA, { reachable: true, ...viewIdentity() }, rows)], [VB, viewObserved(VB, { reachable: true, ...viewIdentity() }, [viewRow(VB, 'dev-b')])]]);
+    return loadViews({ ctxs: [VA, VB], snapshot: { byWs }, remoteGroups: [far] }).panelData(V_OATS);
+  };
+  const panel = panelOf(SESSION_ENDS.lost, false), ids = localDeploymentIds(panel);
+  assert.deepEqual(panel.deployments.map(d => [d.id, d.local]), [[VA, true], [VB, true], ['remote:altair:a1', false]]);
+  assert.deepEqual(ids, [VA, VB]);
+  const local = panel.instances.find(i => i.deployment.id === VA), far = panel.instances.find(i => i.deployment.id === 'remote:altair:a1');
+  assert.equal(local.sessionEnd, SESSION_ENDS.lost);
+  assert.equal(far.sessionEnd, SESSION_ENDS.lost, 'the remote row reads lost too');
+  assert.deepEqual(lostLocalHomes(panel.instances, ids), [local.home], 'only the local deployment\'s home');
+  assert.deepEqual(lostLocalHomes(panel.instances), [], 'no local ids: nothing is local');
+  assert.deepEqual(lostLocalHomes(panel.instances, [VA, VB, 'remote:altair:a1']), [local.home, far.home], 'the id is the one rule');
+  // A running or not-lost local row is not named; nor is an out-of-contract value, which the reader drops.
+  assert.deepEqual(lostLocalHomes(panelOf(SESSION_ENDS.lost, true).instances, ids), [], 'lost but running');
+  for (const end of [SESSION_ENDS.stopped, SESSION_ENDS.exited, undefined, 'crashed']) {
+    const p = panelOf(end, false);
+    assert.deepEqual(lostLocalHomes(p.instances, localDeploymentIds(p)), [], String(end));
+  }
 });

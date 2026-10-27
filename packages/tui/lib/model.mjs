@@ -6,7 +6,7 @@
 // their answers, and holds no rule of its own about which group a row is in or what state it is
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
-  TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
+  TERMS, panelData, localDeploymentIds, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
   hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor, instanceDisplayName,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
@@ -56,6 +56,15 @@ export function heldOf(state, at) {
  *  as read: this run's retires in flight are put on them by `build` alone. */
 export function panelOf(state, at) {
   return state.open === null ? null : panelData(heldOf(state, at), state.open, TERMS);
+}
+
+/** What the shared resume trigger observes after a read of served deployment `id` (lib/main.mjs): the rows of
+ *  the view that holds it, each tagged with its deployment, and the ids of that view's deployments of this
+ *  machine, as the Desktop's panel gives them (panel-views.mjs `panelData`, session-resume-trigger.mjs
+ *  `localDeploymentIds`). Another machine's rows in the view are there, and are never local. */
+export function resumeObservation(state, id, at) {
+  const panel = panelData(heldOf(state, at), id, TERMS);
+  return { rows: panel.instances ?? [], localDeploymentIds: localDeploymentIds(panel) };
 }
 
 /** The workspace (the shared view's id: panel-views.mjs viewModel) that holds deployment `id` in `state`,
@@ -594,6 +603,16 @@ export const LIST_WORDS = Object.freeze({
   notAdded: (message) => Object.freeze([{ own: "This deployment was not added to this computer's list: " }, { shown: message }]),
   /** An add or a remove still running as the TUI leaves: one line, after the screen is left. */
   leaving: "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.",
+});
+
+/** The TUI's own words around the kernel's machine sweep (docs/tui.md, "Resuming lost sessions"),
+ *  where the shared reader has none: the sweep refused or unreadable (the line under the sidebar's
+ *  title, once; a code of the kernel's form, else none, never what it printed), and the sweep still running as
+ *  the TUI leaves. What a sweep did is the shared resumeNotice's words, not these. */
+export const RESUME_WORDS = Object.freeze({
+  failed: (code) => Object.freeze([{ own: code === null ? "OATS could not resume lost sessions." : `OATS could not resume lost sessions (${code}).` }]),
+  /** The sweep still running as the TUI leaves: one line, after the screen is left. */
+  leaving: "oats: the resume of lost sessions is still running; `oats status` shows the instances.",
 });
 
 /** The lines of the list of workspaces (docs/tui.md, "The list of workspaces"): the leader's Up or

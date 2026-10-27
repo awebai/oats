@@ -103,6 +103,10 @@ const TAKEN = Object.freeze({
   "session-start.mjs": ["startGate", "startInstance"],
   "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
+  // #1559: lost sessions resumed when the TUI opens, and when a read shows one lost (lib/main.mjs).
+  "session-resume-cli.mjs": ["runResumeSweep"],
+  "session-resume.mjs": ["resumeNotice"],
+  "session-resume-trigger.mjs": ["createResumeTrigger", "localDeploymentIds"],
   "workspace-admission.mjs": ["validateWorkspace"],
   "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey"],
   "soul-rows.mjs": ["soulRows"],

@@ -4,6 +4,7 @@
 import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
 import { instanceId, resolveLinkId, findRosterInstance } from '../../client/instance-tree.mjs';
 import { instanceDisplayName } from '../../client/instance-display-name.mjs';
+import { drawsParentLine } from '../../client/same-work.mjs';
 
 /** An instance row's name (0.68.1, the product owner): the words shown (instanceDisplayName: "Oats expert maintainer
  * lanes"), the real name kept where it identifies the instance. The words are hidden from assistive tech and a visually
@@ -46,6 +47,10 @@ export function clusterSeparator(doc, { label, count } = {}) {
  * sits on the dot column and the solid lineage just right of it (shell.css
  * --tree-branch-offset), so a row between two roots draws its own
  * `link-through` and never lets a solid line stand in for it (#1312).
+ * The solid lineage joins only a child that draws its parent line (#1577, packages/client/same-work.mjs
+ * `drawsParentLine`; the gate is stamped on each row by the panel): a child that does not keeps its indent and
+ * gets no elbow, and its parent's stem and vertical do not reach it. The dotted links are siblinghood, not
+ * parentage, and are drawn as before. Nothing else marks the flag: the line is its only sign, aria-hidden.
  * `items` is the rendered group order. */
 export function treeConnectors(items, item, allInstances = items) {
   const at = items.indexOf(item), depth = item.depth || 0;
@@ -59,9 +64,9 @@ export function treeConnectors(items, item, allInstances = items) {
     else if (segment === "end") out.push({ kind: "elbow", level });
   });
   // The stem: an expanded parent's own line leaves its dot downward to the
-  // first child's elbow (the child is the very next rendered item).
+  // first child's elbow (the child is the very next rendered item), when that child draws its line.
   const next = at >= 0 ? items[at + 1] : null;
-  if (next && (next.depth || 0) === depth + 1) out.push({ kind: "down", level: depth });
+  if (next && (next.depth || 0) === depth + 1 && drawsParentLine(next)) out.push({ kind: "down", level: depth });
   const rootBefore = at > 0 && items.slice(0, at).some((i) => !(i.depth || 0));
   const rootAfter = at >= 0 && items.slice(at + 1).some((i) => !(i.depth || 0));
   if (!depth) {
@@ -117,7 +122,9 @@ export function resolveTerminalOpen(instances, ref, workspace) {
 /** VS Code-style guide segments for one row in a flattened parent-first tree.
  * `continue` is an ancestor/sibling vertical; `branch` has a later sibling and
  * an elbow; `end` is the final sibling, stopping at its elbow; `none` suppresses
- * an exhausted ancestor line through deeper descendants.
+ * an exhausted ancestor line through deeper descendants, and the row's own segment when it does not draw
+ * its parent line (#1577, `drawsParentLine`). A vertical counts only later siblings that draw theirs: under
+ * one parent those come first (instance-tree.mjs `clusterInstances`), so it ends at the last one.
  * Pass the full roster as allInstances when items is a cluster/filtered subset:
  * resolve parent names there first, using the same identity rules as clustering.
  * Then walk only visible ancestry and count only visible siblings — a hidden
@@ -148,9 +155,11 @@ export function treeGuideSegments(items, item, allInstances = items) {
   return chain.map((branch, index) => {
     const at = positions.get(branch);
     const hasLaterSibling = items.slice(at + 1)
-      .some((candidate) => parentIdOf.get(instanceId(candidate)) === parentIdOf.get(branch));
+      .some((candidate) => parentIdOf.get(instanceId(candidate)) === parentIdOf.get(branch) && drawsParentLine(candidate));
     const current = index === chain.length - 1;
     if (!current) return hasLaterSibling ? "continue" : "none";
+    // No elbow; a later sibling that draws (never, in the roster's order) would still take the vertical past it.
+    if (!drawsParentLine(item)) return hasLaterSibling ? "continue" : "none";
     return hasLaterSibling ? "branch" : "end";
   });
 }
@@ -234,7 +243,7 @@ export function renderRosterCount(el, instances, { pending = false, stale = fals
 }
 
 /* ── the roster's loading state (desktop/loading-states) ─────────────────── */
-/** Why Start… and the row actions menu are disabled while the roster is stale: the reason a
+/** Why Start… is disabled, and the row's context menu held, while the roster is stale: the reason a
  * disabled control carries for the pointer (title) and for assistive tech (aria-description),
  * since a greyed look alone says nothing. */
 export { ROSTER_STALE_TITLE };

@@ -9,8 +9,9 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import * as treeShared from "../../client/instance-tree.mjs";
+import * as sameWork from "../../client/same-work.mjs";
 import * as treeView from "../renderer/instance-tree-view.mjs";
-const tree = { ...treeShared, ...treeView };
+const tree = { ...treeShared, ...treeView, ...sameWork }; // the renderer's client imports, shipped
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "../renderer/instance-action-target.mjs";
 import { instanceSplitPlan } from "../renderer/instance-split.mjs";
@@ -37,7 +38,7 @@ function fixture(t, pendingRows = []) {
   const doc = dom.window.document, tips = new Map();
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
-    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, sayInHint() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),

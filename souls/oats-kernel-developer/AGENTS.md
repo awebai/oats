@@ -25,3 +25,9 @@ teams, schedules and triggers, and their tests (`test/`).
   in the same change. Read the reference docs and the design records
   (`docs/`, `docs/design/`) before changing an established kernel decision; ask
   `oats-kernel-expert` when the rationale is not written down.
+- A live check of the Desktop or the TUI never reaches the operator's screen
+  or sessions: a test Desktop runs on a virtual display and a test TUI on a
+  private tmux socket, both with a private `HOME`, `OATS_HOME_DIR` and
+  `TMUX_TMPDIR` so their session resume sweep never restarts the operator's
+  agents, by "Admit a safe probe before launching" in
+  `capabilities/oats-desktop-ui/skills/electron-live-verification/SKILL.md`.

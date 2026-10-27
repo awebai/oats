@@ -22,7 +22,7 @@ function fakeTmux(dir, sessions) {
   const log = join(dir, "tmux-calls.log");
   writeFileSync(log, "");
   const cases = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w) => `'${w}'`).join(" ")};;`).join("\n");
-  const panes = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w, i) => `'${w}\t%${i + 1}\t0\tsleep\t${100 + i}'`).join(" ")};;`).join("\n");
+  const panes = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w, i) => `'${w}\t@${i + 1}\t%${i + 1}\t0\tsleep\t${100 + i}\t'`).join(" ")};;`).join("\n");
   writeFileSync(join(dir, "tmux"), `#!/bin/sh
 printf '%s\\n' "$*" >> ${JSON.stringify(log)}
 target=""; prev=""
@@ -91,7 +91,7 @@ test("a new tmux spawn opens in session.tmuxSession", async () => {
 test("status reads each tmux home in the session it recorded: a pre-0.31 pi-agents home still shows running", async () => {
   const fx = v2Deployment();
   const log = fakeTmux(join(base, "fake-tmux-status"), { "pi-agents": ["old-1"], "oats-agents": ["new-1"] });
-  const path = process.env.PATH;
+  const path = process.env.PATH, oatsHome = process.env.OATS_HOME_DIR;
   try {
     process.env.PATH = fx.env.PATH;
     for (const [name, session] of [["old-1", "pi-agents"], ["new-1", "oats-agents"], ["gone-1", "pi-agents"]]) {
@@ -101,6 +101,8 @@ test("status reads each tmux home in the session it recorded: a pre-0.31 pi-agen
       writeFileSync(metaPath, JSON.stringify({ ...meta, tmux: { session, window: name } }, null, 2) + "\n");
     }
     process.env.PATH = `${join(base, "fake-tmux-status")}:${fx.env.PATH}`;
+    // The listing records what it saw (lib/session-seen.mjs): in the fixture's OATS_HOME_DIR.
+    process.env.OATS_HOME_DIR = fx.env.OATS_HOME_DIR;
     const rows = listInstances(fx.root, "oats-agents").flatMap((a) => a.instances).filter((i) => /-1$/.test(i.instance));
     assert.deepEqual(rows.map((r) => [r.instance, r.running]).sort(), [["gone-1", false], ["new-1", true], ["old-1", true]]);
     const listed = readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("list-windows"));
@@ -108,7 +110,11 @@ test("status reads each tmux home in the session it recorded: a pre-0.31 pi-agen
     const paneReads = readFileSync(log, "utf8").split("\n").filter(l => l.startsWith("-u list-panes"));
     assert.equal(paneReads.length, 2, "each recorded session's panes are read once");
     assert.ok(paneReads.some(l => l.includes("-t =pi-agents ")), "the pane read targets the legacy session exactly");
-  } finally { process.env.PATH = path; fx.cleanup(); }
+  } finally {
+    process.env.PATH = path;
+    if (oatsHome === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = oatsHome;
+    fx.cleanup();
+  }
 });
 
 test("real private default server: legacy and current sessions report live harnesses and fallback shells", async (t) => {

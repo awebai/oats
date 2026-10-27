@@ -149,10 +149,13 @@ see the [official catalog](official-catalog.md) for current pins.
 | `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 | `spawn-apply-max-age` | `--max-age <s>` on a spawn apply bound by `--expect-decision <revision>`: the apply reuses member heads as the preview does, its decision fence unchanged, and its answer carries no `observation` block, OATS 0.58.0 ([Apply](#apply)). Gate on the probe: a kernel without it refuses the flag on an apply (`E_BAD_ARGS`) | |
 | `instance-color` | `oats instance color <instance> (<color> \| --clear)`, local and `--server` ([An instance's colour](#an-instances-colour-oats-instance-color)); `color` on `oats status --json` instance rows, on `oats server roster --json` rows and on `oats inspect --home` `instance` (`null` for none). Gate on the probe, locally or in the host's `probe.features`: an older kernel's rows have no `color` | `instanceColorApi: 1` (payload only) |
+| `instance-same-work` | `oats instance same-work <instance> on\|off` and `oats spawn … --same-work`, local and `--server` ([Same work as the parent](#same-work-as-the-parent-oats-instance-same-work)); `sameWork: true` on `oats status --json` instance rows and on `oats server roster --json` rows while the instance's flag is bound to its current `parentInstance`, the key absent otherwise ([`sameWork`](#row-same-work)). Gate on the probe, locally or in the host's `probe.features`: an older kernel's rows never carry `sameWork`, and it refuses the flag and the verb (`E_BAD_ARGS`) | |
 | `deployments-list` | `oats deployments [list]\|add\|remove\|import --json`, this computer's list of its deployments (`~/.oats/config/deployments.json`); `listed` on `oats onboard --json`; a kernel command run in an unlisted deployment lists it ([This computer's deployments](#this-computers-deployments-oats-deployments)). Gate on the probe: there is no fallback scan | `deploymentsApi: 1` |
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 | `instance-suggest-name` | `oats instance suggest-name --soul <soul> (--task <t> \| --task-file <f>) [--harness claude\|pi] [--model <m>] [--launch-config <n>] --json`: the name a `--suggest-name` spawn of `<soul>` would get, chosen on this machine for a spawn that may land on another, not made unique ([A name for a spawn elsewhere](#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)). Local only: `--server` is `E_BAD_ARGS`. Gate on the local probe; without it, the spawn goes unnamed (numbered, or named where it lands) | |
 | `spawn-apply-suggest-name` | `--suggest-name` on a spawn apply, without `--preview`: the apply names the instance as a preview's `--suggest-name` would, on the machine that spawns, and its result carries `naming` ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)). Routed, the host needs the feature (`E_REMOTE_INCOMPATIBLE`, nothing sent): gate on the host's `probe.features` and don't send the flag to a host without it | |
+| `instance-background` | background instances (awebai/oats#1579): `soul.yaml` `background:`; `oats spawn … --background\|--no-background`, whose preview and result carry `background` and `backgroundFrom`; `oats instance background <instance> on\|off`, local and `--server`; `background: true` on `oats status --json` instance rows, `oats server roster --json` rows, `oats inspect --home` `instance` and `oats souls --json` soul rows, absent otherwise ([Background instances](#background-instances-oats-instance-background)). Gate on the probe, locally or in the host's `probe.features`: an older kernel refuses the flags and the verb, and its rows have no `background`. A routed spawn with either flag needs the host's feature (`E_REMOTE_INCOMPATIBLE`, nothing sent) | `instanceBackgroundApi: 1` (payload only) |
+| `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1259,8 +1262,10 @@ are absent until `sync`.
 **Soul rows:** `name, origin, kind (member | external | package), repoKey,
 commit, teams, defaultTeam, private (always false), path, work, description`,
 plus the Desktop facts `harness, model, harnessFrom, file, spawnable,
-problem`, (feature `souls-capabilities`) `capabilities`, and (feature
-`launch-preference`) `key` and `launch`.
+problem`, (feature `souls-capabilities`) `capabilities`, (feature
+`launch-preference`) `key` and `launch`, and (feature `instance-background`)
+`background: true` on a soul whose `soul.yaml` says `background: true`,
+absent otherwise: the launch dialog's default for Run in background.
 - `key` is the soul key that `souls.launch` uses, and that
   `oats soul teams <key>` takes: `qualifiedName` for a package
   soul, the bare `name` for a member or external soul. Two member souls that
@@ -2475,6 +2480,20 @@ it to a temporary copy (`soulFetched: true`).
   native probes share one 20 s budget.
 - `policy.childSpawns` is what the instance will record.
 
+**Background** (feature `instance-background`).
+- `background` (`true` or `false`) says whether the instance will be listed
+  under the clients' Background section
+  ([Background instances](#background-instances-oats-instance-background)).
+  It is `--background` or `--no-background`, else the soul's
+  `background:`, else `false`.
+- `backgroundFrom` is `"flag"` or `"soul"`, the layer that declared the
+  value; a soul's explicit `background: false` is `"soul"`. It is absent
+  when neither declares it.
+- Both flags together are `E_BAD_ARGS` (`choose --background or
+  --no-background, not both`). The text preview prints `list: background
+  (from the soul)` or `(from the --background flag)` for a background
+  instance.
+
 **Composition.**
 - `modules[]` (feature `instance-modules`): `{name, from, layer, private,
   declares, changedSince, composedFrom}`; `from` is what `instance.json` will
@@ -2670,8 +2689,11 @@ preview's call and rules above, through the soul's harness.
 revision}`. `effective` (feature `spawn-apply-2`) is `{repo, work, harness,
 model, launchConfig, yolo, backend, childSpawns, relation, providers}`;
 `relation` is `null` or `{kind, anchor: {instance, agentsRoot}}`; `providers`
-(feature `served-identity`) equals `settings`. `revision` (24 hex) hashes the
-decision.
+(feature `served-identity`) equals `settings`. `effective.background: true`
+(feature `instance-background`) is there only when the instance will be
+background, so a decision without it keeps the revision it had: an apply
+whose resolved value differs from the preview's is `E_DECISION_STALE`.
+`revision` (24 hex) hashes the decision.
 
 Apply with `oats spawn <soul> … --expect-decision <revision> --json`. Any drift
 refuses `E_DECISION_STALE` with the fresh `details.decision`; nothing is
@@ -2761,6 +2783,10 @@ with `--expect-decision` records the key and decision in `instance.json`.
   --home <home>` for `--no-launch`. A value is single-quoted only when it
   holds a character outside `A-Za-z0-9_./:-`. It is not a field to parse:
   read `tmux` for the target.
+- `background` and `backgroundFrom` (feature `instance-background`) are the
+  preview's. A background spawn writes the home's record with the home's
+  other files, so a spawn that rolls back leaves none. A keyed replay answers
+  `background` as the home's record reads now, without `backgroundFrom`.
 - When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
   `wakeScheduleError` (a requested wake), `worktreeHooks` (feature
@@ -2921,7 +2947,7 @@ kernel stage raised as well.
 
 | Code | Details | When |
 |---|---|---|
-| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul |
+| `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul; `--same-work` for an instance that would record no parent ([Same work as the parent](#same-work-as-the-parent-oats-instance-same-work)) |
 | `E_LOCAL_MISSING`, `E_NO_DEPLOYMENT` | | no `oats-local.yaml`; no `agents/` root |
 | `E_SOUL_UNKNOWN` | `{name, members, packages}` | no such soul, or not at `--agents-root` |
 | `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
@@ -3245,8 +3271,12 @@ its absence.
   "shell"`, even though the window remains; a dead pane or absent window is
   `false`. A wrapper shell with a live non-shell descendant stays `true`;
   `null` with `runtimeState: "unreachable"` and the tmux error as
-  `runtimeError` when that server or its panes cannot be read (including a split
-  agent window or a failed shell-descendant process scan), and also when its socket
+  `runtimeError` when that server or its panes cannot be read (including a
+  window where OATS cannot tell which pane is the agent's
+  ([which pane is the agent's](execution-targets.md#which-pane-is-the-agents)),
+  a session with two windows of the instance's name, or a failed
+  shell-descendant process scan; a window whose agent's pane is found reads by
+  that pane alone), and also when its socket
   file is missing while a process works in the home or the process scan
   cannot run, `runtimeError` then naming the processes or the scan's error
   ([#624](execution-targets.md#missing-socket); with no process in the home
@@ -3297,12 +3327,50 @@ its absence.
   An older kernel's `running` is the window's presence, and it checks a row
   with a claim against its session (as `oats session inspect` observes it),
   reading `null` unless a harness runs there.
+- <a id="row-session-end"></a>**`sessionEnd`** (feature `session-resume`, OATS
+  0.69): how the last session of a launched home that does not run ended:
+  `lost` (the host went down, its tmux server died, or the harness was killed
+  by a signal: the sweep brings it back when it can vouch for the loss,
+  [Which losses come back](execution-targets.md#which-losses-come-back)), `stopped` (stopped with OATS:
+  `oats instance stop`, Desktop's Stop) or `exited` (the harness ended by
+  itself: `/exit`, its own error). Present only on a row that reads
+  `running: false` and records `launched: true`, a row at its fallback shell
+  (`runtimeState: "shell"`) included; absent while it runs or reads unknown
+  (`running: null`), for a home never launched, on rows with `retirePending`,
+  `rollbackIncomplete` or `spawnInProgress`, and from older kernels. Read
+  from the home's current start (`startId`; its time is the last
+  `restarts[].startedAt`, else `createdAt`) and two kernel-private files of
+  the home, not a contract ([execution-targets.md](execution-targets.md#how-a-sessions-end-is-read)).
+  A home spawned before 0.69 and never restarted since reads `lost` when its
+  harness ended on its own; its next start covers it.
+- **A local status read records what it sees** (feature `session-resume`,
+  OATS 0.69): per home, its current start, when it was last seen running and
+  first seen not running, with the boot of each, in a kernel-private file of
+  this machine, one per deployment, under `~/.oats/session-resume/seen/`
+  (`$OATS_HOME_DIR` when set), beside the sweep's per-boot note; it is not a
+  contract, and only the sweep reads it. It never changes the answer: not the
+  output, not the exit status, and nothing is printed, whether or not it can
+  be read or written. A status routed with `--server` records nothing on this
+  machine ([execution-targets.md](execution-targets.md#which-losses-come-back)).
 - **`color`** (feature `instance-color`): the instance's colour, one of
   `sand`, `sage`, `slate`, `mauve`, `clay`, `olive`, or `null` for none,
   from the home's own record ([An instance's colour](#an-instances-colour-oats-instance-color));
   a `color` in `instance.json` never stands in for it. Every row has it,
   an unreadable record's row included (`null`). Presentation only: it is not
   identity and never addresses anything.
+- **`background`** (feature `instance-background`): `true` while the home
+  holds a valid background record ([Background instances](#background-instances-oats-instance-background)),
+  absent otherwise; never `false`. A `background` in `instance.json` never
+  stands in for it. The text rows mark it: `• <instance> [background]`.
+- <a id="row-same-work"></a>**`sameWork`** (feature `instance-same-work`):
+  `true` when the home's same-work flag
+  ([Same work as the parent](#same-work-as-the-parent-oats-instance-same-work))
+  is bound to the parent the row's `parentInstance` names. Otherwise the key
+  is absent, never `false` or `null`: no flag, a flag bound to an earlier
+  parent, no `parentInstance`, and a row whose `instance.json` cannot be read.
+  A `sameWork` in `instance.json` never stands in for it. Clients draw the
+  parent→child line for a row that carries it; a client that does not know
+  the key ignores it, and an older kernel never sends it.
 - <a id="row-retire"></a>**`retire`** (feature `status-retire-state`, OATS
   0.59.0): `{state, since, self, code?, message?}` while a retire of the home
   is running, scheduled or owed; absent otherwise, and from older kernels.
@@ -3544,6 +3612,15 @@ route target:
   cut to the same bound. `oats status --server
   <id> --json` relays the host's answer verbatim, `retire` included, as it
   does every other field.
+- **`background`** (feature `instance-background`) is on a row only when the
+  host's row has exactly `background: true`; any other value, a host whose
+  kernel predates the feature and a saved route the host did not list carry
+  none.
+- **`sameWork`** (feature `instance-same-work`) is on a row only when the
+  host's row has `sameWork: true`, and is then `true`. Any other value, a host
+  whose kernel predates the feature, and a saved route the host did not list
+  carry no key ([`sameWork`](#row-same-work)). `oats status --server <id>
+  --json` relays the host's answer verbatim, `sameWork` included.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared
@@ -3773,6 +3850,8 @@ instance's own machine: the local command, with `--server <id>` added.
 | `oats instance stop <name> --server <id> (--plan \| --apply …)` | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
 | `oats retire <name> --server <id> --plan`, and the guarded apply (`--plan-revision`, `--idempotency-key`) | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
 | `oats instance color <name> (<color> \| --clear) --server <id>` | none | `instance-color` |
+| `oats instance background <name> on\|off --server <id>` | none | `instance-background` |
+| `oats instance same-work <name> on\|off --server <id>` | none | `instance-same-work` |
 
 - The flags are the local command's. The instance is addressed like every
   routed instance command ([servers.md](servers.md#run-there)): `--home` as
@@ -4512,7 +4591,12 @@ leaves nothing of its own in the home: the private file each of the two
 writes goes through (`.oats-stop.json.tmp-<pid>`,
 `.oats-stop-receipt.<key>.json.<pid>.tmp`) is removed when its write or its
 rename fails. Before 0.53.0 each apply on a full disk left both there,
-empty.
+empty. With no record of the stop, the instance then reads
+[`sessionEnd: "lost"`](#row-session-end), and a resume sweep would start it
+again: stop it once more when the disk has space (a stop of an instance that
+reads `lost` records the stop, signalling nothing). The exit marker of the
+harness's window (0.69) is not the stop's: the window's shell writes it when
+the harness ends, and on a full disk its write fails too.
 
 In 0.52.0 a stop whose claim could not be written for one of those five
 codes was refused like the others, before anything was signalled
@@ -5856,6 +5940,150 @@ palette name is relayed, anything else is `null`), and on `oats inspect
 row's palette name, else none. Colour never says a state alone: a client's
 mark keeps the state by its shape.
 
+## Background instances (`oats instance background`)
+
+Feature `instance-background` (awebai/oats#1579).
+
+```text
+oats instance background <instance> on|off [--home <abs>] [--dir <d>] [--json]
+```
+
+A background instance is listed by the clients under a Background section of
+its own. That is all it changes: it spawns, starts, attaches, takes input,
+messages, shows in `oats status` and retires like any other. Like the colour,
+it is presentation, never identity or policy, and anyone may change it at any
+time, a stopped instance's included.
+
+- **At spawn** the value is `--background` or `--no-background`, else the
+  soul's `background:` ([soul.yaml](souls-and-instances.md#soulyaml-v2)),
+  else `false` ([the preview](#the-preview)). Nothing is inherited from a
+  parent, and there is no workspace or host default. A later edit of the soul
+  does not move an existing instance: this command does.
+- **The record** is `<home>/.oats-background.json`, `{"backgroundApi": 1,
+  "at": "<ISO time>"}`, mode 0600, written atomically. Present means
+  background; `off` removes it. It lasts as long as the home, through start,
+  restart, stop, resume and `oats instance upgrade`. It is a kernel-owned
+  home file: a capability cannot declare it as its own, and it is no change
+  to the home at retire.
+- **A reader** takes a regular file only, without following a link, of at
+  most 4 KiB, holding a JSON object with `backgroundApi: 1`. Anything else
+  reads as not background, never as an error, and `off` removes it.
+- **The instance** is addressed and refused exactly as `oats instance color`
+  addresses and refuses it ([An instance's colour](#an-instances-colour-oats-instance-color)),
+  with "the background was not changed" where the colour's refusals say the
+  colour.
+
+The answer:
+
+```json
+{"instanceBackgroundApi":1,"instance":"dev-a","home":"/w/agents/dev/instances/dev-a","background":true,"changed":true}
+```
+
+`on` for a background instance and `off` for one that is not answer
+`changed: false` and write nothing (`off` still removes an invalid file).
+The text answer is `<instance>: background` or `<instance>: not
+background`, with ` (unchanged)` when nothing changed.
+
+| Code | When |
+|---|---|
+| `E_BAD_ARGS` | Not exactly one of `on` or `off`: `give on or off; usage: …` |
+| *(as `oats instance color`)* | Instance resolution, `E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY` |
+
+Routed with `--server <id>`, the command runs on the host
+([Routed reads and plans](#routed-reads-and-plans)); a host whose probe does
+not advertise `instance-background` is refused with `E_REMOTE_INCOMPATIBLE`,
+and nothing is sent. The same holds for a routed `oats spawn` with
+`--background` or `--no-background`; without either flag the route is
+unchanged.
+
+Where it is read: `background: true` on [status rows](#the-roster-oats-status---json),
+on [remote roster rows](#the-remote-roster-oats-server-roster---json), on
+`oats inspect --home` as `instance.background`, and on the soul rows of
+[`oats souls`](#oats-capabilities-and-oats-souls) for a soul that declares
+it. Each is absent when not background.
+
+## Same work as the parent (`oats instance same-work`)
+
+Feature `instance-same-work` (awebai/oats#1577).
+
+```text
+oats instance same-work <instance> on|off [--home <abs>] [--dir <d>] [--json]
+oats spawn <soul> … --same-work
+```
+
+The flag records that an instance does the same work as its parent. Clients
+draw the parent→child line for an instance that carries it. Nothing else in
+the kernel reads it: it is not identity, it grants nothing and it never
+addresses anything.
+
+- **The record** is `<home>/.oats-same-work.json`, `{"sameWorkApi": 1,
+  "parent": "<instance>", "at": "<ISO time>"}`, mode 0600, written
+  atomically. Present means on; `off` removes it. It is a kernel-owned home
+  file: a capability cannot declare it as its own, a retire does not count it
+  as work (on its own it never makes a recovery copy), and `oats instance
+  upgrade` does not see it as a change to the home.
+- **A reader** takes a regular file only, without following a link, of at
+  most 4 KiB, holding JSON with `sameWorkApi: 1` and a non-empty string
+  `parent`. Anything else reads as off, never as an error.
+- **Bound to the parent.** The flag is on only while the record's `parent` is
+  the home's current recorded `parentInstance`. A reparent leaves the record
+  naming the old parent, so the flag reads off: a retire's lineage relink
+  (the instances pointing at the retiree re-pointed to its parent) and a
+  `--relation parent` spawn re-pointing its anchor. `on` binds it to the
+  current parent again.
+- **Lifetime.** It survives `oats session restart`, a stop and a start, a
+  resume (`oats session start --resume`) and `oats instance upgrade`. Only
+  `off` and retirement clear it.
+
+**The verb.** The instance is addressed as `oats instance color` addresses
+it, and refused with the same answers.
+
+- `on` binds the flag to the instance's recorded `parentInstance`; an
+  instance with none is refused. `on` again while the flag is bound to that
+  parent writes nothing; `on` after a reparent rebinds it to the current
+  parent.
+- `off` removes whatever stands at the record's name (a file, a link, a
+  directory). It succeeds whether or not the flag was on and whether or not a
+  parent is recorded; `off` again is the same answer.
+
+The answer, the envelope's `result`, has exactly these two keys:
+
+```json
+{"instance":"dev-a","sameWork":true}
+```
+
+`sameWork` is the binding rule read after the write: `true` after `on`,
+`false` after `off`. The text answer is `dev-a: same work on` (or `off`).
+
+| Code | When |
+|---|---|
+| `E_BAD_ARGS` | Neither `on` nor `off`, or more than one word; a `--home` that is not absolute; `on` for an instance with no recorded parent: `<instance> has no parent instance: same work is declared against a recorded parent; the flag was not changed` |
+| *(as `oats instance color`)* | Instance resolution: `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_UNIDENTIFIED_INSTANCE_HOME` |
+| `E_INSTANCE_RETIRING` | A retire of the home is in flight (its pending marker, or a live retire holding the home's lifecycle claim, which the command reads and never takes), or the home is quarantined. Nothing was written |
+| `E_LIFECYCLE_BUSY` | The home's claim file cannot be read as a claim, or a retire's liveness cannot be read, as for `oats worktree add` |
+
+**At spawn.** `oats spawn … --same-work` sets the flag on the new instance,
+bound to the parent its home records, whichever relation gave it: `--parent
+<instance>` or `--relation child`; `--relation sibling` of an anchor that has
+a parent (the new instance shares it); `--relation parent` of an anchor that
+had a parent (the new instance inherits it); `--work attached` (the owner of
+the tree). The record is written inside the spawn, before the launch, so the
+instance's first status row carries `sameWork: true`; a spawn rolled back
+removes it with the home. When the new instance would record no parent (no
+relation, `--relation unrelated`, a sibling of a root anchor, `--relation
+parent` of a root anchor), the spawn is refused with `E_BAD_ARGS` before
+anything is created, `--preview` included.
+
+Routed with `--server <id>`, the verb runs on the host
+([Routed reads and plans](#routed-reads-and-plans)) and `spawn --server …
+--same-work` sends the flag there. A host whose probe does not advertise
+`instance-same-work` is refused with `E_REMOTE_INCOMPATIBLE` for either, and
+nothing is sent.
+
+Where it is read: `sameWork` on [status rows](#row-same-work) and on
+[remote roster rows](#the-remote-roster-oats-server-roster---json) (only
+`true` is relayed).
+
 ## Sessions and launch configurations
 
 ### Input
@@ -5898,7 +6126,9 @@ harness receipt. See [execution targets](execution-targets.md).
 
 ```text
 oats session start --home <abs> [--launch-config <name>|none] [--harness pi|claude|codex] [--model <id>] [--yolo|--no-yolo] [--server <id>] --json
+oats session start --resume --home <abs> --json
 oats session restart --home <abs> [the same options] [--stop-grace <1-300 s>] --json
+oats session resume [--deployment <dir>] [--plan] --json
 ```
 
 Features `session-start`, `session-restart`, and `launch-config` for the
@@ -5978,6 +6208,152 @@ warning naming the same-key cleanup retry.
   [`details.cause`](#kernel-codes) when it has a code of its own or is a
   defect, and without it when it is a refusal without a code).
 
+#### Resume a lost session (`--resume`)
+
+`oats session start --resume --home <abs> --json` (feature `session-resume`,
+OATS 0.69) is the ordinary start of a home whose session was lost
+([`sessionEnd: "lost"`](#row-session-end)), in the harness's own last
+conversation: the same locks, checks, recorded recipe and launch hooks under
+the captured settings, with the conversation's selector and the resume
+notice in place of the task prompt
+([execution-targets.md](execution-targets.md#resume-after-a-shutdown)). Its
+answer is the ordinary start answer plus one object:
+
+```json
+"resume": {
+  "resumed": true,
+  "reason": "no-conversation",
+  "harness": "claude",
+  "sessionId": "<the harness's session id>",
+  "waiting": "resume-confirmation"
+}
+```
+
+- `resumed: true` with `sessionId` when it continues that conversation;
+  `resumed: false` with `reason` when it started fresh on `TASK.md` instead:
+  `no-conversation` (no transcript of this incarnation whose cwd is the
+  home), `no-receipts` (no native-record receipt of this incarnation names
+  where the harness writes), `resume-unproven` (Codex, until a resume of it
+  is proven end to end on a signed-in host).
+- `waiting: "resume-confirmation"`: the start **succeeded** (exit 0, the
+  session runs and is kept) and Claude is waiting for its human to choose how
+  to resume a long conversation (its resume-cost dialog). No key was sent.
+  Absent otherwise, an unrecognised screen after the bound included.
+- Refused before anything is read, `E_BAD_ARGS`: `--resume` with
+  `--launch-config`, `--harness`, `--model`, `--yolo`, `--no-yolo` or
+  `--reselect-launch`; `--resume` on `session restart`; `--server`.
+- Refused `E_RESUME_NOT_LOST` when the home did not lose its session
+  (`stopped`, `exited`, never launched), read under the start lock before
+  any launch hook runs; nothing was started.
+- Refused `E_LAUNCH_ENV_CHANGED` when a `{fromEnv}` value differs from the
+  one the start it brings back ran with (checked after `E_LAUNCH_ENV_MISSING`):
+  the message names the variables, sorted, never a value; nothing was
+  started. A home with no record of its last start's values (last started
+  by an earlier kernel, or a record that does not read) is resumed, and
+  `warnings` carries once `<instance>'s launch environment could not be
+  verified this once (it was last started before OATS recorded it); its
+  next start records it` ([The launch environment a resume runs
+  under](execution-targets.md#the-launch-environment-a-resume-runs-under)).
+- Every refusal of an ordinary start answers as it does there
+  (`E_SESSION_RUNNING`, `E_SESSION_START_BUSY`, `E_SESSION_UNKNOWN`,
+  `E_LAUNCH_LEGACY` for a home with no recipe, `E_LAUNCH_ENV_MISSING`, …); a
+  development-channel prompt that stops it is `E_SPAWN_INCOMPLETE` with
+  `details.launchPrompts`, unchanged. A start by hand is neither bounded
+  nor counted by the sweep's 3 resumes per home per boot.
+- What is persisted is the ordinary launch: `instance.json` `command`, the
+  pending receipt and the recipe never carry the selector or the notice, so a
+  later ordinary start opens a fresh conversation.
+
+### The machine sweep (`oats session resume`)
+
+`oats session resume [--deployment <dir>] [--plan] --json` (feature
+`session-resume`, OATS 0.69) starts with `--resume` every home of this
+machine's deployments whose session was lost. A client runs it once when it
+opens. It reads this computer's list of deployments without writing it
+([This computer's deployments](#this-computers-deployments-oats-deployments)),
+and never sweeps one `oats deployments remove` took out;
+`--deployment <dir>` sweeps that one directory instead, listed or not. Each
+home starts as a child process of the kernel, in its own deployment's scope,
+at most 4 at once.
+
+The answer is the standard envelope, exit 0 whenever the sweep ran,
+whatever the rows say:
+
+```json
+{"schemaVersion":1,"ok":true,"result":{
+  "schemaVersion": 1,
+  "plan": false,
+  "deployments": [
+    { "deployment": "/abs/dep", "state": "ok", "swept": true },
+    { "deployment": "/abs/gone", "state": "missing", "swept": false, "reason": "not-ok" }
+  ],
+  "rows": [
+    { "deployment": "/abs/dep", "instance": "x", "home": "/abs/dep/agents/s/instances/x", "outcome": "resumed", "sessionId": "…" },
+    { "deployment": "/abs/dep", "instance": "y", "home": "…", "outcome": "fresh", "reason": "no-conversation" },
+    { "deployment": "/abs/dep", "instance": "z", "home": "…", "outcome": "already-running" }
+  ]}}
+```
+
+- **`deployments[]`**: one entry per deployment considered, sorted by path.
+  `state` is the list's state of it (`ok`, `missing`, `not-a-deployment`,
+  `unreadable`). `swept: false` has a `reason`: `not-ok` (its state is not
+  `ok`) or `unreadable` (its status could not be read; `code` and `message`
+  then). Nothing opts a deployment out: stopping an instance with OATS is
+  the only way to keep it down.
+- **`rows[]`**: one row per home that is lost (whatever its outcome),
+  running (`already-running`) or unknown (`skipped`, `unknown`); stopped,
+  exited and never-launched homes are not listed. Fields: `deployment`,
+  `instance`, `home`, `outcome`, and only when they apply `reason`, `code`,
+  `message`, `launchPrompts`, `sessionId` (resumed) and `warnings` (the
+  start's warnings verbatim, an array of strings, present only when not
+  empty: a client lists `channel-cache-unchecked` from here), without the
+  host-wide ones the sweep's own `warnings` carries.
+
+  | `outcome` | `reason` |
+  |---|---|
+  | `resumed` | none |
+  | `fresh` | `no-conversation`, `no-receipts`, `resume-unproven` |
+  | `already-running` | none |
+  | `skipped` | `not-seen-recently` (the sweep cannot vouch for this loss: OATS never saw the home running for its current start, an earlier sweep already answered the loss, the loss was first seen 24 hours ago or more, or, within one boot, it was first seen 24 hours or more after the last running look; with a `message` that says which, nothing started: [Which losses come back](execution-targets.md#which-losses-come-back)), `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`: it stopped or started between the read and the start) |
+  | `blocked` | `resume-confirmation` (Claude's resume-cost dialog: the session runs and waits for its human), `launch-prompt` (`code` `E_SPAWN_INCOMPLETE`, with `launchPrompts`: the session is kept) |
+  | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start, and its answer to the loss was lost: reported again with that `code` and `message`, nothing started; a refused loss is never retried automatically, after a reboot either), `keeps-getting-lost` (sweeps started this home 3 times in this boot and it was lost again each time: nothing started, no `code`, a `message` that says so; no sweep starts this loss again, after a reboot either: a person starts it by hand) |
+
+  The kernel defines every `sessionEnd`, `resume` and row name in one
+  module, `lib/session-resume-contract.mjs`; a change to one is a contract
+  change ([#1567](https://github.com/awebai/oats/issues/1567)).
+
+- **`warnings`**, beside `rows`, present only when there is one: an array
+  of distinct strings, each a warning the sweep's starts said of the host
+  rather than of their home, once whatever the number of starts that said
+  it, verbatim. Today that is only the agent-scope warning (the harness
+  runs in the OATS tmux server's cgroup, not a scope of its own, and why).
+  Each start still records it in its own home's events. `--plan` has none.
+- A lost home is answered with the first that applies: `not-seen-recently`,
+  `refused-this-boot`, `keeps-getting-lost`, then its start. A sweep that is
+  not a plan answers each lost home once: a later sweep answers that loss
+  `not-seen-recently`.
+- `--plan`: the same shape with `"plan": true`; nothing is started, no lock
+  taken, no note written, no loss answered (its own status read records what
+  it sees, as any local status read does). A lost home's outcome is the prediction: `resumed`
+  (with `sessionId`) or `fresh` with its reason (and the launch-environment
+  warning a start would give), `refused` for a noted refusal, a home sweeps
+  started 3 times in this boot, a home with no recipe, or a launch reference
+  the start would refuse (`E_LAUNCH_ENV_MISSING`, `E_LAUNCH_ENV_CHANGED`,
+  from the sweep's environment). Clients should not call `--plan` on open.
+- **One sweep per machine.** A second sweep while one runs answers
+  `E_RESUME_BUSY` through the standard failure envelope
+  (`{"schemaVersion":1,"ok":false,"error":{"code":"E_RESUME_BUSY","message":"…"}}`,
+  exit 1); nothing was started, and a client shows no notice. The lock and
+  the per-boot note (refusals, and each home's count of sweep starts that
+  launched something: `resumed`, `fresh`, `blocked`) are kernel-private,
+  not a contract. Without a boot id (neither Linux nor macOS) nothing is
+  noted or counted.
+- Errors: `E_RESUME_BUSY`; `E_BAD_ARGS` (`--deployment` that is not a
+  deployment directory, `--server`, an unknown flag or an argument); without
+  `--deployment`, the list's own errors (`E_DEPLOYMENTS_INVALID`,
+  `E_DEPLOYMENTS_VERSION`). A home's start failure is a row, never the
+  sweep's failure.
+
 ### Upload
 
 ```text
@@ -5993,6 +6369,129 @@ stored file); a remote upload adds `server`, `instance` and `stderr?`. Errors:
 `E_BAD_ARGS`, `E_UPLOAD_TOO_LARGE`, `E_UPLOAD_FAILED` (including a remote
 sha256 mismatch; the remote file is left), `E_SESSION_UNKNOWN`,
 `E_REMOTE_INCOMPATIBLE`.
+
+### How the clients run the sweep
+
+The kernel's machine sweep, `oats session resume --json`
+([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown)), is
+run by a client when it opens and again when its rosters show a lost session
+([When Desktop opens](desktop-instance-start.md#when-desktop-opens)). The
+clients share one trigger, one runner and one reader, so the Desktop and the
+TUI decide, run and read it the same way.
+
+**The trigger**, `createResumeTrigger({ cli, run, read, now, onReading })`
+(`packages/client/session-resume-trigger.mjs`), holds the rule:
+
+- `launch()` arms it and runs the launch sweep, with no floor. A client calls
+  it once, after anything the sweep reads is in place (the Desktop: after the
+  startup deployments-list step). `observed()` does nothing before it.
+- `observed(rows, { localDeploymentIds })` is given each roster's instance
+  rows as the client reads them, with the ids of that read's local
+  deployments (the Desktop: `instances` of each accepted `/api/panel` reply,
+  and `localDeploymentIds(reply)`, its `deployments[]` entries with
+  `local: true`). It starts a sweep only when none is in flight, at least
+  `RESUME_MIN_INTERVAL_MS` (30 s) has passed since the last sweep that ran
+  started, and `lostLocalHomes(rows, localDeploymentIds)` names a home that
+  is not settled. Locality is the roster's, by deployment id: a row is local
+  only when its `deployment.id` (the panel's tag) is one of the local ids. A
+  remote deployment's row, a row with no tag, and every row when no ids are
+  given are not local; a client never acts on another host's loss.
+  `lostLocalHomes` keeps a local row's absolute `home` when its `sessionEnd`
+  says the session was lost and it is not running; it is the one place that
+  reads `sessionEnd`'s meaning. There is no timer and no queue.
+- After a sweep that a status read started completes (quiet or a notice),
+  every instance it was started for waits until it changes: it runs, or it is
+  no longer lost. A busy, failed or unsupported sweep, or a plan, settles
+  nothing. A home a read releases while the sweep runs is settled by neither
+  the snapshot nor the answer: that read is newer. A home
+  is also settled when a sweep could not resume it, found it was not lost, or
+  skipped it because the kernel had not seen it running recently. A sweep
+  that resumed it, started it fresh, left it waiting for you or found it
+  running unsettles it, and so does a later roster row that is running or not
+  lost. So a home that cannot be resumed costs at most one sweep after the
+  launch's. Which rows mean which is read in `session-resume.mjs` alone
+  (`sweepSettlement`, `sweepCompleted`).
+- `cli()` gives the accepted probe or null, or a promise of either, and is
+  asked at each would-be start: the sweep runs only when `resumeSupported`
+  holds. When it does not, nothing runs and the floor does not move.
+- Before reading an answer, it drops each `refused` row whose
+  `(home, reason, code)` an earlier sweep of this trigger already reported,
+  so a standing refusal is reported once. A home released (above) forgets its
+  reported refusals: refused again after it recovered, it is news. Every other
+  row is kept. The same goes for the result's own `warnings` (about the host):
+  one a notice of this trigger showed is left out of later answers by its
+  exact string, for the whole run; one only a quiet sweep carried stays news.
+- `onReading(reading)` is called for every finished sweep, whatever the
+  reading. `launch()` and `observed()` never throw or reject; a `run` that
+  rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings
+  and cancels nothing: a sweep in flight runs to its end.
+
+The Desktop's main process queues each `notice` reading's summary (at most
+10, the oldest dropped first) and tells every live window
+(`session-resume:ready`). A window takes the whole queue
+(`session-resume:take`, behind the trusted-frame guard) and posts each summary
+as its own notice.
+
+**The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):
+
+- It runs only when the probe is accepted, its `bin` is absolute and its
+  `features` list `session-resume` (`resumeSupported`). Otherwise it runs
+  nothing and answers `E_CLI_UNAVAILABLE` or `E_RESUME_FEATURE`. Nothing falls
+  back.
+- The argv is exactly `session resume --json`, with no `--deployment`, no
+  `--plan` and no `--server`. The working directory is `/`, so the kernel
+  resolves no deployment from the client's own. The environment is the
+  client's, without what Desktop's packaging adds (`cliEnvironment`) and without
+  the instance variables (`withoutInstanceVariables`,
+  `packages/client/kernel-environment.mjs`): a client started inside an
+  instance's pane must not scope the sweep to that instance. `OATS_HOME_DIR`
+  passes through.
+- It sets no deadline. The sweep runs in a process session of its own, and its
+  stdout and stderr are files, not pipes: `execFileToFiles`
+  (`packages/client/file-output-exec.mjs`) unlinks them right after the spawn
+  and reads them back from its own descriptors. Neither the client's exit nor
+  a signal to it reaches the sweep, and nothing is left on disk. A caller that
+  passes its own exec must keep those three properties: detached, file-backed,
+  and never signalling the child.
+- It answers the kernel's envelope: the result at exit 0, and an `ok:false`
+  envelope whatever the exit (`E_RESUME_BUSY` exits 1). Otherwise it answers
+  a code of its own, with no message: `E_CLI_OUTPUT_LIMIT` (more than 4 MiB),
+  `E_CLI_PROTOCOL` (no envelope), `E_CLI_FAILED` (a nonzero exit without an
+  `ok:false` envelope, or an exec that throws). No stderr and no exception text
+  reaches the answer.
+
+**The reader**, `readResumeSweep` (`packages/client/session-resume.mjs`),
+gives one of five readings: `unsupported` (nothing ran), `busy`
+(`E_RESUME_BUSY`), `failed` with a code, `quiet`, or `notice` with a summary.
+A plan answer (`plan: true`) is quiet.
+
+- The summary is facts: per row its instance, its deployment and its outcome's
+  reason, never a word of the kernel's text. `already-running` and `skipped`
+  rows are counted nowhere. A notice exists only when a row is `resumed`,
+  `fresh`, `blocked` or `refused`. Unchecked deployments are lines inside such
+  a notice, never a notice on their own; a deployment the kernel reports as
+  `opted-out` (an older kernel) reads as unchecked, with no reason.
+- It is tolerant. A row without a string `instance` and `deployment`, with an
+  unknown `outcome`, or whose name the display filter withholds or empties, is
+  dropped. An unknown `reason` under a known outcome is read as no reason and
+  worded generically. A refusal's `code` is kept only when it matches
+  `^E_[A-Z0-9_]{1,64}$`.
+- The result's own `warnings`, about the host and not one home, are the
+  summary's `host` (`{warnings, omitted}`, always present), kept and cut as a
+  row's are (below). They never make a notice alone; a notice shows them after
+  the unchecked deployments, under "OATS says about this computer:".
+- A row's `warnings` are kept whole and in order, each as one display line
+  (`displayLine`), and cut by position only, at the bounds of
+  `launchFlagIgnored` (16 lines, 4096 UTF-16 units; `boundedWarnings`,
+  `packages/client/launch-prompt-outcome.mjs`). No warning is picked, matched
+  or dropped by its words.
+- A refused row's `message` is the kernel's prose. It is shown only after
+  "OATS says:", attributed, through the display filter, and never matched.
+- The summary keeps at most 100 rows, in the answer's order, and counts the
+  rest. The headline counts the real totals. `resumeSummaryFact` is the
+  summary's decoder at a boundary (the Desktop's main process hands it to a
+  window over IPC), and `resumeNotice` writes the headline and the Details in
+  the clients' own words.
 
 ### Launch configurations
 

@@ -1072,7 +1072,7 @@ test("Windows AltGr: its character is kept as typed (no alias), and the modifier
 });
 
 // A view's own arrow keys give way to the keymap only where it binds the chord (keymapTakes): the
-// roster tree, the overview canvas, the Souls grid and a row's actions trigger use it.
+// roster tree, the overview canvas, the Souls grid and an instance row's open context menu use it.
 test("keymapTakes: a live binding, a rebind included, is the keymap's; an unbound chord is not", t => {
   registerAll(t);
   inFamily(t, DEFAULT_CHORD_FAMILY);

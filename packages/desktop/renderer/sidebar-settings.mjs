@@ -1,10 +1,9 @@
 // The sidebar's settings menu (2026-10-23): the cog at the right end of the sidebar's bottom bar, after the sidebar
 // toggle. It holds the theme, the font and the keyboard shortcuts, each an action of the keymap's registry (Connections
-// stays in the palette, Settings: Connections…; Spawn instance is the bar's own button, before the cog). The menu is the
-// instance actions' pattern (instance-actions.mjs): a native popover with role="menu", the trigger its invoker (a
-// second click closes it), placed as that menu is (its right edge on the cog's, above it when there is no room
-// below), ↓/↑ on the trigger open it on the first / last item, ↑/↓/Home/End move, Esc and Tab close it, Esc back
-// on the cog.
+// stays in the palette, Settings: Connections…; Spawn instance is the bar's own button, before the cog). The menu is a
+// native popover with role="menu" and the instance menu's look (instance-actions.mjs), the trigger its invoker (a
+// second click closes it), placed by the cog (its right edge on the cog's, above it when there is no room below),
+// ↓/↑ on the trigger open it on the first / last item, ↑/↓/Home/End move, Esc and Tab close it, Esc back on the cog.
 import { iconElement } from "./shell-icons.mjs";
 import { joinPickerFocusReturn } from "./overlay-picker.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";

@@ -15,6 +15,8 @@ import { readLock, writeLock } from "../lib/packages.mjs";
 import { planUpgrade, applyUpgrade } from "../lib/instance-upgrade.mjs";
 import { claimHomeFor, homeClaimHolder, releaseHomeClaim, retirementBaselinePath, writeRetirementBaseline, retireInstance, startInstanceSession } from "../lib/core.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
+import { readInstanceBackground, writeInstanceBackground } from "../lib/instance-background.mjs";
+import { readSameWork, writeSameWork } from "../lib/instance-same-work.mjs";
 
 const json = p => JSON.parse(readFileSync(p, "utf8"));
 function pkg(version, mode = "adopt", names = ["acme.one"], launch = false) {
@@ -238,9 +240,12 @@ test("package upgrade acceptance: undo needs a retained verified previous copy",
 
 test("package upgrade acceptance: retire after completed upgrade and receipt replay sees no unexplained home changes", async t => {
   const f = await fixture(t); const { fx, home } = f;
+  // Feature instance-background: the record is presentation, kept by the upgrade and never work at retire.
+  writeInstanceBackground(home, true);
   const plan = await f.plan();
   await f.apply({ planRevision: plan.planRevision, idempotencyKey: "baseline" });
   await f.apply({ planRevision: plan.planRevision, idempotencyKey: "baseline" });
+  assert.equal(readInstanceBackground(home), true, "the upgrade keeps the background record");
   const receipt = readdirSync(join(home, ".oats")).find(n => /^upgrade-receipt\..+\.json$/.test(n));
   assert.ok(receipt, "completed upgrade has a durable receipt");
   const path = join(home, ".oats", receipt);
@@ -773,6 +778,18 @@ test("package upgrade regression: clean home retires without recovery", async t 
   const shown = await f.plan();
   assert.equal(shown.homeChangedSinceSpawn, false);
   await f.apply({ planRevision: shown.planRevision, idempotencyKey: "clean-home" });
+  const retired = await f.fx.inEnv(() => retireInstance(f.fx.root, "seat", { tmuxSession: "oats-test-nosuch" }));
+  assert.equal(retired.workRecovery, undefined);
+  assert.equal(retired.removedDir, true);
+});
+
+test("package upgrade regression: the same-work flag (#1577) is kept, is no home change, and the home still retires without recovery", async t => {
+  const f = await fixture(t, { oldMode: "no-upgrade", nextMode: "no-upgrade" });
+  writeSameWork(f.home, "lead");
+  const shown = await f.plan();
+  assert.equal(shown.homeChangedSinceSpawn, false, "the flag's record is kernel presentation, not a home change");
+  await f.apply({ planRevision: shown.planRevision, idempotencyKey: "same-work" });
+  assert.equal(readSameWork(f.home), "lead", "the upgrade keeps the record");
   const retired = await f.fx.inEnv(() => retireInstance(f.fx.root, "seat", { tmuxSession: "oats-test-nosuch" }));
   assert.equal(retired.workRecovery, undefined);
   assert.equal(retired.removedDir, true);
