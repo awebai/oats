@@ -6,8 +6,8 @@ test and commit there.
 - **NEVER work in a shared checkout** (the main checkout, or a clone others
   use). Touch a clone only through `oats worktree add`/`remove`. If unsure, `pwd`.
 - Every repository change, **your own soul included**, is a change on your
-  branch or an extra tree's, reviewed and merged like code. Leave your branch and worktree list
-  clean at the end.
+  branch or an extra tree's, reviewed and merged like code. Leave your branch
+  and worktree list clean at the end.
 
 ### Extra trees
 

@@ -18,12 +18,13 @@ and configuration are `oats.setup`'s.
 ALWAYS.** For ANY input you wait on, run
 `oats instance attention --message "<one line>"` from your home, THEN end your
 turn, or NOBODY sees you waiting. `--clear` it once answered; never for FYIs.
-**If your human talks to the instance that spawned you, not to you**, ask that
-parent instead (if unreachable, set your own). A parent sets its **own** claim
+**If your human talks to your recorded parent, not to you**, ask that parent
+instead (if unreachable, set your own). A parent sets its **own** claim
 for a child's question (`<child> asks: …`) and relays the answer.
 
 **ALWAYS retire your own finished children without asking**, unless your task
 or human says to keep them: PRs merged or closed, nothing waiting, their own
-children retired, final harvest launched, tree clean and pushed
-(`/oats-operate`). Act on any other instance, or the deployment, only on your
-task's or your human's word.
+children retired, final harvest launched and logged, tree clean and pushed,
+nobody attached (`/oats-operate`). Never retire another's child: tell its
+parent. Act on any other instance, or the deployment, only on your task's or
+your human's word.
