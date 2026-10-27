@@ -6007,22 +6007,32 @@ TUI decide, run and read it the same way.
 
 - `launch()` arms it and runs the launch sweep, with no floor. A client calls
   it once, after anything the sweep reads is in place (the Desktop: after the
-  startup deployments-list step). `observed(rows)` does nothing before it.
-- `observed(rows)` is given each roster's instance rows as the client reads
-  them (the Desktop: `instances` of each accepted `/api/panel` reply). It
-  starts a sweep only when none is in flight, at least
+  startup deployments-list step). `observed()` does nothing before it.
+- `observed(rows, { localDeploymentIds })` is given each roster's instance
+  rows as the client reads them, with the ids of that read's local
+  deployments (the Desktop: `instances` of each accepted `/api/panel` reply,
+  and `localDeploymentIds(reply)`, its `deployments[]` entries with
+  `local: true`). It starts a sweep only when none is in flight, at least
   `RESUME_MIN_INTERVAL_MS` (30 s) has passed since the last sweep that ran
-  started, and `lostLocalHomes(rows)` names a home that is not settled.
-  `lostLocalHomes` keeps a row's absolute `home` when the row is local (no
-  `server`, `remote` not true), its `sessionEnd` says the session was lost and
-  it is not running; it is the one place that reads `sessionEnd`'s meaning.
-  There is no timer and no queue.
+  started, and `lostLocalHomes(rows, localDeploymentIds)` names a home that
+  is not settled. Locality is the roster's, by deployment id: a row is local
+  only when its `deployment.id` (the panel's tag) is one of the local ids. A
+  remote deployment's row, a row with no tag, and every row when no ids are
+  given are not local; a client never acts on another host's loss.
+  `lostLocalHomes` keeps a local row's absolute `home` when its `sessionEnd`
+  says the session was lost and it is not running; it is the one place that
+  reads `sessionEnd`'s meaning. There is no timer and no queue.
 - A home is settled when a sweep could not resume it, found it was not lost,
-  or skipped it because the kernel had not seen it running recently. A sweep that resumed it, started it fresh, left it waiting for you or
-  found it running unsettles it, and so does a later roster row that is
-  running or not lost. A home the sweep could not start because it was busy,
-  or did not recognise, settles nothing. Which rows mean which is read in
-  `session-resume.mjs` alone (`sweepSettlement`).
+  or skipped it because the kernel had not seen it running recently. A home
+  a sweep was started for that its completed answer (quiet or a notice) does
+  not name at all, its deployment not ready say, is settled too: it waits
+  like a refused one. A sweep that resumed it, started it fresh, left it
+  waiting for you or found it running unsettles it, and so does a later
+  roster row that is running or not lost. A home the sweep could not start
+  because it was busy, or did not recognise, settles nothing, and a busy,
+  failed or unsupported sweep settles nothing. Which rows mean which is read
+  in `session-resume.mjs` alone (`sweepSettlement`, `answeredHomes`,
+  `sweepCompleted`).
 - `cli()` gives the accepted probe or null, or a promise of either, and is
   asked at each would-be start: the sweep runs only when `resumeSupported`
   holds. When it does not, nothing runs and the floor does not move.

@@ -58,7 +58,7 @@ import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
 import { createResumeNotices, createResumeWiring, installResumeHandlers, sendToLiveWindows } from "./session-resume-launch.mjs";
-import { createResumeTrigger } from "../client/session-resume-trigger.mjs";
+import { createResumeTrigger, localDeploymentIds } from "../client/session-resume-trigger.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -687,8 +687,9 @@ ipcMain.handle("api", async (e, pathname, opts) => {
       allowedWs = servedSelectors(json.workspaces);
       noteServed(json.workspaces);
     }
-    // The session resume trigger reads the same accepted reply's instance rows (it keeps only local lost ones).
-    if (Array.isArray(json?.instances)) void resumeTrigger.observed(json.instances);
+    // The session resume trigger reads the same accepted reply's instance rows, with the reply's own local
+    // deployments: a row is local only by its deployment id (a remote server's rows never count).
+    if (Array.isArray(json?.instances)) void resumeTrigger.observed(json.instances, { localDeploymentIds: localDeploymentIds(json) });
   }
   return { ok: r.ok, status: r.status, body: json };
   } catch (error) {

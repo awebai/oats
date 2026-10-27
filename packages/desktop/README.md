@@ -99,8 +99,9 @@ The shell has three navigation contexts:
   trigger per app launch (`packages/client/session-resume-trigger.mjs`, its
   probe the served CLI's through `settledCli`). It is launched after the
   startup's deployments-list step settles, and shown each accepted
-  `/api/panel` reply's `instances` in the `api` handler, under the same epoch
-  and transition check as the workspaces update. The sweep's child is
+  `/api/panel` reply's `instances` with the reply's local deployment ids
+  (`localDeploymentIds`) in the `api` handler, under the same epoch and
+  transition check as the workspaces update. The sweep's child is
   detached and file-backed (`packages/client/session-resume-cli.mjs`), so
   quitting never cancels it; nothing in `shutdown()` touches it. Each
   `notice` reading's summary is queued (at most 10, the oldest dropped) and

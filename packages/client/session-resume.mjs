@@ -177,6 +177,15 @@ export function sweepSettlement(envelope) {
   return { settle, release };
 }
 
+/** The homes a sweep's answer names, in any row (whatever its outcome): those it answered for. Empty for an
+ * answer that is not the sweep's document (answerRows). The trigger settles the homes it started a sweep for
+ * that the completed answer leaves out. */
+export function answeredHomes(envelope) {
+  const homes = new Set();
+  for (const row of answerRows(envelope) ?? []) { const home = homeOf(row); if (home !== null) homes.add(home); }
+  return [...homes];
+}
+
 /**
  * News, not repeats: the answer without what an earlier answer already reported, and this answer's keys.
  * `envelope` is a copy (the given one is never changed) that leaves out each `refused` row with a string home
@@ -209,6 +218,10 @@ export function withoutReported(envelope, reported, reportedHost = new Set()) {
   const hostKeys = host.filter(w => typeof w === 'string' && displayLine(w) !== null);
   return { envelope: { ...envelope, result: { ...result, rows: kept, ...(host.length ? { warnings: host } : {}) } }, keys, hostKeys };
 }
+
+/** Whether a reading is a sweep that completed: it ran and its answer was read (`quiet` or `notice`). Busy,
+ * failed and unsupported are not: nothing can be concluded about a home from them. */
+export const sweepCompleted = reading => record(reading) && (reading.kind === 'quiet' || reading.kind === 'notice');
 
 /** The host keys of `hostKeys` (withoutReported's, for the envelope `reading` was read from) that the reading
  * showed: none unless it is a notice, else those its summary kept, in order (the cut is by position). A host

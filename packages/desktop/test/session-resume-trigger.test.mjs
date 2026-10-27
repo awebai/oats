@@ -5,11 +5,12 @@
 // so a reading's summary shows what reached it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createResumeTrigger, lostLocalHomes, RESUME_MIN_INTERVAL_MS } from '../../client/session-resume-trigger.mjs';
+import { createResumeTrigger, lostLocalHomes, localDeploymentIds, RESUME_MIN_INTERVAL_MS } from '../../client/session-resume-trigger.mjs';
 import { readResumeSweep, REFUSED_REASONS, SKIPPED_REASONS, SETTLING_SKIPPED_REASONS } from '../../client/session-resume.mjs';
 import { SESSION_RESUME_FEATURE } from '../../client/session-resume-cli.mjs';
 import { SESSION_ENDS } from '../../client/deployment-data.mjs';
-import { RESUME_PROBE as PROBE, sweepHome as H, sweepAnswer as answer, sweepRefusal, sweepRow, lostInstance as lost,
+import { RESUME_PROBE as PROBE, sweepHome as H, sweepAnswer as answer, sweepRefusal, sweepRow, lostInstance as lost, SWEEP_DEPLOYMENT,
+  SWEEP_LOCAL, REMOTE_TAG, deploymentTag,
   resumedRow, freshRow, blockedRow, refusedRow, runningRow, skippedRow } from './helpers/resume-sweep.mjs';
 
 const BUSY = sweepRefusal('E_RESUME_BUSY', 'another sweep runs');
@@ -18,20 +19,27 @@ const RELEASING = { resumed: resumedRow, fresh: freshRow, blocked: blockedRow, a
 const deferred = () => { let resolve, reject; const promise = new Promise((y, n) => { resolve = y; reject = n; }); return { promise, resolve, reject }; };
 
 /** A trigger over fakes. `h.runs` holds each run started (its probe and its deferred answer); `h.readings` each
- * reading given to onReading; `h.t` is the clock. `h.cli` is what cli() answers (a value or a function of none). */
+ * reading given to onReading; `h.t` is the clock. `h.cli` is what cli() answers (a value or a function of none).
+ * `h.trigger.observed(rows)` passes SWEEP_LOCAL as the read's local deployments unless options are given;
+ * `h.raw` is the trigger itself. */
 function harness(over = {}) {
   const h = { t: 0, runs: [], readings: [], cli: PROBE, cliCalls: 0 };
-  h.trigger = createResumeTrigger({
+  const raw = h.raw = createResumeTrigger({
     cli: () => { h.cliCalls += 1; return typeof h.cli === 'function' ? h.cli() : h.cli; },
     run: (probe, ...rest) => { const d = deferred(); h.runs.push({ probe, rest, ...d }); return d.promise; },
     now: () => h.t,
     onReading: reading => h.readings.push(reading),
     ...over,
   });
+  h.trigger = { ...raw, observed: (rows, options = { localDeploymentIds: SWEEP_LOCAL }) => raw.observed(rows, options) };
   /** Settle the latest run with `envelope` and wait for the sweep's promise. */
   h.answer = async (pending, envelope) => { h.runs.at(-1).resolve(envelope); await pending; };
   return h;
 }
+/** A lost home no read has shown yet: a sweep it starts settles it when the answer leaves it out, so a test
+ * that starts several sweeps for other reasons starts each with a new one. */
+let others = 0;
+const another = () => lost(`other-${others++}`);
 /** Launch and answer the launch sweep with `rows` (or an envelope). */
 async function launched(h, rows = []) {
   const p = h.trigger.launch();
@@ -47,19 +55,34 @@ async function starts(h, t, rows, reply = []) {
   return true;
 }
 
-test('lostLocalHomes: a local, lost, not running row with an absolute home; each once, in order', () => {
-  assert.deepEqual(lostLocalHomes([lost('a'), lost('b', { running: null }), lost('c', { running: undefined }), lost('a')]), [H('a'), H('b'), H('c')]);
+test('lostLocalHomes: a lost, not running row of a local deployment, with an absolute home; each once, in order', () => {
+  const L = SWEEP_LOCAL;
+  assert.deepEqual(lostLocalHomes([lost('a'), lost('b', { running: null }), lost('c', { running: undefined }), lost('a')], L), [H('a'), H('b'), H('c')]);
   assert.deepEqual(lostLocalHomes([
-    lost('remote', { server: 'altair' }), lost('remote-undefined', { server: undefined }), lost('flagged', { remote: true }),
+    lost('remote', { deployment: REMOTE_TAG }), lost('untagged', { deployment: undefined }), lost('null-tag', { deployment: null }),
+    lost('other-local', { deployment: deploymentTag('/elsewhere') }), lost('id-less', { deployment: { machine: 'x', path: SWEEP_DEPLOYMENT } }),
     lost('running', { running: true }),
     lost('stopped', { sessionEnd: SESSION_ENDS.stopped }), lost('exited', { sessionEnd: SESSION_ENDS.exited }), lost('LOST', { sessionEnd: 'LOST' }),
     lost('none', { sessionEnd: undefined }), lost('null', { sessionEnd: null }),
     lost('relative', { home: 'agents/dev/instances/x' }), lost('empty', { home: '' }), lost('number', { home: 7 }),
     lost('nul', { home: '/home/a\0b' }), lost('missing', { home: undefined }),
     null, 'row', [lost('array')], 7,
-  ]), []);
-  assert.deepEqual(lostLocalHomes([lost('kept', { remote: false })]), [H('kept')], 'remote false is local');
-  for (const notRows of [undefined, null, {}, 'rows', lost('a')]) assert.deepEqual(lostLocalHomes(notRows), []);
+  ], L), []);
+  // Locality is the deployment id alone: a row's own `server` or `remote` keys say nothing (the panel never sets them).
+  assert.deepEqual(lostLocalHomes([lost('keyed', { server: 'altair', remote: true })], L), [H('keyed')]);
+  // The ids: any iterable of strings; missing, empty or not an iterable: no row is local.
+  assert.deepEqual(lostLocalHomes([lost('a')], new Set(L)), [H('a')]);
+  assert.deepEqual(lostLocalHomes([lost('a')], ['/x', 7, SWEEP_DEPLOYMENT]), [H('a')]);
+  for (const ids of [undefined, null, [], new Set(), SWEEP_DEPLOYMENT, { [SWEEP_DEPLOYMENT]: true }, 7]) {
+    assert.deepEqual(lostLocalHomes([lost('a')], ids), [], JSON.stringify(ids));
+  }
+  for (const notRows of [undefined, null, {}, 'rows', lost('a')]) assert.deepEqual(lostLocalHomes(notRows, L), []);
+});
+
+test('localDeploymentIds: a panel reply\'s deployments with local: true, in order; anything else, none', () => {
+  const entry = (id, local) => ({ ...deploymentTag(id), label: id, local, reachable: true });
+  assert.deepEqual(localDeploymentIds({ deployments: [entry('/a', true), entry('remote:altair:a1', false), entry('/b', true), entry('/c', 'true'), null, { local: true }, { id: 7, local: true }] }), ['/a', '/b']);
+  for (const panel of [undefined, null, {}, { deployments: 'x' }, { deployments: null }, []]) assert.deepEqual(localDeploymentIds(panel), []);
 });
 
 test('observed does nothing before launch; launch runs at once, with no floor, and a second launch is the same promise', async () => {
@@ -101,13 +124,14 @@ test('the floor counts from the start of the last sweep, not its end', async () 
   assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS - 1, [lost('a')]), false);
   assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('a')]), true, 'from the start at 0, not the end at 25 s');
   assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS + 1, [lost('a')]), false, 'that sweep started at 30 s');
-  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('a')]), true);
+  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('a')]), false, 'a: left unanswered by that sweep, settled');
+  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('b')]), true);
 });
 
 test('no lost local home, or only settled ones: nothing starts, whatever the time', async () => {
   const h = harness();
   await launched(h);
-  for (const rows of [[], undefined, null, 'rows', [lost('a', { running: true })], [lost('r', { remote: true })], [lost('s', { sessionEnd: SESSION_ENDS.stopped })]]) {
+  for (const rows of [[], undefined, null, 'rows', [lost('a', { running: true })], [lost('r', { deployment: REMOTE_TAG })], [lost('u', { deployment: undefined })], [lost('s', { sessionEnd: SESSION_ENDS.stopped })]]) {
     assert.equal(await starts(h, 10 * RESUME_MIN_INTERVAL_MS, rows), false, JSON.stringify(rows));
   }
 });
@@ -125,17 +149,96 @@ test('settled: refused and skipped not-lost settle; start-busy and unknown do no
   // Each releasing outcome, in a later answer, lets its home start a sweep again.
   for (const [outcome, rowOf] of Object.entries(RELEASING)) {
     const name = `s-${outcome}`;
-    assert.equal(await starts(h, later(), [lost('b')], [refusedRow(name, { code: 'E_X' })]), true);
+    assert.equal(await starts(h, later(), [another()], [refusedRow(name, { code: 'E_X' })]), true);
     assert.equal(await starts(h, later(), [lost(name)]), false, `${name} settled`);
-    assert.equal(await starts(h, later(), [lost('b')], [rowOf(name)]), true);
+    assert.equal(await starts(h, later(), [another()], [rowOf(name)]), true);
     assert.equal(await starts(h, later(), [lost(name)]), true, `${outcome} released it`);
   }
   // A settled home with an unknown outcome or a start-busy row stays settled.
-  assert.equal(await starts(h, later(), [lost('b')], [skippedRow('x', { reason: SKIPPED_REASONS.startBusy }), sweepRow('x', 'vanished')]), true);
+  assert.equal(await starts(h, later(), [another()], [skippedRow('x', { reason: SKIPPED_REASONS.startBusy }), sweepRow('x', 'vanished')]), true);
   assert.equal(await starts(h, later(), [lost('x')]), false);
   // A row that does not decode settles nothing and breaks nothing.
-  assert.equal(await starts(h, later(), [lost('b')], [null, 'row', refusedRow('y', { home: 7 }), refusedRow('y', { home: undefined })]), true);
+  assert.equal(await starts(h, later(), [another()], [null, 'row', refusedRow('y', { home: 7 }), refusedRow('y', { home: undefined })]), true);
   assert.equal(await starts(h, later(), [lost('x')]), false);
+});
+
+test('locality: without local deployment ids nothing is local, so nothing starts and nothing is released', async () => {
+  const h = harness();
+  await launched(h, [refusedRow('x', { code: 'E_X' })]);
+  for (const options of [undefined, null, {}, { localDeploymentIds: [] }, { localDeploymentIds: null }, { localDeploymentIds: ['/elsewhere'] }]) {
+    h.t += RESUME_MIN_INTERVAL_MS;
+    const before = h.runs.length;
+    void h.raw.observed([lost('a'), lost('x', { running: true })], options);
+    await new Promise(setImmediate);
+    assert.equal(h.runs.length, before, JSON.stringify(options));
+  }
+  // x was not released by those reads: still settled.
+  assert.equal(await starts(h, h.t + RESUME_MIN_INTERVAL_MS, [lost('x')]), false);
+});
+
+test('locality: a remote deployment\'s lost row never starts a sweep, at any read past the floor', async () => {
+  const h = harness();
+  await launched(h);
+  for (let i = 1; i <= 5; i++) {
+    assert.equal(await starts(h, i * RESUME_MIN_INTERVAL_MS, [lost('far', { deployment: REMOTE_TAG }), lost('bare', { deployment: undefined })]), false);
+  }
+  assert.equal(h.runs.length, 1, 'the launch sweep only');
+});
+
+test('unanswered: a lost local home a completed sweep did not name settles; a running read releases it; lost again, it sweeps', async () => {
+  const h = harness();
+  await launched(h);
+  // Its deployment is not ready, say: the answer names other homes, or none.
+  assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('a')], [resumedRow('elsewhere')]), true);
+  for (const t of [2, 3, 10]) assert.equal(await starts(h, t * RESUME_MIN_INTERVAL_MS, [lost('a')]), false, `settled at ${t}`);
+  assert.equal(await starts(h, 11 * RESUME_MIN_INTERVAL_MS, [lost('a', { running: true })]), false);
+  assert.equal(await starts(h, 11 * RESUME_MIN_INTERVAL_MS, [lost('a')], []), true, 'released, lost again: a sweep');
+  assert.equal(await starts(h, 12 * RESUME_MIN_INTERVAL_MS, [lost('a')]), false, 'unanswered again: settled again');
+  // A quiet answer settles it too, and so does a notice; the launch sweep has no snapshot.
+  const q = harness();
+  await launched(q, []);
+  assert.equal(await starts(q, RESUME_MIN_INTERVAL_MS, [lost('b')], []), true, 'the launch sweep settled nothing extra');
+  assert.equal(q.readings.at(-1).kind, 'quiet');
+  assert.equal(await starts(q, 2 * RESUME_MIN_INTERVAL_MS, [lost('b')]), false);
+});
+
+test('unanswered: a home its own sweep named as busy or unknown is not settled by the snapshot', async () => {
+  const h = harness();
+  await launched(h);
+  assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('a'), lost('b')],
+    [skippedRow('a', { reason: SKIPPED_REASONS.startBusy }), skippedRow('b', { reason: SKIPPED_REASONS.unknown })]), true);
+  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('a')]), true, 'a: named start-busy, may try again');
+  assert.equal(await starts(h, 3 * RESUME_MIN_INTERVAL_MS, [lost('b')], [skippedRow('b', { reason: SKIPPED_REASONS.unknown })]), true, 'b: named unknown');
+});
+
+test('unanswered: a busy, failed or unsupported reading settles nothing of its snapshot', async () => {
+  for (const envelope of [BUSY, sweepRefusal('E_SESSION_FAILED'), sweepRefusal('E_RESUME_FEATURE'), { ok: true }, null]) {
+    const h = harness();
+    await launched(h);
+    assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('a')], []), true);
+    // Answer the next one with `envelope`: it is not a completed sweep.
+    h.t = 2 * RESUME_MIN_INTERVAL_MS;
+    const before = h.runs.length;
+    const p = h.trigger.observed([lost('c')]);
+    await new Promise(setImmediate);
+    assert.equal(h.runs.length, before + 1);
+    await h.answer(p, envelope);
+    assert.notEqual(['quiet', 'notice'].includes(h.readings.at(-1).kind), true, JSON.stringify(envelope));
+    assert.equal(await starts(h, 3 * RESUME_MIN_INTERVAL_MS, [lost('c')]), true, `c stays news after ${JSON.stringify(envelope)}`);
+  }
+  // A run that rejects (failed, E_CLI_FAILED) and no CLI (nothing ran) settle nothing either.
+  const h = harness();
+  await launched(h);
+  h.t = RESUME_MIN_INTERVAL_MS;
+  const p = h.trigger.observed([lost('d')]);
+  await new Promise(setImmediate);
+  h.runs.at(-1).reject(new Error('no'));
+  await p;
+  assert.equal(h.readings.at(-1).code, 'E_CLI_FAILED');
+  h.cli = null;
+  await h.trigger.observed([lost('d')]);
+  h.cli = PROBE;
+  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('d')]), true, 'd stays news');
 });
 
 test('settled: a home skipped as not seen recently stays settled while its row reads lost; running releases it', async () => {
@@ -167,9 +270,9 @@ test('settled: a later read releases a local home that is no longer lost, or run
     assert.equal(await starts(h, later(), [lost('b', { sessionEnd: end })]), false);
     assert.equal(await starts(h, later(), [lost('b')], [refusedRow('b', { code: 'E_X' })]), true, String(end));
   }
-  // A remote row, or one without an absolute home, releases nothing: it cannot speak for this machine's home.
+  // A remote or untagged row, or one without an absolute home, releases nothing: it cannot speak for this machine's home.
   const stopped = { sessionEnd: SESSION_ENDS.stopped };
-  assert.equal(await starts(h, later(), [lost('c', { ...stopped, server: 'altair' }), lost('c', { ...stopped, remote: true }),
+  assert.equal(await starts(h, later(), [lost('c', { ...stopped, deployment: REMOTE_TAG }), lost('c', { ...stopped, deployment: undefined }),
     lost('c', { ...stopped, home: 'relative' }), lost('c', { ...stopped, home: 7 })]), false);
   assert.equal(await starts(h, later(), [lost('c')]), false, 'still settled');
   // A release seen while a sweep runs still counts.
@@ -187,27 +290,27 @@ test('news, not repeats: a refused row already reported is dropped; a changed re
   await launched(h, [x(), x(), resumedRow('r')]);
   assert.deepEqual(h.readings[0].summary.refused.map(r => r.instance), ['x', 'x'], 'two in one sweep are both this sweep\'s');
   // The same refusal again: dropped. A resumed row again: an event of this sweep, kept.
-  assert.equal(await starts(h, later(), [lost('other')], [x(), resumedRow('r')]), true);
+  assert.equal(await starts(h, later(), [another()], [x(), resumedRow('r')]), true);
   assert.equal(h.readings.at(-1).kind, 'notice');
   assert.deepEqual(h.readings.at(-1).summary.refused, []);
   assert.deepEqual(h.readings.at(-1).summary.resumed.map(r => r.instance), ['r']);
   // Only the repeat: quiet.
-  assert.equal(await starts(h, later(), [lost('other')], [x()]), true);
+  assert.equal(await starts(h, later(), [another()], [x()]), true);
   assert.equal(h.readings.at(-1).kind, 'quiet');
   // Its reason changes: news. Then its code: news. Then the first again: already reported.
-  assert.equal(await starts(h, later(), [lost('other')], [x({ reason: KEEPS_GETTING_LOST })]), true);
+  assert.equal(await starts(h, later(), [another()], [x({ reason: KEEPS_GETTING_LOST })]), true);
   assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.reason), [KEEPS_GETTING_LOST]);
-  assert.equal(await starts(h, later(), [lost('other')], [x({ reason: KEEPS_GETTING_LOST, code: 'E_RESUME_REFUSED' })]), true);
+  assert.equal(await starts(h, later(), [another()], [x({ reason: KEEPS_GETTING_LOST, code: 'E_RESUME_REFUSED' })]), true);
   assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.code), ['E_RESUME_REFUSED']);
-  assert.equal(await starts(h, later(), [lost('other')], [x(), x({ reason: KEEPS_GETTING_LOST })]), true);
+  assert.equal(await starts(h, later(), [another()], [x(), x({ reason: KEEPS_GETTING_LOST })]), true);
   assert.equal(h.readings.at(-1).kind, 'quiet');
   // Another home with the same reason and code is news; so is a reason or code that was absent and now is not.
-  assert.equal(await starts(h, later(), [lost('other')], [refusedRow('y', { reason: START_REFUSED, code: 'E_START_REFUSED' })]), true);
+  assert.equal(await starts(h, later(), [another()], [refusedRow('y', { reason: START_REFUSED, code: 'E_START_REFUSED' })]), true);
   assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.instance), ['y']);
-  assert.equal(await starts(h, later(), [lost('other')], [refusedRow('z')]), true);
-  assert.equal(await starts(h, later(), [lost('other')], [refusedRow('z')]), true);
+  assert.equal(await starts(h, later(), [another()], [refusedRow('z')]), true);
+  assert.equal(await starts(h, later(), [another()], [refusedRow('z')]), true);
   assert.equal(h.readings.at(-1).kind, 'quiet');
-  assert.equal(await starts(h, later(), [lost('other')], [refusedRow('z', { code: 'E_X' })]), true);
+  assert.equal(await starts(h, later(), [another()], [refusedRow('z', { code: 'E_X' })]), true);
   assert.equal(h.readings.at(-1).kind, 'notice');
 });
 
@@ -221,16 +324,16 @@ test('news, not repeats: a released home forgets its reported refusals, so a ref
   assert.deepEqual(h.readings[0].summary.refused.map(r => r.instance), ['x', 'y']);
   // x and y are settled by their refusals, so another lost home starts each sweep.
   // A sweep resumes x: released, its refusal forgotten. y is untouched.
-  assert.equal(await starts(h, later(), [lost('other')], [resumedRow('x'), y()]), true);
+  assert.equal(await starts(h, later(), [another()], [resumedRow('x'), y()]), true);
   assert.deepEqual(h.readings.at(-1).summary.refused, [], 'y is still a repeat');
-  assert.equal(await starts(h, later(), [lost('other')], [x(), y()]), true);
+  assert.equal(await starts(h, later(), [another()], [x(), y()]), true);
   assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.instance), ['x'], 'x refused again after it recovered: news');
   // A read shows y running: released too, and its next refusal is news.
   await h.trigger.observed([lost('y', { running: true })]);
-  assert.equal(await starts(h, later(), [lost('other')], [x(), y()]), true);
+  assert.equal(await starts(h, later(), [another()], [x(), y()]), true);
   assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.instance), ['y'], 'x a repeat again; y news');
   // A read that does not show a home releases nothing: x stays reported.
-  assert.equal(await starts(h, later(), [lost('other')], [x()]), true);
+  assert.equal(await starts(h, later(), [another()], [x()]), true);
   assert.equal(h.readings.at(-1).kind, 'quiet');
 });
 
@@ -292,7 +395,7 @@ test('news, not repeats: read gets a copy; the run\'s envelope is never changed;
   const second = answer([refusedRow('x', { code: 'E_X' }), resumedRow('r')]);
   const before = structuredClone(second), rows = second.result.rows;
   assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('a')], []), true);
-  const p = (h.t = 2 * RESUME_MIN_INTERVAL_MS, h.trigger.observed([lost('a')]));
+  const p = (h.t = 2 * RESUME_MIN_INTERVAL_MS, h.trigger.observed([another()]));
   await h.answer(p, second);
   assert.deepEqual(second, before, 'the run\'s object is not mutated');
   assert.equal(second.result.rows, rows);
@@ -300,7 +403,7 @@ test('news, not repeats: read gets a copy; the run\'s envelope is never changed;
   // An answer that is not ok:true, or has no rows array, reaches read as it came, and settles nothing.
   for (const envelope of [BUSY, { schemaVersion: 1, ok: true, result: { rows: 'x' } }, { ok: true }, null, 'text']) {
     h.t += RESUME_MIN_INTERVAL_MS;
-    const q = h.trigger.observed([lost('a')]);
+    const q = h.trigger.observed([another()]);
     await h.answer(q, envelope);
     assert.equal(seen.at(-1), envelope);
   }

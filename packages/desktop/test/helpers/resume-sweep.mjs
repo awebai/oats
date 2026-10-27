@@ -29,6 +29,13 @@ export const refusedRow = (instance, more) => sweepRow(instance, RESUME_OUTCOMES
 export const runningRow = (instance, more) => sweepRow(instance, RESUME_OUTCOMES.alreadyRunning, more);
 export const skippedRow = (instance, more) => sweepRow(instance, RESUME_OUTCOMES.skipped, more);
 
-/** A roster instance row (as /api/panel serves one) whose session was lost and is not running; `more` over it. */
+/** The tag /api/panel puts on each row (panel-views.mjs deploymentTag): the deployment it belongs to. */
+export const deploymentTag = (id, machine = 'This computer', path = id) => ({ id, machine, path });
+/** The local deployment ids of a read (the trigger's `localDeploymentIds`): SWEEP_DEPLOYMENT alone. */
+export const SWEEP_LOCAL = Object.freeze([SWEEP_DEPLOYMENT]);
+/** A remote deployment's tag, as panelData gives a server's rows. */
+export const REMOTE_TAG = Object.freeze(deploymentTag('remote:altair:a1', 'altair', '/home/juan/oats'));
+/** A roster instance row (as /api/panel serves one) of SWEEP_DEPLOYMENT whose session was lost and is not
+ * running; `more` over it. */
 export const lostInstance = (instance, more = {}) =>
-  ({ instance, home: sweepHome(instance), sessionEnd: SESSION_ENDS.lost, running: false, ...more });
+  ({ instance, home: sweepHome(instance), deployment: deploymentTag(SWEEP_DEPLOYMENT), sessionEnd: SESSION_ENDS.lost, running: false, ...more });

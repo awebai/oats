@@ -256,16 +256,17 @@ it off.
 
 **When it runs.** Once when Desktop opens, after Desktop has imported its
 saved workspaces into this computer's deployments list, because the sweep
-reads that list. After that, whenever Desktop reads a roster that shows a
-local instance whose session was lost and that is not running, and only
-then:
+reads that list. After that, whenever Desktop reads a roster that shows an
+instance of a local deployment, as the roster names its deployments, whose
+session was lost and that is not running, and only then:
 
 - at most one sweep at a time, and at least 30 seconds after the last one
   started (the one at launch counts);
 - not for an instance the last sweep could not resume, found was not lost,
-  or left because it was lost long ago: such an instance does not set off
-  another sweep until a later roster shows it running or no longer lost, or a
-  sweep resumes it;
+  left because it was lost long ago, or did not answer for at all (its
+  deployment not ready, say): such an instance does not set off another
+  sweep until a later roster shows it running or no longer lost, or a sweep
+  resumes it;
 - never for another machine's instances.
 
 There is no timer and no queue: a read that comes too soon starts nothing,

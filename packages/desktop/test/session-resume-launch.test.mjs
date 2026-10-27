@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { trustedRendererUrl } from "../renderer/window-binding.mjs";
-import { createResumeTrigger } from "../../client/session-resume-trigger.mjs";
+import { createResumeTrigger, localDeploymentIds } from "../../client/session-resume-trigger.mjs";
 import { readResumeSweep } from "../../client/session-resume.mjs";
 import { RESUME_PROBE, resumedRow, sweepAnswer } from "./helpers/resume-sweep.mjs";
 import { createResumeNotices, createResumeWiring, installResumeHandlers, sendToLiveWindows } from "../session-resume-launch.mjs";
@@ -280,29 +280,38 @@ test("main observes once, in the api handler, inside the accepted-panel-reply co
   const api = apiHandler(), block = acceptedBlock();
   assert.ok(observed[0] > api.start && observed[0] < api.end, "inside the api handler");
   assert.ok(observed[0] > block.start && observed[0] < block.end, "inside the accepted-panel-reply condition");
-  assert.match(block.source, /^ {4}if \(Array\.isArray\(json\?\.instances\)\) void resumeTrigger\.observed\(json\.instances\);$/m, "on the reply's instances array, void");
+  assert.match(block.source, /^ {4}if \(Array\.isArray\(json\?\.instances\)\) void resumeTrigger\.observed\(json\.instances, \{ localDeploymentIds: localDeploymentIds\(json\) \}\);$/m,
+    "on the reply's instances array, with the reply's own local deployments, void");
+  assert.match(main, /^import \{ createResumeTrigger, localDeploymentIds \} from "\.\.\/client\/session-resume-trigger\.mjs";$/m, "the shared reading of the reply's local deployments");
   assert.match(block.source, /^ {4}if \(Array\.isArray\(json\?\.workspaces\)\) \{\n {6}allowedWs = servedSelectors\(json\.workspaces\);\n {6}noteServed\(json\.workspaces\);\n {4}\}$/m,
     "the workspaces update keeps its own condition");
   assert.equal(api.source.split(ACCEPTED).length, 2, "one accepted-panel-reply condition");
 });
 
-test("main's shipped accepted-panel block observes only accepted panel replies, and updates workspaces as before", () => {
+test("main's shipped accepted-panel block observes only accepted panel replies, with their local deployments, and updates workspaces as before", () => {
   const { source } = acceptedBlock();
   const instances = [{ home: "/h/a" }], workspaces = [{ id: "w" }];
-  const run = ({ epoch = 7, serverEpoch = 7, transition = false, ok = true, route = "panel", json = { instances, workspaces } } = {}) => {
-    const seen = { observed: [], served: [] };
+  const deployments = [{ id: "/d", local: true }, { id: "remote:altair:a1", local: false }, { id: "/e", local: true }];
+  const run = ({ epoch = 7, serverEpoch = 7, transition = false, ok = true, route = "panel", json = { instances, workspaces, deployments } } = {}) => {
+    const seen = { observed: [], options: [], served: [] };
     const context = {
       epoch, serverEpoch, r: { ok }, route, json, allowedWs: "before",
       serverHost: { inTransition: () => transition },
       servedSelectors: (list) => `selectors of ${list.length}`,
       noteServed: (list) => seen.served.push(list),
-      resumeTrigger: { observed: (rows) => { seen.observed.push(rows); return Promise.resolve(); } },
+      resumeTrigger: { observed: (rows, options) => { seen.observed.push(rows); seen.options.push(options); return Promise.resolve(); } },
+      localDeploymentIds,
     };
     runInNewContext(source, context);
     return { ...seen, allowedWs: context.allowedWs };
   };
   const accepted = run();
   assert.equal(accepted.observed.length, 1); assert.equal(accepted.observed[0], instances, "the reply's own rows");
+  const plain = (v) => JSON.parse(JSON.stringify(v)); // made in the vm's realm
+  assert.deepEqual(plain(accepted.options), [{ localDeploymentIds: ["/d", "/e"] }], "the reply's local deployments, never a remote one");
+  for (const odd of [undefined, null, "x", [{ id: "/d" }], [{ id: "/d", local: "true" }]]) {
+    assert.deepEqual(plain(run({ json: { instances, deployments: odd } }).options), [{ localDeploymentIds: [] }], JSON.stringify(odd));
+  }
   assert.deepEqual(accepted.served, [workspaces]); assert.equal(accepted.allowedWs, "selectors of 1");
   const noWorkspaces = run({ json: { instances } });
   assert.equal(noWorkspaces.observed[0], instances, "the instances need only the accepted reply");
