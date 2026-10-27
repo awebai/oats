@@ -395,3 +395,25 @@ test('the latest pick wins: a take-over still waiting on main, then a switch bac
   assert.deepEqual(bound, [B, A], 'main binds A last');
   assert.equal(w.common.currentWorkspace(), A, 'and so does this window');
 });
+
+// A switch puts the keyboard back where it was in the workspace it lands on (the shell's focus place), unless it
+// says otherwise: landsFocusPlace, read by the workspace listeners while the switch lands. Main's claim is unchanged.
+test('a landing places the focus, except a switch with focusPlace false and a take-over that brought a layout', async () => {
+  const layout = { terminals: [], split: null, active: null };
+  const w = await windowWith({ hash: workspaceHash(A), claim: async (id, options) => (options.takeOver && id === C ? { ok: true, layout } : { ok: true }) });
+  const seen = []; w.common.onWorkspaceChange((id) => seen.push([id, w.common.landsFocusPlace(id)]));
+  await w.common.switchWorkspace(B);
+  await w.common.switchWorkspace(A, { focusPlace: false });
+  await w.common.switchWorkspace(B, { takeOver: true });
+  await w.common.switchWorkspace(C, { takeOver: true });
+  await w.common.leaveTakenWorkspace(C, [{ id: A }, { id: B }, { id: C }]);
+  assert.deepEqual(seen, [[B, true], [A, false], [B, true], [C, false], [B, true]],
+    'a plain switch, a caller\'s own target, a take-over with no layout, one with a layout, a fall back after a take-over away');
+  assert.deepEqual(w.claims, [[B, { focus: true }], [A, { focus: true }], [B, { takeOver: true }], [C, { takeOver: true }], [B, { focus: false }]],
+    'main is asked as before: focusPlace never reaches it');
+  assert.equal(w.common.landsFocusPlace(A), true, 'outside a landing, nothing is held');
+  const plain = await windowWith({ hash: '', stored: A, bridge: false });
+  const harness = []; plain.common.onWorkspaceChange((id) => harness.push([id, plain.common.landsFocusPlace(id)]));
+  await plain.common.switchWorkspace(B, { focusPlace: false }); await plain.common.switchWorkspace(A);
+  assert.deepEqual(harness, [[B, false], [A, true]], 'without the window bridge, the same');
+});

@@ -20,7 +20,7 @@ import * as keymap from "../renderer/keybindings.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { createLeader } from "../renderer/leader.mjs";
 import { createLeaderHint } from "../renderer/leader-hint.mjs";
-import { createLeaderDispatch, NO_WORKSPACE_ABOVE, NO_WORKSPACE_BELOW } from "../renderer/leader-dispatch.mjs";
+import { createLeaderDispatch } from "../renderer/leader-dispatch.mjs";
 import { leaderApplies, leaderLabel } from "../renderer/leader-keys.mjs";
 import { splitControlsState } from "../renderer/split-controls.mjs";
 import { LEADER_TABLE } from "../../client/keymap.mjs";
@@ -41,6 +41,7 @@ import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { createFocusRegions } from "../renderer/focus-regions.mjs";
 
 const memory = new Map();
 globalThis.localStorage ??= { getItem: k => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, String(v)), removeItem: k => memory.delete(k) };
@@ -91,7 +92,9 @@ function rig(t, { platform = "Linux x86_64" } = {}) {
       setFocusMode: on => document.getElementById("app").classList.toggle("focus-mode", on),
       isFocusMode: () => document.getElementById("app").classList.contains("focus-mode"),
     },
-    tabOpenIntents: { invalidations: 0, invalidate() { this.invalidations++; } },
+    tabOpenIntents: { invalidations: 0, invalidate() { this.invalidations++; }, applyFocus: fn => fn() },
+    // The leader's workspaceStep asks the F6 regions whether the focus is in the list of workspaces.
+    focusRegions: createFocusRegions({ doc: document }),
     registerAction: action => { const off = keymap.registerAction(action); offs.push(off); return off; },
     runAction: keymap.runAction, handleKeydown: keymap.handleKeydown, getBinding: keymap.getBinding, formatChord: keymap.formatChord,
   };
@@ -138,44 +141,55 @@ function rig(t, { platform = "Linux x86_64" } = {}) {
   };
 }
 
-for (const platform of ["Linux x86_64", "MacIntel"]) test(`${platform}: Ctrl+X then ↓ / ↑ step the list as drawn, as a click does; at an end the hint says so`, async t => {
+for (const platform of ["Linux x86_64", "MacIntel"]) test(`${platform}: Ctrl+X then ↓ / ↑ step the list as drawn, as a click does, wrapping at the ends; with no other workspace the hint says so`, async t => {
   const r = rig(t, { platform });
   r.shows(A, [A, B, C]); await flush();
   // The rows are the served views alone: the list asks main for nothing (this computer's deployments are Add's).
   assert.deepEqual(r.rows().map(row => row.dataset.workspaceId), [A.id, B.id, C.id]);
   assert.equal(r.asked(), 0);
-  // At the top: ↑ moves nothing and says why, in the hint's line.
+  // At the top: ↑ goes on from the other end, to Gamma, the last row. Made from outside the list (the foot), the
+  // focus goes back where it was in the workspace shown.
   r.leaderThen("up");
-  assert.deepEqual(r.switched, []);
-  assert.equal(r.line(), NO_WORKSPACE_ABOVE);
-  assert.equal(r.line(), "No workspace above this one.");
+  assert.deepEqual(r.switched, [[C.id, { focusPlace: true, takeOver: true }]], "the moves wrap");
+  r.switched.length = 0;
+  r.shows(C, [A, B, C]);
+  // ↓ from Gamma: Alpha, the first row again.
+  r.leaderThen("down");
+  assert.deepEqual(r.switched, [[A.id, { focusPlace: true, takeOver: true }]]);
+  r.switched.length = 0;
+  r.shows(A, [A, B, C]);
   // ↓: B, even if another window shows it: it is taken over into this window, as its click is.
   r.leaderThen("down");
-  assert.deepEqual(r.switched, [[B.id, { takeOver: true }]], "a pick from the list always shows the workspace here");
-  r.row(B.id).click();
-  assert.deepEqual(r.switched.at(-1), [B.id, { takeOver: true }], "the click: the same switch");
+  assert.deepEqual(r.switched, [[B.id, { focusPlace: true, takeOver: true }]], "a pick from the list always shows the workspace here");
   r.switched.length = 0;
   r.shows(B, [A, B, C]);
-  // ↓ from B: Gamma, the last row; every row opens, so nothing is passed over.
+  // ↓ from B: Gamma; every row opens, so nothing is passed over.
   r.leaderThen("down");
-  assert.deepEqual(r.switched, [[C.id, { takeOver: true }]]);
+  assert.deepEqual(r.switched, [[C.id, { focusPlace: true, takeOver: true }]]);
   r.shows(C, [A, B, C]);
   assert.equal(r.current()?.dataset.workspaceId, C.id);
-  // ↓ from Gamma: the end.
-  r.switched.length = 0;
-  r.leaderThen("down");
-  assert.deepEqual(r.switched, []);
-  assert.equal(r.line(), NO_WORKSPACE_BELOW);
-  assert.equal(r.line(), "No workspace below this one.");
   // ↑ from Gamma: Beta, then Alpha.
+  r.switched.length = 0;
   r.leaderThen("up");
-  assert.deepEqual(r.switched, [[B.id, { takeOver: true }]]);
+  assert.deepEqual(r.switched, [[B.id, { focusPlace: true, takeOver: true }]]);
   r.shows(B, [A, B, C]);
   r.leaderThen("up");
-  assert.deepEqual(r.switched.at(-1), [A.id, { takeOver: true }]);
+  assert.deepEqual(r.switched.at(-1), [A.id, { focusPlace: true, takeOver: true }]);
   assert.deepEqual(r.added, [], "a move adds nothing");
   // No instance was opened or stepped: the leader's arrows are the workspace moves only.
   assert.equal(r.c.tabs.size, 0);
+  // A click on a row: the same switch, with no focus option of its own (the focus goes back where it was there).
+  r.shows(A, [A, B, C]);
+  r.row(C.id).click();
+  assert.deepEqual(r.switched.at(-1), [C.id, { takeOver: true }], "the click: the same switch");
+  // One workspace, the current one: nothing moves, and the hint's line says why.
+  const alone = rig(t, { platform });
+  alone.shows(A, [A]); await flush();
+  for (const key of ["down", "up"]) {
+    alone.leaderThen(key);
+    assert.deepEqual(alone.switched, [], `${key}: nothing to show`);
+    assert.equal(alone.line(), "No other workspace to show.");
+  }
 });
 
 test("the leader's ↓ from a row of the list itself moves the workspace, not the list's focus", async t => {
@@ -183,7 +197,7 @@ test("the leader's ↓ from a row of the list itself moves the workspace, not th
   r.shows(A, [A, B]); await flush();
   r.current().focus();
   r.leaderThen("down");
-  assert.deepEqual(r.switched, [[B.id, { takeOver: true }]]);
+  assert.deepEqual(r.switched, [[B.id, { focusPlace: false, takeOver: true }]], "made from the list: the focus stays on the list");
   assert.equal(r.document.activeElement, r.row(A.id), "the arrow was the leader's: the list's own Down did not run");
 });
 
