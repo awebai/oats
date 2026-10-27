@@ -1293,11 +1293,12 @@ list), and without holding up the first frame or the first read. Then
 again whenever a read of a deployment open in the run shows an instance of
 this computer whose session was lost and that is not running (another
 machine's instances shown in the same workspace never count). Never two at
-a time, and never sooner than 30 seconds after the last one began. Not for
-an instance the last sweep could not resume, found was not lost, left
-because it was lost long ago, or did not answer for at all (its deployment
-not ready, say): such an instance sets off no sweep until a
-later read shows it running or no longer lost, or a sweep resumes it. There
+a time, and never sooner than 30 seconds after the last one began. After a
+sweep that a read started, every instance it was started for waits until it
+changes (it runs, or it is no longer lost); so does an instance any sweep
+could not resume, found was not lost, or left because it was lost long ago.
+Such an instance sets off no sweep until a later read shows it running or no
+longer lost, or a sweep resumes it. There
 is no timer and no queue: a read that comes too soon starts nothing, and the
 next read asks again. The rule is the Desktop's
 (`packages/client/session-resume-trigger.mjs`). It runs only when the kernel

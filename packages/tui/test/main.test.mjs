@@ -991,7 +991,7 @@ test("a lost row of another machine's deployment in the open view sweeps nothing
   assert.equal(await r.status, 0);
 });
 
-test("a lost row of this machine sweeps once; a sweep that answered nothing of it settles it, and the same read later sweeps nothing", async () => {
+test("a lost row of this machine sweeps once; once that sweep has completed the row waits, and the same read later sweeps nothing", async () => {
   const r = await started({ kernel: { ok: true, cli: RESUME_CLI } });
   await settle();
   sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
