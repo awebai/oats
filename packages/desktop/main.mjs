@@ -57,7 +57,7 @@ import { validWorkspaceId } from "./renderer/workspace-id.mjs";
 import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
-import { createResumeNotices, createResumeWiring, installResumeHandlers, sendToLiveWindows } from "./session-resume-launch.mjs";
+import { createResumeWiring } from "./session-resume-launch.mjs";
 import { createResumeTrigger, localDeploymentIds } from "../client/session-resume-trigger.mjs";
 
 const require = createRequire(import.meta.url);
@@ -381,13 +381,10 @@ async function listOnComputer(path) {
 // launch, armed by the primary instance's startup only, after its deployments-list step settles, then asked
 // again by each accepted /api/panel reply (the api handler). Its sweeps' children are detached and file-backed:
 // shutdown() never touches them, and the trigger is never disposed at quit.
-const resumeNotices = createResumeNotices();
 const resumeTrigger = createResumeWiring({
-  createTrigger: createResumeTrigger, cli: () => settledCli(readServedCli, { attempts: 60 }), notices: resumeNotices,
-  broadcast: () => sendToLiveWindows(BrowserWindow.getAllWindows(), "session-resume:ready"),
+  createTrigger: createResumeTrigger, cli: () => settledCli(readServedCli, { attempts: 60 }),
   error: (line) => console.error(line),
 });
-installResumeHandlers({ ipc: ipcMain, guard, notices: resumeNotices });
 // Where Add workspace → Browse… opens next (picker-default-path.mjs): the
 // parent of the workspace most recently added or opened, across launches.
 const LAST_WORKSPACE_PARENT_FILE = () => join(app.getPath("userData"), "last-workspace-parent.json");

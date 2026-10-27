@@ -1,5 +1,5 @@
 // The machine sweep's reader (packages/client/session-resume.mjs): `oats session resume --json` read into a
-// summary of facts, the boundary decoder main and the renderer share, and the notice in the clients' words.
+// summary of facts, its boundary decoder, and the notice in the clients' words.
 // The answers are hand-written from the agreed kernel contract (the kernel is built in parallel); their
 // warnings and messages are examples, not the kernel's sentences. Every sentence of the notice is pinned here.
 import test from 'node:test';
@@ -222,7 +222,7 @@ test('resumeSummaryFact: idempotent, a fresh copy, and the reader\'s summary dec
     blockedRow('b', { reason: 'launch-prompt' }), refusedRow('x', { reason: 'refused-this-boot', code: 'E_X', message: 'said' }),
   ], [{ deployment: A, swept: false, reason: 'opted-out' }, { deployment: B, swept: false, reason: 'unreadable' }]));
   assert.deepEqual(resumeSummaryFact(empty), empty);
-  // Through structured clone, as IPC carries it.
+  // Through structured clone: a copy decodes like the original.
   assert.deepEqual(resumeSummaryFact(structuredClone(s)), s);
 });
 

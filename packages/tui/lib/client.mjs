@@ -41,7 +41,6 @@ export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
 // #1559: the kernel's machine sweep, run when the TUI opens and when a read shows a lost session
 // (lib/main.mjs): the shared trigger decides when, the runner runs it, and the reader words what it did.
 export { runResumeSweep } from "../../client/session-resume-cli.mjs";
-export { resumeNotice } from "../../client/session-resume.mjs";
 export { createResumeTrigger, localDeploymentIds } from "../../client/session-resume-trigger.mjs";
 export { validateWorkspace } from "../../client/workspace-admission.mjs";
 export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";

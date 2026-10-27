@@ -236,7 +236,7 @@ const rowShape = {
 };
 const copyRow = r => Object.hasOwn(r, 'warnings') ? { ...r, warnings: [...r.warnings] } : { ...r };
 
-/** The summary as it crossed a boundary (main to a renderer over IPC): the same summary, a fresh copy, or
+/** The summary as given to resumeNotice, decoded again at that boundary: the same summary, a fresh copy, or
  * undefined. Exactly the keys above, everywhere; names and paths display lines, never withheld or empty;
  * reasons one of their kind's or null; codes of the kernel's form or null; each row's warnings within both
  * bounds with `omitted` consistent (boundedWarningsValid); at most RESUME_SUMMARY_ROWS rows and
