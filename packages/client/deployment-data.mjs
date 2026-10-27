@@ -223,6 +223,9 @@ export function deploymentStatusData(document, deployment) {
       // instanceColor, the one rule of which colour a row shows). Validated, never check()ed: anything
       // else is dropped and the row reads as one with no colour.
       if (own(instance, 'color') && instanceColor(instance) !== null) row.color = instanceColor(instance);
+      // Feature instance-background (#1579): the row is placed in the Background section. Exactly true only; any
+      // other value is dropped, never checked: the row stays in the main tree.
+      if (own(instance, 'background') && instance.background === true) row.background = true;
       // #802 (feature worktree-event): a spawn running its worktree hooks, verifiably alive. Boolean true only;
       // any other value is dropped, never checked: the row stays an ordinary one.
       if (own(instance, 'spawnInProgress') && instance.spawnInProgress === true) row.spawnInProgress = true;

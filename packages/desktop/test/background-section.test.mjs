@@ -7,6 +7,9 @@ import assert from "node:assert/strict";
 import { backgroundPlacement, instanceVisibleInTree, waitingRollup, collapseKey, instanceId, filterInstanceTree } from "../../client/instance-tree.mjs";
 import { sidebarSections, rosterSectionKey, rosterSections } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
+import { deploymentStatusData } from "../../client/deployment-data.mjs";
+import { panelInstance } from "../../client/deployment-panel.mjs";
+import { projectActivePanel, activeSignature } from "../renderer/active-observation.mjs";
 
 const WS = "ws";
 const at = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, ...extra });
@@ -144,4 +147,18 @@ test("two deployments: the section keeps the machine sub-headings", () => {
   const s = sidebarSections(roster, roster, deployments, DESKTOP_TERMS, { placement: backgroundPlacement(roster, true), open: true });
   assert.deepEqual(s.main.map(p => p.deployment.id), ["far"]);
   assert.deepEqual(s.background.sections.map(p => [p.deployment.id, drawn([p])]), [["here", ["a@0"]], ["far", ["b@0"]]]);
+});
+
+test("the field passes the client allow-lists as exactly true, anything else is absent", () => {
+  const status = (value) => deploymentStatusData({ root: "/d/agents", agents: [{ name: "dev", dir: "/d/agents/dev",
+    instances: [{ instance: "dev-1", home: "/d/agents/dev/instances/dev-1", ...(value === undefined ? {} : { background: value }) }] }] }, "/d");
+  assert.equal(status(true).agents[0].instances[0].background, true);
+  for (const bad of [false, "true", 1, null, undefined]) assert.equal(Object.hasOwn(status(bad).agents[0].instances[0], "background"), false, String(bad));
+  const base = { instance: "dev-1", home: "/d/agents/dev/instances/dev-1", agentsRoot: "/d/agents", running: true };
+  assert.equal(panelInstance({ ...base, background: true }).background, true);
+  assert.equal(Object.hasOwn(panelInstance({ ...base, background: "yes" }), "background"), false);
+  const panel = (value) => ({ workspace: { id: "team" }, instances: [{ ...base, ...(value === undefined ? {} : { background: value }) }] });
+  assert.equal(projectActivePanel(panel(true)).instances[0].background, true);
+  assert.equal(Object.hasOwn(projectActivePanel(panel(1)).instances[0], "background"), false);
+  assert.notEqual(activeSignature(projectActivePanel(panel(true))), activeSignature(projectActivePanel(panel(undefined))), "a move redraws");
 });
