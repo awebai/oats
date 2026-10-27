@@ -247,6 +247,42 @@ test('an answer the reader fails or reads as nothing (not the document, or a pla
   }
 });
 
+test('host warnings: shown in the first notice, left out of the next; a quiet sweep does not use one up', async () => {
+  const SCOPE = "the agent's harness runs in the OATS tmux server's cgroup, not a scope of its own: no user session";
+  const hosted = (rows, warnings = [SCOPE]) => answer(rows, [], { warnings });
+  /** Start a sweep with a read showing another lost home at `t`, and answer it with `envelope`. */
+  const sweepAt = async (h, t, envelope) => {
+    h.t = t;
+    const before = h.runs.length, p = h.trigger.observed([lost(`l${t}`)]);
+    await new Promise(setImmediate);
+    assert.equal(h.runs.length, before + 1, 'a sweep started');
+    await h.answer(p, envelope);
+  };
+  const host = (r) => r.summary.host.warnings;
+  // Quiet first: the warning was not shown, so it stays news.
+  const h = harness();
+  await launched(h, hosted([runningRow('x')]));
+  assert.equal(h.readings[0].kind, 'quiet');
+  assert.deepEqual(host(h.readings[0]), [SCOPE]);
+  // The first notice shows it.
+  await sweepAt(h, RESUME_MIN_INTERVAL_MS, hosted([resumedRow('a')]));
+  assert.equal(h.readings.at(-1).kind, 'notice');
+  assert.deepEqual(host(h.readings.at(-1)), [SCOPE]);
+  // The next notice leaves it out; a new one beside it is news.
+  await sweepAt(h, 2 * RESUME_MIN_INTERVAL_MS, hosted([resumedRow('b')], [SCOPE, 'another host warning']));
+  assert.deepEqual(host(h.readings.at(-1)), ['another host warning']);
+  await sweepAt(h, 3 * RESUME_MIN_INTERVAL_MS, hosted([resumedRow('c')], [SCOPE, 'another host warning']));
+  assert.deepEqual(host(h.readings.at(-1)), []);
+  // It is never forgotten in a run: no home releases it.
+  await h.trigger.observed([lost('a', { running: true }), lost('b', { sessionEnd: SESSION_ENDS.stopped })]);
+  await sweepAt(h, 4 * RESUME_MIN_INTERVAL_MS, hosted([resumedRow('d')]));
+  assert.deepEqual(host(h.readings.at(-1)), []);
+  // Another trigger (another client run) shows it again.
+  const other = harness();
+  await launched(other, hosted([resumedRow('a')]));
+  assert.deepEqual(host(other.readings[0]), [SCOPE]);
+});
+
 test('news, not repeats: read gets a copy; the run\'s envelope is never changed; other answers pass unchanged', async () => {
   const seen = [];
   const h = harness({ read: envelope => { seen.push(envelope); return readResumeSweep(envelope); } });

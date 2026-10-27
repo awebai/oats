@@ -4,7 +4,7 @@
 // warnings and messages are examples, not the kernel's sentences. Every sentence of the notice is pinned here.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readResumeSweep, resumeSummaryFact, resumeNotice, sweepSettlement, withoutReported, RESUME_SUMMARY_ROWS, RESUME_SUMMARY_DEPLOYMENTS,
+import { readResumeSweep, resumeSummaryFact, resumeNotice, sweepSettlement, withoutReported, shownHostKeys, RESUME_SUMMARY_ROWS, RESUME_SUMMARY_DEPLOYMENTS,
   RESUME_ANSWER_ENTRIES, REFUSED_REASONS, RESUME_OUTCOMES, SKIPPED_REASONS, SETTLING_SKIPPED_REASONS } from '../../client/session-resume.mjs';
 import { boundedWarnings, FLAG_IGNORED_WARNINGS, FLAG_IGNORED_UNITS } from '../../client/launch-prompt-outcome.mjs';
 import { DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
@@ -18,7 +18,8 @@ const label = (d) => d.replace(/^\/home\/ana/, '~');
 const notice = (...args) => resumeNotice(summaryOf(...args), { label });
 const lines = (n) => n.detail.split('\n');
 const totals = (resumed = 0, fresh = 0, waiting = 0, refused = 0) => ({ resumed, fresh, waiting, refused });
-const empty = { resumed: [], fresh: [], waiting: [], refused: [], unswept: [], omitted: 0, totals: totals() };
+const NO_HOST = Object.freeze({ warnings: [], omitted: 0 });
+const empty = { resumed: [], fresh: [], waiting: [], refused: [], unswept: [], host: NO_HOST, omitted: 0, totals: totals() };
 
 test('reader: a refusal reads as unsupported, busy or failed with its code', () => {
   assert.deepEqual(readResumeSweep(refusal('E_CLI_UNAVAILABLE')), { kind: 'unsupported' });
@@ -84,7 +85,7 @@ test('reader: every outcome and reason, unknown reasons as null', () => {
       { instance: 'x3', deployment: A, reason: null, code: null, message: null },
       { instance: 'x4', deployment: A, reason: 'keeps-getting-lost', code: 'E_RESUME_REFUSED', message: null },
     ],
-    unswept: [], omitted: 0, totals: totals(1, 5, 3, 4),
+    unswept: [], host: NO_HOST, omitted: 0, totals: totals(1, 5, 3, 4),
   });
 });
 
@@ -442,7 +443,7 @@ test('sweepSettlement and withoutReported read only what readResumeSweep reads: 
   const plan = answer(rows, [], { plan: true });
   assert.equal(readResumeSweep(plan).kind, 'quiet', 'a plan started nothing');
   assert.deepEqual(sweepSettlement(plan), { settle: [], release: [] });
-  assert.deepEqual(withoutReported(plan, reported), { envelope: plan, keys: [] });
+  assert.deepEqual(withoutReported(plan, reported), { envelope: plan, keys: [], hostKeys: [] });
 });
 
 test('withoutReported: a copy without the refusals already reported, and every refusal\'s key of this answer', () => {
@@ -481,4 +482,95 @@ test('withoutReported: a copy without the refusals already reported, and every r
     assert.equal(out.envelope, envelope);
     assert.deepEqual(out.keys, []);
   }
+});
+
+// ── Host warnings: the result's own `warnings`, about this computer ──────────
+/** A sentence shaped like the kernel's host warning: it is read by position only, never by its words. */
+const SCOPE = "the agent's harness runs in the OATS tmux server's cgroup, not a scope of its own: no systemd user session";
+const hosted = (warnings, rows = [resumedRow('a')], deployments = []) => answer(rows, deployments, { warnings });
+
+test('host warnings: kept in order as display lines; absent, malformed or in a plan they give none', () => {
+  assert.deepEqual(summaryOf([resumedRow('a')]).host, NO_HOST, 'absent: always present, empty');
+  assert.deepEqual(readResumeSweep(hosted([SCOPE, 'second <b>line</b>'])).summary.host, { warnings: [SCOPE, 'second <b>line</b>'], omitted: 0 });
+  for (const bad of [null, 'one string', 7, { 0: SCOPE }]) assert.deepEqual(readResumeSweep(hosted(bad)).summary.host, NO_HOST, JSON.stringify(bad));
+  assert.deepEqual(readResumeSweep(hosted([7, null, SCOPE, ['x'], ''])).summary.host, { warnings: [SCOPE], omitted: 0 }, 'a non-string or empty entry is no line');
+  assert.deepEqual(readResumeSweep(hosted(['token=abc123secret should go'])).summary.host.warnings, [DETAIL_WITHHELD], 'through the display filter');
+  assert.deepEqual(readResumeSweep(answer([resumedRow('a')], [], { plan: true, warnings: [SCOPE] })).summary.host, NO_HOST, 'a plan reads none');
+});
+
+test('host warnings: cut by position at the shared bounds, never by their words', () => {
+  const many = Array.from({ length: FLAG_IGNORED_WARNINGS + 4 }, (_, i) => `host warning ${i}`);
+  many[FLAG_IGNORED_WARNINGS] = SCOPE; // the kernel-looking one falls past the cut: left out like any other
+  assert.deepEqual(readResumeSweep(hosted(many)).summary.host, { ...boundedWarnings(many) });
+  assert.deepEqual(readResumeSweep(hosted(many)).summary.host, { warnings: many.slice(0, FLAG_IGNORED_WARNINGS), omitted: 4 });
+  const long = 'w'.repeat(MAX_DISPLAY_LINE);
+  const units = Array.from({ length: Math.ceil(FLAG_IGNORED_UNITS / MAX_DISPLAY_LINE) + 1 }, () => long);
+  const host = readResumeSweep(hosted(units)).summary.host;
+  assert.ok(host.warnings.join('').length <= FLAG_IGNORED_UNITS && host.omitted > 0, 'the units bound cuts too');
+});
+
+test('host warnings: alone they are quiet, carried in the summary; a notice shows them under their own lead-in', () => {
+  const alone = readResumeSweep(hosted([SCOPE], [runningRow('x'), skippedRow('y', { reason: SKIPPED_REASONS.notLost })], [{ deployment: B, swept: false, reason: 'not-ok' }]));
+  assert.equal(alone.kind, 'quiet', 'a host warning, even beside an unchecked deployment, never makes a notice');
+  assert.deepEqual(alone.summary.host, { warnings: [SCOPE], omitted: 0 });
+  assert.equal(resumeNotice(alone.summary, { label }), null);
+  const n = resumeNotice(readResumeSweep(hosted([SCOPE, 'second'], [resumedRow('a')], [{ deployment: B, swept: false, reason: 'not-ok' }])).summary, { label });
+  assert.equal(n.headline, 'OATS resumed 1 instance whose session was lost.', 'the headline does not change');
+  assert.deepEqual(lines(n), ['a: resumed in its own conversation.', 'Not checked in ~/work/team: its deployment isn\'t ready.',
+    'OATS says about this computer:', SCOPE, 'second']);
+  // Lines the cut left out are counted under them; the summary's own "M more not shown." stays last.
+  const many = Array.from({ length: FLAG_IGNORED_WARNINGS + 2 }, (_, i) => `h${i}`);
+  const rows = Array.from({ length: RESUME_SUMMARY_ROWS + 1 }, (_, i) => resumedRow(`r${i}`));
+  const tail = lines(resumeNotice(readResumeSweep(hosted(many, rows)).summary, { label })).slice(-(FLAG_IGNORED_WARNINGS + 3));
+  assert.deepEqual(tail, ['OATS says about this computer:', ...many.slice(0, FLAG_IGNORED_WARNINGS), '2 more not shown.', '1 more not shown.']);
+  assert.equal(lines(notice([resumedRow('a')])).includes('OATS says about this computer:'), false, 'nothing without a warning');
+});
+
+test('resumeSummaryFact: `host` is decoded exactly, and the summary with it decodes to itself', () => {
+  const s = readResumeSweep(hosted([SCOPE])).summary;
+  const fact = resumeSummaryFact(s);
+  assert.deepEqual(fact, s);
+  assert.notEqual(fact.host, s.host);
+  assert.notEqual(fact.host.warnings, s.host.warnings);
+  assert.deepEqual(resumeSummaryFact(fact), fact);
+  const without = { ...s };
+  delete without.host;
+  for (const bad of [without, { ...s, host: null }, { ...s, host: { warnings: [SCOPE] } }, { ...s, host: { ...s.host, extra: 1 } },
+    { ...s, host: { warnings: [7], omitted: 0 } }, { ...s, host: { warnings: [SCOPE], omitted: -1 } },
+    { ...s, host: { warnings: [SCOPE], omitted: 1 } }, { ...s, host: { warnings: Array(FLAG_IGNORED_WARNINGS + 1).fill('w'), omitted: 0 } }]) {
+    assert.equal(resumeSummaryFact(bad), undefined, JSON.stringify(bad.host));
+  }
+});
+
+test('withoutReported: a host warning a notice showed is left out by its exact string; shownHostKeys says what a reading showed', () => {
+  const first = hosted([SCOPE, 7, 'other']);
+  const once = withoutReported(first, new Set(), new Set());
+  assert.deepEqual(once.envelope, first);
+  assert.deepEqual(once.hostKeys, [SCOPE, 'other'], 'each string that becomes a line, in order');
+  const read = readResumeSweep(once.envelope);
+  assert.deepEqual(shownHostKeys(read, once.hostKeys), [SCOPE, 'other']);
+  assert.deepEqual(shownHostKeys({ ...read, kind: 'quiet' }, once.hostKeys), [], 'a quiet reading showed nothing');
+  for (const r of [null, { kind: 'notice' }, { kind: 'notice', summary: {} }, { kind: 'failed' }]) assert.deepEqual(shownHostKeys(r, once.hostKeys), []);
+  // Cut by position: only the lines the summary kept were shown.
+  const many = Array.from({ length: FLAG_IGNORED_WARNINGS + 3 }, (_, i) => `h${i}`);
+  const cut = withoutReported(hosted(many), new Set(), new Set());
+  assert.deepEqual(shownHostKeys(readResumeSweep(cut.envelope), cut.hostKeys), many.slice(0, FLAG_IGNORED_WARNINGS));
+  // Shown once: left out after, by exact string; a changed one is news; none left means no `warnings` key.
+  const shown = new Set([SCOPE, 'other']);
+  const again = withoutReported(hosted([SCOPE, `${SCOPE}.`, 'other']), new Set(), shown);
+  assert.deepEqual(again.envelope.result.warnings, [`${SCOPE}.`]);
+  assert.deepEqual(again.hostKeys, [`${SCOPE}.`]);
+  const gone = withoutReported(hosted([SCOPE, 'other']), new Set(), shown);
+  assert.equal(Object.hasOwn(gone.envelope.result, 'warnings'), false);
+  assert.deepEqual(readResumeSweep(gone.envelope).summary.host, NO_HOST);
+  // The given envelope is never changed; a `warnings` that is not an array passes as it is, with no keys.
+  const given = hosted([SCOPE]), before = structuredClone(given);
+  withoutReported(given, new Set(), shown);
+  assert.deepEqual(given, before);
+  const odd = withoutReported(hosted('text'), new Set(), shown);
+  assert.equal(odd.envelope.result.warnings, 'text');
+  assert.deepEqual(odd.hostKeys, []);
+  // A plan or an answer that is not the document: as it came, no keys.
+  const plan = answer([], [], { plan: true, warnings: [SCOPE] });
+  assert.deepEqual(withoutReported(plan, new Set(), new Set()), { envelope: plan, keys: [], hostKeys: [] });
 });

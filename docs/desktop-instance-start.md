@@ -299,6 +299,11 @@ sessions". Desktop keeps the last 10 notices no window has shown yet, so a
 window that opens after a sweep has finished still gets them, and only one
 window ever shows each. Closing that window loses it.
 
+OATS can also warn about this computer rather than one instance (how the
+sessions it resumes are run on this machine, say). Such a warning is shown
+once each time Desktop runs, in the next notice, after the deployments, under
+"OATS says about this computer:". A warning alone never makes a notice.
+
 There is no notice when nothing was lost, when the sessions were already
 running, when another sweep holds the machine (another Desktop, the TUI, or
 `oats session resume` run by hand), or when the only thing to report is a

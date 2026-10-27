@@ -19,7 +19,9 @@
  * News, not repeats. The kernel reports a refusal again in every sweep: before `read`, the refusals an earlier
  * sweep of this trigger reported are left out of a copy of the envelope (session-resume.mjs withoutReported; the
  * run's own is never changed). Every other row is this sweep's event and kept. A home released (above) forgets
- * the refusals reported for it, so a refusal after it recovered is news again. This module reads nothing of the
+ * the refusals reported for it, so a refusal after it recovered is news again. A host warning (the result's
+ * own `warnings`, about this computer) is left out the same way once a notice of this trigger showed it: once
+ * per run, never forgotten (it is no home's); one a quiet sweep carried was never shown, so it stays news. This module reads nothing of the
  * answer itself: its shape is session-resume.mjs's alone.
  *
  * `onReading` gets the reading of every finished sweep, whatever its kind (the caller ignores what it does not
@@ -28,7 +30,7 @@
  * `dispose()` stops the trigger and never cancels a sweep: a sweep in flight runs on (a kernel change outlives
  * its client), and its reading is dropped. Nothing here throws out of `launch` or `observed`. */
 import { resumeSupported, runResumeSweep } from './session-resume-cli.mjs';
-import { readResumeSweep, sweepSettlement, withoutReported } from './session-resume.mjs';
+import { readResumeSweep, shownHostKeys, sweepSettlement, withoutReported } from './session-resume.mjs';
 import { SESSION_ENDS } from './deployment-data.mjs';
 
 export const RESUME_MIN_INTERVAL_MS = 30_000;
@@ -62,6 +64,7 @@ export function lostLocalHomes(rows) {
 export function createResumeTrigger({ cli, run = runResumeSweep, read = readResumeSweep, now = Date.now, onReading }) {
   let launched = null, disposed = false, flying = false, lastStart = null;
   const settled = new Set(), reported = new Set(), reportedFor = new Map(); // reportedFor: home → its reported keys
+  const reportedHost = new Set(); // host warnings a notice showed
 
   /** A home no longer settled, and the refusals reported for it forgotten. */
   function release(home) {
@@ -71,18 +74,19 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
   }
 
   /** Settle and release from this answer (sweepSettlement); the envelope `read` is given, without the refusals
-   * an earlier answer reported (withoutReported), whose keys are then added. */
+   * an earlier answer reported and the host warnings a notice showed (withoutReported), with this answer's
+   * host keys for after the read. Its refusal keys are added at once. */
   function digest(envelope) {
     const { settle, release: released } = sweepSettlement(envelope);
     for (const home of settle) settled.add(home);
     for (const home of released) release(home);
-    const news = withoutReported(envelope, reported);
+    const news = withoutReported(envelope, reported, reportedHost);
     for (const { home, key } of news.keys) {
       reported.add(key);
       if (!reportedFor.has(home)) reportedFor.set(home, new Set());
       reportedFor.get(home).add(key);
     }
-    return news.envelope;
+    return news;
   }
 
   async function sweep() {
@@ -97,7 +101,11 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
       let reading;
       try {
         const envelope = await run(probe);
-        try { reading = read(digest(envelope)); } catch { reading = { kind: 'failed', code: 'E_CLI_PROTOCOL' }; }
+        try {
+          const news = digest(envelope);
+          reading = read(news.envelope);
+          for (const key of shownHostKeys(reading, news.hostKeys)) reportedHost.add(key);
+        } catch { reading = { kind: 'failed', code: 'E_CLI_PROTOCOL' }; }
       } catch { reading = { kind: 'failed', code: 'E_CLI_FAILED' }; }
       if (!disposed && typeof onReading === 'function') { try { onReading(reading); } catch { /* the caller's */ } }
     } catch { /* never out of launch or observed */ } finally { flying = false; }

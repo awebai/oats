@@ -4,12 +4,14 @@
  * a caller's missing `label`). No sentence names a client's control, so no client terms are needed.
  *
  * The answer: `{schemaVersion: 1, plan, deployments: [{deployment, state, swept, reason?, …}], rows:
- * [{deployment, instance, outcome, reason?, code?, message?, warnings?, …}]}`. The summary:
+ * [{deployment, instance, outcome, reason?, code?, message?, warnings?, …}], warnings?}`; the result's own
+ * `warnings` are about the host, not one home. The summary:
  *   { resumed: [{instance, deployment, warnings, omitted}],
  *     fresh:   [{instance, deployment, reason, warnings, omitted}],   reason: FRESH_REASONS or null
  *     waiting: [{instance, deployment, reason}],                      a `blocked` row; reason: WAITING_REASONS or null
  *     refused: [{instance, deployment, reason, code, message}],       reason: REFUSED_REASONS or null
  *     unswept: [{deployment, reason}],                                not swept; reason: UNSWEPT_REASONS or null
+ *     host:    {warnings, omitted},                                   the result's warnings, bounded as a row's
  *     omitted, totals: {resumed, fresh, waiting, refused} }
  * `refused` carries `reason` beside the four fields the spec lists: the words say when a refusal was this
  * boot's, and when the home keeps losing its session. There is no opt-out: an older kernel's `opted-out`
@@ -51,7 +53,7 @@ export const UNSWEPT_REASONS = Object.freeze(['not-ok', 'unreadable']);
 const UNSUPPORTED = new Set(['E_CLI_UNAVAILABLE', 'E_RESUME_FEATURE']);
 const CODE = /^E_[A-Z0-9_]{1,64}$/;
 const KINDS = ['resumed', 'fresh', 'waiting', 'refused'];
-const SUMMARY_KEYS = [...KINDS, 'unswept', 'omitted', 'totals'];
+const SUMMARY_KEYS = [...KINDS, 'unswept', 'host', 'omitted', 'totals'];
 
 const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const exactKeys = (v, keys) => record(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -85,7 +87,7 @@ function decodeDeployment(d) {
   return d.swept === true ? null : { deployment, reason: known(UNSWEPT_REASONS, d.reason) };
 }
 
-const empty = () => ({ resumed: [], fresh: [], waiting: [], refused: [], unswept: [], omitted: 0,
+const empty = () => ({ resumed: [], fresh: [], waiting: [], refused: [], unswept: [], host: { warnings: [], omitted: 0 }, omitted: 0,
   totals: { resumed: 0, fresh: 0, waiting: 0, refused: 0 } });
 
 /** Whether `result` is the sweep's document: the one check the summary and the trigger's helpers share. */
@@ -94,7 +96,9 @@ const sweepDocument = result => record(result) && result.schemaVersion === 1 && 
   && result.deployments.length <= RESUME_ANSWER_ENTRIES && result.rows.length <= RESUME_ANSWER_ENTRIES;
 
 /** The sweep's `result` as a summary, or null when it is not the document. A plan (`plan: true`) started
- * nothing, so it is the empty summary: none of its rows or deployments is read. */
+ * nothing, so it is the empty summary: none of its rows, deployments or warnings is read. The result's own
+ * `warnings` (about the host) are kept as a row's are (boundedWarnings): a host warning alone is no row, so
+ * it never makes a notice. */
 function summarize(result) {
   if (!sweepDocument(result)) return null;
   const s = empty();
@@ -112,6 +116,7 @@ function summarize(result) {
     if (!decoded) continue;
     if (lines < RESUME_SUMMARY_DEPLOYMENTS) { s.unswept.push(decoded); lines += 1; } else s.omitted += 1;
   }
+  s.host = boundedWarnings(result.warnings);
   return s;
 }
 
@@ -173,19 +178,22 @@ export function sweepSettlement(envelope) {
 }
 
 /**
- * News, not repeats: the answer without the refused rows already reported, and this answer's refused keys.
+ * News, not repeats: the answer without what an earlier answer already reported, and this answer's keys.
  * `envelope` is a copy (the given one is never changed) that leaves out each `refused` row with a string home
- * whose (home, reason, code) key is in `reported`; every other row is kept, in order. `keys` are the keys of
- * every such refused row of this answer, those left out too, each with its home, for the caller to add to
- * `reported` after (and to forget by home). The key is opaque outside this module.
- * An envelope that is not `ok: true` with a rows array is given back as it came, with no keys.
+ * whose (home, reason, code) key is in `reported`, and each host warning (the result's `warnings`) whose
+ * exact string is in `reportedHost`; everything else is kept, in order (`warnings` absent when none is left).
+ * `keys` are the keys of every such refused row of this answer, those left out too, each with its home, for
+ * the caller to add to `reported` after (and to forget by home). `hostKeys` are the host warnings kept, each
+ * that becomes a line, in order: shownHostKeys says which of them a reading showed. Keys are opaque outside
+ * this module. An envelope that is not the sweep's document (answerRows) is given back as it came, with no keys.
  * @param {unknown} envelope
- * @param {Set<string>} reported  keys an earlier answer gave
- * @returns {{envelope: unknown, keys: {home: string, key: string}[]}}
+ * @param {Set<string>} reported  refusal keys an earlier answer gave
+ * @param {Set<string>} [reportedHost]  host keys an earlier notice showed
+ * @returns {{envelope: unknown, keys: {home: string, key: string}[], hostKeys: string[]}}
  */
-export function withoutReported(envelope, reported) {
+export function withoutReported(envelope, reported, reportedHost = new Set()) {
   const rows = answerRows(envelope);
-  if (!rows) return { envelope, keys: [] };
+  if (!rows) return { envelope, keys: [], hostKeys: [] };
   const keys = [];
   const kept = rows.filter(row => {
     const home = homeOf(row);
@@ -194,7 +202,21 @@ export function withoutReported(envelope, reported) {
     keys.push({ home, key });
     return !reported.has(key);
   });
-  return { envelope: { ...envelope, result: { ...envelope.result, rows: kept } }, keys };
+  // Host warnings: a reported one left out by its exact string; a `warnings` that is not an array passes as it is.
+  const { warnings: given, ...result } = envelope.result;
+  if (!Array.isArray(given)) return { envelope: { ...envelope, result: { ...envelope.result, rows: kept } }, keys, hostKeys: [] };
+  const host = given.filter(w => typeof w !== 'string' || !reportedHost.has(w));
+  const hostKeys = host.filter(w => typeof w === 'string' && displayLine(w) !== null);
+  return { envelope: { ...envelope, result: { ...result, rows: kept, ...(host.length ? { warnings: host } : {}) } }, keys, hostKeys };
+}
+
+/** The host keys of `hostKeys` (withoutReported's, for the envelope `reading` was read from) that the reading
+ * showed: none unless it is a notice, else those its summary kept, in order (the cut is by position). A host
+ * warning a quiet sweep carried was never shown, so it stays news. */
+export function shownHostKeys(reading, hostKeys) {
+  if (!record(reading) || reading.kind !== 'notice' || !record(reading.summary) || !record(reading.summary.host)
+    || !Array.isArray(reading.summary.host.warnings) || !Array.isArray(hostKeys)) return [];
+  return hostKeys.slice(0, reading.summary.host.warnings.length);
 }
 
 /** Whether each kept fact has its kind's exact shape. */
@@ -212,13 +234,15 @@ const copyRow = r => Object.hasOwn(r, 'warnings') ? { ...r, warnings: [...r.warn
  * undefined. Exactly the keys above, everywhere; names and paths display lines, never withheld or empty;
  * reasons one of their kind's or null; codes of the kernel's form or null; each row's warnings within both
  * bounds with `omitted` consistent (boundedWarningsValid); at most RESUME_SUMMARY_ROWS rows and
- * RESUME_SUMMARY_DEPLOYMENTS deployment lines; `totals` non-negative safe integers, each at least its kind's
+ * RESUME_SUMMARY_DEPLOYMENTS deployment lines; `host` the host warnings within both bounds (boundedWarningsValid);
+ * `totals` non-negative safe integers, each at least its kind's
  * kept rows. `omitted` is the rows over the bound (the totals' sum less the kept rows: above 0 only beside
  * a full set of rows) plus the deployment lines over theirs (above 0 only beside a full set of lines).
  * Idempotent: readResumeSweep's summary decodes to itself, and so does this function's answer. */
 export function resumeSummaryFact(v) {
   if (!exactKeys(v, SUMMARY_KEYS) || !exactKeys(v.totals, KINDS) || !KINDS.every(k => count(v.totals[k]))
-    || !count(v.omitted) || !Array.isArray(v.unswept)) return undefined;
+    || !count(v.omitted) || !Array.isArray(v.unswept)
+    || !exactKeys(v.host, ['warnings', 'omitted']) || !boundedWarningsValid(v.host.warnings, v.host.omitted)) return undefined;
   let kept = 0;
   for (const k of KINDS) {
     const rows = v[k];
@@ -233,7 +257,8 @@ export function resumeSummaryFact(v) {
   if (overRows > 0 && kept < RESUME_SUMMARY_ROWS || overLines < 0 || overLines > 0 && lines < RESUME_SUMMARY_DEPLOYMENTS) return undefined;
   const out = {};
   for (const k of KINDS) out[k] = v[k].map(copyRow);
-  return { ...out, unswept: v.unswept.map(u => ({ ...u })), omitted: v.omitted, totals: { ...v.totals } };
+  return { ...out, unswept: v.unswept.map(u => ({ ...u })), host: { warnings: [...v.host.warnings], omitted: v.host.omitted },
+    omitted: v.omitted, totals: { ...v.totals } };
 }
 
 const FRESH_WHY = {
@@ -270,7 +295,8 @@ const said = r => r.warnings.length ? ['OATS says:', ...r.warnings, ...(r.omitte
  * @param {unknown} summary
  * @param {{label: (deployment: string) => string}} options  `label` is the caller's display label for a
  *   deployment path (required: a TypeError without it); a non-string or empty label shows the path itself.
- * Detail: a line per kept row, waiting, refused, fresh, resumed; then the unswept deployments; then
+ * Detail: a line per kept row, waiting, refused, fresh, resumed; then the unswept deployments; then the host
+ * warnings under `OATS says about this computer:` (and how many more the cut left out); then
  * `M more not shown.` when anything was left out. A row line names its deployment (` in {d}`) only when the
  * kept rows name more than one; a deployment line always does. A refused row's kernel message follows it on
  * its own line, as `OATS says: …`. `detail` is the lines joined with '\n', absent when there are none.
@@ -292,6 +318,8 @@ export function resumeNotice(summary, options) {
     ...s.fresh.flatMap(r => [`${who(r)}: started fresh from its briefing, ${FRESH_WHY[r.reason] ?? 'its conversation could not be resumed.'}`, ...said(r)]),
     ...s.resumed.flatMap(r => [`${who(r)}: resumed in its own conversation.`, ...said(r)]),
     ...s.unswept.map(u => `Not checked in ${shown(u.deployment)}: ${UNSWEPT_WHY[u.reason] ?? 'it could not be checked.'}`),
+    ...(s.host.warnings.length ? ['OATS says about this computer:', ...s.host.warnings,
+      ...(s.host.omitted > 0 ? [`${s.host.omitted} more not shown.`] : [])] : []),
     ...(s.omitted > 0 ? [`${s.omitted} more not shown.`] : []),
   ];
   return lines.length ? { headline: headline(s.totals), detail: lines.join('\n') } : { headline: headline(s.totals) };

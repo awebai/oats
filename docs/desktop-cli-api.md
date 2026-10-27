@@ -6030,7 +6030,9 @@ TUI decide, run and read it the same way.
   `(home, reason, code)` an earlier sweep of this trigger already reported,
   so a standing refusal is reported once. A home released (above) forgets its
   reported refusals: refused again after it recovered, it is news. Every other
-  row is kept.
+  row is kept. The same goes for the result's own `warnings` (about the host):
+  one a notice of this trigger showed is left out of later answers by its
+  exact string, for the whole run; one only a quiet sweep carried stays news.
 - `onReading(reading)` is called for every finished sweep, whatever the
   reading. `launch()` and `observed()` never throw or reject; a `run` that
   rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings
@@ -6086,6 +6088,10 @@ A plan answer (`plan: true`) is quiet.
   dropped. An unknown `reason` under a known outcome is read as no reason and
   worded generically. A refusal's `code` is kept only when it matches
   `^E_[A-Z0-9_]{1,64}$`.
+- The result's own `warnings`, about the host and not one home, are the
+  summary's `host` (`{warnings, omitted}`, always present), kept and cut as a
+  row's are (below). They never make a notice alone; a notice shows them after
+  the unchecked deployments, under "OATS says about this computer:".
 - A row's `warnings` are kept whole and in order, each as one display line
   (`displayLine`), and cut by position only, at the bounds of
   `launchFlagIgnored` (16 lines, 4096 UTF-16 units; `boundedWarnings`,
