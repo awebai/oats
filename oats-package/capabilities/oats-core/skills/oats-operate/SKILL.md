@@ -296,22 +296,22 @@ them. Your children are the instances recorded as yours: those you spawned
 with `--parent`, and those handed to you when a child of yours retired. A
 child is finished when its work has landed (its PRs merged or closed, never
 merely handed back: it may still be needed for fixes), or your task or human
-dropped it;
-nothing waits on it; it has no children of its own left (each instance
-retires its own finished children before it reports done); and, if it has a
-knowledge harvest duty, its final harvest checkpoint is recorded with a
-receipt (the harvester's name in its log.md) and its harvester launched (the harvester snapshots at spawn, and retirement keeps a
-recovery copy). A child runs that checkpoint before it reports done, and says
-so ("done, harvested: <harvester>" or "done, no harvest duty"); ask the child
-when its report lacks that line. "Done, harvest pending: <proposal>" is not
-finished: once `oats status` no longer lists the harvester it waits on, ask
-the child to launch its pending proposal, then wait for its harvested report. Before you retire it, check that its
-work tree has no uncommitted changes or unpushed commits (`oats instance git
-<child>`) and that no other instance is attached to it (`oats retire <child> --plan`
-lists them); if
-either fails, ask the child to finish or hand over first. Then
-`oats retire <child>` and record it in your state. Never retire another's instance: tell its parent instead.
-Your soul's own capabilities may say more about when work has landed.
+dropped it; nothing waits on it; it has no children of its own left (each
+instance retires its own finished children before it reports done); and, if it
+has a knowledge harvest duty, its final harvest checkpoint is recorded with a
+receipt (the harvester's name in its log.md) and its harvester launched (the
+harvester snapshots at spawn, and retirement keeps a recovery copy). A child
+runs that checkpoint before it reports done, and says so ("done, harvested:
+<harvester>" or "done, no harvest duty"); ask the child when its report lacks
+that line. "Done, harvest pending: <proposal>" is not finished: once `oats
+status` no longer lists the harvester it waits on, ask the child to launch its
+pending proposal, then wait for its harvested report. Before you retire it,
+check that its work tree has no uncommitted changes or unpushed commits (`oats
+instance git <child>`) and that no other instance is attached to it (`oats
+retire <child> --plan` lists them); if either fails, ask the child to finish
+or hand over first. Then `oats retire <child>` and record it in your state.
+Never retire another's instance: tell its parent instead. Your soul's own
+capabilities may say more about when work has landed.
 Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
 unless told to discard. An extra tree in the home is removed when it is
@@ -355,12 +355,12 @@ oats instance attention --clear                                  # once you have
   those go through your task's usual channel.
 - **The human talks to your parent, not to you** (you are another instance's
   recorded child and your human has not addressed you directly): send the
-  question to your parent through your messaging layer, then end your turn.
-  If you cannot reach it (no messaging, or it is stopped), set your own claim. A parent
-  that receives a child's question for the human sets needs-input itself,
-  naming the child (`<child> asks: …`), and relays the answer back. Clear it
-  once relayed. Each instance's claim is its own: never set one for another
-  home.
+  question to your parent through your messaging layer, then end your turn. If
+  you cannot reach it (no messaging, or it is stopped), set your own claim. A
+  parent that receives a child's question for the human sets needs-input
+  itself, naming the child (`<child> asks: …`), and relays the answer back.
+  Clear it once relayed. Each instance's claim is its own: never set one for
+  another home.
 
 The Claude Code emitter is separate and automatic. In a Claude instance,
 oats.core's hooks report a pending permission prompt or question themselves
