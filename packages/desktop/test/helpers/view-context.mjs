@@ -8,12 +8,16 @@
 // #1247: the window's retires in flight. A suite about other behaviour holds none: rows are drawn as the roster
 // says (`shownRows` the identity) and a read lets nothing go; a suite about them passes the shipped ones.
 // A workspace switch's focus place (focus-place.mjs) is inert the same way.
-import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
+// #1579: the Background section's placement, section key and heading are pure and shared the same way; a suite
+// about other behaviour runs without the kernel's feature (`backgroundShown`), so nothing moves, and its sections
+// are closed (`backgroundOpen`). background-sidebar.test.mjs turns the feature on.
+import { deploymentState, rosterSections, rowStale, splitByDeployment, rosterSectionKey, sidebarSections } from "../../../client/roster-sections.mjs";
+import { backgroundHeading } from "../../renderer/background-heading.mjs";
 import { DESKTOP_TERMS } from "../../renderer/desktop-terms.mjs";
 import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
 import { waitingClaim, waitingSentence, waitingDetail, waitingClock } from "../../../client/waiting-on-you.mjs";
-import { waitingRollup } from "../../../client/instance-tree.mjs";
+import { waitingRollup, backgroundPlacement } from "../../../client/instance-tree.mjs";
 import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, heldLine } from "../../renderer/speaker-line.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "../../renderer/retired-tabs.mjs";
@@ -40,4 +44,9 @@ export const viewContext = () => ({
   // A switch puts the keyboard back where it was (focus-place.mjs): a suite about other behaviour remembers no place
   // and applies none; workspace-switch-focus-shell extracts the shipped focusArrival and applyRosterPlace.
   focusPlaces: { take: () => null, note() {}, forget() {}, rehome() {} }, focusArrival() {}, applyRosterPlace() {},
+  backgroundPlacement, rosterSectionKey, sidebarSections, backgroundHeading, backgroundShown: () => false, backgroundOpen: new Set(),
+  setBackgroundOpen() {},
+  // The row menu's Move to background / out of it (instance-background-menu.mjs) offers nothing here: its gate is the
+  // route's check, which a suite about other behaviour never answers. instance-background.test.mjs drives the shipped one.
+  backgroundMenu: { items: () => [], handles: () => false, run: async () => {} },
 });

@@ -124,6 +124,11 @@ export function spawnArgv(agent, workspaceDir, taskFile, opts = {}) {
     if (typeof opts.yolo !== "boolean") throw Object.assign(new Error("yolo must be a boolean"), { code: "E_BAD_ARGS" });
     argv.push(opts.yolo ? "--yolo" : "--no-yolo");
   }
+  // Run in background (feature instance-background, #1579): the instance's own flag, as the soul's default or not.
+  if (opts.background !== undefined) {
+    if (typeof opts.background !== "boolean") throw Object.assign(new Error("background must be a boolean"), { code: "E_BAD_ARGS" });
+    argv.push(opts.background ? "--background" : "--no-background");
+  }
   if (opts.suggestName) argv.push("--suggest-name");
   argv.push("--json");
   return argv;
@@ -648,21 +653,38 @@ export function operationArgs(args) {
   if (entries.length > 8 || entries.some(([k, v]) => !/^[a-z][a-z0-9-]{0,63}$/.test(k) || typeof v !== 'string' || !v || v.length > 1024 || /[\x00-\x1f\x7f]/.test(v))) return null;
   return entries.flatMap(([k, v]) => ['--arg', `${k}=${v}`]);
 }
-/** An instance's colour (feature instance-color, awebai/oats#1421 §2): `oats instance color <instance>
- * (<color> | --clear) --home <home> (--dir <context> | --server <server>) --json`, addressed as `oats
- * instance stop` is (lifecycle-cli.mjs: a routed command never carries --dir). `color` is a palette name
- * (soul-colors.mjs SOUL_COLORS) or null to clear; anything else is refused here and nothing runs. A read's
- * deadline: 30 s, 45 s routed. The envelope comes back as the kernel printed it; the caller decodes it. */
-export async function cliInstanceColor(bin, { instance, home, context, server, color }, io = {}) {
+/** A verb that writes one field of an instance's own record: `oats instance <verb> <instance> <values…> --home <home>
+ * (--dir <context> | --server <server>) --json`, addressed as `oats instance stop` is (lifecycle-cli.mjs: a routed
+ * command never carries --dir). Shared by `instance color` and `instance background` (server/instance-record.mjs);
+ * each checks its own value first. Anything out of shape is refused here and nothing runs. A read's deadline:
+ * 30 s, 45 s routed. The envelope comes back as the kernel printed it; the caller decodes it. */
+function runInstanceRecord(bin, { instance, home, context, server }, verb, values, io) {
   const fail = code => ({ schemaVersion: 1, ok: false, error: { code } });
   if (typeof bin !== "string" || !isAbsolute(bin) || typeof instance !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(instance)
-    || typeof home !== "string" || !isAbsolute(home) || home.includes("\0") || !(color === null || SOUL_COLORS.includes(color))
+    || typeof home !== "string" || !isAbsolute(home) || home.includes("\0")
     || (server !== undefined ? !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server ?? "") : typeof context !== "string" || !isAbsolute(context))) return fail("E_BAD_ARGS");
-  const argv = ["instance", "color", instance, ...(color === null ? ["--clear"] : [color]), "--home", home,
+  const argv = ["instance", verb, instance, ...values, "--home", home,
     ...(server !== undefined ? ["--server", server] : ["--dir", context]), "--json"];
   const limit = server !== undefined ? 45_000 : 30_000;
   return runJson(bin, argv, { cwd: server !== undefined ? io.cwd : context, exec: io.exec, strictExit: true,
     timeout: Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, limit) : limit });
+}
+const instanceRecordRefused = () => ({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS" } });
+/** An instance's colour (feature instance-color, awebai/oats#1421 §2): `oats instance color <instance>
+ * (<color> | --clear) …` (runInstanceRecord). `color` is a palette name (soul-colors.mjs SOUL_COLORS) or null to
+ * clear; anything else is refused here and nothing runs. */
+export async function cliInstanceColor(bin, args, io = {}) {
+  const { color } = args;
+  if (!(color === null || SOUL_COLORS.includes(color))) return instanceRecordRefused();
+  return runInstanceRecord(bin, args, "color", color === null ? ["--clear"] : [color], io);
+}
+/** Whether an instance runs in the background (feature instance-background, awebai/oats#1579): `oats instance
+ * background <instance> (on | off) …` (runInstanceRecord). `background` is a boolean; anything else is refused
+ * here and nothing runs. Over `--server`, a host without the feature refuses it (E_REMOTE_INCOMPATIBLE). */
+export async function cliInstanceBackground(bin, args, io = {}) {
+  const { background } = args;
+  if (typeof background !== "boolean") return instanceRecordRefused();
+  return runInstanceRecord(bin, args, "background", [background ? "on" : "off"], io);
 }
 
 /** `maxAge` (feature observe-max-age) is inspect's alone; `features` is the probe's list and

@@ -12,7 +12,9 @@ import { whenRightButtonReleased } from "./context-menu-release.mjs";
 /** The menu's words for each act instanceActs can list. */
 const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'Start…', restart: 'Restart with…', stop: 'Stop…', retire: 'Retire instance…', forget: 'Forget…' });
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
-const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove', forget: 'close' });
+// Move to background / out of it (#1579; instance-background-menu.mjs): the section's layers.
+const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', 'background-on': 'layers', 'background-off': 'layers',
+  inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove', forget: 'close' });
 
 const pending = new Map(); // instance key -> { reason } while an act of its menu runs
 /** A menu label without its trailing ellipsis, for prose ("Knowledge & capabilities…" → "Knowledge & capabilities"). */

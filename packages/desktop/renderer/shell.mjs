@@ -51,6 +51,7 @@ import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { createInstanceColorDialog, instanceColorCSS } from './instance-color-dialog.mjs';
+import { createInstanceBackgroundMenu } from './instance-background-menu.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, createFontPicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
@@ -89,7 +90,7 @@ import { waitingClaim, waitingSentence, waitingDetail, waitingClock } from "../.
 import { syncWaitingRow } from "./waiting-row.mjs";
 import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
-import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
+import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome, backgroundPlacement, BACKGROUND_FEATURE } from "../../client/instance-tree.mjs";
 import { withParentGate } from "../../client/same-work.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
 import { treeConnectors, treeGuides, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
@@ -101,7 +102,9 @@ import {
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "./retired-tabs.mjs";
 import { notePanel, panelDeployments, deploymentHeading } from "./view-deployments.mjs";
-import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
+import { deploymentState, rowStale, rosterSectionKey, sidebarSections } from "../../client/roster-sections.mjs";
+import { backgroundHeading } from "./background-heading.mjs";
+import { cliStatus, onCliChange } from "./views/cli-status.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
@@ -145,6 +148,11 @@ const rosterPrs = createRosterPrs({
   request: (ws) => api(`/api/forge-roster?ws=${encodeURIComponent(ws)}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
   onChange: () => renderContextRoster(contextInstances),
 });
+// Move to background / out of it (#1579; instance-background-menu.mjs): the row menu's items, gated as the route is.
+const backgroundMenu = createInstanceBackgroundMenu({ deploymentOf: rowDeployment,
+  request: async (row, body) => (await desk.api(`/api/instance-background?ws=${encodeURIComponent(rowDeployment(row))}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).body,
+  onGate: () => { if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances); } });
 let connectionGeneration = 0;
 const connectionListeners = new Set();
 const subscribeConnections = fn => { connectionListeners.add(fn); return () => connectionListeners.delete(fn); };
@@ -521,6 +529,18 @@ function menuState(value, element) {
   updateActiveContexts();
 }
 const collapsedInstances = new Set();
+// #1579: the workspaces whose Background section this window draws open. Closed by default in every new window,
+// kept in memory per workspace as a collapse is, and re-homed with the collapsed rows (rehomeWorkspaceState).
+const backgroundOpen = new Set();
+// The section exists only while this computer's CLI lists the kernel's feature (BACKGROUND_FEATURE): without it
+// nothing moves, whatever a row carries. A probe that changes the answer repaints the roster.
+const backgroundShown = () => { const features = cliStatus()?.features; return Array.isArray(features) && features.includes(BACKGROUND_FEATURE); };
+let backgroundFeature = backgroundShown();
+onCliChange(() => {
+  if (backgroundShown() === backgroundFeature) return;
+  backgroundFeature = !backgroundFeature;
+  if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances);
+});
 // Collapsed agent groups (sidebar group headers), keyed like instances.
 const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
@@ -849,7 +869,7 @@ async function refreshContextRoster({ user = false } = {}) {
   }
   if (focusedRetry && !focusedRetry.isConnected && !contextRosterEl.querySelector(".ctx-list")?.contains(document.activeElement)) {
     const entry = rosterEntry();
-    if (entry?.classList.contains("ctx-inst")) setRovingRow(entry.closest(".ctx-list"), entry);
+    if (entry?.matches(".ctx-inst, .ctx-background-toggle")) setRovingRow(entry.closest(".ctx-list"), entry);
     else if (!document.activeElement || document.activeElement === document.body) entry?.focus({ preventScroll: true });
   }
   if (reportedFailure) rosterState?.fail(failure);
@@ -909,6 +929,9 @@ function renderContextRoster(instances) {
   instances = shownRows(instances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const restoreTreeState = captureTreeRenderState(listEl);
+  // #1579: what had focus in the list, for the Background heading (no instance identity: it keeps its own focus)
+  // and for a focused row this paint moves into the closed section (its focus goes to the heading).
+  const focusedBefore = listEl.contains(document.activeElement) ? document.activeElement : null;
   const restoreActionMenu = captureInstanceActionMenu(listEl);
   // No read of this subject has succeeded yet (desktop/loading-states): the
   // skeleton or the failed block own the list and the count is a skeleton
@@ -927,7 +950,7 @@ function renderContextRoster(instances) {
     listEl.prepend(note);
   };
   if (pending) {
-    for (const el of listEl.querySelectorAll(":scope > .ctx-tree-row, :scope > .ctx-group, :scope > .ctx-empty")) el.remove();
+    for (const el of listEl.querySelectorAll(":scope > .ctx-tree-row, :scope > .ctx-group, :scope > .ctx-empty, :scope > .ctx-background")) el.remove();
     paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
     if (failed) applyRosterPlace(); // its Retry is the roster's landing
@@ -964,11 +987,13 @@ function renderContextRoster(instances) {
     return Number.isFinite(job?.startedAt) ? job.startedAt : null;
   };
   const rosterGeneration = workspaceGeneration();
-  // The deployment section each row is painted in (rosterSections' split). A collapse hides, and rolls up,
-  // only rows of its own section.
-  const sectionOf = new Map();
-  for (const [id, rows] of splitByDeployment(contextDeployments)(instances)) for (const row of rows) sectionOf.set(row, id);
-  const rowSection = (row) => sectionOf.get(row) ?? null;
+  // #1579: the rows the Background section holds, over the rows painted (a pending spawn under a background
+  // parent included: it has no flag of its own), only while this computer's CLI lists the feature.
+  const placement = backgroundPlacement(instances, backgroundShown());
+  // The section each row is painted in: its deployment's (#482), in the main tree or in the Background section
+  // (rosterSectionKey). A collapse hides, and rolls up, only rows of its own section, so nothing hides or rolls
+  // up across the main tree and the Background section.
+  const rowSection = rosterSectionKey(contextDeployments, placement);
   const visible = instances.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, false, { section: rowSection },
   ));
@@ -977,7 +1002,12 @@ function renderContextRoster(instances) {
   // Needs input (Spec D): waiting rows a collapse hides, on their nearest visible ancestor. Derived on every
   // paint over the full roster, so expanding the parent drops it and the children show their own marks.
   const waitingBelow = waitingRollup(instances, collapsedInstances, ws, { stale: rowHeldStale, section: rowSection });
-  if (!visible.length) {
+  // The main tree's sections, then the Background section (sidebarSections): null when no row is in it, else its
+  // heading's count and wait, and its own tree while it is open. Every row in it may be: then the main tree is
+  // empty and the heading is the list.
+  const { main, background } = sidebarSections(instances, visible, contextDeployments, DESKTOP_TERMS,
+    { placement, open: backgroundOpen.has(ws), stale: rowHeldStale });
+  if (!visible.length && !background) {
     listEl.innerHTML = `<div class="ctx-empty">No instances.</div>`;
     paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
@@ -1001,12 +1031,32 @@ function renderContextRoster(instances) {
   // ambiguous names (merged-state review @3e76616).
   // Views (#482): with two or more deployments, each deployment's agent groups sit under its heading
   // (rosterSections); with one, the groups are exactly these clusters and no heading is drawn.
-  const groups = rosterSections(instances, visible, contextDeployments, DESKTOP_TERMS)
-    .flatMap((section) => section.groups.map((group, at) => ({ ...group, heading: at === 0 && section.deployment ? section : null })));
+  // #1579: the main tree's groups, then the Background heading at the very end, then (open) the section's own
+  // groups, drawn by this one loop: a machine's sub-heading in the section sits a level under the heading.
+  // Each part is a tree of its own (sidebarSections), so a cluster's rows (`items`, the connectors' rows) are
+  // one part's: no stem, elbow or sibling link reaches a row of the other part.
+  const partGroups = (sections, level) => sections.flatMap((section) => section.groups.map((group, at) => ({ ...group, heading: at === 0 && section.deployment ? section : null, level })));
+  const groups = [...partGroups(main, 3), ...(background ? [{ background }, ...partGroups(background.sections, 4)] : [])];
+  // A row's disclosure counts only children of its own section: a main row whose children are all in the
+  // Background section has nothing to collapse here.
+  const parentsHere = new Set();
+  for (const child of instances) {
+    const pid = rosterParentId(instances, instanceId(child)), parent = pid ? instances.find((r) => instanceId(r) === pid) : null;
+    if (parent && rowSection(parent) === rowSection(child)) parentsHere.add(pid);
+  }
   for (const group of groups) {
+    if (group.background) {
+      const head = backgroundHeading(document, group.background), toggle = head.querySelector(".ctx-background-toggle");
+      toggle.addEventListener("click", () => setBackgroundOpen(ws, !group.background.open));
+      toggle.addEventListener("keydown", onRosterRowKey);
+      listEl.append(head);
+      continue;
+    }
     if (group.heading) {
       const { deployment, label, machine, tail, groups: own } = group.heading;
-      listEl.append(deploymentHeading(document, { deployment, label, machine, tail, count: own.reduce((n, g) => n + g.clusters.reduce((m, c) => m + c.instances.length, 0), 0) }));
+      const head = deploymentHeading(document, { deployment, label, machine, tail, count: own.reduce((n, g) => n + g.clusters.reduce((m, c) => m + c.instances.length, 0), 0) });
+      if (group.level > 3) head.setAttribute("aria-level", String(group.level));
+      listEl.append(head);
     }
     listEl.append(clusterSeparator(document, { label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0) }));
     for (const cluster of group.clusters) {
@@ -1024,7 +1074,7 @@ function renderContextRoster(instances) {
         // same-named instances from different agents roots collapse and
         // focus independently (review 46f3fdc).
         const key = collapseKey(ws, instanceId(i));
-        const hasChildren = hasInstanceChildren(instances, i);
+        const hasChildren = parentsHere.has(instanceId(i));
         const collapsed = collapsedInstances.has(key);
 
         // Design connectors drawn from the dots: rounded solid elbows into
@@ -1173,9 +1223,11 @@ function renderContextRoster(instances) {
               : unsupportedLine(i) || (i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason) },
             { action: 'open-pr', actionId: 'instance.openPullRequest', label: 'Open pull request…', reason: !actionTarget ? 'Instance identity is not fully reported.'
               : i.server || i.remote ? 'Remote PR inspection is unavailable; no local fallback.' : '' },
+            ...backgroundMenu.items(i, placement),
           ],
           invoke: async (action, instance) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) throw new Error("Workspace changed; select the instance again");
+            if (backgroundMenu.handles(action)) return backgroundMenu.run(action, instance);
             if (action === 'open-split') return openTerminalTab(instance, { inSplit: true, expected: actionTarget, valid: menuOwner });
             if (action === 'open-pr') return instancePrAction.open(actionTarget);
             if (action === "start" || action === "restart") { openInstanceStart(instance, { restart: action === "restart" }); return; }
@@ -1214,21 +1266,27 @@ function renderContextRoster(instances) {
     }
   }
   paintNote();
+  const heading = listEl.querySelector(".ctx-background-toggle");
+  // A row (by instanceId) the closed section holds: it is not drawn.
+  const closedHere = (id) => !!heading && !background.open && placement.has(id);
   // Polling restores the same logical focus; it must not cancel a pending
   // terminal open from that row as if the user had re-entered the sidebar.
   tabOpenIntents.applyFocus(() => {
-    restoreTreeState();
+    // The heading had focus (its own toggle repaints the list), or a row it now holds closed did.
+    const toHeading = focusedBefore?.dataset.rosterBackground === "1" || closedHere(focusedBefore?.dataset.treeInstance);
+    if (!restoreTreeState() && toHeading) heading.focus({ preventScroll: true });
     restoreActionMenu();
   });
   rosterTip.sync(listEl);
   // roving tabindex: exactly one row enters the tab order — the focused row
   // when it survived the rebuild, else the selected one (its terminal is the
-  // active tab), else the first
+  // active tab), else the Background heading when the closed section holds the selected one (#1579), else the first
   applyChordTitles(); updateActiveContexts();
-  const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
+  const rowsAfter = [...listEl.querySelectorAll(".ctx-inst, .ctx-background-toggle")];
   const focusedRow = rowsAfter.find((r) => r === listEl.ownerDocument.activeElement);
+  const selectedClosed = activeTab != null && instances.some((i) => closedHere(instanceId(i)) && tabShowsRow(tabs.get(activeTab), ws, i));
   const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active"))
-    || rowsAfter[0];
+    || (selectedClosed ? heading : null) || rowsAfter[0];
   if (tabbable) tabbable.tabIndex = 0;
   applyRosterPlace();
 }
@@ -1307,12 +1365,28 @@ function announceSpawn(text) {
   region.textContent = text;
 }
 
+/* #1579: open or close this window's Background section of workspace `ws` (in memory, per workspace) and repaint;
+   the heading keeps the focus it had (renderContextRoster restores it). Only the heading opens it: a tab, the
+   palette, a reveal or a step to a background row never does. */
+function setBackgroundOpen(ws, open) {
+  if (open) backgroundOpen.add(ws); else backgroundOpen.delete(ws);
+  renderContextRoster(contextInstances);
+}
+
 /* Keyboard walk over the rendered roster rows. Every row takes focus, an
    unavailable one included (aria-disabled: its tools stay reachable);
    expanding/collapsing re-renders and the focused instance is restored by
    captureTreeRenderState. */
 function onRosterRowKey(e) {
   const btn = e.currentTarget;
+  // #1579: the Background heading's disclosure toggles on Enter and Space here, once (its default activation
+  // prevented), and takes the tree keys as a collapsible row: Right opens it, Left closes it.
+  if (btn.dataset.rosterBackground === "1" && (e.key === "Enter" || e.key === " ") && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    tabOpenIntents.invalidate();
+    e.preventDefault();
+    btn.click();
+    return;
+  }
   const action = rosterKeyAction(e, {
     hasChildren: btn.dataset.rosterChildren === "1",
     collapsed: btn.dataset.rosterCollapsed === "1",
@@ -1321,7 +1395,7 @@ function onRosterRowKey(e) {
   tabOpenIntents.invalidate(); // keyboard tree navigation is explicit, not a polling restoration
   e.preventDefault();
   const listEl = contextRosterEl.querySelector(".ctx-list");
-  const rows = [...listEl.querySelectorAll(".ctx-inst")];
+  const rows = [...listEl.querySelectorAll(".ctx-inst, .ctx-background-toggle")];
   const at = rows.indexOf(btn);
   const id = btn.dataset.treeInstance; // instanceId(i) — composite identity
   const ws = contextWorkspace || currentWorkspace();
@@ -1332,6 +1406,7 @@ function onRosterRowKey(e) {
     return !!target;
   };
   if (action.type === "expand" || action.type === "collapse") {
+    if (btn.dataset.rosterBackground === "1") { setBackgroundOpen(ws, action.type === "expand"); return; }
     const key = collapseKey(ws, id);
     if (action.type === "expand") collapsedInstances.delete(key); else collapsedInstances.add(key);
     renderContextRoster(contextInstances);
@@ -1339,11 +1414,16 @@ function onRosterRowKey(e) {
     return;
   }
   if (action.type === "parent") {
+    if (btn.dataset.rosterBackground === "1") return;
     // rows carry instanceId, so resolve the CURRENT item and its parent by
     // IDENTITY — a bare-name lookup never matches identity-bearing rows
     // (ArrowLeft dead) and is unsafe for duplicate names (review 96b037b)
     const pid = rosterParentId(contextInstances, id);
-    if (pid) focusInstance(pid);
+    // #1579: a root of the Background section (drawn after its heading; a parent it has is in the main tree)
+    // steps to the heading, never across to the main tree.
+    const cut = rows.findIndex((r) => r.dataset.rosterBackground === "1");
+    if (cut >= 0 && at > cut && !(pid && rows.findIndex((r) => r.dataset.treeInstance === pid) > cut)) setRovingRow(listEl, rows[cut]);
+    else if (pid) focusInstance(pid);
     return;
   }
   // PageUp/PageDown move by the rows that fit the list.
@@ -1359,26 +1439,29 @@ function onRosterRowKey(e) {
    scrollbar: the row (its whole box, so its tools shown on focus too) is revealed inside the list
    only, never by the focus scroll, which can move scrollable ancestors. */
 function setRovingRow(listEl, row) {
-  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"], .ctx-background-toggle[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0;
   row.focus({ preventScroll: true });
   revealInScrollport(listEl, row.closest(".ctx-tree-row") || row);
 }
 
 /** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through any
- * collapsed ancestor. False when the roster does not list it (yet). */
+ * collapsed ancestor. False when the roster does not list it (yet). #1579: a row the closed Background section
+ * holds is shown at its heading, which this never opens; only the ancestors of its own part are expanded. */
 async function showInRoster(instance) {
   const ws = currentWorkspace();
   const find = () => contextWorkspace === ws ? contextInstances.find(i => (i.server || null) === (instance?.server || null) && i.home === instance?.home) : null;
   if (!find()) await refreshContextRoster();
   const row = find();
   if (!row || ws !== currentWorkspace() || !contextRosterEl) return false;
-  for (let id = rosterParentId(contextInstances, instanceId(row)), seen = new Set(); id && !seen.has(id); id = rosterParentId(contextInstances, id)) {
+  const placed = backgroundPlacement(contextInstances, backgroundShown()), inBackground = placed.has(instanceId(row));
+  for (let id = rosterParentId(contextInstances, instanceId(row)), seen = new Set(); id && !seen.has(id) && placed.has(id) === inBackground; id = rosterParentId(contextInstances, id)) {
     seen.add(id); collapsedInstances.delete(collapseKey(ws, id));
   }
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
-  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row));
+  const target = listEl && ([...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row))
+    || (inBackground ? listEl.querySelector(".ctx-background-toggle") : null));
   if (!target) return false;
   tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
   setRovingRow(listEl, target);
@@ -1395,7 +1478,9 @@ function showPendingSpawn(id) {
 }
 
 /* Spec E: after a press, the pending row is revealed and highlighted (its ancestors expanded, scrolled
-   into view) without taking focus or cancelling anything pending. Returns the row, or null. */
+   into view) without taking focus or cancelling anything pending. Returns the row, or null. #1579: a pending
+   row under a background parent, while the Background section is closed, is revealed at the section's heading
+   (returned in its place), which this never opens; only the ancestors of its own part are expanded. */
 function revealPendingSpawn(id) {
   const ws = currentWorkspace();
   const pending = spawnJobs.rows(ws).find(p => p.id === id);
@@ -1403,13 +1488,15 @@ function revealPendingSpawn(id) {
   const all = [...contextInstances, { instance: pending.instance, agent: pending.agent, agentsRoot: pending.agentsRoot, home: pending.home,
     ...(pending.parentInstance ? { parentInstance: pending.parentInstance } : {}), ...(pending.siblingInstance ? { siblingInstance: pending.siblingInstance } : {}) }];
   const self = all.at(-1);
-  for (let pid = rosterParentId(all, instanceId(self)), seen = new Set(); pid && !seen.has(pid); pid = rosterParentId(all, pid)) {
+  const placed = backgroundPlacement(all, backgroundShown()), inBackground = placed.has(instanceId(self));
+  for (let pid = rosterParentId(all, instanceId(self)), seen = new Set(); pid && !seen.has(pid) && placed.has(pid) === inBackground; pid = rosterParentId(all, pid)) {
     seen.add(pid); collapsedInstances.delete(collapseKey(ws, pid));
   }
   spawnJobs.reveal(id);
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
-  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self));
+  const target = listEl && ([...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self))
+    || (inBackground ? listEl.querySelector(".ctx-background-toggle") : null));
   if (!target) return null;
   revealInScrollport(listEl, target.closest(".ctx-tree-row") || target);
   return target;
@@ -1921,13 +2008,16 @@ function revealActiveRosterRow(tab) {
     r.closest(".ctx-tree-row")?.classList.toggle("active", r === selected);
   }
   if (selected && !listEl.contains(document.activeElement)) {
-    for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+    for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"], .ctx-background-toggle[tabindex="0"]')) r.tabIndex = -1;
     selected.tabIndex = 0;
   }
   const app = document.getElementById("app");
   if (!instance || app?.classList.contains("sidebar-hidden") || app?.classList.contains("focus-mode")) return;
   let target = selected;
-  // A row that is not painted is one a collapsed ancestor hides: reveal that ancestor instead.
+  // A row that is not painted is one a collapsed ancestor hides: reveal that ancestor instead. #1579: or one the
+  // closed Background section holds: reveal its heading, which the selection never opens.
+  const closedHeading = target ? null : listEl.querySelector('.ctx-background-toggle[aria-expanded="false"]');
+  if (closedHeading && backgroundPlacement(contextInstances, backgroundShown()).has(instanceId(instance))) target = closedHeading;
   if (!target) {
     for (let id = rosterParentId(contextInstances, instanceId(instance)), seen = new Set(); id && !seen.has(id) && !target; id = rosterParentId(contextInstances, id)) {
       seen.add(id); target = rows.get(id) || null;
@@ -2566,7 +2656,7 @@ function lifecycleFallbackFocus() {
   const { order = [], at = -1 } = lifecycleRowOrder || {};
   const row = successorRow(rows, order, at) || rows.find(r => r.tabIndex === 0) || rows[0];
   if (!row) return stableFocusTarget();
-  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"], .ctx-background-toggle[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0; return row;
 }
 function openLifecycleDialog(operation, instance, workspace) {
@@ -2604,7 +2694,7 @@ function forgetNextFocus() {
   const { order = [], at = -1 } = forgetRowOrder || {};
   const next = forgetSuccessor(rows, order, at);
   if (!next) { contextRosterEl.tabIndex = -1; return contextRosterEl; }
-  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"], .ctx-background-toggle[tabindex="0"]')) r.tabIndex = -1;
   next.tabIndex = 0; return next;
 }
 function openForgetDialog(instance, workspace) {
@@ -2658,7 +2748,8 @@ function rosterEntry() {
   const list = contextRosterEl?.querySelector(".ctx-list");
   const spawn = document.getElementById("sidebar-spawn");
   // A control the roster shows (Retry, in its notice or its failed block) before the foot's Spawn instance.
-  return list?.querySelector('.ctx-inst[tabindex="0"]') || list?.querySelector(".ctx-inst")
+  // #1579: the Background heading is a stop of the roster's roving order, and the list's only one when every row is in its closed section.
+  return list?.querySelector('.ctx-inst[tabindex="0"], .ctx-background-toggle[tabindex="0"]') || list?.querySelector(".ctx-inst, .ctx-background-toggle")
     || contextRosterEl?.querySelector(':scope > :not(.ctx-head) button:not([disabled])')
     // Spawn instance is in the foot, shown with the sidebar: it is the roster's way in only while the roster is.
     || (contextRosterEl && !contextRosterEl.hidden && spawn && !spawn.disabled ? spawn : null)
@@ -2673,7 +2764,7 @@ function focusRoster() {
   contextPanel.setFocusMode(false);
   setSidebarHidden(false); // a shortcut must not focus display:none content
   const entry = rosterEntry();
-  if (entry?.classList.contains("ctx-inst")) setRovingRow(entry.closest(".ctx-list"), entry);
+  if (entry?.matches(".ctx-inst, .ctx-background-toggle")) setRovingRow(entry.closest(".ctx-list"), entry);
   else entry?.focus({ preventScroll: true });
 }
 
@@ -3389,6 +3480,10 @@ function rehomeWorkspaceState(workspaces) {
   workspaceTabMemory.rehome(map);
   focusPlaces.rehome(map);
   rehomeCollapsed(collapsedInstances, map);
+  // #1579: an open Background section follows its view, as its collapsed rows do.
+  const openMoved = [...backgroundOpen].filter((id) => map.has(id));
+  for (const id of openMoved) backgroundOpen.delete(id);
+  for (const id of openMoved) backgroundOpen.add(map.get(id));
   spawnJobs.rehome(map);
   if (map.has(tabWorkspace)) tabWorkspace = map.get(tabWorkspace);
   if (map.has(contextWorkspace)) contextWorkspace = map.get(contextWorkspace);

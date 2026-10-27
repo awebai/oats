@@ -10,6 +10,9 @@ export function spawnEffective(v) {
     || !HARNESSES.includes(harnessOf(v)) || !nullable(v.model) || !nullable(v.launchConfig)
     || v.yolo !== null && typeof v.yolo !== 'boolean' || v.backend !== 'tmux'
     || typeof v.childSpawns !== 'boolean') return null;
+  // Feature instance-background (#1579): the decision binds `background: true` exactly when the instance runs in the
+  // background; it is absent otherwise (any other value is not the contract's).
+  if (Object.hasOwn(v, 'background') && v.background !== true) return null;
   let relation = null;
   if (v.relation !== null) {
     const r = v.relation, a = r?.anchor;
@@ -18,7 +21,7 @@ export function spawnEffective(v) {
     relation = { kind: r.kind, anchor: { instance: a.instance, agentsRoot: a.agentsRoot } };
   }
   return { repo: v.repo, work: v.work, harness: harnessOf(v), model: v.model, launchConfig: v.launchConfig,
-    yolo: v.yolo, backend: v.backend, childSpawns: v.childSpawns, relation };
+    yolo: v.yolo, backend: v.backend, childSpawns: v.childSpawns, relation, ...(v.background === true ? { background: true } : {}) };
 }
 export function spawnDecision(v, { effectiveRequired = false } = {}) {
   if (!record(v) || !name(v.instance) || !absolute(v.home) || !nullable(v.branch)

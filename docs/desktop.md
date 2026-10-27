@@ -962,7 +962,8 @@ line for the rows it hides that need input, beside its own mark when it waits
 too. Rows never move or grow, and nothing animates.
 
 A row has no ⋯ button. Its actions (Open in split, Open pull request…,
-Knowledge & capabilities…, Start…, Restart with…, Stop…, Retire instance…, and
+Knowledge & capabilities…, Start…, Restart with…, Stop…, Retire instance…,
+Move to background or out of it ([Background instances](#background-instances)), and
 Forget… for an instance its server no longer lists) are in the row's context
 menu (right-click, Shift+F10 or the ContextMenu key), as a workspace row's are.
 It opens where you right-click, or on the row from the keyboard; the arrow keys,
@@ -972,6 +973,48 @@ row. A right-click never opens the row's terminal. While the menu can't be used
 can't be used from this computer), it opens nothing, and one line at the
 bottom of the main area says why, as a leader key that can't act does. The row's own tools stay: its pull request link and, on a
 stopped row, **Start…**.
+
+## Background instances
+
+An instance can run in the background: it is listed apart, so the main tree
+keeps the agents you work with. Background changes only where an instance is
+listed. It starts, opens, takes input, messages and retires as any other.
+
+- **Where it is listed.** Background instances leave the main tree for one
+  **Background** heading at the very end of the list, in the machine
+  headings' style, with a chevron and the number of instances under it. A
+  child of a background instance is listed under it there, whatever its own
+  setting, and so is the whole chain below it. A background instance whose
+  parent is in the main tree is a top row of the section. Inside, the rows
+  form their own tree, with the machine headings when the workspace has two
+  or more machines; no line joins a row of the section to a row of the main
+  tree. With no background instance there is no heading.
+- **Closed by default.** The section starts closed in every new window. A
+  click, Enter or Space on the heading opens or closes it, and the right and
+  left arrows open and close it as they do a parent row. It stays as you left
+  it while the window shows the workspace, as a parent row's fold does.
+  Selecting an instance's tab, or opening one from the command palette, never
+  opens it. The command palette lists every instance, background ones
+  included, and the previous and next instance keys pass over the rows of a
+  closed section. When the row you are on moves to a closed section, the
+  focus goes to the heading.
+- **Needs input.** While an instance of the section waits on you, the
+  heading carries the **Needs input** mark, open or closed. Open, the
+  waiting row shows its own mark, and a folded parent says how many below it
+  wait, as in the main tree. The workspace's Needs input mark counts
+  background instances too.
+- **Choosing it.** The **Spawn** dialog has a **Run in background** switch,
+  set to the soul's default (`background:` in its `soul.yaml`). A row's
+  context menu offers **Move to background**, or **Move out of background**
+  on a background instance, which runs `oats instance background`. A row
+  that is in the section only because its parent is offers neither: move
+  the parent. The setting is the instance's own, kept in its home by OATS:
+  it lasts through restarts and is not inherited.
+
+This needs OATS with the `instance-background` feature on this computer,
+and for an instance on a server, on that server too. With an older OATS the
+sidebar lists every instance in the main tree, and the switch and the menu
+items are not shown.
 
 ## An instance's colour
 

@@ -37,6 +37,8 @@ export function soulRows(deployment, catalog) {
       ...(Object.hasOwn(soul, "capabilities") ? { capabilities: soul.capabilities && soul.capabilities.map((c) => ({ ...c })) } : {}),
       // The kernel's soul key (`oats soul teams <key>`): the qualified name for a package soul, the bare name otherwise.
       ...(typeof soul.key === "string" ? { key: soul.key } : {}),
+      // Feature instance-background (#1579): the soul runs its instances in the background unless a spawn says otherwise.
+      ...(soul.background === true ? { background: true } : {}),
       ...(soul.kind === "package" ? { package: soul.package, version: soul.version, qualifiedName: soul.qualifiedName } : {}),
       origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
       soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },

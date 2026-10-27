@@ -666,6 +666,21 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   worktreeLabel.append(worktree, doc.createTextNode('Use a worktree instead'));
   worktreeLabel.hidden = soul.work !== 'checkout';
   workField.append(workLabel, workText_, joined, worktreePath, worktreeLabel);
+  // Run in background (feature instance-background, #1579): the instance is listed under the sidebar's Background
+  // heading. A switch (the worktree switch's idiom), set to the soul's default (`background: true` in its soul.yaml,
+  // as the souls catalog reports it, then as a preview without the flag reports it); offered only where this CLI
+  // lists the feature and, on another machine, its host does too (backgroundOffered). Sent only when it differs
+  // from that default (backgroundChoice).
+  const backgroundField = el('div', undefined, 'spawn-field spawn-background'); backgroundField.hidden = true;
+  const backgroundLabel = el('label', undefined, 'spawn-switch'), backgroundSwitch = el('input', undefined, 'fbackground');
+  backgroundSwitch.type = 'checkbox'; backgroundSwitch.setAttribute('role', 'switch');
+  backgroundLabel.append(backgroundSwitch, doc.createTextNode('Run in background'));
+  const backgroundHint = el('p', '', 'spawn-hint spawn-background-hint'); backgroundHint.id = 'spawn-background-hint';
+  backgroundSwitch.setAttribute('aria-describedby', backgroundHint.id);
+  backgroundField.append(backgroundLabel, backgroundHint);
+  let backgroundDefault = soul.background === true, backgroundTouched = false;
+  backgroundSwitch.checked = backgroundDefault;
+  backgroundSwitch.addEventListener('change', () => { backgroundTouched = true; }); // before the form's own change listener
   // Relationship — shown by default.
   const relation = el('fieldset', undefined, 'spawn-field spawn-relationship');
   const relationLegend = el('legend', 'Relationship'); relationLegend.append(keyHint('relationship')); relation.append(relationLegend);
@@ -794,7 +809,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   footer.append(statusRow, actions, details);
   const body = el('div', undefined, 'spawn-form-body');
   // The Opening instruction first (the dialog lands there), Name last before Developer settings.
-  body.append(selectionSummary, taskLabel, runField, placeField, relation, teamsField, nameField, advanced);
+  body.append(selectionSummary, taskLabel, runField, placeField, relation, backgroundField, teamsField, nameField, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
   const columns = el('div', undefined, 'spawn-columns'); columns.append(preview, chooser, form);
   // Below SPAWN_NARROW (one column), What will be created follows the form's last field in the form's own
@@ -1015,6 +1030,16 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const joinLabels = () => teamsOffered() ? teamsNow.filter(t => joinable(t) && joinPicked.has(t.label)).map(t => t.label) : [];
   // The preview for these choices must bind exactly the ticked teams (settings echo).
   const joinBound = data => { const labels = joinLabels(); return !labels.length || data?.messaging?.join === labels.join(','); };
+  /** Run in background is offered: this CLI lists instance-background and, on another machine, so does its host. */
+  const backgroundOffered = () => !!cli()?.features?.includes('instance-background') && (local() || hostAdvertises('instance-background'));
+  /** What the switch sends: here, its value only when it differs from the soul's default; on another machine, whose soul's
+   * default is not reported here, its value once it was switched; else nothing (the soul decides). */
+  const backgroundChoice = () => !backgroundOffered() ? undefined : local() ? backgroundSwitch.checked !== backgroundDefault ? backgroundSwitch.checked : undefined
+    : backgroundTouched ? backgroundSwitch.checked : undefined;
+  /** The preview for these choices decided what the switch shows (absent: an older kernel, which offers no switch). */
+  const backgroundBound = data => !backgroundOffered() || data?.background === undefined || data.background === backgroundSwitch.checked;
+  /** The preview for these choices can be spawned as the form shows it. */
+  const bound = data => joinBound(data) && backgroundBound(data);
   // The chosen deployment's own catalog row (#482): the root differs per deployment.
   let selector = deploymentField?.selector() ?? { soul: soul.name, agentsRoot: soul.agentsRoot };
   /** The facts a preview depends on from outside the form: the CLI (identity and features), the
@@ -1058,6 +1083,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       ...(effectiveWork() === 'worktree' && base.value.trim() ? { base: base.value.trim() } : {}),
       ...(runtime.value ? { harness: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
       ...(backend.value ? { backend: backend.value } : {}), ...(yolo.value ? { yolo: yolo.value === 'true' } : {}),
+      ...(backgroundChoice() !== undefined ? { background: backgroundChoice() } : {}),
       model: nativeModel ? { kind: 'native-default' } : model.value.trim() ? { kind: 'custom', value: model.value.trim() } : { kind: 'inherit' },
       // A remote spawn sends its relation to /api/spawn itself; the local preview contract never sees a remote anchor.
       relation: relationValue.anchor?.server ? { kind: 'unrelated' } : relationValue, ...(identityChoice ? { identity: identityChoice } : {}),
@@ -1149,6 +1175,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const dir = data.subject?.dir, shownPath = dir && data.worktree.startsWith(`${dir}/`) ? data.worktree.slice(dir.length + 1) : data.worktree;
       worktreePath.append('Worktree at '); const code = el('code', shownPath); code.title = data.worktree; worktreePath.append(code);
     }
+    // Run in background: a preview read without the flag reports the soul's default here (the catalog may be older).
+    backgroundField.hidden = !backgroundOffered();
+    if (local() && settled?.data && typeof settled.data.background === 'boolean' && settled.value?.background === undefined
+      && settled.key === choiceKey(settled.value)) backgroundDefault = settled.data.background;
+    if (!backgroundTouched && backgroundSwitch.checked !== backgroundDefault) backgroundSwitch.checked = backgroundDefault;
+    backgroundHint.textContent = !local() && !backgroundTouched ? `Left as it is, its soul decides on ${remoteTarget()}.`
+      : backgroundSwitch.checked ? 'Listed under Background in the sidebar.' : 'Listed in the main tree of the sidebar.';
     // Advanced defaults.
     yolo.options[0].textContent = data ? `Default · ${permissionText(data.yolo)}` : 'Default';
     backend.options[0].textContent = data ? `Default · ${data.backend}` : 'Default';
@@ -1289,7 +1322,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // settled is kept as intent (run). Only a settled answer for exactly these choices that cannot be
     // spawned (a refusal, or teams it did not bind) keeps it disabled.
     const draftChoice = choices(), known = local() && !!shown && shown.key === choiceKey(draftChoice.value) && !readDue();
-    const refused = known && (!shown.data || !joinBound(shown.data));
+    const refused = known && (!shown.data || !bound(shown.data));
     spawn.textContent = flight || pressed ? (phase === 'checking' ? 'Checking…' : 'Spawning…')
       : ['unknown', 'pending'].includes(phase) ? 'Check result' : ['complete', 'partial'].includes(phase) ? 'Created' : phase === 'incomplete' ? 'Spawn incomplete' : 'Spawn';
     spawn.setAttribute('aria-busy', String(!!(flight || pressed)));
@@ -1401,7 +1434,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // (nameThenRun) is not a preview's to settle: it continues when its name lands.
     const press = pressed?.naming ? null : pressed;
     if (press) { pressed = null; phase = 'idle'; }
-    if (press && next.data && press.key === key && joinBound(next.data)) { render(); void run(); return; }
+    if (press && next.data && press.key === key && bound(next.data)) { render(); void run(); return; }
     if (next.data) {
       if (phase === 'drifted') setStatus(outcomeText('drifted', null, '', 'dialog'));
       else if (notice) setStatus(notice.text, true, notice);
@@ -1666,7 +1699,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     try {
       const outcome = await remoteSpawn({ server: remoteTarget(), ...(deploymentField ? { agentsRoot: selector.agentsRoot, deployment: address() } : {}),
         ...naming, ...numbered, task: task.value, harness: runtime.value, model: model.value.trim(),
-        backend: backend.value, launchConfig: config.value, yolo: yolo.value === '' ? undefined : yolo.value === 'true', wake: wakeValue,
+        backend: backend.value, launchConfig: config.value, yolo: yolo.value === '' ? undefined : yolo.value === 'true', background: backgroundChoice(), wake: wakeValue,
         relation: rel.value, relativeTo: relTo.value, relativeRoot: relTo.selectedOptions[0]?.dataset.root || '', status, button: spawn });
       if (outcome?.created) deploymentField?.remember(); // the host created it (the dialog may already be closed)
       if (outcome?.created && alive) phase = 'complete'; // created on the host: never a second spawn
@@ -1867,6 +1900,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (typeof c.launchConfig === 'string') configWanted = c.launchConfig;
       if (typeof c.backend === 'string' && [...backend.options].some(o => o.value === c.backend)) backend.value = c.backend;
       if (typeof c.yolo === 'boolean') yolo.value = String(c.yolo);
+      if (typeof c.background === 'boolean') { backgroundSwitch.checked = c.background; backgroundTouched = true; }
       if (c.model?.kind === 'native-default') nativeModel = true;
       else if (c.model?.kind === 'custom' && typeof c.model.value === 'string') model.value = c.model.value;
       const kind = c.relation?.kind, anchor = c.relation?.anchor;
