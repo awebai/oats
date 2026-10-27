@@ -42,5 +42,5 @@ the tasks they cover.
   --test`); terminal and identity behaviour is verified live through CDP, with
   tmux state asserted before and after, not only in the UI. A test Desktop
   runs on a virtual display, never in the operator's session, with a private
-  `HOME` and `OATS_HOME_DIR` so its session resume sweep never restarts the
-  operator's agents (`/electron-live-verification`).
+  `HOME`, `OATS_HOME_DIR` and `TMUX_TMPDIR` so its session resume sweep never
+  restarts the operator's agents (`/electron-live-verification`).
