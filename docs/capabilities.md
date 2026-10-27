@@ -274,8 +274,9 @@ A self-contained package has an `oats.json`:
       `.a*`);
     - an exact name that is `.oats`, `.agents` or `.claude`, or that starts
       with `.oats-events`, `.oats-stop`, `.oats-restart`, `.oats-rollback`,
-      `.oats-agents-md`, `.oats-start`, `.oats-attachments` or `.oats-color`: the top-level
-      entries the kernel itself writes in an instance home;
+      `.oats-agents-md`, `.oats-start`, `.oats-attachments`, `.oats-color` or
+      `.oats-same-work`: the top-level entries the kernel itself writes in an
+      instance home;
     - a prefix that starts with `.oats-`.
 
     An exact name such as `.oats-aweb` is allowed: it is a provider's
