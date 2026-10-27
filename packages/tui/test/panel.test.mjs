@@ -515,9 +515,9 @@ describe("the panel", { concurrency: 8 }, () => {
       "%subscription-changed another $0 @1 1 %1 : 1 1",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1 more",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1",
-      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1234 ",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1 9",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 0 kill",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1234 ",
     ]) world.emit(line);
     await waitFor("the panel to hear them", () => heard().includes(": 1 1234 \n"));
     assert.deepEqual([closed, panel.current, world.control().filter((line) => line.startsWith("kill-pane"))], [[], id, []]);

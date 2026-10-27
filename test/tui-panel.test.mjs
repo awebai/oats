@@ -1248,10 +1248,11 @@ for (const [how, end, expected] of [
 // ---- four agents, four tabs ---------------------------------------------------------------------
 // q and kill -9 as with one terminal open (the tests after "on a terminal"), with the real `oats tui`
 // and four agents' terminals open, each a tab, opened as a person opens them: Enter on the first
-// agent, then Alt+Shift+Down from each shown terminal, which opens the next agent of the list (on
-// macOS, where that is no chord, the list's j then Enter: openTab) (docs/tui.md, "Tabs" and "Chords"). The three agents beside alpha are these tests' own: homes
-// recorded as launched in windows of AGENTS as alpha's is (launchedAgent), spawned at the first of
-// them, each window made new by each test and killed after it, so nothing after them lists those
+// agent, then Alt+Shift+Down from each shown terminal, which opens the next agent of the list
+// (on macOS, where that is no chord, the list's j then Enter: openTab) (docs/tui.md, "Tabs" and
+// "Chords"). The three agents beside alpha are these tests' own: homes recorded as launched in
+// windows of AGENTS as alpha's is (launchedAgent), spawned at the first of them, each window made
+// new by each test and killed after it, so nothing after them lists those
 // agents running.
 const OTHERS = ["bravo", "charlie", "delta"];
 /** The four agents, in the order the list draws them (name order) and so the tabs are opened. */
