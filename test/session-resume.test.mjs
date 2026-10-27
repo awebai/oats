@@ -46,7 +46,7 @@ test("the session-resume contract's names", () => {
   assert.deepEqual(FRESH_REASON, { NO_CONVERSATION: "no-conversation", NO_RECEIPTS: "no-receipts", RESUME_UNPROVEN: "resume-unproven" });
   assert.deepEqual(RESUME_WAITING, { RESUME_CONFIRMATION: "resume-confirmation" });
   assert.deepEqual(OUTCOME, { RESUMED: "resumed", FRESH: "fresh", ALREADY_RUNNING: "already-running", SKIPPED: "skipped", BLOCKED: "blocked", REFUSED: "refused" });
-  assert.deepEqual(ROW_REASON, { UNKNOWN: "unknown", START_BUSY: "start-busy", NOT_LOST: "not-lost", NOT_SEEN_RECENTLY: "not-seen-recently", RESUME_CONFIRMATION: "resume-confirmation", LAUNCH_PROMPT: "launch-prompt", START_REFUSED: "start-refused", REFUSED_THIS_BOOT: "refused-this-boot", KEEPS_GETTING_LOST: "keeps-getting-lost" });
+  assert.deepEqual(ROW_REASON, { UNKNOWN: "unknown", START_BUSY: "start-busy", NOT_LOST: "not-lost", NOT_SEEN_RECENTLY: "not-seen-recently", RESUME_CONFIRMATION: "resume-confirmation", LAUNCH_PROMPT: "launch-prompt", START_REFUSED: "start-refused", REFUSED_THIS_BOOT: "refused-this-boot", KEEPS_GETTING_LOST: "keeps-getting-lost", LIFECYCLE_BUSY: "lifecycle-busy" });
   assert.deepEqual(NOT_SWEPT, { NOT_OK: "not-ok", UNREADABLE: "unreadable" });
 });
 
@@ -202,6 +202,8 @@ test("a start's answer maps to the sweep's row", () => {
   assert.deepEqual(fail("E_SESSION_START_BUSY"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.START_BUSY, code: "E_SESSION_START_BUSY" });
   assert.deepEqual(fail("E_RESUME_NOT_LOST"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.NOT_LOST, code: "E_RESUME_NOT_LOST" });
   assert.deepEqual(fail("E_SESSION_RUNNING"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.NOT_LOST, code: "E_SESSION_RUNNING" });
+  // A home OATS is stopping, upgrading or retiring (the start met its lifecycle claim, or its owed retire): skipped, with the code and the words.
+  for (const code of ["E_INSTANCE_RETIRING", "E_LIFECYCLE_BUSY"]) assert.deepEqual(fail(code), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.LIFECYCLE_BUSY, code, message: `${code} message` });
   assert.deepEqual(fail("E_LAUNCH_LEGACY"), { ...id, outcome: OUTCOME.REFUSED, reason: ROW_REASON.START_REFUSED, code: "E_LAUNCH_LEGACY", message: "E_LAUNCH_LEGACY message" });
   assert.equal(rowFromStart(row, undefined).code, "E_SESSION_START_FAILED", "no answer");
 });

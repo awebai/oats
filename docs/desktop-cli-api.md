@@ -4699,8 +4699,10 @@ nothing, and the command already on the home is not disturbed.
 | a retire is running | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
 | a self-retire is scheduled | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
 | a stop apply is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| a resume is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
 | a retire whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
 | a stop whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| a resume whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
 | the claim file is no readable claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
 | the holder of the claim is gone | not refused | not refused | not refused | not refused |
 
@@ -5637,7 +5639,7 @@ line and says that nothing was done:
   second for a retire, which does not wait).
   `details` is `{instance, home, lock, holder: "unknown"}`; the message is
   `<lock> is not a readable claim; nothing was done — inspect it and remove
-  it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`.
+  it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`.
 - A claim whose holder is gone and that this kernel cannot take over is
   never removed either: its `nonce` is not the 32 hexadecimal digits a claim
   carries (a file written or damaged by hand); or it is the claim of a
@@ -5649,7 +5651,7 @@ line and says that nothing was done:
   The message is `the
   process that held <lock> (pid <pid>) is gone, and this file is not a claim
   this kernel can take over (<why>); nothing was done — inspect <lock> and
-  remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry` (0.52.0, #874; before,
+  remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry` (0.52.0, #874; before,
   the first was answered as a live holder, to wait for, and the second as
   `E_LIFECYCLE_FAILED` with the system's `ENAMETOOLONG` about a file that
   does not exist). Removing that one file lets the next retire take the
