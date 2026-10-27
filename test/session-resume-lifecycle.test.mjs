@@ -14,8 +14,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnChild, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { deferredRetireResultPath, retireClaimPath, retirePendingMarkerPath } from "../lib/core.mjs";
 import { bootId, readBootNote, resumeSessions } from "../lib/session-resume.mjs";
 import { OUTCOME, ROW_REASON, SESSION_END } from "../lib/session-resume-contract.mjs";
@@ -213,6 +213,53 @@ test("a claim taken after the sweep read the row: the start answers E_LIFECYCLE_
   assert.deepEqual(await f.noted(i), [], "no refusal is noted");
   rmSync(i.lock);
   assert.ok([OUTCOME.RESUMED, OUTCOME.FRESH].includes(f.row(f.sweep(), i)?.outcome), "not judged: the next sweep resumes it");
+});
+
+test("one claim for every spelling of a home: a resume of H/. or of H through a link to its deployment meets the claim at H, and a retire meets the claim a resume of such a spelling holds", TMUX, async (t) => {
+  const f = fixture(t);
+  const i = await f.lostHome("spelled");
+  const link = join(f.fx.base, "deployment-link");
+  symlinkSync(f.fx.dep, link);
+  const spellings = [`${i.home}/.`, join(link, relative(f.fx.dep, i.home))];
+  const claim = await f.claim(i, "stop");
+  for (const home of spellings) {
+    const hand = f.resume(home);
+    assert.deepEqual([hand.error?.code, hand.error?.details?.action, hand.error?.details?.lock], ["E_LIFECYCLE_BUSY", "stop", i.lock], `${home}: ${JSON.stringify(hand)}`);
+  }
+  assert.equal(readFileSync(i.lock, "utf8"), claim, "the stop's claim is as it was");
+  assert.equal(f.launches(i.name), 1, "nothing was started");
+  rmSync(i.lock);
+  // The other way round: a resume of a spelling holds H's claim, and a retire of H meets it.
+  const run = await heldOnClaim(f, i, ["session", "start", "--resume", "--home", spellings[0], "--json"], "resume");
+  try {
+    const retire = f.cli(["retire", i.name, "--json"]);
+    assert.deepEqual([retire.error?.code, retire.error?.details?.action], ["E_LIFECYCLE_BUSY", "resume"], JSON.stringify(retire));
+    run.release("claimed");
+    const r = await run.done;
+    assert.deepEqual([r.code, r.timedOut], [0, []], r.stdout + r.stderr);
+    await waitUntil(() => f.launches(i.name) === 2, "the resumed harness to start", 30000);
+    assert.deepEqual(f.claimFiles(i), [], "the resume released its claim");
+  } finally { await run.finish(); }
+});
+
+test("an upgrade that took the claim and wrote its partial receipt after the sweep read the row: the start is busy, not a partial upgrade; the row is skipped lifecycle-busy, nothing is noted or judged", TMUX, async (t) => {
+  const f = fixture(t);
+  const i = await f.lostHome("late-upgrade");
+  const receipt = join(i.home, ".oats", "upgrade-receipt.k1.json");
+  const answer = await f.fx.inEnv(() => resumeSessions({ deployment: f.fx.dep, start: async (row) => {
+    await f.claim(i, "upgrade");
+    writeFileSync(receipt, JSON.stringify({ action: "upgrade", status: "partial", idempotencyKey: "k1", planRevision: "r1", instance: i.name }));
+    return f.cli(["session", "start", "--resume", "--home", row.home, "--json"]);
+  } }));
+  const row = f.row(answer, i);
+  assert.deepEqual({ ...shape(row), code: row.code }, { ...skippedBusy(i), code: "E_LIFECYCLE_BUSY" }, JSON.stringify(row));
+  assert.match(row.message, /^an? upgrade of late-upgrade is already running/);
+  assert.equal(f.launches(i.name), 1, "nothing was started");
+  assert.deepEqual(await f.noted(i), [], "no refusal is noted");
+  // The upgrade finishes: its claim and its partial receipt go. The loss was not judged.
+  rmSync(i.lock);
+  rmSync(receipt);
+  assert.ok([OUTCOME.RESUMED, OUTCOME.FRESH].includes(f.row(f.sweep(), i)?.outcome), "the next sweep resumes it");
 });
 
 test("an owed retire (a self-retire whose completion failed or was interrupted, no claim held): the sweep skips the home lifecycle-busy, a hand resume is refused E_INSTANCE_RETIRING", TMUX, async (t) => {
