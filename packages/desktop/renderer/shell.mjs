@@ -91,6 +91,7 @@ import { syncWaitingRow } from "./waiting-row.mjs";
 import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
+import { withParentGate } from "../../client/same-work.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
 import { treeConnectors, treeGuides, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE, rosterName } from "./instance-tree-view.mjs";
@@ -951,7 +952,13 @@ function renderContextRoster(instances) {
   if (inFlight.size) instances = instances.map((i) => inFlight.has(instanceId(i)) && !i.rollbackIncomplete
     ? { ...i, pendingSpawn: inFlight.get(instanceId(i)), reportedSpawn: true } : i);
   const spawning = decided.filter((p) => !reported.has(instanceId(p)));
-  if (spawning.length) instances = [...instances, ...spawning];
+  if (spawning.length) {
+    // #1577: a pending row is this window's own, so the panel stamped no same-work gate on it: it takes its parent's
+    // (same-work.mjs `withParentGate`). This Desktop's spawn never passes --same-work, so on a host that declares
+    // the feature it draws no parent line, as its reported row will not.
+    const all = [...instances, ...spawning], byId = new Map(all.map((i) => [instanceId(i), i]));
+    instances = [...instances, ...spawning.map((p) => withParentGate(p, byId.get(rosterParentId(all, instanceId(p))) ?? null))];
+  }
   // "since <local time>" on a row setting up its worktree: the start of a job of this window for its home, if any.
   const spawnStart = (i) => {
     const job = i.pendingSpawn || jobs.find((p) => p.home === i.home && p.agentsRoot === i.agentsRoot);

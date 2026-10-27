@@ -46,6 +46,7 @@ import { teamMembers } from './team-members.mjs';
 import { requireTerms } from './client-terms.mjs';
 import { ROSTER_WORKSPACE_KEY } from './cli-adapter.mjs';
 import { waitingClaim } from './waiting-on-you.mjs';
+import { sameWorkDeclared, withSameWorkGate } from './same-work.mjs';
 
 /** Roots come ONLY from the kernel's observed `status.root`; before (or
  * without) an observation there is nothing to act on. No layout guess. */
@@ -309,13 +310,20 @@ export function deploymentEntry(info, primary) {
     ...(info.reason && info.fix?.length ? { fix: [...info.fix] } : {}), ...(info.note ? { note: info.note } : {}) };
 }
 
-/** One deployment's own panel, as served before views. */
+/** One deployment's own panel, as served before views. Each row carries whether its host declares
+ * instance-same-work (#1577), stamped here and nowhere else (same-work.mjs `withSameWorkGate`): `held.cli` for
+ * this computer's rows, and the group's host too for another machine's. */
 export function deploymentPanel(held, ws) {
   // Another machine's panel never says who made its `error`: the key is removed here whatever the panel carried.
   // A kept group's panel is made at the time it was read (#1124): a filtered read never makes it look newer.
-  if (ws?.remote) { const { errorOrigin: _sent, ...panel } = remotePanel(ws.group, held.keptReadAt?.get?.(ws.group.id) ?? held.at); return { ...panel, observedAt: null, refreshing: held.remoteCollecting }; }
+  if (ws?.remote) {
+    const { errorOrigin: _sent, ...panel } = remotePanel(ws.group, held.keptReadAt?.get?.(ws.group.id) ?? held.at);
+    const declared = sameWorkDeclared(held.cli, ws.group);
+    return { ...panel, instances: panel.instances.map((row) => withSameWorkGate(row, declared)), observedAt: null, refreshing: held.remoteCollecting };
+  }
   const observed = ws ? held.snapshot.byWs.get(ws.id) : null;
-  const instances = observed?.instances || [], kept = keptFailure(observed);
+  const declared = sameWorkDeclared(held.cli);
+  const instances = (observed?.instances || []).map((row) => withSameWorkGate(row, declared)), kept = keptFailure(observed);
   return {
     workspace: ws ? { id: ws.id, name: ws.name, team: null } : null,
     team: null,
