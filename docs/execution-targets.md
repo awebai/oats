@@ -137,14 +137,22 @@ options and environment, are left exactly as they were.
   earlier kernel failed a start whose recorded tmux server could not be
   reached when a sizing command was refused; this one does not.
 
-#### A server started from inside a systemd service
+<a id="a-server-started-from-inside-a-systemd-service"></a>
+#### Where sessions run: the server's scope and each agent's
 
-A tmux server lives in the cgroup of the process that started it. When that
-process runs inside a systemd service, the server and every agent pane in it
-end when the service stops. The schedule tick's oneshot service ends after
-each tick, and a Desktop run as a user service restarts at each upgrade. So,
-on Linux, when OATS starts the `oats` server (no server answered) from inside
-a service, it starts it in a transient scope of its own:
+A tmux server lives in the cgroup of the process that started it, and its
+panes with it. On a systemd host that cgroup can end, and take every agent
+with it: a service's cgroup ends when the service stops (the schedule tick's
+oneshot service ends after each tick, a Desktop run as a user service restarts
+at each upgrade), and systemd-oomd, under memory pressure, kills a whole cgroup
+of the user manager's: a client application's `app-*.scope` (OATS Desktop or
+`oats tui` launched from a desktop session) with everything started from it.
+So, on Linux, on the unified cgroup hierarchy, OATS keeps the server out of
+its creator's unit, and each agent's harness out of the server's cgroup.
+
+**The server.** When OATS starts the `oats` server (no server answered) from
+inside a unit of the user manager, or from a system service, it starts it in
+a transient scope of its own:
 
 ```text
 systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> -- env -u INVOCATION_ID tmux -u -L oats new-session -d …
@@ -161,25 +169,27 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
   of the SHA-256 of the server's address, and `<random>` 8 random hex digits.
   `systemd-run` and `env` are the system's own (`/usr/bin`, `/bin`), never
   ones found on `PATH`.
-- **The server outlives the service.** It is a sibling of the service, not
-  part of it: the service can end, stop or restart, and the server and its
-  agents go on. The scope ends when its last process does, and `--collect`
-  removes it then. That is usually the server. On a tmux without systemd
-  support the panes are in the scope too, so a process that outlives the
-  server (one an agent started in the background) keeps the scope until it
-  exits. On a tmux with systemd support each pane has a scope of its own,
-  but the dead server's scope still stays listed (`loaded inactive dead`)
-  while a process from one of its panes lives. Either way, a later start
-  never reuses that scope: it gets one of its own.
-- **See it:** `systemctl --user status 'oats-tmux-<hash>-*.scope'` (or
-  `'oats-tmux-*.scope'` for every OATS server), or
-  `systemd-cgls --user`. A tmux built with systemd support also puts each
-  pane in a `tmux-spawn-<id>.scope` of its own.
-- **When the creator is inside a service:** `/proc/self/cgroup` is the
-  unified hierarchy (one `0::<path>` line) and the path's last component ends
-  in `.service`. An operator's shell (`session-N.scope`), an agent's pane, and
-  macOS are not, and start the server as before. A server that already
-  answers is used as it is.
+- **The server outlives its creator's unit.** It is a sibling of that unit,
+  not part of it: the service can end, stop or restart, and the client can
+  quit or be killed, and the server and its agents go on. The scope ends when
+  its last process does, and `--collect` removes it then. That is usually the
+  server. On a tmux without systemd support the panes are in the scope too
+  (each agent's harness is not: below), so a process that outlives the server
+  (one an agent's shell started in the background) keeps the scope until it
+  exits. On a tmux with systemd support each pane has a scope of its own, but
+  the dead server's scope still stays listed (`loaded inactive dead`) while a
+  process from one of its panes lives. Either way, a later start never reuses
+  that scope: it gets one of its own.
+- **When the creator is inside a unit:** `/proc/self/cgroup` is the unified
+  hierarchy (one `0::<path>` line), and the path's last component ends in
+  `.service` (any service, system or user), or ends in `.scope` and the path
+  runs through the user manager (`…/user@<uid>.service/…`): a desktop
+  application's `app-*.scope`, a terminal's `vte-spawn-*.scope`, an agent's
+  own `oats-agent-*.scope` (an agent that spawns), the manager's `init.scope`.
+  A login session's scope (`/user.slice/user-<uid>.slice/session-N.scope`, an
+  ssh or tty login) sits beside the user manager, not in it, and starts the
+  server as before, as macOS does. A server that already answers is used as
+  it is: one started before this rule keeps the cgroup it has.
 - **The limits.**
   - Only the unified cgroup hierarchy is judged. On the old or hybrid
     hierarchy the server starts as before. When `INVOCATION_ID` shows the
@@ -187,9 +197,9 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
     that service.
   - The scope needs the user's systemd manager and its bus
     (`XDG_RUNTIME_DIR`), and `systemd-run` and `env` in `/usr/bin` or `/bin`:
-    a host without them gets the warning below at every start from a
-    service. A system service (one outside the user's manager) is
-    wrapped the same way, and without a user bus it gets the warning below.
+    a host without them gets the warning below at every start from a unit.
+    A system service (one outside the user's manager) is wrapped the same
+    way, and without a user bus it gets the warning below.
   - When `systemd-run` is missing or fails, and no other creator's server
     answers in the meantime, the server starts as before. The answer's
     `warnings` (spawn, session start and restart), and the schedule tick's
@@ -198,6 +208,50 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
     your own shell, or enable the user systemd bus (<reason>)`.
   - macOS is not wrapped: launchd lets the server, which leaves the job's
     process group, outlive the job.
+
+**Each agent's harness.** Every launch of a harness (spawn, session start and
+restart, and so a resume) runs it in a transient scope of its own, in the
+user manager's default slice, wherever the server is:
+
+```text
+… PATH=<home>/.oats/bin:… systemd-run --user --scope --collect --quiet --unit oats-agent-<hash>-<random> -- env -u INVOCATION_ID /bin/sh -c '<record the start> && exec <harness> …'
+```
+
+- **One agent per kill.** systemd-oomd ends one cgroup at a time: with a scope
+  per agent, memory pressure that selects an agent ends that agent, never the
+  server or the other agents. `<hash>` is the first 12 hex digits of the
+  SHA-256 of the home's canonical path, and `<random>` 8 random hex digits
+  per launch: a scope ends with its last process, so a later launch never
+  reuses its name. `systemd-run` and `env` are the system's own.
+- **Nothing else changes.** Each step execs the next, so the harness keeps the
+  process `systemd-run` began as: it is the pane's direct child, its exit
+  status is the pane shell's, and stop, status and the launch-prompt check see
+  the pane as without the scope. `INVOCATION_ID` is removed as for the server.
+  The scope is decided at each launch and is never recorded: the home's
+  `command`, its launch recipe, the start's receipt and the retirement baseline
+  are as before, and `oats spawn --preview` does not show it.
+- **The conditions.** Linux, and the launching process on the unified cgroup
+  hierarchy, whatever unit it is in. Before it wraps, the launch checks that a
+  scope can be created: it runs `systemd-run --user --scope --collect --quiet
+  -- true` with the pane's own `XDG_RUNTIME_DIR` and
+  `DBUS_SESSION_BUS_ADDRESS` (the session's, else the server's, unless the
+  launch configuration sets them), bounded to 5 seconds. One OATS command
+  checks once for each `systemd-run` and pair of values, so a start of many
+  agents checks once.
+- **When it cannot.** When the check fails, `systemd-run`, `env` or `true` is
+  not in `/usr/bin` or `/bin`, or the pane's environment cannot be read, the
+  harness is launched exactly as before, and the answer's `warnings` (spawn,
+  session start and restart; a start also as a `launch-warning` event) say
+  once `the agent's harness runs in the OATS tmux server's cgroup, not a scope
+  of its own: <reason>`. A pane whose server has no `XDG_RUNTIME_DIR` or bus
+  (a server started where none was set) fails the check. Off Linux and on the
+  old or hybrid hierarchy nothing changes and nothing is said.
+- **What is left.** `systemd-run` could still fail between the check and the
+  pane. The pane's shell then reads exit status 1, an ordinary exit that is
+  never taken for a harness to bring back.
+- **See it:** `systemctl --user status 'oats-agent-<hash>-*.scope'` (one home),
+  `systemctl --user list-units 'oats-agent-*'` (every agent), or
+  `systemd-cgls --user`.
 
 <a id="the-servers-start-environment"></a>
 #### The environment of the server and its panes
@@ -568,8 +622,8 @@ the login shell, honoured only for a process whose `HOME` is not your home
 directory; a launch configuration cannot set it),
 `OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS`, `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS`,
 `OATS_TEST_PROCESS_START_PS` (below), `OATS_TEST_CGROUP` and
-`OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's
-[own scope](#a-server-started-from-inside-a-systemd-service)), a `worktree` hook's tree
+`OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's and the agents'
+[own scopes](#where-sessions-run-the-servers-scope-and-each-agents)), a `worktree` hook's tree
 (`OATS_TREE`, `OATS_TREE_CLONE`, `OATS_TREE_REMOTE`, `OATS_TREE_MEMBER`,
 `OATS_TREE_BASE`, `OATS_TREE_BASE_OID`, `OATS_PURPOSE`, `OATS_TREE_ORIGIN`), `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
 `OATS_TEAM_ID`, `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAMS`,

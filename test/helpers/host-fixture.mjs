@@ -91,6 +91,22 @@ function schedulerStubs(base) {
   }
   return bin;
 }
+/** The system directory a fixture's kernel takes its systemd-run, env and true from
+ *  (OATS_TEST_SYSTEM_TOOL_DIRS, lib/system-tools.mjs): the host's env and true, and a systemd-run that
+ *  runs what follows `--` in its own process, as a scope runs it, and asks no service manager. A
+ *  fixture's kernel judges itself on the unified hierarchy (FIXTURE_CGROUP), so it probes for and
+ *  launches each agent's harness in a scope of its own (lib/tmux-server-scope.mjs agentScope): through
+ *  this one, never the host's user manager. A test of the scope sets its own. */
+function systemToolStubs(base) {
+  const dir = join(base, "fixture-system-tools");
+  mkdirSync(dir, { recursive: true });
+  for (const name of ["env", "true"]) if (!existsSync(join(dir, name))) symlinkSync(executable(name), join(dir, name));
+  if (!existsSync(join(dir, "systemd-run"))) { // never rewritten under a child that may be running it
+    writeFileSync(join(dir, "systemd-run"), '#!/bin/sh\nwhile [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\n[ "$#" -gt 1 ] || exit 1\nshift\nexec "$@"\n');
+    chmodSync(join(dir, "systemd-run"), 0o755);
+  }
+  return dir;
+}
 // ---- what a fixture never inherits (awebai/oats#972) --------------------------------------------
 // ONE place decides what a fixture takes from the process that runs the suite. Every helper that
 // builds an environment, for a child or for an in-process kernel call, starts from inheritedEnv()
@@ -162,7 +178,7 @@ const FIXTURE_CGROUP = "0::/oats-fixture.scope\n";
 /** A fixture's rules, made once: its HOME and XDG directories and its scheduler stubs are created
  *  here, and nowhere else. */
 export function fixtureRules(base, { home = join(base, "home") } = {}) {
-  return { set: { ...isolatedHomeAndGit(home), OATS_TEST_CGROUP: FIXTURE_CGROUP }, stubs: schedulerStubs(base) };
+  return { set: { ...isolatedHomeAndGit(home), OATS_TEST_CGROUP: FIXTURE_CGROUP, OATS_TEST_SYSTEM_TOOL_DIRS: systemToolStubs(base) }, stubs: schedulerStubs(base) };
 }
 /** Apply a fixture's rules to an environment in place, creating nothing: what it never inherits
  *  removed (dropInherited), its HOME, XDG and git set, and its scheduler stubs ahead on PATH (once). */
@@ -480,7 +496,7 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   for (const key of SHELL_STARTUP) delete process.env[key];
   // The fixture's git and XDG rules (fixtureEnv's), with HOME as this worker's; PATH stays system-bin
   // only, so no host service manager is reachable at all.
-  Object.assign(process.env, isolatedHomeAndGit(home), { XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base), OATS_TEST_CGROUP: FIXTURE_CGROUP });
+  Object.assign(process.env, isolatedHomeAndGit(home), { XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base), OATS_TEST_CGROUP: FIXTURE_CGROUP, OATS_TEST_SYSTEM_TOOL_DIRS: systemToolStubs(base) });
   // Neither the environment (above) nor the working directory makes this worker an OATS instance.
   const comeBack = leaveEnclosingInstance(base);
   isolatedTmpdir = tmuxTmpdir;
