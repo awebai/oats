@@ -42,6 +42,7 @@ import { basename, dirname, join } from "node:path";
 import YAML from "yaml";
 import { CLAIM_UNWRITABLE_CODES } from "../lib/claim.mjs";
 import { retireClaimPath } from "../lib/core.mjs";
+import { readStartExited } from "../lib/session-end.mjs";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { waitUntil } from "./helpers/host-fixture.mjs";
@@ -559,6 +560,16 @@ test("a file system with no space for any write of the stop, the claim's and the
   const before = snapshot(d.fx.dep);
   const written = () => changes(before, snapshot(d.fx.dep));
   const NOTHING_BUT_THE_DIRECTORY = ["+ agents/worker/instances/.oats-retirement/claims/"];
+  // And the exit marker of the stopped harness's window: written by the window's shell when the
+  // harness ends, not by the stop (a write outside the kernel's process, so the fault does not reach
+  // it; on a full disk its redirect fails too, and there is none). It names the start with the
+  // signal's status: with no record of the stop, the home reads `sessionEnd: lost`.
+  const marked = async (x) => {
+    await waitUntil(() => readStartExited(x.home) !== null, `the exit marker of ${x.name}'s window`);
+    const { startId } = JSON.parse(readFileSync(join(x.home, "instance.json"), "utf8"));
+    assert.deepEqual(readStartExited(x.home), { startId, status: 143 }, `${x.name}: the marker of its start, SIGTERM's status`);
+    return `+ agents/worker/instances/${x.name}/.oats-start-exited`;
+  };
 
   // 1. The apply, in JSON mode.
   const first = d.faulted(d.applyArgs(i.name, plans.i.planRevision, "k1"), full());
@@ -571,7 +582,8 @@ test("a file system with no space for any write of the stop, the claim's and the
   assert.deepEqual({ ...result, message: undefined }, { instance: i.name, home: i.home, ok: false, code: "E_SESSION_STOP_FAILED", message: undefined, stillRunning: [] }, "never the system's code; and none of its processes is still running");
   assert.match(result.message, /^full1: ENOSPC: .*; its harness was signalled \(SIGTERM\) and has exited$/);
   await waitUntil(() => !alive(i.pid), "the harness of full1 to be gone: the stop stopped it");
-  assert.deepEqual(written(), NOTHING_BUT_THE_DIRECTORY, "nothing was written: no claim, no record of the stop, no receipt, and no private file of any of them");
+  const markerI = await marked(i);
+  assert.deepEqual(written(), [...NOTHING_BUT_THE_DIRECTORY, markerI].sort(), "nothing was written: no claim, no record of the stop, no receipt, and no private file of any of them");
 
   // 2. The same key again. The receipt was not stored, so nothing is replayed: the apply runs,
   // and the plan is no longer the one that was shown (the session is stopped).
@@ -587,7 +599,7 @@ test("a file system with no space for any write of the stop, the claim's and the
   const idle = receiptOf(third, "the apply with the fresh revision");
   assert.deepEqual([idle.ok, idle.replayed, idle.results.map(row)], [true, false, [{ instance: i.name, home: i.home, ok: true, stopped: false, alreadyIdle: true }]]);
   assert.equal(third.stderr, warning(i, "ENOSPC"));
-  assert.deepEqual(written(), NOTHING_BUT_THE_DIRECTORY, "and still nothing was written");
+  assert.deepEqual(written(), [...NOTHING_BUT_THE_DIRECTORY, markerI].sort(), "and still nothing was written");
 
   // Text mode, on the other instance: the warning, the row's words, and the exit status of a
   // stop one of whose targets failed.
@@ -596,5 +608,5 @@ test("a file system with no space for any write of the stop, the claim's and the
   assert.equal(text.status, 1, text.stdout);
   assert.match(text.stdout, /^ {2}full2: E_SESSION_STOP_FAILED — full2: ENOSPC: .*; its harness was signalled \(SIGTERM\) and has exited\n/);
   await waitUntil(() => !alive(j.pid), "the harness of full2 to be gone");
-  assert.deepEqual(written(), NOTHING_BUT_THE_DIRECTORY);
+  assert.deepEqual(written(), [...NOTHING_BUT_THE_DIRECTORY, markerI, await marked(j)].sort());
 });
