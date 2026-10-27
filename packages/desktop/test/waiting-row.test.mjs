@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { syncWaitingRow, fitWaitingLines, waitingFit, WAITING_LINES } from "../renderer/waiting-row.mjs";
-import { waitingLabel, waitedText } from "../../client/waiting-on-you.mjs";
+import { waitingLabel, waitedText, waitingOnYouData } from "../../client/waiting-on-you.mjs";
 
 const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
 const SINCE = "2026-10-03T09:00:00.000Z", AT = Date.parse(SINCE) + 12 * 60e3;
@@ -55,11 +55,17 @@ test("the message is agent text: markup is shown as text, never rendered", t => 
 
 test("a null message: the row says why in words, from the reason", t => {
   const u = fixture(t);
-  for (const reason of ["permission", "question", "attention", "approval", null]) {
+  for (const reason of ["permission", "question", "attention"]) {
     u.sync(claim({ message: null, reason }));
     const message = part(u.pane, "message");
     assert.equal(message.textContent, waitingLabel({ reason }), String(reason));
     assert.ok(message.classList.contains("reason"), "our words, styled apart from agent text");
+  }
+  // No reason of its own: "Needs input" is the tag's word already, so the head says it once (#1502).
+  for (const reason of ["approval", null]) {
+    u.sync(claim({ message: null, reason }));
+    assert.equal(rowOf(u.pane).textContent, "Needs input · 12 min", String(reason));
+    assert.equal(part(u.pane, "message").hidden, true);
   }
   assert.equal(waitingLabel({ reason: "permission" }), "Waiting for a tool approval");
   u.sync(claim());
@@ -180,5 +186,25 @@ test("CSS: the row takes its rows from the terminal, wraps and cuts the message 
   assert.match(rule(".waiting-message.reason"), /color: var\(--muted\)/);
   for (const body of [row, head, message, rule(".waiting-age"), rule(".waiting-message.reason")]) {
     assert.doesNotMatch(body, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|opacity|animation|transition/i, "tokens only, no opacity, no motion");
+  }
+});
+
+test("#1502 follow-ups: an unknown reason never reads Needs input twice, and a message of only spaces reads the reason in words", t => {
+  const u = fixture(t);
+  // The tag already says it all: the row is its head alone, the message line empty and hidden.
+  u.sync(waitingOnYouData(claim({ message: null, reason: "approval" })));
+  assert.equal(rowOf(u.pane).textContent, "Needs input · 12 min");
+  assert.equal(part(u.pane, "message").hidden, true, "no line under the head");
+  // A message, or a known reason, brings the line back.
+  u.sync(waitingOnYouData(claim({ message: "Pick one?", reason: "approval" })));
+  assert.equal(part(u.pane, "message").hidden, false);
+  assert.equal(part(u.pane, "message").textContent, "Pick one?");
+  u.sync(waitingOnYouData(claim({ message: "  ", reason: "approval" })));
+  assert.equal(rowOf(u.pane).textContent, "Needs input · 12 min", "only spaces, and no reason of its own: the head alone");
+  assert.equal(part(u.pane, "message").hidden, true);
+  for (const message of ["   ", "\u00A0\u3000"]) {
+    u.sync(waitingOnYouData(claim({ message, reason: "question" })));
+    assert.equal(part(u.pane, "message").textContent, "Asked you a question", JSON.stringify(message));
+    assert.ok(part(u.pane, "message").classList.contains("reason"));
   }
 });

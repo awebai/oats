@@ -83,7 +83,7 @@ import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
-import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
+import { waitingClaim, waitingSentence, waitingDetail, waitingClock } from "../../client/waiting-on-you.mjs";
 import { syncWaitingRow } from "./waiting-row.mjs";
 import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
@@ -1581,7 +1581,8 @@ function syncTabNeedsInput(instances, workspace) {
         if (drawn.mark?.parentNode === trigger) drawn.mark.replaceWith(attn); else trigger.prepend(attn);
       }
       label = `${drawn.label}, needs input`;
-      note = `Needs input: ${claim.message ?? waitingLabel(claim)} since ${waitingClock(claim.since, now)}`;
+      const detail = waitingDetail(claim);
+      note = `Needs input${detail ? `: ${detail}` : ""} since ${waitingClock(claim.since, now)}`;
     } else if (attn) {
       if (drawn.mark) attn.replaceWith(drawn.mark); else attn.remove();
     }

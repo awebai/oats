@@ -11,7 +11,7 @@ import { terminalKey } from "../renderer/instance-tree-view.mjs";
 import { tabShowsRow } from "../renderer/retired-tabs.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
 import { syncWaitingRow } from "../renderer/waiting-row.mjs";
-import { waitingClaim, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
+import { waitingClaim, waitingDetail, waitingClock } from "../../client/waiting-on-you.mjs";
 import { rowStale } from "../../client/roster-sections.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
@@ -32,7 +32,7 @@ function fixture(t, { stale = false } = {}) {
   const dom = new JSDOM("<!doctype html><body><div class='strip-a'></div><div class='strip-b'></div></body>", { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document, tabs = new Map();
-  const context = { document: doc, tabs, terminalKey, tabShowsRow, waitingClaim, waitingLabel, waitingClock, syncWaitingRow, iconElement, rowStale, paintDotColor, setTabTitle,
+  const context = { document: doc, tabs, terminalKey, tabShowsRow, waitingClaim, waitingDetail, waitingClock, syncWaitingRow, iconElement, rowStale, paintDotColor, setTabTitle,
     contextDeployments: [], rosterStale: stale, tabNeedsInputRoster: { instances: [], workspace: null } };
   Object.defineProperty(context, "Date", { get: () => Date, enumerable: true }); // the test realm's (mockable) clock
   const sync = runInNewContext(`${source}\nsyncTabNeedsInput`, context);
@@ -81,11 +81,12 @@ test("a withheld note: the tab's title reads the reason in words, never “[with
   const u = fixture(t), tab = u.open(row("dev-a")), trigger = tab.triggerEl;
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 60e3 });
   for (const [message, reason, label] of [["See https://github.com/awebai/oats/pull/552", "attention", "Asked for your attention"],
-    ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", "Needs input"]]) {
+    ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", null]]) {
     u.sync([row("dev-a", { waitingOnYou: claim({ message, reason }) })], "A");
     assert.ok(cue(tab), "the claim is kept");
     assert.equal(trigger.getAttribute("aria-label"), "dev-a, needs input");
-    assert.equal(trigger.title, `dev-a\nNeeds input: ${label} since ${waitingClock(SINCE, Date.now())}`, message);
+    // An unknown reason adds nothing to the tag's words: the note says them once (#1502).
+    assert.equal(trigger.title, `dev-a\nNeeds input${label ? `: ${label}` : ""} since ${waitingClock(SINCE, Date.now())}`, message);
   }
   u.sync([row("dev-a", { waitingOnYou: claim({ message: "Pick one?" }) })], "A");
   assert.match(trigger.title, /\nNeeds input: Pick one\? since /, "a safe note is still shown");

@@ -4,7 +4,8 @@
  * markup), wrapped to at most WAITING_LINES lines, cut with "…". The whole row stays within a quarter of the
  * pane: the message gives up lines first, and a pane too short for even the head shows no row (the tab's
  * own mark still says Needs input).
- * A null message reads the reason in words (waitingLabel).
+ * A null message reads the reason in words (waitingDetail); a claim with no reason of its own has no message
+ * line, since the tag's "Needs input" says it all.
  *
  * The terminal gives the row its rows, so the row's height is the terminal's: it changes only when the
  * claim starts, clears or its shown text changes. The age ticks inside the head's one line, so a tick
@@ -12,7 +13,7 @@
  * pane's own height (a layout change, never a tick), through one observation of the pane for the row's
  * life. Pure DOM, no shell state: syncTabNeedsInput (shell.mjs) calls it with the claim the gate passed. */
 import { iconElement } from "./shell-icons.mjs";
-import { waitingLabel, waitedText } from "../../client/waiting-on-you.mjs";
+import { waitingDetail, waitedText } from "../../client/waiting-on-you.mjs";
 
 /** The most lines the message wraps to. */
 export const WAITING_LINES = 3;
@@ -38,7 +39,8 @@ export function fitWaitingLines(row) {
   const fit = waitingFit({ pane: pane.clientHeight, chrome: chromes.get(row), line });
   if (!fit) return;
   if (row.hidden !== !fit.row) row.hidden = !fit.row;
-  if (message.hidden !== (fit.lines === 0)) message.hidden = fit.lines === 0;
+  const hide = fit.lines === 0 || !message.textContent;
+  if (message.hidden !== hide) message.hidden = hide;
   if (fit.lines && row.style.getPropertyValue("--waiting-lines") !== String(fit.lines)) row.style.setProperty("--waiting-lines", String(fit.lines));
 }
 
@@ -74,7 +76,12 @@ export function syncWaitingRow(pane, claim, now = Date.now(), { observe = observ
   const age = row.querySelector(".waiting-age"), message = row.querySelector(".waiting-message");
   const aged = ` · ${waitedText(claim.since, now)}`;
   if (age.textContent !== aged) age.textContent = aged;
-  const text = claim.message ?? waitingLabel(claim);
-  if (message.textContent !== text) message.textContent = text;
+  const text = waitingDetail(claim) ?? "";
+  if (message.textContent !== text) {
+    message.textContent = text;
+    // A line that is back is shown as far as the pane fits it.
+    if (text) { message.hidden = false; fitWaitingLines(row); }
+  }
+  if (!text && !message.hidden) message.hidden = true;
   if (message.classList.contains("reason") !== (claim.message == null)) message.classList.toggle("reason", claim.message == null);
 }

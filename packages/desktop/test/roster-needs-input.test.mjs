@@ -318,7 +318,7 @@ test("the card shows the reason, the message and the age, computed when shown", 
   assert.equal(u.fact("dev-a", "Message"), "Allow Bash(rm -rf build)?");
   const keys = u.facts("dev-a").rows.map(([k]) => k);
   assert.equal(keys.indexOf("Waiting"), keys.indexOf("Status") + 1, "after Status");
-  assert.equal(u.fact("dev-b", "Waiting"), `Needs input · 3 h (since ${waitingClock(SINCE)})`, "an unknown reason is never shown raw");
+  assert.equal(u.fact("dev-b", "Waiting"), `Needs input · 3 h (since ${waitingClock(SINCE)})`, "an unknown reason is never shown raw: the card has no tag, so its Waiting fact says the shared word once");
   assert.equal(u.fact("dev-b", "Message"), undefined, "no message, no row");
   t.mock.timers.setTime(Date.parse(SINCE) + 2 * 86400e3 + 5);
   assert.equal(u.fact("dev-a", "Waiting"), `Waiting for a tool approval · 2 d (since ${waitingClock(SINCE)})`, "not frozen at paint");
@@ -445,7 +445,9 @@ test("an unavailable row (no card) says it in its title and description: message
   u.render(withheld);
   WITHHELD.forEach(([message, , label], n) => {
     const said = u.row(`held-${n}`).getAttribute("aria-description");
-    assert.ok(said.endsWith(` · Needs input: ${label} since ${waitingClock(SINCE)}`), `${message}: ${said}`);
+    // The card's label for an unknown reason is the tag's own word, so the sentence says it once (#1502).
+    const detail = label === "Needs input" ? "" : `: ${label}`;
+    assert.ok(said.endsWith(` · Needs input${detail} since ${waitingClock(SINCE)}`), `${message}: ${said}`);
     assert.equal(u.row(`held-${n}`).title, said);
     assert.doesNotMatch(said, /withheld/i);
   });

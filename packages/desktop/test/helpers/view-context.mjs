@@ -11,7 +11,7 @@ import { deploymentState, rosterSections, rowStale, splitByDeployment } from "..
 import { DESKTOP_TERMS } from "../../renderer/desktop-terms.mjs";
 import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
-import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../../client/waiting-on-you.mjs";
+import { waitingClaim, waitingSentence, waitingDetail, waitingClock } from "../../../client/waiting-on-you.mjs";
 import { waitingRollup } from "../../../client/instance-tree.mjs";
 import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, heldLine } from "../../renderer/speaker-line.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
@@ -22,7 +22,7 @@ import { syncWaitingRow } from "../../renderer/waiting-row.mjs";
 export const viewContext = () => ({
   contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale, deploymentState,
   rehomeMap, viewMembership: createViewMembership(), rehomeWorkspaceState() {},
-  waitingClaim, waitingRollup, waitingSentence, waitingLabel, waitingClock, splitByDeployment,
+  waitingClaim, waitingRollup, waitingSentence, waitingDetail, waitingClock, splitByDeployment,
   rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, keptFailure, heldLine,
   // #1421 §2: an instance's colour on its dots (instance-dot.mjs), pure, read by the roster paint, the tab sync and a tab's open.
   dotColor, paintDotColor,

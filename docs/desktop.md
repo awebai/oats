@@ -826,7 +826,8 @@ over its terminal:
 - **Needs input**, then how long it has waited (`· 12 min`), on one line.
 - Under it, the agent's question as it wrote it, shown as plain text. When
   the agent left no text, the row says why in words, for example "Waiting for
-  a tool approval".
+  a tool approval". When the agent gave no reason either, the first line
+  says it all and the row has no second line.
 - The question wraps to at most three lines, and the row never takes more
   than a quarter of the pane; a longer question ends with "…". The tab's
   tooltip and the sidebar's card have the whole of it. A pane too short

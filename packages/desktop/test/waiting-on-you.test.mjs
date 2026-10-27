@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
+import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitingDetail, waitedText, waitingClock, waitingNames,
   waitingBelowText, waitingSentence } from '../../client/waiting-on-you.mjs';
 import { EVENTS_WITHHELD, eventsDetail } from '../../client/instance-events-contract.mjs';
 import { collapseKey, instanceId, waitingRollup } from '../../client/instance-tree.mjs';
@@ -115,6 +115,26 @@ test('reasons map to fixed words; an unknown or null reason reads "Needs input" 
   assert.equal(waitingLabel(null), 'Needs input');
 });
 
+test('waitingDetail: the words after a "Needs input" tag: the message, else a known reason\'s words, else null, so the tag is said once (#1502)', () => {
+  assert.equal(waitingDetail(waitingOnYouData(claim())), 'Allow Bash(rm -rf build)?');
+  assert.equal(waitingDetail(waitingOnYouData(claim({ message: null, reason: 'question' }))), 'Asked you a question');
+  for (const reason of ['approval', null, '', 'toString', '__proto__']) {
+    assert.equal(waitingDetail(waitingOnYouData(claim({ message: null, reason }))), null, String(reason));
+    assert.equal(waitingDetail(waitingOnYouData(claim({ message: '   ', reason }))), null, `${reason}: a message of only spaces adds nothing either`);
+  }
+  assert.equal(waitingDetail(waitingOnYouData(claim({ message: 'Pick one?', reason: 'approval' }))), 'Pick one?', 'a message is said whatever the reason');
+});
+
+test('a message with no character but white space reads null in the claim, as a withheld one does; waitingMessage still accepts it (#1502)', () => {
+  for (const message of ['   ', ' ', '\u00A0\u00A0', '\u3000', ' \u2003 ', '\u2002\u200A', '\u202F']) {
+    assert.notEqual(waitingMessage(message), null, `${JSON.stringify(message)} is a valid note, as the kernel's rule says`);
+    const out = waitingOnYouData(claim({ message }));
+    assert.ok(out, 'the claim is kept'); assert.equal(out.message, null, JSON.stringify(message));
+  }
+  assert.equal(waitingOnYouData(claim({ message: '  Pick one?  ' })).message, '  Pick one?  ', 'text with spaces around it is kept verbatim');
+  assert.equal(waitingOnYouData(claim({ message: '\u00A0x' })).message, '\u00A0x');
+});
+
 test('waitedText floors into under a minute / min / h / d buckets; a future since reads under a minute', () => {
   const at = Date.parse(since), min = 60000, h = 60 * min;
   for (const [offset, text] of [[0, 'under a minute'], [59999, 'under a minute'], [-5 * min, 'under a minute'], [min, '1 min'],
@@ -153,8 +173,8 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' })), [], sameDay), ` · Needs input: Asked you a question since ${at}`);
   // A withheld note reads as the reason in words, never "[withheld]" (#584 finding 12).
   for (const [note, reason, label] of [['See https://github.com/awebai/oats/pull/552', 'attention', 'Asked for your attention'],
-    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', 'Needs input']]) {
-    assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input: ${label} since ${at}`, note);
+    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', null]]) {
+    assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input${label ? `: ${label}` : ''} since ${at}`, note);
   }
   // A start built from LOCAL fields, so its local date is known in any time zone.
   const lastYear = waitingOnYouData(claim({ since: new Date(localAt(2026, 9, 3, 10, 0)).toISOString() }));
