@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DETACH_KEY_FEATURE, LOCKED_PREFIX_BINDINGS, NO_STATUS_LINE_FEATURE, PREFIX_SCROLL_FEATURE, readSessionViewer, PREFIX_TABLE_SUFFIX, PREFIX_KEY, SESSION_DETACHED_EXIT, VIEWER_BINDINGS, VIEWER_PREFIX_MIN_TMUX, VIEWER_SCROLL_HINT, VIEWER_SCROLL_HINT_WITHOUT_PREFIX, tmuxForwardsBoundKey, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
-function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "", clients = "" } = {}) {
+function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "", clients = "", panes = "%1\t0\tcodex\t123\n" } = {}) {
   const calls = [], options = [];
   return { calls, options, exec(bin, args, opts) {
     assert.equal(bin, "tmux");
     // The shared tmux helper forces UTF-8 (-u) ahead of the socket (a0b0e14).
     assert.deepEqual(args.slice(0, 3), ["-u", "-S", target.socket]);
     const cmd = args.slice(3); calls.push(cmd); options.push(opts);
-    if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
+    if (cmd[0] === "list-panes") return panes;
     if (cmd[0] === "list-keys") return keys;
     if (cmd[0] === "list-clients") return clients;
     if (cmd[0] === "list-sessions") return sessions;
@@ -117,7 +117,7 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
   const name = io.calls.find((c) => c[0] === "new-session")[3];
   assert.match(name, /^oatsview-\d+-[0-9a-f]{8}$/);
   const prepared = [
-    ["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}"],
+    ["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\t#{@oats-agent}"],
     ["list-keys"],
     ["list-sessions", "-F", "#{session_name}\t#{session_attached}"],
     ["new-session", "-d", "-s", name, "-P", "-F", "#{window_id}"],
@@ -158,7 +158,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
     const name = io.calls.find((c) => c[0] === "new-session")[3];
     assert.match(name, /^oatsview-\d+-[0-9a-f]{8}$/);
     assert.deepEqual(io.calls, [
-      ["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}"],
+      ["list-panes", "-t", "=oats:=agent", "-F", "#{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\t#{@oats-agent}"],
       ["list-keys"],
       ["list-sessions", "-F", "#{session_name}\t#{session_attached}"],
       ["new-session", "-d", "-s", name, "-P", "-F", "#{window_id}"],
@@ -466,4 +466,31 @@ test("readSessionViewer answers this host's viewer fact, prefixScroll: a viewer 
     assert.deepEqual(readSessionViewer({ exec }), { prefixScroll }, String(answer));
     assert.deepEqual(calls, [["tmux", "-V"], ["tmux", "-V"]], "probed fresh, never kept");
   }
+});
+
+test("1569: in a split window the viewer selects the agent's pane once the window is linked; a one-pane window is left as it is", () => {
+  // The agent's pane is %7 (marked), listed after a split %3 that tmux may have left active.
+  for (const panes of ["%3\t0\tzsh\t300\t\n%7\t0\tcodex\t700\tagent\n", "%7\t0\tcodex\t700\tagent\n%3\t0\tzsh\t300\t\n"]) {
+    const io = fixture(false, { panes });
+    prepareSessionViewer(target, io);
+    const kinds = io.calls.map((c) => c[0]);
+    assert.deepEqual(io.calls.filter((c) => c[0] === "select-pane"), [["select-pane", "-t", "%7"]], "the agent's pane, by its id, once");
+    const at = kinds.indexOf("select-pane");
+    assert.deepEqual(kinds.slice(at - 2, at + 1), ["link-window", "kill-window", "select-pane"], "after the window is linked and the placeholder is gone");
+    assert.ok(at < kinds.indexOf("set-option"), "before the viewer's own options");
+  }
+  // Unmarked: the lowest id is the agent's.
+  const unmarked = fixture(false, { panes: "%9\t0\tcodex\t900\n%10\t0\tzsh\t1000\n" });
+  prepareSessionViewer(target, unmarked);
+  assert.deepEqual(unmarked.calls.filter((c) => c[0] === "select-pane"), [["select-pane", "-t", "%9"]]);
+  // One pane, marked or not: no select-pane at all, as before.
+  for (const panes of ["%1\t0\tcodex\t123\n", "%1\t0\tcodex\t123\tagent\n"]) {
+    const io = fixture(false, { panes });
+    prepareSessionViewer(target, io);
+    assert.equal(io.calls.some((c) => c[0] === "select-pane"), false, JSON.stringify(panes));
+  }
+  // A window whose agent's pane cannot be told: refused before any viewer exists.
+  const twice = fixture(false, { panes: "%3\t0\tcodex\t300\tagent\n%7\t0\tcodex\t700\tagent\n" });
+  assert.throws(() => prepareSessionViewer(target, twice), /^Error: the window has 2 panes marked as agent's agent pane \(%3, %7\)/);
+  assert.deepEqual(twice.calls.map((c) => c[0]), ["list-panes"], "nothing else was asked");
 });

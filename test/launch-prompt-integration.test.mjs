@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,7 @@ import { startInstanceSession, restartInstanceSession, inspectInstanceSession, s
 import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES, CLAUDE_SESSION_HINT } from '../lib/launch-prompt-fixtures.mjs';
 import { waitUntil } from './helpers/host-fixture.mjs';
 import { readEvents } from '../lib/instance-events.mjs';
+import { LAUNCH_PANE_FORMAT } from '../lib/launch-prompt-transport.mjs';
 
 const DEV = ['--dangerously-load-development-channels', 'plugin:aweb-channel@awebai-marketplace'];
 // The exact words a person reads: what was seen, then the causes in order (a telemetry opt-out, the
@@ -73,6 +75,8 @@ process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(
   return { fx, write, home: name => join(fx.root, 'dev', 'instances', name) };
 }
 const meta = home => JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
+/** The pane's @oats-agent mark (#1569), read from the home's recorded server. */
+const markOf = (h, pane) => execFileSync('tmux', ['-u', '-S', meta(h).tmux.socket, 'display-message', '-p', '-t', pane, '#{@oats-agent}'], { encoding: 'utf8', timeout: 10000 }).trim();
 // A stop that follows a start: stop signals the processes it finds under the pane, and answers
 // E_SESSION_UNKNOWN (rightly) when the session reads as running but its `ps` walk finds none yet, as a
 // just-forked harness under load can be. Wait, bounded, until both hold in one poll: session inspect
@@ -100,6 +104,7 @@ test('an eligible claude argv engages on spawn, start and restart: one Enter eac
   assert.ok(spawned.warnings.includes(DEV_CHANNEL_STATEMENT));
   const a = home('dev-spawn');
   assert.equal(meta(a).launched, true);
+  assert.equal(markOf(a, `=${meta(a).tmux.session}:=dev-spawn`), 'dev-spawn', 'the spawn marked the pane it created as the agent\'s');
   assert.equal(meta(a).launchPrompts.status, 'completed');
   assert.deepEqual(meta(a).launchPrompts.answers, [{ class: 'awebDevelopmentChannel', signatureId: ENTRY, status: 'submitted' }]);
   assert.deepEqual(keys(a), ['\r']);
@@ -115,7 +120,17 @@ test('an eligible claude argv engages on spawn, start and restart: one Enter eac
   assert.equal(started.launchPrompts.status, 'completed', 'the start result carries what it recorded');
   assert.equal(meta(b).launchPrompts.status, 'completed');
   await waitUntil(() => keys(b).length === 1, 'the start sent its Enter');
-  const restarted = await fx.inEnv(() => restartInstanceSession(b));
+  // The restart in place, its tmux calls observed: the respawn marks the pane by its id, before the
+  // display-message whose answer is the new process's identity (#1569).
+  const launches = [];
+  const observing = { exec: (binary, args, options) => { if (args.includes('respawn-pane') || args.includes('new-window')) launches.push(args); return execFileSync(binary, args, options); } };
+  const restarted = await fx.inEnv(() => restartInstanceSession(b, { io: observing }));
+  assert.equal(launches.length, 1);
+  const [respawn] = launches;
+  const pane = respawn[respawn.indexOf('respawn-pane') + 3];
+  assert.deepEqual(respawn.slice(respawn.indexOf('respawn-pane'), respawn.indexOf('respawn-pane') + 3), ['respawn-pane', '-k', '-t']);
+  assert.deepEqual(respawn.slice(respawn.indexOf(';')), [';', 'set-option', '-q', '-p', '-t', pane, '@oats-agent', 'dev-start', ';', 'display-message', '-p', '-t', pane, LAUNCH_PANE_FORMAT]);
+  assert.equal(markOf(b, pane), 'dev-start');
   assert.ok(restarted.warnings.includes(DEV_CHANNEL_STATEMENT));
   assert.equal(meta(b).launchPrompts.status, 'completed');
   assert.notEqual(meta(b).launchPrompts.receipt[0].row.data.startId, undefined);
