@@ -297,8 +297,9 @@ harvest duty, its final harvest checkpoint is recorded and its harvester
 launched (the harvester snapshots at spawn, and retirement keeps a recovery
 copy). A child runs that checkpoint before it reports done, and says so
 ("done, harvested: <harvester>" or "done, no harvest duty"); ask only when its
-report lacks that line. Then `oats retire <child>` and record it in your
-state. Retire children
+report lacks that line. "Done, harvest pending: <proposal>" is not finished:
+wait for its harvested report. Then `oats retire <child>` and record it in
+your state. Retire children
 before yourself, and never another instance's: tell its parent instead. Your
 soul's own capabilities may say more about when work has landed. Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
