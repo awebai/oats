@@ -38,7 +38,7 @@ const TAB_LABELS = { machines: 'Machines', teams: 'Teams', souls: 'Souls', capab
  * --live underline. Shared with the Deployments page's tabs (deployments-page.mjs), so the two never drift. */
 export const tabBarCSS = (sel) => `${sel} { display:flex; flex-wrap:nowrap; overflow-x:auto; gap:22px; min-width:0; scrollbar-width:none; }
 /* Unselected tabs read like the sidebar's items (human, 2026-09-28): its ink and size, not muted grey. */
-${sel} button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font:500 13px var(--sans,system-ui); cursor:pointer; }
+${sel} button { flex:none; display:inline-flex; align-items:center; gap:6px; padding:0; border:0; border-radius:0; background:none; color:var(--nav-fg); font-weight:500; font-size:13px; line-height:normal; font-family:var(--ui-font,system-ui); cursor:pointer; }
 ${sel} button:hover { color:var(--fg); }
 ${sel} button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 /* Keyboard focus: the tint gets a layout-neutral 6px inset so it does not hug the label. */
@@ -72,7 +72,7 @@ ${tabBarCSS('.workspace-tabs')}
    Geometry (human, 2026-09-29, "looks cropped"): 24px segments inside 3px padding make a 30px frame
    (32px with its 1px border), text centred at line-height 1, and flex:none so no bar squeezes it. */
 .ws-segmented { display:inline-flex; align-items:center; box-sizing:content-box; height:24px; padding:3px; gap:2px; border:1px solid var(--border); border-radius:8px; background:var(--surface); flex:none; }
-.oats-view .ws-segmented button { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-height:0; height:24px; padding:0 10px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:500 12px/1 var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .ws-segmented button { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-height:0; height:24px; padding:0 10px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-weight:500; font-size:12px; line-height:1; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .ws-segmented button:hover { color:var(--fg); }
 .oats-view .ws-segmented button[aria-pressed=true] { background:var(--sel); color:var(--accent); font-weight:650; }
 .oats-view .ws-segmented button:focus-visible { background:var(--sel); }

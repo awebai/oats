@@ -129,8 +129,9 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
 
 // Keep the operational capabilities narrow. oats.setup and oats.support are resource-only; oats.core
 // adds exactly one executable surface, its Claude Code waiting emitter: the spawn
-// and launch hooks of bin/oats-core.mjs (preview-aware) and the bin/claude-waiting.sh
-// they wire into a Claude instance's settings. Any other executable surface, key or
+// and launch hooks of bin/oats-core.mjs (preview-aware), the bin/claude-waiting.sh
+// they wire into a Claude instance's settings, and the bin/claude-waiting-message.mjs
+// that script runs for a claim's text (#1502). Any other executable surface, key or
 // file is a boundary change, not unnoticed manifest growth. Use the kernel's actual
 // schema, not a copied validator; files must survive acquiring each own root.
 const OPERATIONAL_CAPABILITIES = [
@@ -138,7 +139,7 @@ const OPERATIONAL_CAPABILITIES = [
     slug: "oats-core", names: ["oats-operate", "oats-souls", "oats-token-saving"], injection: "injects/oats.md",
     // 0.40.0: `oats instance waiting`, which the emitter calls, and `oats instance attention`, which the skills teach.
     compatibility: ">=0.40.0",
-    executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" }, launchPreview: true, files: ["bin/claude-waiting.sh", "bin/oats-core.mjs"] },
+    executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" }, launchPreview: true, files: ["bin/claude-waiting-message.mjs", "bin/claude-waiting.sh", "bin/oats-core.mjs"] },
   },
   { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-setup-expert", "oats-host-delivery", "oats-agent-permissions", "oats-git-setup", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations", "oats-upgrade"], injection: "injects/setup.md", compatibility: ">=0.30.0" },
   // 0.40.0: `oats instance attention`, which the skills use to ask the desk's human.

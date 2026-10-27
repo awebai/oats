@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { execFileSync as execFileSyncReal, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fakeBin } from "./helpers/fake-ssh.mjs";
+import { fakeBin, fakeLoginShell } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { connectServer } from "../lib/servers.mjs";
 
@@ -55,6 +55,28 @@ esac
   return { base, bin, log, fx, env, npmDir, oats, servers, serversFile, npmCalls, cleanup, hostDir: join(env.HOME, "acme") };
 }
 const statuses = (res) => res.steps.map((s) => s.status);
+/** The command line of every ssh call the fake ssh logged, in order. */
+const sshCommands = (s) => {
+  const lines = existsSync(s.log) ? readFileSync(s.log, "utf8").split("\n") : [];
+  return lines.flatMap((line, i) => (line === "--" && /-host$|^nowhere$/.test(lines[i + 1] ?? "") ? [lines[i + 2]] : []));
+};
+/** What the host's sshd asks the login shell for first: its own name. */
+const SHELL_ASK = "printf '%s\\n' \"$SHELL\"";
+/** The host user's login shell is a fake `name` (helpers/fake-ssh.mjs) reading s.env.HOME's files. */
+function loginShell(s, name = "zsh", files = {}) {
+  const shell = fakeLoginShell(join(s.base, "remote-shells"), name);
+  s.env.FAKE_REMOTE_SHELL = shell;
+  for (const [file, text] of Object.entries(files)) writeFileSync(join(s.env.HOME, file), text);
+  return shell;
+}
+const shellCalls = (s) => (existsSync(join(s.env.HOME, ".shell-calls")) ? readFileSync(join(s.env.HOME, ".shell-calls"), "utf8").split("\n").filter(Boolean) : []);
+/** A directory holding an `oats` that is this CLI. */
+function oatsDir(s) {
+  const dir = join(s.base, "oats-bin"); mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "oats"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"\n`);
+  chmodSync(join(dir, "oats"), 0o755);
+  return dir;
+}
 const stepOf = (res, name) => res.steps.find((s) => s.step === name);
 
 test("a fresh host: no npm, then no oats, then installed, onboarded, registered and ready; a re-run does nothing", () => {
@@ -68,7 +90,9 @@ test("a fresh host: no npm, then no oats, then installed, onboarded, registered 
     assert.equal(res.id, "box"); assert.equal(res.ready, false); assert.equal(res.registration, null);
     assert.deepEqual(res.steps.map((x) => x.step), STEPS);
     assert.deepEqual(statuses(res), ["ok", "needs-human", "skipped", "skipped", "skipped", "skipped"]);
-    assert.equal(stepOf(res, "oats").remedy, "install Node.js 22+ (npm) on box-host, or pass --path <the directory holding npm>");
+    assert.equal(stepOf(res, "ssh").detail, "could not read box-host's login-shell PATH (its login shell (sh) is not bash, zsh or fish); using ssh's own PATH");
+    assert.equal(stepOf(res, "oats").detail, "no oats at oats on box-host, and no npm on ssh's PATH");
+    assert.equal(stepOf(res, "oats").remedy, "install Node.js 22+ (npm) on box-host where a non-interactive ssh command finds it, then check again (run the same connect); from the CLI, --path <the directory holding npm> names it instead");
     for (const name of STEPS.slice(2)) assert.equal(stepOf(res, name).detail, "waits for oats");
     assert.deepEqual(res.human, [stepOf(res, "oats").remedy]);
     assert.deepEqual(s.servers(), {}, "nothing registered");
@@ -292,6 +316,7 @@ test("readiness is bounded: souls the budget does not reach become one line nami
   const souls = ["a", "b", "c", "d"].map((name) => ({ name, problem: null }));
   const answer = (cmd) => {
     if (cmd === "true") return "";
+    if (cmd === SHELL_ASK) return "/bin/sh\n";
     if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: ["server-connect"] });
     if (/ onboard .* --check --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "deployment", workspace: { ref: "git:github.com/acme/ws", key: "github.com/acme/ws" }, remote: { readable: true, commit: "a".repeat(40) } } });
     if (/ status --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/srv/ws/agents", agents: [], workspace: { key: "github.com/acme/ws" } } });
@@ -332,6 +357,7 @@ test("the requested id's own target conflict comes before the same-target twin, 
 function hostAnswers(souls) {
   return (cmd) => {
     if (cmd === "true") return "";
+    if (cmd === SHELL_ASK) return "/bin/sh\n";
     if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, name: "@awebai/oats", version: "99.0.0", features: ["server-connect"] });
     if (/ onboard .* --check --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "deployment", workspace: { ref: "git:github.com/acme/ws", key: "github.com/acme/ws" }, remote: { readable: true, commit: "a".repeat(40) } } });
     if (/ status --json --dir \/srv\/ws$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/srv/ws/agents", agents: [], workspace: { key: "github.com/acme/ws" } } });
@@ -442,6 +468,7 @@ test("a copyable remedy passes each dynamic value as ONE literal argument, whate
     let res = connectServer({ ...budgetOptions, workspaceRef: hostile }, { execFileSync: (bin, argv) => {
       const cmd = argv.at(-1);
       if (cmd === "true") return "";
+      if (cmd === SHELL_ASK) return "/bin/sh\n";
       if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "99.0.0", features: ["server-connect"] });
       return JSON.stringify({ schemaVersion: 1, ok: true, result: { check: true, dir: "/srv/ws", state: "absent", workspace: { ref: hostile, key: `local/${hostile}`, url: hostile }, remote: { readable: false, error: { code: "E_REMOTE_UNREADABLE", reason: "not-found", message: "missing" } } } });
     } });
@@ -474,6 +501,7 @@ test("a host kernel of this version that does not advertise server-connect is no
   const execFileSync = (bin, argv) => {
     const cmd = argv.at(-1);
     if (cmd === "true") return "";
+    if (cmd === SHELL_ASK) return "/bin/sh\n";
     if (/ version --json$/.test(cmd)) return JSON.stringify({ schemaVersion: 1, desktopApi: 1, version: "0.39.0", features: installed ? ["server-connect"] : ["workspace-identity"] });
     if (/^npm --version$/.test(cmd)) { npmCalls.push("version"); return "10.9.0\n"; }
     if (/^npm install -g @awebai\/oats@0\.39\.0$/.test(cmd)) { npmCalls.push("install"); installed = true; return "added 1 package\n"; }
@@ -492,3 +520,144 @@ test("a host kernel of this version that does not advertise server-connect is no
   const stuck = (bin, argv) => (/^npm install /.test(argv.at(-1)) ? "added 0 packages\n" : execFileSync(bin, argv));
   assert.throws(() => connectServer({ ...budgetOptions, installOats: true }, { execFileSync: stuck }), (e) => e.code === "E_REMOTE_INSTALL" && /does not advertise server-connect/.test(e.message));
 }));
+
+// awebai/oats#1517: without --path, connect reads the PATH of the host user's own login shell
+// ($SHELL there, run -l -i), records it as the registration's `path`, and every later hop uses it.
+
+test("a PATH only the host's login files set is found: oats installs and resolves through it, and every later hop uses it, a later --server command too", () => {
+  const s = setup();
+  try {
+    loginShell(s, "zsh", { ".zprofile": `PATH=${s.npmDir}:"$PATH"; export PATH\n` });
+    const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--install-oats", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const res = r.json().result;
+    assert.deepEqual(statuses(res), ["ok", "done", "ok", "done", "done", "ok"], JSON.stringify(res.steps, null, 1));
+    assert.equal(stepOf(res, "ssh").detail, "PATH from box-host's login shell (zsh -l -i), used by every later step");
+    const path = `${s.npmDir}:${s.bin}`;
+    const registration = { sshHost: "box-host", workspace: s.hostDir, oatsPath: join(s.npmDir, "oats"), path, workspaceKey: s.fx.key };
+    assert.deepEqual(res.registration, registration);
+    assert.deepEqual(s.servers().box, registration);
+    assert.deepEqual(shellCalls(s).filter((c) => c.includes("-l")), ["-l -i"], "asked once, as a login and interactive shell");
+
+    // ssh's `true`, the shell's name, the login shell's PATH; then every hop with the recorded PATH.
+    const commands = sshCommands(s);
+    assert.equal(commands[0], "true");
+    assert.equal(commands[1], SHELL_ASK);
+    assert.match(commands[2], new RegExp(`^exec ${s.env.FAKE_REMOTE_SHELL} -l -i -c `));
+    const later = commands.slice(3);
+    assert.ok(later.length >= 6, later.join("\n"));
+    for (const cmd of later) assert.ok(cmd.startsWith(`PATH=${path}:"$PATH" `), `a hop without the login PATH: ${cmd}`);
+    assert.ok(later.some((cmd) => cmd.includes(`${join(s.npmDir, "oats")} onboard `)), "the resolved oats, by its absolute path");
+
+    // A later command against the registration: the same PATH and oats.
+    const before = sshCommands(s).length;
+    const check = s.oats(["server", "check", "box", "--json"]);
+    assert.equal(check.status, 0, check.stderr + check.stdout);
+    const routed = sshCommands(s).slice(before);
+    assert.ok(routed.length > 0);
+    for (const cmd of routed) assert.ok(cmd.startsWith(`PATH=${path}:"$PATH" ${join(s.npmDir, "oats")} `), cmd);
+  } finally { s.cleanup(); }
+});
+
+test("a PATH only the interactive rc sets is found too: the login shell runs -i as well as -l", () => {
+  const s = setup();
+  try {
+    // ~/.zshrc is read only by an interactive shell: a login-only read (-l) would not find npm here.
+    loginShell(s, "zsh", { ".zprofile": "LOGIN_ONLY=1\n", ".zshrc": `echo 'welcome to box-host'\nPATH="$PATH":${s.npmDir}; export PATH\n` });
+    const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--json"]);
+    const res = r.json().result;
+    assert.deepEqual(statuses(res), ["ok", "needs-human", "skipped", "skipped", "skipped", "skipped"]);
+    assert.equal(stepOf(res, "ssh").detail, "PATH from box-host's login shell (zsh -l -i), used by every later step");
+    assert.equal(stepOf(res, "oats").remedy, `on box-host: \`npm install -g @awebai/oats@${VERSION}\` (or pass --install-oats)`, "npm found on the rc's PATH");
+    assert.deepEqual(s.npmCalls(), [["--version"]]);
+    assert.deepEqual(shellCalls(s).filter((c) => c.includes("-l")), ["-l -i"]);
+  } finally { s.cleanup(); }
+});
+
+test("even the login shell has no npm: the remedy names the login shell's PATH and a check to run there, acted on by checking again", () => {
+  const s = setup();
+  try {
+    const shell = loginShell(s, "zsh");
+    const res = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--install-oats", "--json"]).json().result;
+    assert.deepEqual(statuses(res), ["ok", "needs-human", "skipped", "skipped", "skipped", "skipped"]);
+    assert.equal(stepOf(res, "oats").detail, "no oats at oats on box-host, and no npm on the PATH of box-host's login shell (zsh -l -i)");
+    const remedy = stepOf(res, "oats").remedy;
+    assert.equal(remedy, `install Node.js 22+ (npm) on box-host so that its login shell finds it (there, \`${shell} -l -i -c 'command -v npm'\` prints its path), then check again (run the same connect); from the CLI, --path <the directory holding npm> names it instead`);
+    assert.deepEqual(codeSpans(remedy), [`${shell} -l -i -c 'command -v npm'`], "one command, for the Desktop's copy button");
+    assert.deepEqual(res.human, [remedy]);
+    assert.deepEqual(s.servers(), {});
+  } finally { s.cleanup(); }
+});
+
+test("an explicit --path wins: the login shell is never asked", () => {
+  const s = setup();
+  try {
+    loginShell(s, "zsh", { ".zprofile": "PATH=/never:\"$PATH\"; export PATH\n" });
+    const r = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--path", s.npmDir, "--install-oats", "--json"]);
+    const res = r.json().result;
+    assert.equal(res.ready, true, r.stdout);
+    assert.equal(Object.hasOwn(stepOf(res, "ssh"), "detail"), false);
+    assert.deepEqual(s.servers().box.path, s.npmDir);
+    assert.equal(Object.hasOwn(s.servers().box, "oatsPath"), false, "oats stays as --path finds it");
+    assert.equal(sshCommands(s).some((cmd) => cmd.includes("$SHELL") || cmd.includes(" -l -i ")), false, sshCommands(s).join("\n"));
+    assert.deepEqual(shellCalls(s).filter((c) => c.includes("-l")), []);
+  } finally { s.cleanup(); }
+});
+
+test("a login shell that is not bash, zsh or fish is never run: ssh's own PATH, with the detail", () => {
+  const s = setup();
+  try {
+    loginShell(s, "tcsh", { ".zprofile": `PATH=${s.npmDir}:"$PATH"; export PATH\n` });
+    const res = s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", "~/acme", "--json"]).json().result;
+    assert.equal(stepOf(res, "ssh").status, "ok");
+    assert.equal(stepOf(res, "ssh").detail, "could not read box-host's login-shell PATH (its login shell (tcsh) is not bash, zsh or fish); using ssh's own PATH");
+    assert.equal(stepOf(res, "oats").detail, "no oats at oats on box-host, and no npm on ssh's PATH");
+    assert.deepEqual(shellCalls(s).filter((c) => c.includes("-l")), [], "never run as a login shell");
+  } finally { s.cleanup(); }
+});
+
+test("a login shell that does not answer in time is given up on: ssh's own PATH, with the detail", () => isolatedHome(() => {
+  const s = setup();
+  try {
+    loginShell(s, "zsh", { ".zshrc": "exec sleep 30\n" });
+    const execFileSync = (bin, argv, opts) => execFileSyncReal(join(s.bin, bin), argv, { ...opts, env: s.env });
+    const started = Date.now();
+    const res = connectServer({ ...budgetOptions, sshHost: "box-host", dir: "~/acme" }, { execFileSync, loginShellTimeoutMs: 1000 });
+    assert.ok(Date.now() - started < 10000, "bounded");
+    assert.equal(stepOf(res, "ssh").detail, "could not read box-host's login-shell PATH (its login shell did not answer within 1 s); using ssh's own PATH");
+    assert.equal(stepOf(res, "oats").detail, "no oats at oats on box-host, and no npm on ssh's PATH");
+  } finally { s.cleanup(); }
+}));
+
+test("register: a login-shell path and oats fill what an existing registration lacks, never change what it has, and replace it under --replace", () => {
+  const s = setup();
+  try {
+    const bin = oatsDir(s);
+    loginShell(s, "zsh", { ".zprofile": `PATH=${bin}:"$PATH"; export PATH\n` });
+    const write = (servers) => writeFileSync(s.serversFile, JSON.stringify({ servers }, null, 2) + "\n");
+    const connect = (...more) => s.oats(["server", "connect", "box", "--ssh", "box-host", "--dir", s.fx.dep, ...more, "--json"]);
+    const path = `${bin}:${s.bin}`, oats = join(bin, "oats");
+
+    // Registered before the login-shell PATH was read: filled in, the rest unchanged.
+    write({ box: { sshHost: "box-host", workspace: s.fx.dep, label: "Box", workspaceKey: s.fx.key } });
+    let r = connect();
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    let reg = stepOf(r.json().result, "register");
+    assert.deepEqual([reg.status, reg.detail], ["done", "recorded oatsPath, path"]);
+    assert.deepEqual(s.servers().box, { sshHost: "box-host", workspace: s.fx.dep, label: "Box", workspaceKey: s.fx.key, oatsPath: oats, path });
+
+    // Values it has are kept, and not reported as differing: they were not asked for.
+    const own = { sshHost: "box-host", workspace: s.fx.dep, oatsPath: CLI, path: "/opt/own/bin", workspaceKey: s.fx.key };
+    write({ box: own });
+    r = connect();
+    reg = stepOf(r.json().result, "register");
+    assert.deepEqual([reg.status, Object.hasOwn(reg, "detail")], ["ok", false], JSON.stringify(reg));
+    assert.deepEqual(s.servers().box, own);
+
+    // --replace rewrites them with what this run found.
+    r = connect("--replace");
+    reg = stepOf(r.json().result, "register");
+    assert.deepEqual([reg.status, reg.detail], ["done", "updated oatsPath, path"]);
+    assert.deepEqual(s.servers().box, { sshHost: "box-host", workspace: s.fx.dep, oatsPath: oats, path, workspaceKey: s.fx.key });
+  } finally { s.cleanup(); }
+});

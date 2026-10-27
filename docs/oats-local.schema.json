@@ -56,7 +56,7 @@
     },
     "launch-configs": {
       "type": "object",
-      "description": "Named ways to start a harness on this host, independent of any soul (a spawn-time host choice). Selected by name at spawn or session start/restart; explicit flags override its fields. Written by `oats launch-config set|remove`.",
+      "description": "Named ways to start a harness on this host, independent of any soul (a spawn-time host choice). Selected by name at spawn or session start/restart; explicit flags override its fields. Written by `oats launch-config set|remove`. This machine's ~/.oats/config/launch-configs.yaml holds the same block as its one key (docs/configuration.md, This machine's launch configurations); an entry here replaces the machine's entry of the same name whole.",
       "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
       "additionalProperties": {
         "type": "object",
@@ -65,7 +65,7 @@
         "properties": {
           "harness": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness this configuration starts; it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
           "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "deprecated": true, "description": "The old name of `harness`, still read (a deprecation warning); both, disagreeing, are refused. `oats launch-config set` writes `harness`." },
-          "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the harness's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved against the deployment directory (where this oats-local.yaml lives) when relative. Checked to exist and be executable before any start; never executed just to probe it." },
+          "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the harness's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved, when relative, against the directory of the file that declares it (the deployment directory, where this oats-local.yaml lives, or ~/.oats/config for this machine's file). Checked to exist and be executable before any start; never executed just to probe it." },
           "args": { "type": "array", "items": { "type": "string" }, "description": "Extra arguments, each passed literally (no shell interpretation): native configuration files or profiles go here as ordinary arguments." },
           "env": {
             "type": "object",

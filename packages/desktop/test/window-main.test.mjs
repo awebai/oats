@@ -48,6 +48,7 @@ function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats',
     setTimeout: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
     clearTimeout: (timer) => { if (timer) timer.cleared = true; },
     createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl, frameWorkspace, validLayout,
+    omarchyArguments: Object.freeze(["--oats-host-omarchy"]), // main's start-time answer (omarchy-host.test.mjs), as on Omarchy
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
     // main's post of the window set to the backend (#1124), recorded: the views the windows show at each call.
     noteWindowViews: () => noted.push(main.windows.entries().map(([, key]) => key)),
@@ -75,6 +76,9 @@ test('restore with two workspaces: a window each, bound by its hash, titled from
   b.main.restoreWindows();
   assert.equal(FakeWindow.all.length, 2);
   assert.deepEqual(FakeWindow.all.map((w) => [w.loaded.hash, w.title, w.options.x]), [[workspaceHash(A).slice(1), 'oats', 50], [workspaceHash(B).slice(1), 'tsm', 300]]);
+  // Each window's preload hears main's Omarchy answer (oatsDesktop.isOmarchy), in an array of its own.
+  for (const w of FakeWindow.all) assert.deepEqual([...w.options.webPreferences.additionalArguments], ['--oats-host-omarchy']);
+  assert.notEqual(FakeWindow.all[0].options.webPreferences.additionalArguments, FakeWindow.all[1].options.webPreferences.additionalArguments);
 });
 
 test('restore with one workspace missing: no window for it, and windows.json still lists it', () => {

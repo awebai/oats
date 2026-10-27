@@ -302,7 +302,7 @@ in its workspace for the rest of the run, also while it is not reached.
 | `?` | `?` | state unknown: the kernel or the terminal probe could not tell, or the instance's machine was not reached |
 | `◆` | `#` | held by a spawn or a retire: under way (Retiring…), failed or not finished ([below](#held-rows)) |
 | `+n` | `+n` | after a name: n instances folded away below it |
-| `!` | `!` | needs input: in place of the state mark, in yellow and reverse video (not reversed on the selected row) |
+| `!` | `!` | needs input: in place of the state mark, in yellow and reverse video (not reversed on the selected row); with its terminal shown, the [waiting row](#tabs) under the tab bar says what it waits on |
 | `N below` | `N below` | N instances folded away below it need input: a tag in reverse video at the row's right edge, `N` where the whole name does not fit beside the words |
 | `>` | `>` | the selected row (also drawn in reverse video), and the pane the movement keys act on |
 | `*` | `*` | in the switcher: the workspace that is open |
@@ -581,6 +581,37 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
     of the row with their dividers (they stay open). The shown tab's name
     stays whole while the row can hold it, and is cut last.
   - The TUI takes no mouse input: a tab is shown with the keys below.
+- **The waiting row.** While the shown tab's agent waits on you (a live
+  `waitingOnYou` claim, as the list's `!` mark shows it), a row
+  stands under its group's tab bar, and the agent's screen starts under it:
+
+  ```
+  │[steward 1]│ backend-lead 2
+  │ Needs input  · 12 min Survey done: yes/no on bumping Claude Code
+  │ 2.1.309 + Codex 0.164.0 and removing their old mise installs
+  │> 
+  ```
+
+  - It reads `Needs input` in the list's needs-input look (reverse video in
+    the waiting colour), then how long the agent has waited, dim, after ` · `
+    (` - ` in ASCII), then the claim's message, the agent's own text. The
+    age comes first, so a cut never removes it.
+  - **A claim with no message** says what it waits on in the TUI's words:
+    `waiting on a permission prompt`, `asked you a question`,
+    `asked for your attention`, or `waiting for your input` when the
+    reason is not one of those.
+  - **A long message wraps** to at most 3 rows, and to no more than a
+    quarter of the group's height; when more is left, the last row ends in
+    `…` (`...` in ASCII). The whole message is in the agent's
+    [detail](#what-it-shows), and in `oats status`.
+  - **The agent's screen loses those rows** while the row stands, so its
+    pane is resized when the claim starts, clears or its text changes, and
+    never as the age grows: the rows are counted as if the age were its
+    longest, `under a minute`.
+  - In a [split](#splits) each group has its own row for its own shown tab.
+    A hidden tab's claim adds no row: the list's `!` mark shows it.
+  - Under `NO_COLOR` the words carry it: `Needs input` stays in reverse
+    video.
 - **Opening.** `Enter` on a row, an instance in
   [the palette](#the-palette), `Alt+Shift+Up` or `Alt+Shift+Down`, and a
   [spawn](#spawning-an-agent)'s new agent open a terminal the same way:

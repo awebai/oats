@@ -127,7 +127,7 @@ test("segmented control: selected segment is --sel/--accent at 650, unselected i
   assert.equal(group.height, "24px"); assert.equal(group.boxSizing, "content-box", "24px segments + 3px padding = a 30px frame inside its 1px border");
   assert.equal(group.borderRadius, "8px"); assert.match(group.flex, /^(none|0 0 auto)$/, "no bar squeezes it");
   const segment = u.rule(".oats-view .ws-segmented button");
-  assert.equal(segment.height, "24px"); assert.equal(segment.alignItems, "center"); assert.match(segment.font, /12px ?\/ ?1 /, "line-height 1, text centred");
+  assert.equal(segment.height, "24px"); assert.equal(segment.alignItems, "center"); assert.equal(segment.fontSize, "12px"); assert.equal(segment.lineHeight, "1", "line-height 1, text centred");
   assert.equal(group.background, "var(--surface)");
   assert.equal(group.overflow, "", "segments are not clipped by the frame; they are inset");
   // No dividers: a sibling rule may only clear a border (e.g. border-left:0), never paint one.

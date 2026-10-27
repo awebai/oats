@@ -15,7 +15,14 @@ ipcRenderer.on("window:release-workspace", (_e, message) => {
   if (releaseKept.length > RELEASE_KEPT) releaseKept.shift();
 });
 
+// main's Omarchy flag (host-theme.mjs OMARCHY_ARG, spelled the same here: preload cannot import it).
+const IS_OMARCHY = process.argv.includes("--oats-host-omarchy");
+
 contextBridge.exposeInMainWorld("oatsDesktop", {
+  /** This computer runs Omarchy (main's one read-only check, host-theme.mjs omarchyHost): a constant
+   * boolean, read once, that picks the font's and the terminal size's defaults. Nothing sends. */
+  isOmarchy: IS_OMARCHY,
+
   /** ctx.api backing: proxied fetch against the oats-web server. */
   api: (pathname, opts) => ipcRenderer.invoke("api", pathname, opts),
 

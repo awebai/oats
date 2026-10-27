@@ -17,7 +17,7 @@ let centers = 0;
 export const notificationCSS = `
 .app-notifications { position:fixed; right:16px; bottom:42px; width:min(340px,calc(100vw - 32px)); max-height:calc(100vh - 58px); overflow-y:auto; box-sizing:border-box; padding:3px; z-index:80; pointer-events:none; }
 .app-notifications ol { list-style:none; display:grid; gap:10px; margin:0; padding:0; }
-.app-toast { display:flex; flex-wrap:wrap; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:9px; background:var(--primary-bg); color:var(--primary-fg); box-shadow:var(--shadow-popover); pointer-events:auto; font:12.5px/1.5 var(--sans,system-ui); }
+.app-toast { display:flex; flex-wrap:wrap; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:9px; background:var(--primary-bg); color:var(--primary-fg); box-shadow:var(--shadow-popover); pointer-events:auto; font-weight:normal; font-size:12.5px; line-height:1.5; font-family:var(--ui-font,system-ui); }
 .app-toast-text { min-width:0; flex:1; max-height:160px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
 .app-toast-dismiss { flex:none; min-width:26px; min-height:26px; border:1px solid var(--primary-fg); border-radius:5px; padding:0 4px; background:var(--primary-bg); color:var(--primary-fg); font:inherit; cursor:pointer; }
 .app-toast-open, .app-toast-action { flex:none; padding:4px 6px; border:1px solid var(--primary-fg); border-radius:5px; background:var(--primary-bg); color:var(--primary-fg); font:inherit; cursor:pointer; }

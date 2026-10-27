@@ -10,6 +10,7 @@ import { paintDotColor } from "../renderer/instance-dot.mjs";
 import { terminalKey } from "../renderer/instance-tree-view.mjs";
 import { tabShowsRow } from "../renderer/retired-tabs.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
+import { syncWaitingRow } from "../renderer/waiting-row.mjs";
 import { waitingClaim, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
 import { rowStale } from "../../client/roster-sections.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
@@ -31,7 +32,7 @@ function fixture(t, { stale = false } = {}) {
   const dom = new JSDOM("<!doctype html><body><div class='strip-a'></div><div class='strip-b'></div></body>", { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document, tabs = new Map();
-  const context = { document: doc, tabs, terminalKey, tabShowsRow, waitingClaim, waitingLabel, waitingClock, iconElement, rowStale, paintDotColor, setTabTitle,
+  const context = { document: doc, tabs, terminalKey, tabShowsRow, waitingClaim, waitingLabel, waitingClock, syncWaitingRow, iconElement, rowStale, paintDotColor, setTabTitle,
     contextDeployments: [], rosterStale: stale, tabNeedsInputRoster: { instances: [], workspace: null } };
   Object.defineProperty(context, "Date", { get: () => Date, enumerable: true }); // the test realm's (mockable) clock
   const sync = runInNewContext(`${source}\nsyncTabNeedsInput`, context);
@@ -41,6 +42,7 @@ function fixture(t, { stale = false } = {}) {
     const tabId = ++id, name = inst.instance;
     const chrome = createTabChrome(doc, tabId, name, true, { dot: inst.running ? "on" : "off", tailAt: tabNameTailStart(name, inst.agent), tailEnd: name.length });
     doc.querySelector(strip).append(chrome.tabEl);
+    const wrap = doc.createElement("div"); wrap.className = "term-wrap"; chrome.paneEl.append(wrap); doc.body.append(chrome.paneEl);
     const tab = { ...chrome, title: name, key: terminalKey(workspace, inst), kind: "terminal", workspace };
     tabs.set(tabId, tab);
     return tab;
@@ -48,6 +50,7 @@ function fixture(t, { stale = false } = {}) {
   return { doc, dom, sync, open, context, tabs };
 }
 const cue = tab => tab.triggerEl.querySelector(":scope > .tab-attn");
+const waitingRow = tab => tab.paneEl.querySelector(":scope > .waiting-row");
 
 test("the cue appears with the claim and clears on the next poll, giving back the drawn dot, label and title", async t => {
   const u = fixture(t), tab = u.open(row("dev-a")), trigger = tab.triggerEl;
@@ -174,7 +177,32 @@ test("CSS: the glyph fits the dot's slot (the label does not move), in --warn, n
   assert.match(css, /\.tab-attn > \.shell-icon \{ width: 12px; height: 12px; \}/);
 });
 
+test("shell: closing a tab ends its waiting row, so a tab closed while waiting leaves no pane observation (#1502)", () => {
+  assert.match(shell, /\n  syncWaitingRow\(t\.paneEl, null\);\n  t\.paneEl\.remove\(\);/);
+  assert.equal(shell.match(/paneEl\.remove\(\)/g).length, 1, "the one place a pane leaves the DOM");
+});
+
 test("shell: every roster paint syncs the tabs, and a new terminal tab syncs at once", () => {
   assert.match(shell, /function refreshPanelInstance\(instances, workspace\) \{\n  syncTabNeedsInput\(instances, workspace\);/);
   assert.match(shell, /lost a race to an identical tab\n[^\n]*\n  syncTabNeedsInput\(tabNeedsInputRoster\.instances, tabNeedsInputRoster\.workspace\);/);
+});
+
+test("each terminal pane carries its own waiting row (#1502): a split with one waiting group, and the gate clears it", async t => {
+  const u = fixture(t), a = u.open(row("dev-a")), b = u.open(row("dev-b"), { strip: ".strip-b" });
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 12 * 60e3 });
+  u.sync([row("dev-a", { waitingOnYou: claim() }), row("dev-b")], "A");
+  assert.ok(waitingRow(a), "the waiting group's pane has the row");
+  assert.equal(waitingRow(b), null, "the other group's pane has none");
+  assert.equal(waitingRow(a).textContent, "Needs input · 12 minPick one?");
+  assert.equal(waitingRow(a).nextElementSibling, a.paneEl.querySelector(":scope > .term-wrap"), "over the terminal");
+  u.sync([row("dev-a", { waitingOnYou: claim({ message: null, reason: "permission" }) }), row("dev-b")], "A");
+  assert.equal(waitingRow(a).querySelector(".waiting-message").textContent, "Waiting for a tool approval");
+  u.context.rosterStale = true;
+  u.sync([row("dev-a", { waitingOnYou: claim() })], "A");
+  assert.equal(waitingRow(a), null, "a held-stale roster is unknown: no row");
+  u.context.rosterStale = false;
+  u.sync([row("dev-a", { waitingOnYou: claim(), running: false, runtimeState: "stopped" })], "A");
+  assert.equal(waitingRow(a), null, "nor for a row that is not running");
+  u.sync([row("dev-a"), row("dev-b", { waitingOnYou: claim() })], "A");
+  assert.equal(waitingRow(a), null, "cleared"); assert.ok(waitingRow(b));
 });

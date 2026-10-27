@@ -655,7 +655,7 @@ test("preload: hostTheme() invokes host-theme:get, and onHostThemeChanged hands 
     webUtils: {},
   };
   runInNewContext(readFileSync(new URL("../preload.cjs", import.meta.url), "utf8"),
-    { require: name => name === "electron" ? electron : require(name === "./terminal-bridge.cjs" ? "../terminal-bridge.cjs" : name) });
+    { process: { argv: [] }, require: name => name === "electron" ? electron : require(name === "./terminal-bridge.cjs" ? "../terminal-bridge.cjs" : name) });
   assert.equal(await api.hostTheme("ignored"), "answer");
   assert.deepEqual(invoked, [["host-theme:get"]], "no argument crosses the bridge");
   const heard = [];

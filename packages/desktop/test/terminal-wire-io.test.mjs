@@ -178,7 +178,7 @@ test('actual main composition registers owner BEFORE load and uses shared broker
     frameWorkspace, choosers: new Set(), holdsHash: (win, id) => win === window && id === '/memory/ws',
     sweepOrphanViewers() {}, shell: {}, Menu: {}, invalidateTerminalPreparations: null,
     // One window per workspace (#481): the window's workspace, title, records and registry.
-    workspaceHash, trustedRendererUrl, windowTitle, clampBounds, servedList: [], screen: { getAllDisplays: () => [] },
+    workspaceHash, trustedRendererUrl, windowTitle, clampBounds, servedList: [], screen: { getAllDisplays: () => [] }, omarchyArguments: [],
     windows: { focused() {}, remove() {}, keyOf: () => '/memory/ws' }, windowRecords: null, quitStarted: false, served: () => true,
     windowState: () => null, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), console,
     execFileSync: (bin, args) => { commands.push([bin, args]); return args.includes('new-session') ? '@81' : ''; },

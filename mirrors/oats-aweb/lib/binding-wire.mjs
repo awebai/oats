@@ -5,6 +5,7 @@ import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment, wakeDaemonAssessment, claudeChannelModeUnset, CLAUDE_CHANNEL_MODE_DEFAULT } from './wake-receive.mjs';
+import { channelConnection, channelReadiness } from './claude-channel.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
@@ -345,7 +346,11 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     receiveProblems.push(...expected.problems);
     warnings.push(...(expected.warnings||[]));
     if(!expected.problems.length) {
-      if(expected.native) warnings.push({code:'native-receive-unproven',message:'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
+      // A Claude channel home is on the channel only with Claude's own
+      // registration line from after its last start (awebai/oats#981).
+      const channel=expected.native && expected.runtime==='claude'?channelReadiness(channelConnection({home:ctx.home,startedAt:expected.startedAt}),ctx.home):undefined;
+      if(channel) {receiveProblems.push(...channel.problems);warnings.push(...channel.warnings);}
+      if(expected.native) warnings.push({code:'native-receive-unproven',message:channel?.receiveMessage??'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
       // req.settings is the home's captured payload, its origins the captured ones.
       if(expected.capturedDelivery==='channel' && expected.runtime==='claude' && claudeChannelModeUnset(req.settings,settingsOrigins(env))) warnings.push({...CLAUDE_CHANNEL_MODE_DEFAULT});
       if(expected.brokerRequired) {

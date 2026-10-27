@@ -82,7 +82,7 @@ import { paintDotColor } from "../instance-dot.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
-        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        font-weight: normal; font-size: 13px; line-height: 1.45; font-family: var(--ui-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); }
 .hier * { box-sizing: border-box; }
 .hier-bar { display: flex; align-items: center; gap: 10px; height:48px; flex: none; padding:0 calc(12px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px));
             border-bottom: 1px solid var(--border); background: var(--surface); }
