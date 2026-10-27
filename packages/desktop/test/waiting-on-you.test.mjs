@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
+import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitingDetail, waitedText, waitingClock, waitingNames,
   waitingBelowText, waitingSentence } from '../../client/waiting-on-you.mjs';
 import { EVENTS_WITHHELD, eventsDetail } from '../../client/instance-events-contract.mjs';
 import { collapseKey, instanceId, waitingRollup } from '../../client/instance-tree.mjs';
@@ -107,13 +107,22 @@ test('the withheld marker is one literal: display-text.mjs exports it, the contr
   for (const name of ['instance-events-contract.mjs', 'readiness-contract.mjs', 'waiting-on-you.mjs']) assert.equal(source(name).includes(EVENTS_WITHHELD), false, name);
 });
 
-test('reasons map to fixed words; an unknown or null reason reads "Waiting for your input" and the raw value is never returned', () => {
+test('reasons map to fixed words; an unknown or null reason reads "Needs input" and the raw value is never returned', () => {
   assert.equal(waitingLabel({ reason: 'permission' }), 'Waiting for a tool approval');
   assert.equal(waitingLabel({ reason: 'question' }), 'Asked you a question');
   assert.equal(waitingLabel({ reason: 'attention' }), 'Asked for your attention');
-  // Never the tag's own words: the row, the tab and the card put the label after "Needs input" (#1502).
-  for (const reason of ['approval', null, '', 'toString', '__proto__', 'constructor']) assert.equal(waitingLabel({ reason }), 'Waiting for your input', String(reason));
-  assert.equal(waitingLabel(null), 'Waiting for your input');
+  for (const reason of ['approval', null, '', 'toString', '__proto__', 'constructor']) assert.equal(waitingLabel({ reason }), 'Needs input', String(reason));
+  assert.equal(waitingLabel(null), 'Needs input');
+});
+
+test('waitingDetail: the words after a "Needs input" tag: the message, else a known reason\'s words, else null, so the tag is said once (#1502)', () => {
+  assert.equal(waitingDetail(waitingOnYouData(claim())), 'Allow Bash(rm -rf build)?');
+  assert.equal(waitingDetail(waitingOnYouData(claim({ message: null, reason: 'question' }))), 'Asked you a question');
+  for (const reason of ['approval', null, '', 'toString', '__proto__']) {
+    assert.equal(waitingDetail(waitingOnYouData(claim({ message: null, reason }))), null, String(reason));
+    assert.equal(waitingDetail(waitingOnYouData(claim({ message: '   ', reason }))), null, `${reason}: a message of only spaces adds nothing either`);
+  }
+  assert.equal(waitingDetail(waitingOnYouData(claim({ message: 'Pick one?', reason: 'approval' }))), 'Pick one?', 'a message is said whatever the reason');
 });
 
 test('a message with no character but white space reads null in the claim, as a withheld one does; waitingMessage still accepts it (#1502)', () => {
@@ -164,8 +173,8 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' })), [], sameDay), ` · Needs input: Asked you a question since ${at}`);
   // A withheld note reads as the reason in words, never "[withheld]" (#584 finding 12).
   for (const [note, reason, label] of [['See https://github.com/awebai/oats/pull/552', 'attention', 'Asked for your attention'],
-    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', 'Waiting for your input']]) {
-    assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input: ${label} since ${at}`, note);
+    ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', null]]) {
+    assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input${label ? `: ${label}` : ''} since ${at}`, note);
   }
   // A start built from LOCAL fields, so its local date is known in any time zone.
   const lastYear = waitingOnYouData(claim({ since: new Date(localAt(2026, 9, 3, 10, 0)).toISOString() }));

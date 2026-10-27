@@ -136,8 +136,12 @@ validates the field and never synthesizes it.
   withholds (it holds a URL, or token-like text such as `token: …`), and a
   note with no character but white space: the row, the card and the tab then
   show the reason in words, never `[withheld]` or a blank line. An unknown
-  reason reads "Waiting for your input" (`waitingLabel`), never "Needs
-  input", which each of them already shows before it. The activity view keeps that marker for the same
+  reason reads "Needs input" (`waitingLabel`), the shared word the TUI's
+  detail says too. The row and the tab already say "Needs input" before
+  the detail, so they ask `waitingDetail`, which is null for such a claim,
+  and say the words once: the row is its head alone, and the tab's note is
+  "Needs input since 12:03". The card's Waiting fact has no tag before it,
+  and reads "Needs input · 3 h". The activity view keeps that marker for the same
   note. `waitingMessage` is the validator both share: it returns the marker
   (`EVENTS_WITHHELD`, its one literal, in `packages/client/instance-events-contract.mjs`),
   and "not null" is the kernel's validity answer, which a test pins.
