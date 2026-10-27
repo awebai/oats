@@ -8,8 +8,8 @@
 // the refusal in the detail says "Can't spawn here" in words before its warning style.
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownLines } from "../term/text.mjs";
-import { COLORS, style } from "../term/style.mjs";
-import { cutNote, headingRow, markLook, marksOf, measured } from "./instances.mjs";
+import { style } from "../term/style.mjs";
+import { DEFAULT_FG, colourLook, cutNote, headingRow, markLook, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 
 /** The TUI's own lines in the Souls view. `retry` and `toInstances` stand after the key that does
@@ -25,8 +25,9 @@ export const SOULS_TEXT = Object.freeze({
 });
 
 /** A soul's colour (soul-colors.mjs's palette name) as one of the terminal's sixteen: the model
- *  maps a row's colour with it, and a name not here leaves the soul uncoloured. */
-export const SOUL_COLOURS = Object.freeze({ sand: "yellow", sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
+ *  maps a row's colour with it, and a name not here leaves the soul uncoloured. `sand` is the
+ *  terminal's own foreground (DEFAULT_FG), not yellow: yellow says needs input, and only that. */
+export const SOUL_COLOURS = Object.freeze({ sand: DEFAULT_FG, sage: "green", slate: "blue", mauve: "magenta", clay: "red", olive: "cyan" });
 
 /** A soul's mark, in UTF-8 and in ASCII, and the sign before a count of its instances. */
 export const SOUL_MARK = Object.freeze({ utf8: "■", ascii: "#" });
@@ -56,8 +57,9 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-/** The refusal's warning style: it says "Can't spawn here" too, so the colour is not alone. */
-const WARN = style({ bold: true, fg: "yellow" });
+/** The refusal's warning style: it says "Can't spawn here" too, so the colour is not alone. Red, not
+ *  yellow: yellow says needs input, and only that. */
+const WARN = style({ bold: true, fg: "red" });
 
 const markOf = (ascii) => (ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8);
 const countText = (count, ascii) => `${ascii ? COUNT_SIGN.ascii : COUNT_SIGN.utf8}${count}`;
@@ -121,10 +123,9 @@ export function flowed(units, width, gap = 1) {
 function soulRow(row, cols, ascii) {
   const look = (own) => (row.selected ? SELECTED : own);
   const quiet = row.refused ? DIM : PLAIN;
-  const colour = typeof row.color === "string" && COLORS.includes(row.color) ? row.color : null;
   const spans = [];
   if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED }, { col: 0, text: lit(marksOf(ascii).selected), style: SELECTED, width: 1 });
-  spans.push({ col: MARK, text: lit(markOf(ascii)), style: look(colour ? style({ fg: colour, dim: row.refused === true }) : quiet), width: 1 });
+  spans.push({ col: MARK, text: lit(markOf(ascii)), style: look(colourLook(row.color, { dim: row.refused === true }) ?? quiet), width: 1 });
   const end = cols - 1;
   if (end <= NAME) return spans;
   const after = [...(row.refused ? [{ text: "!", style: quiet }] : []), ...(row.count > 0 ? [{ text: countText(row.count, ascii), style: DIM }] : [])];

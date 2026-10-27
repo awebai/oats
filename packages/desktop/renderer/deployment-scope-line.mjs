@@ -1,7 +1,7 @@
-/** "On This Mac · ~/acme" (#482, expert decision Q1): a deployment-level surface (the
- * Workspace view, Automations, Schedules, the soul inspector, Brain, a capability page, the Sync
- * sheet) reads and acts on its view's PRIMARY deployment. In a view of two or more deployments it
- * says which, in one short line under its heading. A one-deployment view shows nothing (the line
+/** "On This Mac · ~/acme" (#482, expert decision Q1): a deployment-level surface reads and acts on
+ * its view's PRIMARY deployment. The side panel's soul inspector, Brain and the Sync sheet say which
+ * in a view of two or more deployments, in one short line under their heading; the Workspace pages
+ * (every tab, a capability's, a team's and a soul's page) do not (the product owner, 2026-10-23). A one-deployment view shows nothing (the line
  * stays hidden and takes no space): the surface looks exactly as before views.
  *
  * Surfaces do not read the panel themselves: the line follows the view store that every panel the
@@ -23,7 +23,6 @@ export const deploymentScopeCSS = `
 .deployment-scope { margin:0; padding:6px 16px 0; color:var(--muted); font-size:11.5px; line-height:1.4; font-weight:500;
   min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .deployment-scope[hidden] { display:none; }
-.deployment-scope.inline { padding:0; }
 `;
 
 function ensureCSS(doc) {
@@ -34,14 +33,14 @@ function ensureCSS(doc) {
 
 /**
  * A self-updating line. `workspace()` names the view (or deployment) the surface shows: the shell's
- * current workspace, or a pinned tab's own. `inline` drops the bar padding (a line inside a padded
- * page or dialog). Returns `{ element, update(), dispose() }`; the subscription also ends by itself
- * once a line that was on screen leaves the document.
+ * current workspace, or a pinned tab's own; `className` adds the surface's own class. Returns
+ * `{ element, update(), dispose() }`; the subscription also ends by itself once a line that was on
+ * screen leaves the document.
  */
-export function createDeploymentScopeLine(doc, { workspace = currentWorkspace, inline = false, className = '' } = {}) {
+export function createDeploymentScopeLine(doc, { workspace = currentWorkspace, className = '' } = {}) {
   ensureCSS(doc);
   const element = doc.createElement('p');
-  element.className = ['deployment-scope', inline ? 'inline' : '', className].filter(Boolean).join(' ');
+  element.className = ['deployment-scope', className].filter(Boolean).join(' ');
   let seen = false, off = null, offWorkspace = null;
   const update = () => {
     const label = deploymentScopeLabel(viewDeployments(typeof workspace === 'function' ? workspace() : workspace) || []);

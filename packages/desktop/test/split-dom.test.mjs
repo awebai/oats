@@ -274,20 +274,41 @@ test("index.html ships the split buttons and shell wires the group projection th
   const footerDom = new JSDOM(html);
   t.after(() => footerDom.window.close());
   const document = footerDom.window.document;
-  const toggle = document.querySelector('#nav-foot button#sidebar-toggle');
-  assert.ok(toggle, "sidebar toggle is a footer button");
+  // The foot (the product owner, 2026-10-26): only its bar, the OATS mark, the sidebar toggle, Spawn instance, the cog.
+  const toggle = document.querySelector('#nav-foot > #sidebar-bar > button#sidebar-toggle');
+  assert.ok(toggle, "the sidebar toggle is in the foot's bar");
+  const spawn = document.querySelector("#nav-foot > #sidebar-bar > button#sidebar-spawn");
+  assert.ok(spawn, "Spawn instance is in the bar");
+  assert.equal(toggle, document.querySelector("#sidebar-bar > button"), "the bar's first button");
+  assert.ok(toggle.previousElementSibling.classList.contains("sidebar-brand"), "the toggle after the OATS mark");
+  assert.equal(spawn.previousElementSibling, toggle, "Spawn instance after the toggle");
+  assert.equal(spawn.nextElementSibling.id, "sidebar-settings", "then the cog");
+  assert.equal(spawn.dataset.action, "app.quickOpenSouls", "it runs Quick Open");
+  assert.equal(spawn.querySelector("kbd"), null, "no chord hint element: the chord is in its tooltip");
   assert.equal(toggle.getAttribute("aria-label"), "Hide the sidebar", "icon-only button has an accessible name");
   assert.equal(toggle.dataset.action, "sidebar.toggle");
+  // The foot's controls are wired here (every [data-action] in #nav-foot: Spawn instance and the toggle; the cog builds
+  // its own menu), the nav's buttons, under the list of workspaces, by their own listener (shell.mjs nav rail), so no
+  // click runs twice.
   const wiring = src.match(/for \(const button of document\.querySelectorAll\("#nav-foot \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
   const registration = src.split("\n").find(line => line.startsWith('registerAction({ id: "sidebar.toggle"'));
-  assert.ok(wiring && registration, "exercise shipped footer dispatch and registry binding");
-  let toggles = 0;
+  assert.ok(wiring && registration, "exercise shipped sidebar dispatch and registry binding");
+  // A nav button, as the nav rail adds them before this wiring runs (it carries its stage action too).
+  assert.equal(document.querySelector("#nav-foot #nav"), null, "the nav is not in the foot");
+  const navButton = document.createElement("button"); navButton.dataset.action = "sidebar.toggle";
+  document.getElementById("nav").append(navButton);
+  let toggles = 0, quickOpens = 0;
+  t.after(registerAction({ id: "app.quickOpenSouls", label: "Quick Open", run: () => quickOpens++ }));
   runInNewContext(`${wiring}\n${registration}`, {
     document, runAction, toggleSidebar: () => toggles++,
     registerAction: action => { t.after(registerAction(action)); },
   });
   toggle.click();
-  assert.equal(toggles, 1, "footer click runs sidebar.toggle through the actual action registry");
+  assert.equal(toggles, 1, "the foot's toggle runs sidebar.toggle through the actual action registry");
+  spawn.click();
+  assert.deepEqual([toggles, quickOpens], [1, 1], "and Spawn instance runs Quick Open through it");
+  navButton.click();
+  assert.equal(toggles, 1, "that wiring never adds a second dispatch to the nav's buttons");
   const css = read("renderer/shell.css");
   assert.doesNotMatch(css, /#sidebar-restore/);
   assert.match(css, /\.main-edge-control\[hidden\] \{ display: none; \}/);

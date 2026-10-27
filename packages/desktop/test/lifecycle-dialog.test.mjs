@@ -797,11 +797,11 @@ test('a connection change while a plan is read drops a kept PR row: the account 
     assert.equal(f.doc.querySelector('.lifecycle-forge').textContent, ''); link.click(); assert.deepEqual(opened, []);
   } finally { f.close(); }
 });
-/** The shipped roster's ancestry (#instance-roster: the filter, then the list of rows, each with its actions trigger), so the
- * generic return (an ancestor's first control: the filter) is there to compete with the successor row. */
-const roster = `<section id="instance-roster"><div class="ctx-filter-field"><input class="ctx-filter" type="search"></div><div class="ctx-list">${['a', 'b', 'c'].map((id, i) =>
+/** The shipped roster's ancestry (#instance-roster: its head, then the list of rows, each with its actions trigger), so the
+ * generic return (an ancestor's first control: the first row) is there to compete with the successor row. */
+const roster = `<section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list">${['a', 'b', 'c'].map((id, i) =>
   `<div class="ctx-tree-row"><button class="ctx-inst" data-tree-instance="${id}" tabindex="${i === 0 ? 0 : -1}">dev-${i}</button><span class="ctx-row-tools"><button class="ctx-instance-actions" data-tree-instance="key-${id}" data-tree-control="actions">⋯</button></span></div>`).join('')}</div></section>`;
-test('in the roster: after the retired row leaves, Done and Esc land on the row that followed it, not the filter; with the row still there, focus returns to its trigger', async () => {
+test('in the roster: after the retired row leaves, Done and Esc land on the row that followed it, not the roster\'s first row; with the row still there, focus returns to its trigger', async () => {
   for (const how of ['done', 'escape', 'cancel']) {
     const gate = deferred(); let fallbacks = 0, doc;
     const order = ['a', 'b', 'c'], fallbackFocus = () => { fallbacks++; return successorRow([...doc.querySelectorAll('.ctx-inst')], order, 1); };

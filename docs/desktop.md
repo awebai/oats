@@ -204,32 +204,81 @@ workspace on a server: `name — server`).
 
 ## Workspaces
 
-The top of the sidebar lists the workspaces, above the views and the
-instances, and is always shown. Its header holds **Add local workspace…** (the
-**+**). The list has one row per workspace this window can show, whatever
+The sidebar, top to bottom: the **Workspace** heading, with **Show only the
+current workspace** and **Add local workspace…** at its end, over the list of
+workspaces; a thin line; the two main views, **Workspace overview** and
+**Automations**, one under the other; another line; **Instances**, a heading
+with the running count over the list of instances; and, over a line, the
+foot, one bar: the OATS mark and the sidebar toggle (**Hide the sidebar**)
+after it, and at the bar's right **Spawn instance**, its words alone (a ground
+only on hover), which
+opens Quick Open (⌘P / Alt+P, named in its tooltip) to pick a soul and then
+the spawn dialog, and the settings cog, whose menu holds **Theme…** and **Keyboard
+shortcuts…**, each with its shortcut. A window opens on the **Workspace
+overview** page, on its **Souls** tab: at launch, and after you choose a
+workspace for it. Connections is in the command palette
+(**Settings: Connections…**), and the palette opens with its shortcut or
+Ctrl+X then `k`.
+The instances have no search field: to find one by name, type it in the
+command palette, which opens its terminal. ⌘F / Alt+F (**Focus the
+instance roster**) and `/` in the sidebar go to the roster's current row;
+on an empty roster, to its one action, the foot's **Spawn instance**, where
+F6 lands too (a failed read's **Retry** comes first).
+
+The sidebar is 288px wide, and you can make it wider or narrower: drag its
+right edge, between 240px and 480px (or 45% of the window, when that is
+less, so the terminals keep the rest). With the keyboard, Tab to that edge
+(after the settings cog) and use ← and → (8px a step, 32px with Shift), Home
+and End for the narrowest and the widest. A double-click on the edge, Enter
+on it, or the command palette's **Sidebar: reset width** put it back to 288px.
+The width is remembered on this computer, and kept while the sidebar is
+hidden; a window too narrow for it shows it narrower, and gives it back when
+the window grows again. The terminals refit as it moves, and their programs
+hear the new size once, when you let go.
+
+The list of workspaces is always shown. Its heading holds **Add local
+workspace…** (the **+**). The list has one row per workspace this window can show, whatever
 machine it is on: every workspace the Desktop serves, those only on servers
 included, and the deployments no workspace matched ([One workspace, several
 machines](#one-workspace-several-machines)), after them in the same list.
 
 With one workspace the list is one compact row. With many it scrolls within
 about six rows, the current row stays in view, and while rows are cut off
-below, a line under the list says how many ("2 more below").
+below, a line under the list says how many ("2 more below"), with the
+needs-input mark at its right when one of them has an instance that needs
+input.
 
-- **A row is one line: the workspace's name.** No icon, no machine, no state:
-  a workspace's own pages show its machines and deployments. A long name ends
-  in an ellipsis, and the row's tooltip is the whole name.
-- **The current workspace** has the selection's background and its name in
-  bold; a screen reader hears it as current, and the list's description names
-  it, by the same name as its row.
-- **The yellow dot.** A row has a small yellow dot after its name when an
-  instance of that workspace needs input: the claim the instance roster shows
+**Show only the current workspace** is the toggle before the **+** in the
+heading, for working in one workspace at a time. Pressed (its icon in the
+accent colour), the list shows the current workspace's row alone. Nothing
+stands for the others: no "N more" line, and no needs-input mark for one of
+them that waits. Press it again, or use ⌥⇧⌘O on macOS / Ctrl+Alt+Shift+O on
+Linux and Windows (the same in every chord family, and from a terminal) or the
+palette's **Show only the current workspace**, to see every workspace again.
+Ctrl+X then ↑ / ↓ still move to the previous / next workspace, which then
+shows alone. A window choosing a workspace shows them all. The choice is remembered on this
+computer.
+
+- **A row is one line: a circle and the workspace's name.** No icon, no
+  machine, no state: a workspace's own pages show its machines and
+  deployments. The circle is the one an instance row has, in the same place.
+  A long name ends in an ellipsis, and the row's tooltip is the whole name.
+- **The current workspace** has its circle filled, like a running
+  instance's, and its name in bold; the others have the ring a stopped
+  instance has. It has no background of its own: the selection's background
+  marks the current page (Workspace overview or Automations), so the
+  sidebar fills one "you are here" row. A screen reader hears it as current,
+  and the list's description names it, by the same name as its row.
+- **The needs-input mark.** A row has an exclamation mark (a small amber
+  disc with a "!") at its right end when an instance of that workspace needs
+  input, the same mark a waiting instance's dot shows in the instance tree: the claim the instance roster shows
   for that instance, from a running session (OATS with the `waiting-on-you`
   feature), as the Desktop already reads it for the workspaces it serves.
   Every row can have it, the current one included. The row's name then ends
   in ", needs input" for a screen reader, and its tooltip says "An instance
-  here needs input". What isn't known shows no dot, never a guess: a
+  here needs input". What isn't known shows no mark, never a guess: a
   deployment that isn't live (stale, not reached, its last read failed) and
-  an oats without `waiting-on-you`. The dot never moves a row: the order
+  an oats without `waiting-on-you`. The mark never moves a row: the order
   stays the same whoever waits.
 - **Picking a row** (a click, Enter, or the leader's ↑ / ↓, Ctrl+X then ↑ /
   ↓, which are also ⌥↑ / ⌥↓ on macOS and Alt+↑ / Alt+↓ on Linux and Windows
@@ -252,9 +301,10 @@ below, a line under the list says how many ("2 more below").
 **Add local workspace…** lists the deployments on this computer that are not
 open: those on this computer's deployments list and a saved one. Each is one
 button: a click, or Enter on it, adds it (checked first) and opens it in this
-window; a failure says why in the dialog, with focus back on it. After them
-come the rows of this computer's list that can't be opened, each saying why in
-a word, and they open nothing: **Missing** (the folder is gone, or its volume
+window; a failure says why in the dialog, with focus back on it. The dialog
+counts these alone ("2 workspaces to add"). After them, under **Can't be
+opened**, come the rows of this computer's list that can't be opened, each
+saying why in a word, and they open nothing: **Missing** (the folder is gone, or its volume
 isn't mounted), **Not a deployment** (no `oats-local.yaml` any more), or
 **Can't be checked** (OATS couldn't read the folder). The full sentence is the
 row's tooltip and what a screen reader hears. **Remove** beside such a row
@@ -275,7 +325,7 @@ button opens it again.
 
 Picking a workspace another window shows moves it to this window: a pick from
 the list, the workspace select of
-Deployments or Workspace, and a spawn whose new instance is in that workspace.
+the Workspace page, and a spawn whose new instance is in that workspace.
 Nothing else comes to the front. The other window lets the workspace go: it
 shows the workspace it showed most recently before that one among those the
 Desktop still serves and no other window shows, else no workspace ("Choose a
@@ -292,8 +342,10 @@ other window.
 
 ## Capabilities and spawning
 
-**Workspace › Capabilities** lists what the workspace offers, in three
-sections: **Workspace owned** (from the member repos, for every soul),
+**Workspace › Capabilities** is in two parts, each with its title:
+**Workspace defaults** (below), then **All capabilities**, what the
+workspace offers. Under the **All capabilities** title, a row of segments
+jumps to its three sections: **Workspace owned** (from the member repos, for every soul),
 **Repo owned** (only for souls of the same repo) and **Packages** (pinned
 versions). Workspace owned and Repo owned are grouped by the repository
 that defines each capability. The groups are headed like the Souls tab:
@@ -304,7 +356,7 @@ pills (**All**, then one per repository, each with its count) show one
 repository at a time; "N of M shown" appears while a pill or the search
 narrows the list.
 
-Above those sections, **Workspace defaults** shows what every soul of the
+Above All capabilities, **Workspace defaults** shows what every soul of the
 workspace starts with, unless it turns one off. It is one panel with two
 groups. **Core capabilities** (at most one of each per soul) is always
 **Knowledge**, **Messaging** and **Tasks**. **Additional capabilities** (any
@@ -320,12 +372,12 @@ says "turned off by the workspace". A workspace that sets no defaults, a
 standalone deployment for example, shows one line saying so. The search and
 the repository pills never narrow or hide this section. It is read from
 `oats workspace status --json`: an OATS that does not report the defaults
-shows no section, and the Desktop does not guess them from the souls. The
-section jump at the top of the tab starts with **Defaults**, whose count is
-the filled slots plus the other default capabilities not turned off. Teams
-add no capabilities (removed in 0.30), so there are no team defaults to show.
+shows no such part, and the Desktop does not guess them from the souls. The
+defaults have no segment of their own: the segments are All capabilities'.
+Teams add no capabilities (removed in 0.30), so there are no team defaults
+to show.
 
-The round **i** button after the section jump (**About capabilities**) opens
+The round **i** button in the toolbar, beside the search (**About capabilities**), opens
 **What capabilities are**: what a capability gives a soul's instances (skills,
 commands and instructions, the instructions injected into each instance's
 composed `AGENTS.md` after the soul's own), the three places one comes from
@@ -516,16 +568,21 @@ matched by the workspace each one reports (its repository key and default
 team, by the kernel's rules). It needs a CLI with the `workspace-identity`
 feature (OATS 0.36.0); without it each deployment has its own entry.
 
-- **Deployments.** The **Deployments** page (formerly the Active overview)
-  shows the workspace's overview trees. **All** stacks one section per
-  deployment, each headed by its machine and folder ("This Mac ·
-  ~/acme", "altair · ~/northwind"). Then each deployment has a tab of
-  its own, named by its machine ("altair"; "This Mac · oats-v2" when this Mac
-  holds two). A workspace with one deployment shows just that deployment's
-  tab. The tab you chose is remembered per workspace. With two or more
-  deployments, the sidebar's instance list is grouped under one heading per
-  machine; with one, it has no headings.
-- **An instance's card.** Clicking an instance on the Deployments page shows
+- **Machines.** **Workspace › Machines** (once the Deployments page, and
+  the Active overview before that) shows the workspace's overview trees.
+  One sentence above them says what a machine is: "Each machine runs this
+  workspace in a folder of its own. The instances under a machine run on
+  that machine." **All** stacks one section per deployment, each headed by
+  its machine and folder ("This Mac · ~/acme", "altair · ~/northwind"),
+  with "Instances on this machine" or "Instances on altair" under it. Then
+  each deployment has a tab of its own, named by its machine ("altair";
+  "This Mac · oats-v2" when this Mac holds two). A workspace with one
+  deployment shows just that deployment's tab, its tree under the same
+heading. The tab you chose is
+  remembered per workspace. With two or more deployments, the sidebar's
+  instance list is grouped under one heading per machine; with one, it has
+  no headings.
+- **An instance's card.** Clicking an instance on the Machines tab shows
   what it reports and two buttons. **Go to instance** opens its terminal tab;
   for a stopped instance it reads **Start…** and opens the Start dialog.
   **Go to soul** opens the soul it was spawned from on the Workspace page. It
@@ -545,15 +602,18 @@ feature (OATS 0.36.0); without it each deployment has its own entry.
   altair"), with a mark when one of them isn't live.
 - **Not matched to a workspace.** A deployment that can't be matched is
   listed on its own under that heading in the list, with its machine and
-  a short reason; choosing it opens its tab on the Deployments page. When this
+  a short reason; choosing it opens its tab on the Machines tab. When this
   computer's OATS is too old to report workspaces, nothing can be matched:
   each deployment is listed on its own, as before, and its heading says to
   update OATS.
 - **Actions.** Everything you do to an instance goes to that instance's own
   deployment. Workspace-wide pages (Setup, Capabilities, Sync, Automations,
   Schedules, Teams configuration) act on the workspace's first deployment on
-  this Mac, else its first, and say "On <deployment>" when there are two or
-  more.
+  this Mac, else its first. None of them names it: not Souls,
+  Capabilities, Teams or Setup, nor the Automations page, nor a soul's, a
+  capability's or a team's page. The side panel names it ("On This Mac ·
+  ~/acme", under a soul's name) when there are two or more, as do Brain and
+  the Sync sheet, and the Machines tab shows each deployment on its own tab.
 - **Spawn.** With two or more deployments, the Spawn dialog asks first which
   one to spawn in (and says "Runs on" in its summary), starting on the one you last used in that workspace when it
   offers the soul, else the first that does (this Mac first). With one, it
@@ -565,7 +625,8 @@ deployment. Details are in
 
 ## Scheduling agents and wake messages
 
-Open **Schedules** in the selected workspace to launch a new agent on a cron,
+Open **Automations › Schedules** in the selected workspace (the sidebar's
+**Automations**, or ⌘3 / Ctrl+3) to launch a new agent on a cron,
 wake an existing agent with a message, or harvest its knowledge. **Schedule…**
 on a Soul roster card preselects that soul. Choose the task or message, repeat
 pattern and time zone; new agent jobs also offer harness, model, permissions
@@ -632,7 +693,7 @@ member and what each member state means. Then **Shared through Git** lists
 what the workspace declares (Members, with the host first and tagged
 **Host**, Packages and Defaults). **This computer** lists what is not shared:
 this deployment's settings, lock, CLI and instances, the member clones, and
-the machines that run the workspace.
+the machines that run the workspace (**Registered machines**).
 
 ## A workspace's machines
 
@@ -640,7 +701,7 @@ A window offers only the machines that run its workspace: those whose
 registration reports the same workspace key as the window's deployment on this
 computer (OATS CLI with `servers-per-workspace` and `server-connect`). The
 spawn dialog's **Where to run** lists "This computer" and those machines; the
-Workspace › Setup tab lists them with their OATS version and whether they can
+Workspace › Setup tab's **Registered machines** lists them with their OATS version and whether they can
 be reached, with **Check** and **Remove**. Registrations whose key is not known
 yet are checked once in the background after the Desktop starts.
 
@@ -768,14 +829,39 @@ right of its parent, and related instances are grouped together. Siblings are
 joined by a dotted line through their dots. A parent's line to its children
 runs just to the right of the dotted line, so the two never merge.
 
+A row shows the instance's name as words: each `-` is a space, and the first
+letter is a capital, so `oats-expert-maintainer-lanes` reads "Oats expert
+maintainer lanes". Only the row's label changes. The hover card, the command
+palette (which still finds the instance by its name), its terminal tab, a
+screen reader and the `oats` CLI all use the instance's real name. The TUI's
+sidebar shows the same words.
+
+A row's dot says the instance's state: filled while it runs, a ring when it is
+stopped, a grey ring with a small grey centre when its state is unknown (the
+command palette, Quick Open and the overview show it the same way). An
+instance that needs input (a running session's claim, from OATS with the
+`waiting-on-you` feature) shows the needs-input mark in place of its dot: a
+slightly larger amber disc with a "!" cut out of it, the mark its terminal tab
+and the workspace list show. Amber means needs input and nothing else.
+Elsewhere, a dot that flags a problem is red: a keyboard shortcut that clashes
+with another (on the settings cog), Setup or Teams needing attention (on the
+Workspace page's tabs), and an automation that doesn't run here or a
+scheduler that is off.
+The row keeps its soul and repository on its second line. A screen reader
+hears "Needs input" after the name, and the hover card gives the reason and
+how long it has waited. A collapsed parent shows "! N below" on its second
+line for the rows it hides that need input, beside its own mark when it waits
+too. Rows never move or grow, and nothing animates.
+
 ## An instance's colour
 
 An instance can have a colour, one of the soul palette's six (Sand, Sage,
 Slate, Mauve, Clay, Olive). Its dot shows it wherever the instance is listed:
 the sidebar, its terminal tab, the command palette and the overview. A running
 instance's dot is filled with the colour, a stopped one's is a ring in it. An
-instance whose state is unknown keeps the warning dot, and one without a colour
-looks as before. The shape says the state, never the colour alone.
+instance whose state is unknown keeps its grey bullseye, one that needs input
+shows the needs-input mark in the sidebar, never in its colour, and one without
+a colour looks as before. The shape says the state, never the colour alone.
 
 To set it, open **Instance: name and colour…** from the command palette, or
 press Alt+R (⌥⌘R on macOS; Ctrl+Alt+R in the Ctrl+Alt family). It acts on the instance of the terminal you

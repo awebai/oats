@@ -22,7 +22,7 @@
    Layout inside a cluster is a layered tidy tree, deliberately NOT
    force-directed: deterministic, no jitter.
    Node cards show reported runtime state (running = filled orange dot;
-   stopped = hollow dot + dashed card; unknown distinct). Activity is NOT
+   stopped = hollow dot + dashed card; unknown a muted bullseye, never yellow). Activity is NOT
    inferred from task/transcript prose: K7 reads are explicit and selected-only. Click
    selects and shows the action popover: its facts and exactly two acts, Go to
    instance (the terminal tab; Start… on a stopped row) and Go to soul (the
@@ -36,6 +36,9 @@
    Keyboard: arrows walk the tree, Enter/t go to the instance (Start… when
    stopped), s Workspace (the Spawn view), o action popover, +/- zoom, f fits,
    Escape clears.
+   The Workspace page's Machines tab (2026-10-26; views/spawn.mjs mounts it):
+   one plain sentence under the bar says what a machine is, and each
+   machine's heading says the tree under it is the instances on it.
    Loading (desktop/loading-states): the shared controller in loading.mjs owns
    the pending / refreshing presentation. Pending (no roster for this workspace
    yet) shows a skeleton pill in .hier-sum after 150ms, aria-busy on the view
@@ -74,7 +77,7 @@ import { isMultiDeployment, splitByDeployment, rowStale } from "../../../client/
 import { deploymentLabel } from "../../../client/deployment-label.mjs";
 import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
-import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
+import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords } from "../deployments-page.mjs";
 import { paintDotColor } from "../instance-dot.mjs";
 
 export const hierarchyCSS = `
@@ -139,7 +142,9 @@ export const hierarchyCSS = `
                 text-overflow: ellipsis; white-space: nowrap; }
 .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-.hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
+/* Unknown: the roster's muted bullseye (shell.css .ctx-dot.unknown; yellow means needs input only), its ring and
+   2px centre with the card's own fill between them. */
+.hdot.unknown { box-sizing: border-box; border: 1.5px solid var(--muted); background: radial-gradient(circle, var(--muted) 1px, transparent 1px); }
 .hdot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
 /* An instance's colour (instance-dot.mjs): the running dot and its halo in it, the stopped ring in it. */
 .hdot.on[data-instance-color] { background: var(--instance-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--instance-color) 18%, transparent); }
@@ -159,6 +164,10 @@ export const hierarchyCSS = `
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 ${deploymentsPageCSS}
 ${instanceEventsCSS}
+/* What a machine is, once, under the bar (the Machines tab, 2026-10-26): plain words, not a dialog. */
+.hier-intro { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); font-size: 12px; line-height: 1.5; }
+.hier-dhead .hier-dsub { color: var(--muted); font-size: 11px; line-height: 1.4; }
 `;
 
 const NODE_W = 220, NODE_H = 60, GAP_X = 50, GAP_Y = 40, PAD = 40;
@@ -344,14 +353,14 @@ export function layoutByDeployment(instances, deployments) {
 }
 
 /** What a tab shows: `{ rows, entries }`, `entries` being the headed sections (`[{ deployment, rows }]`)
- * or null for the unheaded overview (no deployments reported, or one live deployment). */
+ * or null for the unheaded overview (no deployments reported). One deployment is headed too: every machine's
+ * tree sits under its name and "Instances on …" (the Machines tab, 2026-10-26). */
 function tabContent(instances, deployments, tab) {
   const all = instances || [], list = Array.isArray(deployments) ? deployments : [];
   if (!list.length) return { rows: all, entries: null };
   const parts = splitByDeployment(list)(all);
   if (tab === ALL_TAB && isMultiDeployment(list)) return { rows: all, entries: list.map(deployment => ({ deployment, rows: parts.get(deployment.id) })) };
   const deployment = list.find(d => d.id === tab) || list[0], rows = parts.get(deployment.id);
-  if (list.length === 1 && !deploymentHasWords(deployment)) return { rows, entries: null };
   return { rows, entries: [{ deployment, rows }] };
 }
 
@@ -381,6 +390,7 @@ export function mount(el, ctx) {
         <span class="hier-sum"></span>
         <span class="hier-refreshing"></span>
       </div>
+      <p class="hier-intro">Each machine runs this workspace in a folder of its own. The instances under a machine run on that machine.</p>
       <div class="hier-notice" role="note" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button><button class="act hier-readd" type="button" hidden>Re-add workspace</button></div>
       <div class="hier-panel">
         <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
@@ -398,9 +408,9 @@ export function mount(el, ctx) {
   // The deployment tabs lead the bar (the Workspace page's tab component); the count line follows them.
   s.tabs = createDeploymentTabBar(el.ownerDocument, { idPrefix: s.domId, onSelect: (tab) => selectTab(s, tab) });
   s.q("hier-tabs-host").replaceWith(s.tabs.element);
+  const doc = el.ownerDocument;
   // The shared loading controller. The summary hosts the pending pill; the
   // view's own .hier-notice keeps the stale / failed copy, so no noticeHost.
-  const doc = el.ownerDocument;
   s.status = statusLine(doc, { visuallyHidden: true, className: 'hier-status' });
   s.q('hier-bar').after(s.status);
   s.load = createDataState({ doc, noun: ROSTER_NOUN, region: s.q('hier'), skeletonHost: s.q('hier-sum'),

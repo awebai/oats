@@ -73,8 +73,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     <div id="stagehost"></div>
     <div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div>
     <div id="tabhost"></div>
-    <aside id="sidebar"><div id="instance-roster"><input class="ctx-filter" id="filter"><span class="ctx-count"></span><div class="ctx-list"></div></div>
-    <nav id="nav"><button class="nav-item active">Souls</button></nav></aside>
+    <aside id="sidebar"><div id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></div>
+    <nav id="nav"><button class="nav-item active">Workspace</button></nav><div id="nav-foot"></div></aside>
     <button id="destination">Newer destination</button>
   </body>`, { url: "http://127.0.0.1/" });
   const document = dom.window.document, navigator = { platform };
@@ -89,8 +89,9 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     document, window: dom.window, navigator, console, ...keys, THEMES,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
+    settingsMenu: { refresh() {} }, // applyChordTitles refreshes the settings cog's chords (sidebar-settings.test.mjs covers it)
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, contextRosterEl: null,
+    contextRosterGen: 0, contextInstances: [], collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, contextRosterEl: null,
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree-view createRosterLoading)
     // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
     instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
@@ -103,7 +104,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     // Inert presenter: this fixture owns file/chooser focus, not panel layout.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, numberTabStrips, tabNumberObserver: null, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
-    workspaceLabel: { reset() {} }, NAV: [], ctx: {},
+    workspaceLabel: { reset() {} }, NAV: [], NAV_TABS: [], ctx: {},
     alert: message => notices.push(message), onWorkspaceChange: listener => listeners.push(listener),
     api(path) { const request = { ...deferred(), path }; requests.push(request); return request.promise; },
     loadView(name) { const gate = { ...deferred(), name }; loads.push(gate); return gate.promise; },
@@ -301,7 +302,8 @@ for (const picker of ["palette", "quickOpen"]) for (const unavailable of ["gone"
     if (unavailable === "disabled") replacement.disabled = true;
     if (unavailable === "hidden") replacement.closest(".ctx-tree-row").style.display = "none";
     s.key("Escape");
-    assert.equal(s.document.activeElement, s.document.getElementById("filter"), "return to the connected roster entry, never BODY/detached/disabled/hidden nodes");
+    // The roster's first available control (it has no filter field): its first row, the local parent's.
+    assert.equal(s.document.activeElement, s.control(parent), "return to the connected roster entry, never BODY/detached/disabled/hidden nodes");
   });
 }
 

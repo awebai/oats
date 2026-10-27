@@ -98,10 +98,10 @@ runs.
   acme-platform                       │   dev
                                       │   soul     dev
  Instances                          1 │   state    running
-> ● dev                               │   harness  claude, claude-opus-5-5 (so…
+> ● Dev                               │   harness  claude, claude-opus-5-5 (so…
                                       │   work     worktree, agents/dev
-  ● reviewer              Needs input │   team     eng
-    ○ helper                          │   started  11:00
+  ! Reviewer                          │   team     eng
+    ○ Helper                          │   started  11:00
 ──────────────────────────────────────│   home     …oy/agents/dev/instances/dev
  Souls                              2 │
  Capabilities                       3 │
@@ -131,7 +131,9 @@ while a terminal is open); under 80 columns it has the whole width.
   the sidebar's width: a deployment's state when it is not live, with
   `since …` and its reason on rows of its own; the note of a view of one
   deployment; and the line that says what happened after an open, an act or
-  a spawn. Then an empty row.
+  a spawn. Then an empty row. A line that goes at the next key and fits one
+  row (`No workspace above this one.`) stands in that empty row instead, so
+  nothing under it moves.
 - **The views** follow as an accordion, always in this order: `Instances`,
   `Souls`, `Capabilities`, each with its key dim at the right edge. The open
   view's heading is bold and its list stands under it, with a rule between
@@ -181,21 +183,32 @@ while a terminal is open); under 80 columns it has the whole width.
   indent alone says which instance is under which: no mark is drawn for
   it. A row whose instances are folded away (`h`) says how many after its
   name: `+1`.
-- **Each row** is the mark of its state and the name, then, when it needs
-  input, a tag at its right edge in the Desktop's words: `Needs input`. A
+- **Each row** is the mark of its state and the name. A row that needs
+  input has the needs-input mark in place of its state mark: `!`, bold,
+  in reverse video in the waiting colour, a yellow cell with the `!` cut
+  out (the Desktop's mark in one cell), whatever the row's state and its
+  instance colour. On the selected row, which is in reverse video already,
+  it is the waiting colour not reversed, a gap in the selection's bar;
+  under `NO_COLOR` the reverse video and the `!` carry it, and in ASCII it
+  is the same `!`. The detail says it in words (its `needs` line, the
+  reason and how long it has waited), and so does the help. The row shows the name as words, as the Desktop's sidebar does: each `-`
+  a space and the first letter upper-case, so `oats-expert-lead` reads
+  `Oats expert lead`. Only the row does: the detail, the filter (`/` with
+  `oats-expert` still finds the row), the palette, the tabs, the
+  confirmations and everything sent to OATS keep the instance's name. A
   folded row with waiting instances among those it folds away says how
-  many: `3 below`, and `99+ below` past 99. A row that needs input itself
-  and folds waiting ones away says `Needs input`, as the Desktop's row
-  does: the detail's `below` line names the others. The tag is in reverse
-  video in the waiting colour, and on the selected row, which is in reverse
-  video already, it is the waiting colour not reversed, a gap in the
+  many in a tag at its right edge, in the Desktop's words: `3 below`, and
+  `99+ below` past 99, whether or not the row needs input itself: its mark
+  says its own claim, the tag the rest, and the detail's `below` line names
+  them. The tag is in reverse video in the waiting colour, and on the
+  selected row it is the waiting colour not reversed, a gap in the
   selection's bar; under `NO_COLOR` the reverse video alone carries it. On
   a narrow row the tag gives way first: it says its words only where the
   whole name, its `+1` and the row's word in its column all fit beside them,
-  and else shrinks to `!`, or the count alone (`3`, `99+`), still in
-  reverse video, in the cells every row keeps at its right edge. So the
-  tag never cuts a name, a word or a mark: those give way as on a row
-  that does not wait. The harness and the state in words are in
+  and else shrinks to the count alone (`3`, `99+`), still in reverse video,
+  in the cells every row keeps at its right edge. So the tag never cuts a
+  name, a word or a mark: those give way as on a row whose instances do
+  not wait. The harness and the state in words are in
   the detail. A row has a word, dim, only where its mark cannot say it: the
   state of a home a spawn or a retire holds (`Retire didn't finish`), or
   the shared words for why an instance cannot be reached or opened:
@@ -289,20 +302,23 @@ in its workspace for the rest of the run, also while it is not reached.
 | `?` | `?` | state unknown: the kernel or the terminal probe could not tell, or the instance's machine was not reached |
 | `◆` | `#` | held by a spawn or a retire: under way (Retiring…), failed or not finished ([below](#held-rows)) |
 | `+n` | `+n` | after a name: n instances folded away below it |
-| `Needs input` | `Needs input` | needs input: a tag in reverse video at the row's right edge, `!` where the whole name does not fit beside the words |
-| `N below` | `N below` | N instances folded away below it need input, `N` where the whole name does not fit beside the words |
+| `!` | `!` | needs input: in place of the state mark, in yellow and reverse video (not reversed on the selected row) |
+| `N below` | `N below` | N instances folded away below it need input: a tag in reverse video at the row's right edge, `N` where the whole name does not fit beside the words |
 | `>` | `>` | the selected row (also drawn in reverse video), and the pane the movement keys act on |
 | `*` | `*` | in the switcher: the workspace that is open |
 
-Every state has a mark of its own shape, so nothing is told by colour alone.
+Every state has a mark of its own shape, and so does needs input, so
+nothing is told by colour alone.
 
 **An instance's colour** (feature `instance-color`; set with
 `oats instance color <instance> <colour>`, [desktop-cli-api.md](desktop-cli-api.md#an-instances-colour-oats-instance-color))
 colours its mark, in the list and in a soul's detail: a running mark in it, a
 stopped one and one with a shell left in it dim in it. `?` and `◆` keep their
 own look whatever the colour, and an instance with no colour looks as above.
-The six colours are the terminal's: `sand` yellow, `sage` green, `slate` blue,
-`mauve` magenta, `clay` red, `olive` cyan, the souls' own map. Which colour a
+The six colours are the terminal's: `sand` its own foreground colour, `sage`
+green, `slate` blue, `mauve` magenta, `clay` red, `olive` cyan, the souls' own
+map. `sand` is not yellow, which says needs input and nothing else, and in the
+foreground colour it is seen on a light theme as on a dark one. Which colour a
 row shows is the Desktop's rule (`instanceColor` in `packages/client`); an
 older kernel reports none. Setting a colour from the TUI is not in this
 version.
@@ -459,7 +475,9 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   sessions is said then.
 - **No scrollback but the viewer's own, and no mouse.** The panel shows
   what the agent's window shows now; what has scrolled away is reached as
-  the agent's own terminal reaches it.
+  the agent's own terminal reaches it. `Shift+PageUp` scrolls the viewer
+  back (tmux's copy mode, as in `oats session attach`): `PageUp` and
+  `PageDown` then move, and `q` leaves the scrollback.
 - **How it works.** The terminal is the kernel's own viewer,
   `oats session attach`, run in a pane of a tmux server private to this run
   of `oats tui`: its socket is in a directory of the run's own (mode 0700,
@@ -907,7 +925,8 @@ workspace the list is its row.
   is not UTF-8.
 - **Five rows at most.** With more, four stand around the open row (around
   the cursor's while the list has the focus), and `+N` says how many
-  workspaces are not shown. Under 80 columns or beside a terminal (30
+  workspaces are not shown, with the dot one cell after it when an instance
+  of one of them needs input (`+3 ●`; the help's Marks say so too). Under 80 columns or beside a terminal (30
   columns) the names are cut as the list of instances cuts them.
 
 **The keys:**
@@ -918,7 +937,11 @@ workspace the list is its row.
   workspace before or after the open one, as the list draws them. It does not wrap: at an end nothing
   moves, and the line under the list says `No workspace above this one.` or
   `No workspace below this one.` until the next key, of any kind (one typed
-  to an agent too), or a resize. A workspace with a deployment of this
+  to an agent too), or a resize. The line stands in the empty row under the
+  list, so the list of instances does not move while it shows; only when
+  that list fills the sidebar, which then has no such row, does the line
+  take a row, the list giving up its last. With the list's focus (`w`) the
+  focus stays there, the cursor where it was. A workspace with a deployment of this
   machine not opened yet (lfx, with `~/Work/lfx` on this computer's list)
   opens it first, as the switcher's `Enter` does. What the workspace left
   had open is kept for it, as for a switch from the
@@ -2539,7 +2562,11 @@ alone. The next run removes the directory that is left, with its `tmux`,
   included) and attributes: those are the agent's. With `NO_COLOR` set and
   not empty it uses no colour at all, the agent's included; the agent's
   bold, underline, reverse and the like stay. Nothing is told by colour
-  alone.
+  alone. **Yellow says needs input, and only that:** the `!` in place of a
+  row's state mark and the dot in the list of workspaces. A state unknown,
+  `?`, is dim in your terminal's foreground, and a warning (a failed read,
+  `Can't spawn here`, `· 1 on an older version`) is bold red, and a soul's
+  `sand` is in your terminal's foreground ([What it shows](#what-it-shows)).
 - It draws its rules and marks in UTF-8 when `LC_ALL`, else `LC_CTYPE`, else
   `LANG` names UTF-8, and in ASCII otherwise or with `--ascii`. No icon font,
   no emoji. When the locale is not UTF-8, a character outside ASCII in text

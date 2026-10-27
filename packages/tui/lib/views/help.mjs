@@ -112,8 +112,8 @@ function commandRows(command, at, cols) {
  *  takes, what it does not do, and where the keys that can be the back key are listed (the help
  *  does not restate the grammar). */
 export const OPEN_RULES = Object.freeze([
-  "While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too.",
-  "Up to 4 terminals are open at a time, each a tab. They have no scrollback but the viewer's own, and no mouse.",
+  "While the terminal has the focus every other key but Shift+PageUp goes to the agent, Ctrl+C and Ctrl+Z too.",
+  "Up to 4 terminals are open at a time, each a tab, with no mouse. Shift+PageUp scrolls back; PageUp, PageDown move, q leaves.",
   "docs/tui.md has the keys that can be the leader.",
 ]);
 /** The rows under the line of `open`, in `room` cells: the leader then Esc, which takes the focus
@@ -351,11 +351,12 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null, chords = 
       [marks.unknown, "state unknown"],
       [marks.held, ownEllipsis("held by a spawn or a retire: under way (Retiring\u2026), failed or not finished", ascii)],
       ["+N", "N instances folded away below it"],
-      [marks.waiting, `needs input, in reverse video: ${NEEDS_INPUT} where the whole name fits`],
+      [marks.waiting, `${NEEDS_INPUT}: in place of the state mark, in yellow and reverse video`],
       ["N", `N instances folded away below it need input: ${belowText("N")} where the whole name fits`],
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
       [ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8, ascii ? "among the workspaces: an instance there needs input" : `among the workspaces, in yellow: an instance there needs input (${WAITING_DOT.ascii} without colour)`],
+      [`+N ${ascii ? WAITING_DOT.ascii : WAITING_DOT.utf8}`, "among the workspaces: N not shown, and an instance in one of them needs input"],
       [ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul, in its colour"],
       ["!", "among the souls: a spawn of it here would be refused"],
     ].map(([mark, meaning]) => [mark, words(meaning)]), cols),
