@@ -10,10 +10,14 @@ description: Launch and drive developers to build what you specified, one per su
   Never one developer for two unrelated surfaces.
 - Spawn the developer soul that owns the surface as your child, the spec as its task:
   ```bash
-  oats spawn <developer-soul> --parent <your instance> --purpose <short-slug> --task-file <spec.md>
+  oats spawn <developer-soul> --parent <your instance> --same-work --purpose <short-slug> --task-file <spec.md>
   ```
   Add only what the spec can't hold: the branch or PR to target, and who else works next
   to it.
+- `--same-work` marks the developer as working on your work. A developer you started
+  before the flag existed gets it with `oats instance same-work <developer> on`. On a
+  kernel whose `oats version --json` doesn't list the `instance-same-work` feature, do
+  neither: leave the flag out and skip the command.
 - Tell each developer which developers share an interface with it, so they talk directly.
 - Record each in your instance state: instance name, surface, spec, branch.
 

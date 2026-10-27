@@ -51,7 +51,7 @@ lane where you hold its seat, is your child.
 | The work | Do |
 |---|---|
 | Continues what a live expert is doing, or that expert's context (its decisions, open PRs, the code it has loaded) clearly helps | **Delegate it to that expert** by message, with the brief below: it leads this as an effort of its own, launched by you, confirms it takes it, and tells its own coordinator, if any. If it can't, spawn a new lead. A delegated lead is not your child. |
-| Anything else | **Spawn a new instance of the domain's expert as your child:** `oats spawn <expert> --parent "$OATS_INSTANCE" --purpose <slug> --task-file <brief.md>` |
+| Anything else | **Spawn a new instance of the domain's expert as your child:** `oats spawn <expert> --parent "$OATS_INSTANCE" --purpose <slug> --task-file <brief.md>`, without `--same-work`: the effort is its own, not your work. |
 
 - **One lead per effort,** never one per domain: it brings in other experts as its
   children if needed.
