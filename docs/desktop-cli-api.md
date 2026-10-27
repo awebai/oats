@@ -6024,7 +6024,9 @@ TUI decide, run and read it the same way.
   reads `sessionEnd`'s meaning. There is no timer and no queue.
 - After a sweep that a status read started completes (quiet or a notice),
   every instance it was started for waits until it changes: it runs, or it is
-  no longer lost. A busy, failed or unsupported sweep settles nothing. A home
+  no longer lost. A busy, failed or unsupported sweep, or a plan, settles
+  nothing. A home a read releases while the sweep runs is settled by neither
+  the snapshot nor the answer: that read is newer. A home
   is also settled when a sweep could not resume it, found it was not lost, or
   skipped it because the kernel had not seen it running recently. A sweep
   that resumed it, started it fresh, left it waiting for you or found it

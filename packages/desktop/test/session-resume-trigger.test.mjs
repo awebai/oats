@@ -224,6 +224,59 @@ test('snapshot: the retry is bounded; a home the launch sweep answers unknown ge
   assert.equal(h.runs.length, 2, 'the launch sweep and one observed sweep');
 });
 
+test('snapshot: a read that releases a snapshot home while its sweep runs is newer than the answer; the home is not settled', async () => {
+  const h = harness();
+  await launched(h);
+  // x lost: a sweep starts (snapshot [x]); while it runs, a read shows x running (a human started it).
+  h.t = RESUME_MIN_INTERVAL_MS;
+  const p = h.trigger.observed([lost('x')]);
+  await new Promise(setImmediate);
+  assert.equal(h.runs.length, 2);
+  h.t = 40_000;
+  await h.trigger.observed([lost('x', { running: true })]);
+  await h.answer(p, answer([]));
+  assert.equal(h.readings.at(-1).kind, 'quiet');
+  // x is lost again: news, so the next read past the floor sweeps.
+  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('x')], [resumedRow('x')]), true);
+  // The same when the answer itself refuses x, or a not-lost read released it: the newer read wins.
+  for (const [i, release, reply] of [[3, lost('x', { sessionEnd: SESSION_ENDS.stopped }), [refusedRow('x', { code: 'E_X' })]],
+    [5, lost('x', { running: true }), [skippedRow('x', { reason: SKIPPED_REASONS.notLost })]]]) {
+    h.t = i * RESUME_MIN_INTERVAL_MS;
+    const q = h.trigger.observed([lost('x')]);
+    await new Promise(setImmediate);
+    await h.trigger.observed([release]);
+    await h.answer(q, answer(reply));
+    assert.equal(await starts(h, (i + 1) * RESUME_MIN_INTERVAL_MS, [lost('x')], [resumedRow('x')]), true, JSON.stringify(reply));
+  }
+});
+
+test('snapshot: a remote, untagged or other home\'s row while the sweep runs does not keep a snapshot home from settling', async () => {
+  const h = harness();
+  await launched(h);
+  h.t = RESUME_MIN_INTERVAL_MS;
+  const p = h.trigger.observed([lost('x')]);
+  await new Promise(setImmediate);
+  const running = { running: true };
+  await h.trigger.observed([lost('x', { ...running, deployment: REMOTE_TAG }), lost('x', { ...running, deployment: undefined }), lost('y', running)]);
+  await h.raw.observed([lost('x', running)]); // no local ids: nothing is local
+  await h.answer(p, answer([]));
+  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('x')]), false, 'settled');
+});
+
+test('snapshot: a plan answer to an observed sweep is read quiet, but nothing ran, so the snapshot does not settle', async () => {
+  const h = harness();
+  await launched(h);
+  assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('x')]), true);
+  // That sweep (answer []) settled x; use a new home for the plan.
+  h.t = 2 * RESUME_MIN_INTERVAL_MS;
+  const p = h.trigger.observed([lost('p')]);
+  await new Promise(setImmediate);
+  await h.answer(p, answer([refusedRow('p', { code: 'E_X' })], [], { plan: true }));
+  assert.equal(h.readings.at(-1).kind, 'quiet');
+  assert.equal(await starts(h, 3 * RESUME_MIN_INTERVAL_MS, [lost('p')], [resumedRow('p')]), true, 'p stays news');
+  assert.equal(h.runs.length, 4);
+});
+
 test('unanswered: a busy, failed or unsupported reading settles nothing of its snapshot', async () => {
   for (const envelope of [BUSY, sweepRefusal('E_SESSION_FAILED'), sweepRefusal('E_RESUME_FEATURE'), { ok: true }, null]) {
     const h = harness();

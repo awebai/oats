@@ -210,9 +210,11 @@ export function withoutReported(envelope, reported, reportedHost = new Set()) {
   return { envelope: { ...envelope, result: { ...result, rows: kept, ...(host.length ? { warnings: host } : {}) } }, keys, hostKeys };
 }
 
-/** Whether a reading is a sweep that completed: it ran and its answer was read (`quiet` or `notice`). Busy,
- * failed and unsupported are not: nothing can be concluded about a home from them. */
-export const sweepCompleted = reading => record(reading) && (reading.kind === 'quiet' || reading.kind === 'notice');
+/** Whether a sweep completed: its answer is the sweep's document and not a plan (answerRows: it ran), and its
+ * reading is `quiet` or `notice`. Busy, failed, unsupported and a plan are not: nothing can be concluded about a
+ * home from them. `envelope` is the run's answer, `reading` what was read of it. */
+export const sweepCompleted = (envelope, reading) => answerRows(envelope) !== null
+  && record(reading) && (reading.kind === 'quiet' || reading.kind === 'notice');
 
 /** The host keys of `hostKeys` (withoutReported's, for the envelope `reading` was read from) that the reading
  * showed: none unless it is a notice, else those its summary kept, in order (the cut is by position). A host

@@ -16,7 +16,7 @@
  *
  * Settled homes keep a home that cannot be resumed from starting a sweep on every read. A sweep `observed()` started
  * keeps the lost homes it was started for (its snapshot); when it completes as a sweep (its reading is quiet or a
- * notice: session-resume.mjs sweepCompleted), every one of them is settled, whatever the answer said of it (left out
+ * notice of an answer that ran: session-resume.mjs sweepCompleted), every one of them is settled, whatever the answer said of it (left out
  * because its deployment is not ready, or named busy or unknown), so a home that cannot be resumed costs at most
  * one observed sweep. Then the answer's rows settle and release homes (session-resume.mjs sweepSettlement: a
  * refusal, or a home skipped as not lost or not seen running recently, settles it; a session started or running
@@ -86,9 +86,11 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
   let launched = null, disposed = false, flying = false, lastStart = null;
   const settled = new Set(), reported = new Set(), reportedFor = new Map(); // reportedFor: home → its reported keys
   const reportedHost = new Set(); // host warnings a notice showed
+  let releasedDuring = null; // homes a read released while the sweep in flight ran: newer than its answer
 
   /** A home no longer settled, and the refusals reported for it forgotten. */
   function release(home) {
+    releasedDuring?.add(home);
     settled.delete(home);
     for (const key of reportedFor.get(home) ?? []) reported.delete(key);
     reportedFor.delete(home);
@@ -108,16 +110,19 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
   }
 
   /** After the read: a completed sweep settles every home of its snapshot; then the answer's own rows settle and
-   * release (a home it resumed, started, left waiting or found running is released again). */
-  function settle(reading, snapshot, { settlement: { settle: settles, release: released } }) {
-    if (sweepCompleted(reading)) for (const home of snapshot) settled.add(home);
-    for (const home of settles) settled.add(home);
+   * release (a home it resumed, started, left waiting or found running is released again). A home a read released
+   * while the sweep ran is settled by neither: that read is newer than the sweep's answer. */
+  function settle(envelope, reading, snapshot, { settlement: { settle: settles, release: released } }, newer) {
+    const settleIfNotNewer = home => { if (!newer.has(home)) settled.add(home); };
+    if (sweepCompleted(envelope, reading)) for (const home of snapshot) settleIfNotNewer(home);
+    for (const home of settles) settleIfNotNewer(home);
     for (const home of released) release(home);
   }
 
   /** `snapshot`: the lost homes not yet settled that started this sweep (none for the launch sweep). */
   async function sweep(snapshot = []) {
     flying = true;
+    const newer = releasedDuring = new Set();
     const startedAt = now();
     try {
       // A sync answer is used at once (the run starts in this call); a promise is awaited, the slot held meanwhile.
@@ -131,12 +136,13 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
         try {
           const news = digest(envelope);
           reading = read(news.envelope);
-          settle(reading, snapshot, news);
+          releasedDuring = null;
+          settle(envelope, reading, snapshot, news, newer);
           for (const key of shownHostKeys(reading, news.hostKeys)) reportedHost.add(key);
         } catch { reading = { kind: 'failed', code: 'E_CLI_PROTOCOL' }; }
       } catch { reading = { kind: 'failed', code: 'E_CLI_FAILED' }; }
       if (!disposed && typeof onReading === 'function') { try { onReading(reading); } catch { /* the caller's */ } }
-    } catch { /* never out of launch or observed */ } finally { flying = false; }
+    } catch { /* never out of launch or observed */ } finally { flying = false; releasedDuring = null; }
   }
 
   return {

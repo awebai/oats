@@ -575,11 +575,13 @@ test('withoutReported: a host warning a notice showed is left out by its exact s
   assert.deepEqual(withoutReported(plan, new Set(), new Set()), { envelope: plan, keys: [], hostKeys: [] });
 });
 
-test('sweepCompleted: a quiet or notice reading; busy, failed, unsupported and anything else are not', () => {
-  assert.equal(sweepCompleted(readResumeSweep(answer([]))), true);
-  assert.equal(sweepCompleted(readResumeSweep(answer([resumedRow('a')]))), true);
-  for (const envelope of [refusal('E_RESUME_BUSY'), refusal('E_SESSION_FAILED'), refusal('E_RESUME_FEATURE'), { ok: true }]) {
-    assert.equal(sweepCompleted(readResumeSweep(envelope)), false, JSON.stringify(envelope));
-  }
-  for (const reading of [null, undefined, {}, 'quiet', { kind: 'later' }]) assert.equal(sweepCompleted(reading), false);
+test('sweepCompleted: a sweep that ran (its answer the document, not a plan) read as quiet or a notice; nothing else', () => {
+  const done = (envelope) => sweepCompleted(envelope, readResumeSweep(envelope));
+  assert.equal(done(answer([])), true);
+  assert.equal(done(answer([resumedRow('a')])), true);
+  assert.equal(done(answer([resumedRow('a')], [], { plan: true })), false, 'a plan is read quiet, but nothing ran');
+  for (const envelope of [refusal('E_RESUME_BUSY'), refusal('E_SESSION_FAILED'), refusal('E_RESUME_FEATURE'), { ok: true },
+    answer([], [], { schemaVersion: 2 }), answer([], null), null]) assert.equal(done(envelope), false, JSON.stringify(envelope)?.slice(0, 60));
+  // The reading must say so too: a document with a reading that is not quiet or a notice is not completed.
+  for (const reading of [null, undefined, {}, 'quiet', { kind: 'later' }, { kind: 'failed' }]) assert.equal(sweepCompleted(answer([]), reading), false);
 });
