@@ -1181,7 +1181,9 @@ home owes a retire and whether its session is still lost. The sweep reports
 such a home `skipped`, `lifecycle-busy`, and starts nothing; what OATS was
 doing decides what the home is next. A retire records the stop of the session
 it ends, before it ends it, so a home it was retiring reads `stopped`, never
-`lost`, even when the retire fails afterwards.
+`lost`, even when the retire fails afterwards. The one exception is when the
+stop record itself cannot be written (a full disk) and the retire then fails
+as well: that home reads `lost`, as it did before 0.69.2.
 
 #### How a session's end is read
 

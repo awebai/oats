@@ -16,7 +16,9 @@
     `lifecycle-busy`, and starts nothing. What OATS was doing decides what the
     home is next, and a later sweep reads it again.
   - A retire records the stop before it ends the window. A home it was retiring
-    reads `stopped`, never `lost`, also when the retire fails afterwards.
+    reads `stopped`, never `lost`, also when the retire fails afterwards. The
+    exception is a stop record that cannot be written (a full disk) followed by
+    a retire that fails as well: that home reads `lost`, as before 0.69.2.
 
   The new reason and the new `action` value are additive. A client that does
   not know them treats the row as skipped and the claim as busy. See
