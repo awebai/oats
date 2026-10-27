@@ -1395,21 +1395,21 @@ test("the add of the deployment the run started in, refused while the switcher, 
 // --- Lost sessions resumed (#1559): the kernel's machine sweep, read by the shared reader ---------
 
 /** A summary as the shared readResumeSweep makes one: `rows` of each kind, `totals` counted from them. */
-function resumeSummary({ resumed = [], fresh = [], waiting = [], refused = [], unswept = [] } = {}) {
-  return { resumed, fresh, waiting, refused, unswept, omitted: 0, totals: { resumed: resumed.length, fresh: fresh.length, waiting: waiting.length, refused: refused.length } };
+function resumeSummary({ resumed = [], fresh = [], waiting = [], refused = [], unswept = [], host = [] } = {}) {
+  return { resumed, fresh, waiting, refused, unswept, host: { warnings: host, omitted: 0 }, omitted: 0, totals: { resumed: resumed.length, fresh: fresh.length, waiting: waiting.length, refused: refused.length } };
 }
 const resumedRow = (instance, deployment = DEPLOYMENT) => ({ instance, deployment, warnings: [], omitted: 0 });
 
 test("a sweep that resumed sessions is said once, in the line under the sidebar's title: the shared headline, its detail under it, a deployment named as the switcher names it; and the rows are read live", () => {
   const state = stateOf(observed(TREE));
   const other = "/home/u/work/beta";
-  const summary = resumeSummary({ resumed: [resumedRow("acme-dev"), resumedRow("beta-ops", other)], unswept: [{ deployment: "/srv/quiet", reason: "unreadable" }] });
+  const summary = resumeSummary({ resumed: [resumedRow("acme-dev"), resumedRow("beta-ops", other)], unswept: [{ deployment: "/srv/quiet", reason: "unreadable" }], host: ["tmux is older than 3.2"] });
   const told = reduce(state, { resumed: { kind: "notice", summary } });
   assert.deepEqual(told.effect, { refresh: { live: true } }, "a live read, so a resumed row reads running");
   assert.deepEqual(told.state.outcome, {
     said: [{ own: "OATS resumed 2 instances whose sessions were lost." }],
     under: ["acme-dev in /srv/deploy: resumed in its own conversation.", "beta-ops in ~/work/beta: resumed in its own conversation.",
-      "Not checked in /srv/quiet: it could not be read."],
+      "Not checked in /srv/quiet: it could not be read.", "OATS says about this computer:", "tmux is older than 3.2"],
   });
   assert.equal(told.state.notice, null);
   assert.deepEqual({ ...told.state, outcome: null }, { ...state }, "nothing else changes");

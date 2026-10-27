@@ -1309,8 +1309,10 @@ that counts them ("OATS resumed 3 instances whose sessions were lost. 1 of
 them is waiting for you: open its terminal."), and under it a line for each
 instance (waiting for you, could not be resumed, started fresh and why,
 resumed in its own conversation), then the deployments the sweep did not
-check, each named as the switcher names its path. A refusal an earlier
-sweep of this run already reported is not said again. Text from OATS appears
+check, each named as the switcher names its path, then what OATS said
+about this computer as a whole. A refusal an earlier sweep of this run
+already reported is not said again, nor is something about this computer
+that an earlier line of this run said. Text from OATS appears
 only after "OATS says:". The words are the ones the Desktop uses. The list
 is then read at once, so a resumed instance shows running. Nothing is said
 when nothing was lost, when the sessions were already running, or when
