@@ -14,13 +14,15 @@
  * Each would-be start takes the slot, then asks `cli()`: only a probe with the feature (session-resume-cli.mjs
  * resumeSupported) runs. Without one nothing runs, nothing is read, the floor does not move and the slot is let go.
  *
- * Settled homes keep a home that cannot be resumed from starting a sweep on every read. A sweep `observed()`
- * started keeps the lost homes it was started for (its snapshot); when it completes as a sweep (its reading is
- * quiet or a notice: session-resume.mjs sweepCompleted), each of them its answer does not name at all
- * (answeredHomes; its deployment not ready, say) is settled, and waits like a refused one. Then each answer settles
- * and releases homes by its rows (session-resume.mjs sweepSettlement: a refusal, or a home skipped as not lost or
- * not seen running recently, settles it; a session started or running releases it; anything else changes nothing).
- * A later read also releases a local home it shows that lostLocalHomes does not name: no longer lost, or running.
+ * Settled homes keep a home that cannot be resumed from starting a sweep on every read. A sweep `observed()` started
+ * keeps the lost homes it was started for (its snapshot); when it completes as a sweep (its reading is quiet or a
+ * notice: session-resume.mjs sweepCompleted), every one of them is settled, whatever the answer said of it (left out
+ * because its deployment is not ready, or named busy or unknown), so a home that cannot be resumed costs at most
+ * one observed sweep. Then the answer's rows settle and release homes (session-resume.mjs sweepSettlement: a
+ * refusal, or a home skipped as not lost or not seen running recently, settles it; a session started or running
+ * releases it; anything else changes nothing; the launch sweep has no snapshot, so a busy or unknown home there
+ * stays news for one observed sweep). A later read also releases a local home it shows that lostLocalHomes does not
+ * name: no longer lost, or running.
  *
  * News, not repeats. The kernel reports a refusal again in every sweep: before `read`, the refusals an earlier
  * sweep of this trigger reported are left out of a copy of the envelope (session-resume.mjs withoutReported; the
@@ -36,7 +38,7 @@
  * `dispose()` stops the trigger and never cancels a sweep: a sweep in flight runs on (a kernel change outlives
  * its client), and its reading is dropped. Nothing here throws out of `launch` or `observed`. */
 import { resumeSupported, runResumeSweep } from './session-resume-cli.mjs';
-import { answeredHomes, readResumeSweep, shownHostKeys, sweepCompleted, sweepSettlement, withoutReported } from './session-resume.mjs';
+import { readResumeSweep, shownHostKeys, sweepCompleted, sweepSettlement, withoutReported } from './session-resume.mjs';
 import { SESSION_ENDS } from './deployment-data.mjs';
 
 export const RESUME_MIN_INTERVAL_MS = 30_000;
@@ -96,7 +98,7 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
    * notice showed (withoutReported), with this answer's host keys and settlement (sweepSettlement) for after
    * the read. Its refusal keys are added at once. */
   function digest(envelope) {
-    const news = { ...withoutReported(envelope, reported, reportedHost), settlement: sweepSettlement(envelope), answered: answeredHomes(envelope) };
+    const news = { ...withoutReported(envelope, reported, reportedHost), settlement: sweepSettlement(envelope) };
     for (const { home, key } of news.keys) {
       reported.add(key);
       if (!reportedFor.has(home)) reportedFor.set(home, new Set());
@@ -105,10 +107,10 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
     return news;
   }
 
-  /** After the read: a completed sweep settles each snapshot home its answer left out; then the answer's own rows
-   * settle and release (a home it named as busy or unknown is left as it was). */
-  function settle(reading, snapshot, { settlement: { settle: settles, release: released }, answered }) {
-    if (sweepCompleted(reading)) { const named = new Set(answered); for (const home of snapshot) if (!named.has(home)) settled.add(home); }
+  /** After the read: a completed sweep settles every home of its snapshot; then the answer's own rows settle and
+   * release (a home it resumed, started, left waiting or found running is released again). */
+  function settle(reading, snapshot, { settlement: { settle: settles, release: released } }) {
+    if (sweepCompleted(reading)) for (const home of snapshot) settled.add(home);
     for (const home of settles) settled.add(home);
     for (const home of released) release(home);
   }

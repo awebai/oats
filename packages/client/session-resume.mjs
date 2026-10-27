@@ -177,15 +177,6 @@ export function sweepSettlement(envelope) {
   return { settle, release };
 }
 
-/** The homes a sweep's answer names, in any row (whatever its outcome): those it answered for. Empty for an
- * answer that is not the sweep's document (answerRows). The trigger settles the homes it started a sweep for
- * that the completed answer leaves out. */
-export function answeredHomes(envelope) {
-  const homes = new Set();
-  for (const row of answerRows(envelope) ?? []) { const home = homeOf(row); if (home !== null) homes.add(home); }
-  return [...homes];
-}
-
 /**
  * News, not repeats: the answer without what an earlier answer already reported, and this answer's keys.
  * `envelope` is a copy (the given one is never changed) that leaves out each `refused` row with a string home

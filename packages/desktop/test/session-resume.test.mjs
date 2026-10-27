@@ -4,7 +4,7 @@
 // warnings and messages are examples, not the kernel's sentences. Every sentence of the notice is pinned here.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readResumeSweep, resumeSummaryFact, resumeNotice, sweepSettlement, withoutReported, shownHostKeys, answeredHomes, sweepCompleted, RESUME_SUMMARY_ROWS, RESUME_SUMMARY_DEPLOYMENTS,
+import { readResumeSweep, resumeSummaryFact, resumeNotice, sweepSettlement, withoutReported, shownHostKeys, sweepCompleted, RESUME_SUMMARY_ROWS, RESUME_SUMMARY_DEPLOYMENTS,
   RESUME_ANSWER_ENTRIES, REFUSED_REASONS, RESUME_OUTCOMES, SKIPPED_REASONS, SETTLING_SKIPPED_REASONS } from '../../client/session-resume.mjs';
 import { boundedWarnings, FLAG_IGNORED_WARNINGS, FLAG_IGNORED_UNITS } from '../../client/launch-prompt-outcome.mjs';
 import { DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
@@ -573,15 +573,6 @@ test('withoutReported: a host warning a notice showed is left out by its exact s
   // A plan or an answer that is not the document: as it came, no keys.
   const plan = answer([], [], { plan: true, warnings: [SCOPE] });
   assert.deepEqual(withoutReported(plan, new Set(), new Set()), { envelope: plan, keys: [], hostKeys: [] });
-});
-
-test('answeredHomes: every home the answer names, whatever its outcome, once and in order; nothing for an answer that is not the document', () => {
-  const h = sweepHome;
-  assert.deepEqual(answeredHomes(answer([resumedRow('a'), skippedRow('b', { reason: SKIPPED_REASONS.startBusy }), row('c', 'vanished'), refusedRow('a'),
-    runningRow('d'), refusedRow('n', { home: 7 }), null, 'row'])), [h('a'), h('b'), h('c'), h('d')]);
-  for (const envelope of [refusal('E_RESUME_BUSY'), answer([resumedRow('a')], [], { plan: true }), answer([resumedRow('a')], null), { ok: true }, null]) {
-    assert.deepEqual(answeredHomes(envelope), [], JSON.stringify(envelope)?.slice(0, 60));
-  }
 });
 
 test('sweepCompleted: a quiet or notice reading; busy, failed, unsupported and anything else are not', () => {

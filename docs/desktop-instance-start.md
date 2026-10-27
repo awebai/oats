@@ -262,11 +262,11 @@ session was lost and that is not running, and only then:
 
 - at most one sweep at a time, and at least 30 seconds after the last one
   started (the one at launch counts);
-- not for an instance the last sweep could not resume, found was not lost,
-  left because it was lost long ago, or did not answer for at all (its
-  deployment not ready, say): such an instance does not set off another
-  sweep until a later roster shows it running or no longer lost, or a sweep
-  resumes it;
+- after a sweep that a status read started, every instance it was started
+  for waits until it changes (it runs, or it is no longer lost); so does an
+  instance any sweep could not resume, found was not lost, or left because it
+  was lost long ago. Such an instance does not set off another sweep until a
+  later roster shows it running or no longer lost, or a sweep resumes it;
 - never for another machine's instances.
 
 There is no timer and no queue: a read that comes too soon starts nothing,

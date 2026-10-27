@@ -202,13 +202,26 @@ test('unanswered: a lost local home a completed sweep did not name settles; a ru
   assert.equal(await starts(q, 2 * RESUME_MIN_INTERVAL_MS, [lost('b')]), false);
 });
 
-test('unanswered: a home its own sweep named as busy or unknown is not settled by the snapshot', async () => {
+test('snapshot: every home an observed sweep was started for settles when it completes, busy or unknown included', async () => {
   const h = harness();
   await launched(h);
   assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('a'), lost('b')],
     [skippedRow('a', { reason: SKIPPED_REASONS.startBusy }), skippedRow('b', { reason: SKIPPED_REASONS.unknown })]), true);
-  assert.equal(await starts(h, 2 * RESUME_MIN_INTERVAL_MS, [lost('a')]), true, 'a: named start-busy, may try again');
-  assert.equal(await starts(h, 3 * RESUME_MIN_INTERVAL_MS, [lost('b')], [skippedRow('b', { reason: SKIPPED_REASONS.unknown })]), true, 'b: named unknown');
+  for (const t of [2, 3, 10]) assert.equal(await starts(h, t * RESUME_MIN_INTERVAL_MS, [lost('a'), lost('b')]), false, `settled at ${t}`);
+  // A start-busy home loses nothing: the start under way shows it running, which releases it.
+  assert.equal(await starts(h, 11 * RESUME_MIN_INTERVAL_MS, [lost('a', { running: true })]), false);
+  assert.equal(await starts(h, 11 * RESUME_MIN_INTERVAL_MS, [lost('a')], [resumedRow('a')]), true, 'lost again after running: a sweep');
+  // The answer still releases what it resumed: a, lost again at once, sweeps again.
+  assert.equal(await starts(h, 12 * RESUME_MIN_INTERVAL_MS, [lost('a')]), true);
+});
+
+test('snapshot: the retry is bounded; a home the launch sweep answers unknown gets exactly one observed sweep, then none', async () => {
+  const h = harness();
+  await launched(h, [skippedRow('u', { reason: SKIPPED_REASONS.unknown })]);
+  assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('u')], [skippedRow('u', { reason: SKIPPED_REASONS.unknown })]), true,
+    'the launch sweep has no snapshot: one observed sweep follows');
+  for (let i = 2; i <= 20; i++) assert.equal(await starts(h, i * RESUME_MIN_INTERVAL_MS, [lost('u')], [skippedRow('u', { reason: SKIPPED_REASONS.unknown })]), false, `none at ${i}`);
+  assert.equal(h.runs.length, 2, 'the launch sweep and one observed sweep');
 });
 
 test('unanswered: a busy, failed or unsupported reading settles nothing of its snapshot', async () => {
