@@ -153,8 +153,8 @@ lines is shown as one; a text the filter withholds (control characters, a
 credential's shape) reads "[withheld]" alone, with no speaker in
 front; a text with nothing to show leaves the place saying what it said
 before for a row without one. The places: a roster row's title and
-description and its hover card's Status, the actions menu (its trigger,
-Start's reason, Open in split's reason), the notice of a terminal that
+description and its hover card's Status, the row's context menu (what it
+says when it is held, Start's reason, Open in split's reason), the notice of a terminal that
 cannot open, the start dialog's status, the context panel's Start, the
 overview's Go to instance and Start…, the roster's failure notice and the
 overview's.
@@ -504,7 +504,7 @@ answers the view that holds it; no `?ws=` answers the first view.
   read failed, whatever the message holds: a failure with no message is
   stale too. A
   stale deployment's rows wait for a current read, as on a stale roster:
-  Start and the actions menu in the sidebar, the overview's actions. It stays
+  Start and the row's context menu in the sidebar, the overview's actions. It stays
   `reachable`, so spawning there is not blocked. `note` is information, not a
   failure.
 - `instances` is the union of every deployment's rows, each tagged
@@ -811,7 +811,7 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
 - **One predicate.** `canAddressRemote(row)` in `packages/client/remote-address.mjs`
   (re-exported by `packages/client/instance-admission.mjs`): a local row, or a remote row
   with `addressable === true`. It gates every action on a row: opening the
-  terminal, Start…, the actions menu, the context panel's buttons, the start
+  terminal, Start…, the row's context menu, the context panel's buttons, the start
   and restart dialog and route, launch configurations, inspection, lifecycle
   plans and applies, readiness, activity, Git and diff, and the wait for a
   started or spawned instance's terminal. Forget… (below) is the one act it
@@ -822,7 +822,7 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   source of a row's reason: a short label on the roster meta line (Herdr no
   longer supported, gone from `<server>`, not reachable on `<server>`,
   `<server>` not reached, state unknown), and the full sentence used as the
-  row's `title`, `aria-description` and the actions menu's reason. When the
+  row's `title`, `aria-description` and the reason its context menu says. When the
   sentence is the row's own `runtimeError` the reason carries its `origin`
   ([Who made a shown text](#who-made-a-shown-text)); a sentence written
   there carries none. The server label is the registration's label, else
@@ -831,7 +831,7 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   unaddressable row, offered only where `rowReason(row).key === 'missing'`:
   the host was reached and did not list the saved route. A server that was
   not reached, or a state that is unknown, offers nothing. It is on the
-  roster row's actions menu, as "Forget…" alone (`renderer/instance-actions.mjs`
+  roster row's context menu (right-click, Shift+F10 or the ContextMenu key), as "Forget…" alone (`renderer/instance-actions.mjs`
   with the shell's `openForget`; `packages/client/instance-acts.mjs` is
   unchanged, so the terminal client is unaffected), and in the context panel
   beside the remedy note. Both open `renderer/forget-dialog.mjs`, the

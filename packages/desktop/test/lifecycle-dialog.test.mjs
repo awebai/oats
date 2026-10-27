@@ -797,24 +797,45 @@ test('a connection change while a plan is read drops a kept PR row: the account 
     assert.equal(f.doc.querySelector('.lifecycle-forge').textContent, ''); link.click(); assert.deepEqual(opened, []);
   } finally { f.close(); }
 });
-/** The shipped roster's ancestry (#instance-roster: its head, then the list of rows, each with its actions trigger), so the
- * generic return (an ancestor's first control: the first row) is there to compete with the successor row. */
+/** The shipped roster's ancestry (#instance-roster: its head, then the list of rows; a running row without a known
+ * pull request has no row tools), so the generic return (an ancestor's first control: the first row) is there to
+ * compete with the successor row. A Stop…/Retire… of the row's context menu closes the menu onto the row before the
+ * dialog opens (instance-actions.mjs execute), so the row is the opener, as for the leader's keys on a focused row.
+ * Beside it the instance panel (#context-panel), whose footer opens the same dialogs (context-panel.mjs
+ * lifecycleButton): an opener outside the roster. */
 const roster = `<section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list">${['a', 'b', 'c'].map((id, i) =>
-  `<div class="ctx-tree-row"><button class="ctx-inst" data-tree-instance="${id}" tabindex="${i === 0 ? 0 : -1}">dev-${i}</button><span class="ctx-row-tools"><button class="ctx-instance-actions" data-tree-instance="key-${id}" data-tree-control="actions">⋯</button></span></div>`).join('')}</div></section>`;
-test('in the roster: after the retired row leaves, Done and Esc land on the row that followed it, not the roster\'s first row; with the row still there, focus returns to its trigger', async () => {
+  `<div class="ctx-tree-row"><button class="ctx-inst" data-tree-instance="${id}" tabindex="${i === 0 ? 0 : -1}">dev-${i}</button></div>`).join('')}</div></section>`
+  + '<aside id="context-panel"><button class="context-panel-footer-act" data-lifecycle="retire">Retire…</button></aside>';
+const retired = () => ({ lifecycleApi: 1, status: 'complete', target, receipt: lifecycleReceipt(retireReceipt({ key: 'k', revision: retirePlan().planRevision }), retirePlan(), 'k') });
+test('in the roster: after the retired row leaves, Done and Esc land on the row that followed it, not the roster\'s first row; with the row still there, focus returns to the row', async () => {
   for (const how of ['done', 'escape', 'cancel']) {
     const gate = deferred(); let fallbacks = 0, doc;
     const order = ['a', 'b', 'c'], fallbackFocus = () => { fallbacks++; return successorRow([...doc.querySelectorAll('.ctx-inst')], order, 1); };
     const f = fixture({ html: roster, fallbackFocus, request: (_ws, body) => body.action === 'plan' ? planned('retire') : gate.promise });
     doc = f.doc;
     try {
-      const trigger = f.doc.querySelector('[data-tree-instance="key-b"]'); trigger.focus(); f.open('retire'); await tick();
-      if (how === 'cancel') { f.key('Escape'); assert.equal(f.doc.activeElement, trigger, 'the opener'); assert.equal(fallbacks, 0); continue; }
+      const opener = f.doc.querySelector('.ctx-inst[data-tree-instance="b"]'); opener.focus(); f.open('retire'); await tick();
+      if (how === 'cancel') { f.key('Escape'); assert.equal(f.doc.activeElement, opener, 'the opener'); assert.equal(fallbacks, 0); continue; }
       f.button('lifecycle-confirm').click(); await tick();
-      trigger.closest('.ctx-tree-row').remove(); // the roster refresh after the retire
-      gate.resolve({ lifecycleApi: 1, status: 'complete', target, receipt: lifecycleReceipt(retireReceipt({ key: 'k', revision: retirePlan().planRevision }), retirePlan(), 'k') }); await tick();
+      opener.closest('.ctx-tree-row').remove(); // the roster refresh after the retire
+      gate.resolve(retired()); await tick();
       if (how === 'done') f.button('lifecycle-done').click(); else f.key('Escape');
       assert.equal(f.doc.activeElement.dataset.treeInstance, 'c', `${how}: the successor row`); assert.equal(fallbacks, 1);
+    } finally { f.close(); }
+  }
+});
+test('from the instance panel\'s footer: Cancel, Esc and Done return focus to its Retire… button, never to a roster row; the roster\'s fallback is not asked', async () => {
+  for (const how of ['cancel', 'escape', 'done']) {
+    const gate = deferred(); let fallbacks = 0;
+    const f = fixture({ html: roster, fallbackFocus: () => { fallbacks++; return f.doc.querySelector('.ctx-inst[data-tree-instance="c"]'); },
+      request: (_ws, body) => body.action === 'plan' ? planned('retire') : gate.promise });
+    try {
+      const opener = f.doc.querySelector('#context-panel [data-lifecycle="retire"]'); opener.focus(); f.open('retire'); await tick();
+      assert.notEqual(f.doc.activeElement, opener, 'the dialog has focus');
+      if (how === 'cancel') f.button('lifecycle-close').click();
+      else if (how === 'escape') f.key('Escape');
+      else { f.button('lifecycle-confirm').click(); await tick(); gate.resolve(retired()); await tick(); f.button('lifecycle-done').click(); }
+      assert.equal(f.doc.activeElement, opener, `${how}: the panel's button`); assert.equal(fallbacks, 0, `${how}: no fallback`);
     } finally { f.close(); }
   }
 });

@@ -6,7 +6,7 @@ export function captureFocusReturn(doc) {
   const id = original?.id;
   const treeInstance = original?.dataset?.treeInstance;
   const treeControl = original?.dataset?.treeControl;
-  // A roster row's tools (Start…, the actions menu) are shown only while their row has focus:
+  // A roster row's tools (Start…, the PR link) are shown only while their row has focus:
   // when one of them can't take focus back, its row can (spec F audit).
   const rowInstance = original?.closest?.('.ctx-tree-row')?.querySelector?.('.ctx-inst')?.dataset?.treeInstance;
   const ancestors = [];

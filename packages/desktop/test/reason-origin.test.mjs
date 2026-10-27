@@ -4,7 +4,7 @@
 //
 //   rowReason(row)                        remote-address.mjs: a roster row's title, the notice of a terminal
 //                                         that cannot open, a Herdr row's reason
-//   instanceActs(row).blocked             instance-acts.mjs: the actions trigger (`unaddressable`, `held`)
+//   instanceActs(row).blocked             instance-acts.mjs: what a held row context menu says (`unaddressable`, `held`)
 //   instanceActs(row).limited             the same module (`held`)
 //   instanceActs(row).acts[].reason       Start's `unsupported-session`
 //
@@ -174,7 +174,7 @@ test('a row of another machine that arrives with its mark removed, or with one t
       assert.equal(rowReason(down('bell\u0007')).origin, 'roster-read', at);
       assert.equal(rowReasonLine(rowReason(down('bell\u0007'))), DETAIL_WITHHELD, at);
       assert.equal(rowReasonLine(rowReason(down('safe‮txt.exe'))), "Desktop's read of other machines says: safe�txt.exe", at);
-      // The actions trigger shows the same reason when the row offers nothing.
+      // The row's context menu says the same reason when the row offers nothing.
       if (!addressable) assert.equal(reasonLine(instanceActs(down('safe‮txt.exe')).blocked), "Desktop's read of other machines says: safe�txt.exe", at);
     }
   }
