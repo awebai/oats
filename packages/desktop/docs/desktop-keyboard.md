@@ -1072,6 +1072,9 @@ control.
   `treeGuides`, `renderer/instance-tree-view.mjs`, and the same `.ctx-guide`
   rules): the dotted line joining the roots of one group (sibling links) on the
   dot column, and the solid parent→child elbows and pass-throughs to its right.
+  As in the sidebar, a solid line joins only a child that draws its parent line
+  (`drawsParentLine`, `packages/client/same-work.mjs`, #1577), and those
+  children are listed first under their parent, by recency within each part.
   Its dot is the sidebar's state dot: running, stopped or unknown. A context row
   keeps its lines; only its text is dimmed.
 - **Relations in words.** A nested row's option reads "…, under <parent>" and an
