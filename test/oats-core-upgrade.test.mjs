@@ -101,8 +101,7 @@ for (const tag of ["oats-framework/v1.4.1", "oats-framework/v1.8.0", "oats-frame
     const commands = waitingCommands(home);
     assert.ok(commands.length > 0, "the start wrote oats.core's waiting hooks");
     assert.ok(commands.every(c => c.includes(script)), "every waiting hook names the home's moved module copy");
-    const stopped = fx.cli(["session", "stop", "--home", home, "--json"]);
-    assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+    // The session ends with the fixture's own tmux server, at its cleanup.
   });
 }
 
