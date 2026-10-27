@@ -720,13 +720,13 @@ function listedHeard(state, { rows, failure }) {
   return { state: next(state, { listed: Object.freeze({ rows: Object.freeze(rows.map((row) => Object.freeze({ path: row.path, name: row.name, state: row.state }))), failure: null }) }), effect: null };
 }
 
-/** The kernel's machine sweep read (lib/main.mjs; the shared readResumeSweep's `{ kind, summary?, code? }`).
+/** The kernel's machine sweep read (lib/main.mjs; the shared readResumeSweep's `{ kind, code? }`).
  *  The TUI says nothing of a sweep (docs/tui.md, "Resuming lost sessions"): no line, whatever it read,
- *  and the list shows each instance as it is after the next read. A sweep that ran (`notice`, `quiet`)
+ *  and the list shows each instance as it is after the next read. A sweep that answered (`answered`)
  *  asks for that read live, so a resumed row reads running; one that failed, found the machine's sweep
  *  busy, or a kernel without it, asks for nothing. */
 function resumedHeard(state, reading) {
-  if (reading?.kind === "notice" || reading?.kind === "quiet") return { state, effect: { refresh: { live: true } } };
+  if (reading?.kind === "answered") return { state, effect: { refresh: { live: true } } };
   return { state, effect: null };
 }
 

@@ -104,7 +104,7 @@ const TAKEN = Object.freeze({
   "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
   // #1559: lost sessions resumed when the TUI opens, and when a read shows one lost (lib/main.mjs); the TUI
-  // says nothing of a sweep, so the shared reader's notice (session-resume.mjs) is not taken.
+  // says nothing of a sweep: the shared reader (session-resume.mjs) is the trigger's, and the TUI takes only its readings.
   "session-resume-cli.mjs": ["runResumeSweep"],
   "session-resume-trigger.mjs": ["createResumeTrigger", "localDeploymentIds"],
   "workspace-admission.mjs": ["validateWorkspace"],

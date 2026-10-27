@@ -521,7 +521,7 @@ test("a lost session in the kernel's status answer reaches the resume trigger th
   await trigger.launch();
   now += 30_000;
   await trigger.observed(observation.rows, { localDeploymentIds: observation.localDeploymentIds });
-  assert.deepEqual([runs.length, runs.every((asked) => asked === cli), readings], [2, true, ["quiet", "quiet"]], "the launch sweep, then the one the lost row started");
+  assert.deepEqual([runs.length, runs.every((asked) => asked === cli), readings], [2, true, ["answered", "answered"]], "the launch sweep, then the one the lost row started");
 });
 
 test("the cycle numbers grow strictly, a failed cycle and a void one included", async (t) => {

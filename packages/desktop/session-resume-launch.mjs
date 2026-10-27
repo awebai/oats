@@ -10,8 +10,8 @@
    - A sweep's child is the runner's default exec's (file-output-exec.mjs: detached, output in files):
      nothing here holds it, so quitting Desktop never cancels it. Never add the trigger to shutdown(), the
      terminal broker or the server's lifetime; `dispose()` is for tests and the TUI.
-   - The Desktop shows nothing of a sweep (the product owner, 2026-10-27): a `notice` reading is dropped like
-     `quiet`, `busy` and `unsupported`. `failed` logs one line with its code only: no kernel text is logged. */
+   - The Desktop shows nothing of a sweep (the product owner, 2026-10-27): every reading but `failed` is
+     dropped. `failed` logs one line with its code only: no kernel text is logged. */
 
 const CODE = /^E_[A-Z0-9_]{1,64}$/;
 

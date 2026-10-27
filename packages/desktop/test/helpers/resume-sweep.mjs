@@ -1,6 +1,7 @@
 // The machine sweep's answers (`oats session resume --json`) for tests, and the roster rows the resume trigger
 // reads: built from the constants of the modules that own each shape (session-resume.mjs for the answer,
-// deployment-data.mjs for `sessionEnd`, session-resume-cli.mjs for the feature), so no test spells them itself.
+// deployment-data.mjs for `sessionEnd`, session-resume-cli.mjs for the feature), so no test spells them itself;
+// the refused reasons, which no client module owns, are spelled here once.
 // Hand-written from the agreed kernel contract; the deployment, homes and messages are examples.
 import { RESUME_OUTCOMES } from '../../../client/session-resume.mjs';
 import { SESSION_RESUME_FEATURE } from '../../../client/session-resume-cli.mjs';
@@ -10,6 +11,8 @@ import { SESSION_ENDS } from '../../../client/deployment-data.mjs';
 export const SWEEP_DEPLOYMENT = '/home/ana/agents';
 /** An accepted probe with the sweep's feature. */
 export const RESUME_PROBE = Object.freeze({ ok: true, bin: '/usr/local/bin/oats', features: Object.freeze([SESSION_RESUME_FEATURE]) });
+/** A `refused` row's reasons: no client module reads them; the kernel's lib/session-resume-contract.mjs ROW_REASON owns them. */
+export const REFUSAL_REASONS = Object.freeze(['start-refused', 'refused-this-boot', 'keeps-getting-lost']);
 
 /** An instance's home in a deployment. */
 export const sweepHome = (instance, deployment = SWEEP_DEPLOYMENT) => `${deployment}/agents/x/instances/${instance}`;
