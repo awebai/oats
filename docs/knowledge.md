@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.3.0** (OATS **>=0.49.0**). Provider implementation and
+This is the operator guide for **oats.okf 5.5.0** (OATS **>=0.49.0**). Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -25,7 +25,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.3.0
+  oats.okf: v5.5.0
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -50,18 +50,22 @@ settings:
 
 Upgrading from 4.x requires the ordered
 [5.0 cutover](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters), not
-just editing a version line. For 5.3.0, OATS >=0.49.0 remains required:
+just editing a version line. For 5.5.0, OATS >=0.49.0 remains required:
 that kernel first supports the public source-event lookup after retirement.
 
-**Upgrade:** pin `oats.okf: v5.3.0` and run `oats sync`. Only new spawns get
+**Upgrade:** pin `oats.okf: v5.5.0` and run `oats sync`. Only new spawns get
 the capability-owned harvest duty, skill and spawn-recorded policy. Existing
-homes keep their copied provider even after a session restart. Deployments
-whose briefings never mentioned harvesting now get knowledge proposals at
-the harvest checkpoints; souls not ready for this must declare
-`knowledge: { harvest: off }`. Consultation and instance-memory upkeep remain.
-From 5.2.x, 5.3.0 adds the long-lived-role checkpoints and the checkpoint
-line in `log.md`, drops the available-memory gate, and has the proposer name
-each harvester (`--name`, below).
+homes keep their copied provider even after a session restart; from 5.4.0, a
+stopped 5.x home can move with `oats instance upgrade` (OATS 0.68.0 and
+later), and a home spawned under 4.x is refused with the remedy to retire and
+respawn it. Deployments whose briefings never mentioned harvesting now get
+knowledge proposals at the harvest checkpoints; souls not ready for this must
+declare `knowledge: { harvest: off }`. Consultation and instance-memory upkeep
+remain. From 5.2.x, 5.3.0 adds the long-lived-role checkpoints and the
+checkpoint line in `log.md`, drops the available-memory gate, and has the
+proposer name each harvester (`--name`, below). 5.5.0 adds the incarnation to
+the proposal's `Source:` line (below): a harvester on 5.4.0 or older refuses
+that line, so run `oats sync` to 5.5.0 before instances on 5.5.0 propose.
 
 ### Bindings document
 
@@ -191,8 +195,9 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    home: What (one claim per concept), Why, Evidence (observations, dates,
    limits and accepted concepts cited), and optional `## Backing notes` with
    one `- notes/<file>.md` entry per note. It has exactly one line
-   `Source: instance <name>, home <path>, soul <name>` naming the actual
-   source, a pointer to verify rather than authority. Claim only for owned
+   `Source: instance <name>, home <path>, soul <name>, incarnation <createdAt>`
+   naming the actual source, with `createdAt` copied from its `instance.json`:
+   a pointer to verify rather than authority. Claim only for owned
    nodes; a lesson for a node the soul only reads is named in one line in its
    hand-back for that node's owner.
 
@@ -239,9 +244,13 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    <harvester>`).
 3. **Capture, judge and submit.** Before the model starts, the required spawn
    hook checks the source's live record or the completed recovery named by
-   its public retirement event. Source identity, single-incarnation history,
-   recovery manifest and soul opt-out must agree; guessed copies and reused
-   or ambiguous identities refuse. It atomically captures the proposal,
+   its public retirement event. Source identity, the named incarnation,
+   recovery manifest and soul opt-out must agree; guessed copies and
+   ambiguous identities refuse. A live source whose name was used before is
+   matched by its incarnation; a `Source:` line without one still works for an
+   unambiguous source, and on a reused name it refuses with the remedy to
+   propose again with the incarnation. A retired source is captured only when
+   it had a single known incarnation. It atomically captures the proposal,
    verified source declarations/bindings and only named notes into the
    harvester's own `harvest-source/`. The model uses that snapshot, not a later
    live-source read: retirement or recovery disposal after capture cannot

@@ -331,7 +331,7 @@ receipt repair.
 
 Set this up only after cards 1–8 succeed, and only when the intake authorizes harvested
 knowledge reviewed and merged by an agent. It needs kernel ≥ 0.49.0 (the public
-instance-event lookup after a source retires) and `oats.okf` 5.3.0. The contract is
+instance-event lookup after a source retires) and `oats.okf` 5.5.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
 ("Triggers", "Workspace triggers and schedules") in the installed kernel, and
 okf's own README at the pinned tag; read them, and okf's own
@@ -339,7 +339,7 @@ okf's own README at the pinned tag; read them, and okf's own
 
 ### 1. Pin the package
 
-`packages: { oats.okf: v5.3.0 }` in the workspace file, then `oats sync`
+`packages: { oats.okf: v5.5.0 }` in the workspace file, then `oats sync`
 (`/oats-package-pins`). One pin brings, versioned and locked together:
 
 - the three capabilities: `oats.okf` (every working soul's knowledge slot),
@@ -442,7 +442,7 @@ with `E_REMOVED`.
   (some only for long-lived roles), new claims become one proposal for one
   harvester at a time, under a name the skill prints. The harvester opens
   owned-node PRs for the review trigger (section 3). The duty needs no task
-  briefing; only new spawns get it after the 5.3.0 pin.
+  briefing; only new spawns get it after the pin.
 - **The one switch is the soul's own opt-out:** `knowledge: { harvest: off }`
   in its `soul.yaml`. Its instances get the shared conditional instructions
   but no duty; `oats okf status` reports `off` from the spawn-written policy.
