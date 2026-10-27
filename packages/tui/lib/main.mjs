@@ -579,19 +579,21 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  starts in the panel at once. On another, the shared preflight runs first over the reader's
    *  exec (a read like any other, ended on every way out), and what it prepared waits for the
    *  store's `panel`, which comes only if the open was not given up and the row is still there.
-   *  The viewer is given no key of its own: the TUI takes the back key before the pane sees it. */
+   *  The viewer is given no key of its own: the TUI takes the back key before the pane sees it.
+   *  Nor its status line, where the kernel can leave it out (--no-status-line): the cheat sheet
+   *  names the scroll keys. */
   function open(decision) {
     if (!decision.routed) {
       let args;
       // A target the shared home refuses (no absolute home) starts nothing; the line after says
       // the viewer ended without saying why.
-      try { args = sessionAttachArgv(probe.cli, decision.target); } catch { return void heard({ returned: { id: decision.id, status: null, stderr: "" } }); }
+      try { args = sessionAttachArgv(probe.cli, decision.target, { statusLine: false }); } catch { return void heard({ returned: { id: decision.id, status: null, stderr: "" } }); }
       return view(decision.id, probe.cli.bin, args);
     }
     giveUpPreflight();
     const mine = preflight = { id: decision.id, controller: new AbortController(), prepared: null };
     Promise.resolve()
-      .then(() => effects.prepareRemoteTerm(probe.cli, decision.target, { exec: reader.exec, signal: mine.controller.signal }))
+      .then(() => effects.prepareRemoteTerm(probe.cli, decision.target, { exec: reader.exec, signal: mine.controller.signal, statusLine: false }))
       .then((prepared) => { if (preflight === mine) { mine.prepared = prepared; heard({ prepared: { id: mine.id } }); } },
         (error) => { if (preflight === mine) { preflight = null; heard({ prepared: { id: mine.id, error } }); } });
   }

@@ -52,6 +52,7 @@ import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
 import YAML from "yaml";
 import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } from "../lib/servers.mjs";
+import { readSessionViewer } from "../lib/session-viewer.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
@@ -108,7 +109,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade", "instance-suggest-name", "spawn-apply-suggest-name"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade", "session-attach-no-status-line", "session-attach-prefix-scroll", "instance-suggest-name", "spawn-apply-suggest-name"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -2782,7 +2783,7 @@ async function status() {
     const observation = maxAgeGiven === null ? {} : { observation: observationBlock() };
     // `features` (feature server-probe-features): this kernel's own list, as `version --json` answers
     // it, so a remote roster relays the host's without probing it. Never part of a reused observation.
-    console.log(JSON.stringify({ root, agents: data, ...observation, features: KERNEL_FEATURES, ...(ws ? { workspace: { ...(ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true }), ...workspaceIdentity(ws.local, ws.discovery) } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
+    console.log(JSON.stringify({ root, agents: data, ...observation, features: KERNEL_FEATURES, sessionViewer: readSessionViewer(), ...(ws ? { workspace: { ...(ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true }), ...workspaceIdentity(ws.local, ws.discovery) } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
@@ -3615,7 +3616,9 @@ async function sessionCmd() {
         const n = (count, what) => `${count} ${what}${count === 1 ? "" : "s"}`;
         if (sessions + tables > 0) console.error(`oats: removed ${n(sessions, "leftover viewer session")} and ${n(tables, "key table")} of earlier attaches`);
       };
-      process.exitCode = await attachInstanceSession(home, { detachKey: valueFlag("detach-key"), onSwept });
+      // --no-status-line (feature session-attach-no-status-line): a viewer without its status line,
+      // the scroll keys, for a caller that shows them itself.
+      process.exitCode = await attachInstanceSession(home, { detachKey: valueFlag("detach-key"), statusLine: !args.includes("--no-status-line"), onSwept });
       return;
     }
     if (args[1] === "inspect") result = inspectInstanceSession(home);
@@ -3657,7 +3660,7 @@ async function sessionCmd() {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--detach-key key] [--model id] [--launch-config name|none | --reselect-launch] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--detach-key key] [--no-status-line] [--model id] [--launch-config name|none | --reselect-launch] [--harness pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result);
     else {
       console.log(JSON.stringify(result, null, 2));
@@ -4284,7 +4287,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: KERNEL_FEATURES, automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: KERNEL_FEATURES, automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1, sessionViewer: readSessionViewer() }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4666,7 +4669,7 @@ async function serverRouteCmd() {
     const detachKey = valueFlag("detach-key");
     if (detachKey !== undefined) process.on("SIGQUIT", () => {});
     let route;
-    try { route = attachArgv(id, { ...addr, detachKey }, { skipVersionCheck: args.includes("--print") }); }
+    try { route = attachArgv(id, { ...addr, detachKey, statusLine: !args.includes("--no-status-line") }, { skipVersionCheck: args.includes("--print") }); }
     // ssh failing before the viewer (the version probe, a name resolved through the host's roster)
     // is the failure ssh has under it: exit 255, on which a caller reconnects. Every other refusal,
     // and an ssh that never started (no link can come back), exits 1.
@@ -4994,8 +4997,10 @@ Usage:
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
       --instance <name> | --home <abs>       remote instance, by its saved route or the server's
       [--detach-key <key>]                   roster (--print shows attach); oats 0.22.2 or later.
-                                            attach --detach-key: as below; the server must
-                                            advertise session-attach-detach-key
+      [--no-status-line]                     attach --detach-key: as below; the server must
+                                            advertise session-attach-detach-key.
+                                            --no-status-line: as below; a server without
+                                            session-attach-no-status-line shows the line
   oats session start --server <id>           start a stopped remote instance in its existing home
       --instance <name> | --home <abs>       by its saved route or the server's roster; it must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
@@ -5031,13 +5036,15 @@ Usage:
   oats deployments import --from desktop <path>... [--json]
                                             the Desktop's one-time import of its own lists
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
-  oats session attach --home <absolute-home> [--detach-key <key>]
+  oats session attach --home <absolute-home> [--detach-key <key>] [--no-status-line]
                                             a viewer of one instance. <key> (C-<letter>, M-<letter
                                             or digit>, F1 to F12; 'C-\\' is the suggested one)
                                             leaves it with exit status 20; without one no key
                                             leaves it. Shift+PageUp scrolls back (tmux copy mode:
-                                            PageUp, PageDown, q leaves); every other key goes to
-                                            the agent
+                                            PageUp, PageDown, q leaves), and so does C-b [ in a
+                                            viewer without a key, whose status line says so
+                                            (--no-status-line: none); every other key goes to
+                                            the agent, C-b and the key after it included
   oats schedule list|show <id>|test <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
       enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
       tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an

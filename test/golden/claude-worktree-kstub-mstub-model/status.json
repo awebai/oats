@@ -418,6 +418,7 @@
     }
   ],
   "features": "<features>",
+  "sessionViewer": "<sessionViewer>",
   "workspace": {
     "reachable": true,
     "key": "local/<base>/remotes/ws.git",

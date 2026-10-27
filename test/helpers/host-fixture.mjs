@@ -435,7 +435,10 @@ export function isolateSessionEnvironment(base, { userConfig = false } = {}) {
   const tmuxTmpdir = privateTmuxTmpdir();
   ensureOatsSocketDir(tmuxTmpdir);
   const wrapper = join(bin, "tmux");
+  // `tmux -V` alone names no server and starts none: the kernel asks it for its viewer fact
+  // (lib/session-viewer.mjs readSessionViewer), so it is the real tmux's answer.
   writeFileSync(wrapper, `#!/bin/sh
+if [ "$#" -eq 1 ] && [ "$1" = -V ]; then exec ${quote(tmux)} -V; fi
 socket=
 label=
 expect=

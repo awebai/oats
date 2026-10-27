@@ -94,7 +94,7 @@ const TAKEN = Object.freeze({
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
   "remote-address.mjs": ["rowReason"],
-  "session-attach.mjs": ["sessionAttachArgv", "prepareRemoteTerm", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
+  "session-attach.mjs": ["sessionAttachArgv", "prepareRemoteTerm", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE", "PREFIX_SCROLL_FEATURE", "localScrollKeys", "hostScrollKeys"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],
   "instance-lifecycle.mjs": ["createLifecycleBoundary"],
@@ -384,8 +384,10 @@ test("opening an agent: no module of the TUI holds an attach argument, the featu
   }
   // The viewer is started where it is built from the shared answer: lib/main.mjs hands lib/panel.mjs
   // what sessionAttachArgv or prepareRemoteTerm answered, with no key, and nothing else.
-  assert.match(code(read("packages/tui/lib/main.mjs")), /sessionAttachArgv\(probe\.cli, decision\.target\)/);
-  assert.match(code(read("packages/tui/lib/main.mjs")), /effects\.prepareRemoteTerm\(probe\.cli, decision\.target, \{ exec: reader\.exec, signal: mine\.controller\.signal \}\)/);
+  // The viewer without its status line, which the shared home asks only of a kernel that has the flag.
+  assert.match(code(read("packages/tui/lib/main.mjs")), /sessionAttachArgv\(probe\.cli, decision\.target, \{ statusLine: false \}\)/);
+  assert.match(code(read("packages/tui/lib/main.mjs")), /effects\.prepareRemoteTerm\(probe\.cli, decision\.target, \{ exec: reader\.exec, signal: mine\.controller\.signal, statusLine: false \}\)/);
+  assert.doesNotMatch(code(read("packages/tui/lib/main.mjs")), /--no-status-line|session-attach-no-status-line/, "the flag and its feature are the shared home's to spell");
   assert.match(code(read("packages/tui/lib/main.mjs")), /panel\.open\(\{ argv: \[process\.execPath, bin, \.\.\.args\]/);
   assert.doesNotMatch(code(read("packages/tui/lib/main.mjs")), /detachKey: state\.detachKey|"--detach-key"/, "the viewer is given no key");
   // The panel builds no argument of the viewer's: the pane's command is its constant script, then
