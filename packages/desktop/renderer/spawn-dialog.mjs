@@ -680,7 +680,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   backgroundField.append(backgroundLabel, backgroundHint);
   let backgroundDefault = soul.background === true, backgroundTouched = false;
   backgroundSwitch.checked = backgroundDefault;
-  backgroundSwitch.addEventListener('change', () => { backgroundTouched = true; }); // before the form's own change listener
+  // Touched on the press itself: the form's own `input` listener repaints the dialog before `change` fires, and must find it touched.
+  for (const type of ['input', 'change']) backgroundSwitch.addEventListener(type, () => { backgroundTouched = true; });
   // Relationship — shown by default.
   const relation = el('fieldset', undefined, 'spawn-field spawn-relationship');
   const relationLegend = el('legend', 'Relationship'); relationLegend.append(keyHint('relationship')); relation.append(relationLegend);

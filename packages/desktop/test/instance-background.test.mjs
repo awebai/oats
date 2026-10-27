@@ -430,6 +430,18 @@ test('dialog: a soul without the default starts off; on sends --background; back
   assert.equal(Object.hasOwn(u.previews().at(-1).choices, 'background'), false);
 });
 
+test('dialog: one press toggles the switch: the form\'s repaint on `input` finds it touched (the live run, 2026-10-27)', async t => {
+  const { u } = await dialog(t);
+  const control = u.q('.fbackground');
+  // A real press: click, then input, then change. The form's own input listener repaints before change fires.
+  control.click(); await settle();
+  assert.equal(control.checked, true, 'the first press is kept');
+  assert.equal(u.previews().at(-1).choices.background, true);
+  control.click(); await settle();
+  assert.equal(control.checked, false);
+  assert.equal(Object.hasOwn(u.previews().at(-1).choices, 'background'), false, 'back to the default sends nothing');
+});
+
 test('dialog: an older catalog is corrected by the preview without the flag: the switch follows the kernel\'s default', async t => {
   const { u } = await dialog(t, { soulDefault: true, catalogDefault: false });
   assert.equal(u.q('.fbackground').checked, true, 'the preview reports the soul\'s default');
