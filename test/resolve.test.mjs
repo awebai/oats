@@ -732,6 +732,11 @@ test("standalone discovery: from:here resolves against the soul's own repo; defa
   assert.deepEqual(r.modules.map((m) => m.name), ["nw-warehouse-access", "oats.core"], "no workspace defaults except the kernel's own (decision 25); the unresolvable from:<other> is dropped by standaloneRepo as a problem");
   assert.equal(r.modules.find((m) => m.name === "oats.core").from.kind, "package", "oats.core comes from the operator's lock, standalone too");
   assert.equal(r.slots.knowledge, null);
+  assert.deepEqual(r.instructionOrder, ["nw-warehouse-access", "oats.core"], "the kernel's own default follows the soul's capabilities, as any default does");
+  // A soul that lists oats.core itself keeps it at the soul's place.
+  const listed = { ...enumeration, souls: [soulEntry(K.data, C.data, soulDef("data-analyst", { capabilities: { "oats.core": { from: "package" }, "nw-warehouse-access": { from: "here" } } }))] };
+  const sl = standaloneRepo(R.data, C.data, listed);
+  assert.deepEqual((await resolveSoul(sl, sl.members[0].souls[0], opts())).instructionOrder, ["oats.core", "nw-warehouse-access"]);
 });
 
 test("decision 25: standalone `oats.core: off` opts out; standalone without a lock is E_PACKAGE_UNLOCKED, not a silent hollow spawn", async () => {

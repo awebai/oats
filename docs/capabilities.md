@@ -480,7 +480,12 @@ give them: first the capabilities the soul lists, in its `capabilities:` order (
 soul entry that re-lists a workspace default sits at the soul's place), then the
 workspace defaults the soul does not list, in the order the workspace's
 `defaults:` lists them (slot defaults and `defaults.capabilities` entries as they
-appear in the file). A standalone soul has no workspace defaults. A capability
+appear in the file). A standalone soul has no workspace defaults; the kernel's
+own `oats.core` default, which it gets unless it names `oats.core`, comes after
+the capabilities it lists, as any default does. A capability name made only of
+digits (`"123"`) is the one exception to the listing order: it comes first in its
+list, ahead of the names written before it, because the parsed list puts
+integer-like keys first. A capability
 with no inject adds nothing, and one the soul turns `off` or a slot `none` drops
 is not composed. Only the instructions take this order: modules, skills and hooks
 stay in name order, and reordering a soul's list is not a composition change (no

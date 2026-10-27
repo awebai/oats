@@ -129,7 +129,7 @@ full copy** of every capability the soul resolved to:
 
 ```text
 <agents-root>/<soul>/instances/<instance>/
-  AGENTS.md                        # generated: soul AGENTS.md + kernel/work-mode blocks + each module's inject
+  AGENTS.md                        # generated: soul AGENTS.md + each module's inject + kernel/work-mode blocks
   CLAUDE.md → AGENTS.md
   .agents/skills/                  # canonical skill tree, flat: the soul's skills and every module's, full copies
     <skill>/SKILL.md               # one level deep, where every harness discovers skills
