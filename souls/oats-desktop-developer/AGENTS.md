@@ -41,4 +41,5 @@ the tasks they cover.
 - Desktop-only changes run the Desktop suites (`cd packages/desktop && node
   --test`); terminal and identity behaviour is verified live through CDP, with
   tmux state asserted before and after, not only in the UI. A test Desktop
-  never takes the operator's screen or focus (`/electron-live-verification`).
+  runs on a virtual display, never in the operator's session
+  (`/electron-live-verification`).
