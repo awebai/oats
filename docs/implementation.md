@@ -53,7 +53,7 @@ effect of reading: for each deployment opened in a run it runs the kernel
 of the same install and the shared liveness collector as children, through
 the shared observer and refresh loop; it runs that kernel's read of the
 other machines (`oats server roster --json`), one at a time and awaited by
-no cycle; it ends every child; and it makes the one look at the file
+no cycle; it ends every read child and lets changes finish; and it makes the one look at the file
 system the workspace switcher needs (whether a picked row is a deployment).
 This computer's list of deployments is the kernel's: `lib/main.mjs` reads
 and changes it through the shared `cliDeploymentList`, and runs the kernel's
