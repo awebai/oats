@@ -38,6 +38,11 @@ export { createRetiresInFlight, retiringRows } from "../../client/retire-in-flig
 export { startGate, startInstance } from "../../client/session-start.mjs";
 export { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
+// #1559: the kernel's machine sweep, run when the TUI opens and when a read shows a lost session
+// (lib/main.mjs): the shared trigger decides when, the runner runs it, and the reader words what it did.
+export { runResumeSweep } from "../../client/session-resume-cli.mjs";
+export { resumeNotice } from "../../client/session-resume.mjs";
+export { createResumeTrigger } from "../../client/session-resume-trigger.mjs";
 export { validateWorkspace } from "../../client/workspace-admission.mjs";
 export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 export { soulRows } from "../../client/soul-rows.mjs";

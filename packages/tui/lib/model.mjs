@@ -596,6 +596,16 @@ export const LIST_WORDS = Object.freeze({
   leaving: "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.",
 });
 
+/** The TUI's own words around the kernel's machine sweep (docs/tui.md, "Resuming lost sessions"),
+ *  where the shared reader has none: the sweep refused or unreadable (the line under the sidebar's
+ *  title, once; a code of the kernel's form, else none, never what it printed), and the sweep still running as
+ *  the TUI leaves. What a sweep did is the shared resumeNotice's words, not these. */
+export const RESUME_WORDS = Object.freeze({
+  failed: (code) => Object.freeze([{ own: code === null ? "OATS could not resume lost sessions." : `OATS could not resume lost sessions (${code}).` }]),
+  /** The sweep still running as the TUI leaves: one line, after the screen is left. */
+  leaving: "oats: the resume of lost sessions is still running; `oats status` shows the instances.",
+});
+
 /** The lines of the list of workspaces (docs/tui.md, "The list of workspaces"): the leader's Up or
  *  Down with no other row to open (the Desktop's words), and a row picked there that is not a
  *  deployment any more. */

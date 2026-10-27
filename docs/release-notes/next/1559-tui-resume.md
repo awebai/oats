@@ -1,0 +1,15 @@
+## Added
+
+- **TUI: lost sessions are resumed when `oats tui` opens**
+  ([#1559](https://github.com/awebai/oats/issues/1559)). After a shutdown, a
+  reboot or a crash, `oats tui` asks OATS to resume every instance whose
+  session was lost, on every deployment on this computer, without holding up
+  its first screen. It asks again whenever a read shows a session lost while
+  it is open, at most every 30 seconds. When an instance was resumed, started
+  fresh, is waiting for you or could not be resumed, the line under the list
+  of workspaces says so once, in the Desktop's words, and the list is read
+  again. Quitting while the sessions are being resumed does not cut that
+  short. There is no setting: stop an instance with OATS to keep it down, or
+  set `session.resume: off` in a deployment's `oats-local.yaml`. `S` and `R`
+  are unchanged and never resume a conversation. See
+  [Resuming lost sessions](../tui.md#resuming-lost-sessions).

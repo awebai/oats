@@ -74,6 +74,11 @@ const SURFACE = Object.freeze({
     "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
+  // #1559: the kernel's machine sweep, when a client opens and when a read shows a lost session: the
+  // shared trigger decides when, the runner runs it through the client's change exec, the reader words it.
+  "session-resume-cli.mjs": ["runResumeSweep"],
+  "session-resume.mjs": ["resumeNotice"],
+  "session-resume-trigger.mjs": ["createResumeTrigger"],
   "client-terms.mjs": ["clientTerms"],
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
   "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],

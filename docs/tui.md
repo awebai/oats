@@ -1272,6 +1272,62 @@ The exit status never depends on it.
   there can leave `.oats-stop-pending.json` in the agent's home, and then
   the agent can be started but not stopped while that file exists.
 
+## Resuming lost sessions
+
+After a shutdown, a reboot or a crash, the instances that were running have
+lost their sessions. When `oats tui` opens, it asks the kernel to resume
+them: it runs `oats session resume --json`, and the kernel does the rest.
+The kernel looks at every deployment on this computer's list (local
+deployments only, never another machine's) and resumes each lost session as
+it decides; what it does to a session, and when it starts one fresh from its
+briefing instead, is the kernel's rule, written beside the command.
+`oats tui` owns no session: it runs the command and shows a summary.
+
+**When it runs.** Once the run has started, whether it started in a
+deployment or in [the switcher](#the-switcher): after the deployment it
+started in has been added to this computer's list (the sweep reads that
+list), and without holding up the first frame or the first read. Then
+again whenever a read of a deployment open in the run shows an instance
+whose session was lost while `oats tui` is open. Never two at a time, and never sooner than
+30 seconds after the last one began. It runs only when the kernel
+advertises the `session-resume` feature; without it, nothing runs and
+nothing is said.
+
+**What it says.** When the sweep resumed an instance, started one fresh,
+left one waiting for you or could not resume one, the line under the list
+of workspaces says so once, as it says any other line there: a headline
+that counts them ("OATS resumed 3 instances whose sessions were lost. 1 of
+them is waiting for you: open its terminal."), and under it a line for each
+instance (waiting for you, could not be resumed, started fresh and why,
+resumed in its own conversation), then the deployments the sweep did not
+check, each named as the switcher names its path. Text from OATS appears
+only after "OATS says:". The words are the ones the Desktop uses. The list
+is then read at once, so a resumed instance shows running. Nothing is said
+when nothing was lost, when the sessions were already running, or when
+another sweep holds the machine (another `oats tui`, OATS Desktop, or
+`oats session resume` run by hand). A sweep that fails says
+`OATS could not resume lost sessions (<code>).`, with the kernel's code and
+nothing else it printed (with no code when there is none of the kernel's
+form).
+
+**There is no setting to turn it off.** To keep an instance down, stop it
+with OATS (`X`, or `oats instance stop`): a stopped instance is not lost,
+and the sweep leaves it alone. `session.resume: off` in a deployment's
+`oats-local.yaml` turns the kernel's resuming off for that deployment, for
+every client; a summary names it among the deployments not checked.
+
+**Quitting does not stop a sweep.** It is a change, like an act you
+confirmed ([above](#stopping-starting-restarting-and-retiring)): it runs in
+a session of its own, writes its answer to files of its own, and is never
+signalled by `oats tui`. Quitting while it runs leaves it to finish, and
+one line is printed after the screen is left:
+
+    oats: the resume of lost sessions is still running; `oats status` shows the instances.
+
+`S` and `R` are unchanged: a start or restart from `oats tui` starts the
+instance as it was last launched, and never resumes a conversation. Only
+the sweep resumes.
+
 ## Spawning an agent
 
 `n` spawns an agent of a soul of the open workspace, on this machine, with
@@ -2340,6 +2396,10 @@ with the Desktop (`packages/client/`).
 
   An add and a remove are changes: `oats tui` never ends one, and one still
   running as it leaves is named in one line after the screen is left.
+- **The kernel's machine sweep**, `oats session resume --json`, by the same
+  kernel, from `/`, with no time limit: when the run starts, and when a
+  read shows a lost session ([Resuming lost sessions](#resuming-lost-sessions)).
+  It is a change, as an add is.
 - **The workspace of each row of that list the run has not opened** is
   one more read, `oats status --dir <path> --json` with `--max-age 60`, by
   the same kernel ([the switcher](#the-switcher)): at the start, when the
@@ -2649,7 +2709,9 @@ alone. The next run removes the directory that is left, with its `tmux`,
   server, session, window or pane. Its probe only lists panes. An agent's
   own session is started, ended or restarted only by the kernel's commands
   of an act you confirmed
-  ([above](#stopping-starting-restarting-and-retiring)), and an agent's
+  ([above](#stopping-starting-restarting-and-retiring)) and by the kernel's
+  machine sweep, which resumes lost sessions
+  ([above](#resuming-lost-sessions)), and an agent's
   terminal is opened by `oats session attach`, which makes its own viewer
   session on the agents' tmux server and removes it. The one tmux server
   `oats tui` runs is its own private one
@@ -2660,11 +2722,12 @@ alone. The next run removes the directory that is left, with its `tmux`,
   ([above](#what-it-reads-and-what-it-runs)), and a spawn's empty task file
   ([above](#what-it-reads-and-what-it-runs)). The processes it starts are
   the reads above, when you open an agent its private tmux server and the
-  viewers in it, one for each tab, and the acts you confirm. No read, server or viewer
+  viewers in it, one for each tab, the acts you confirm and the kernel's
+  machine sweep. No read, server or viewer
   outlives it on every way out a process can handle; after SIGKILL a read
   in flight runs to its own end, and the private server and its viewers end
-  by themselves. An act you confirmed is never ended by `oats tui`: it runs
-  to its own end. A spawn is ended only at its deadline, while `oats tui`
+  by themselves. An act you confirmed, and the machine sweep, are never
+  ended by `oats tui`: each runs to its own end. A spawn is ended only at its deadline, while `oats tui`
   runs ([above](#what-it-reads-and-what-it-runs)): never on the way out,
   and never after it.
 - It **changes this computer's list of deployments only through the

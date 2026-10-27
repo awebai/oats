@@ -20,7 +20,7 @@ never does.
 | path | contents |
 |---|---|
 | `bin/tui.mjs` | the entry `bin/oats.mjs` loads: it imports the whole module graph, then runs `main()` |
-| `lib/main.mjs` | the start (arguments, environment, terminal, `tui.json`, deployment, kernel, and outside every deployment this computer's list of deployments) and the loop: events through `reduce`, effects out, the frame drawn; the list's reads, the add of the deployment the run starts in and the switcher's Remove, through the shared `cliDeploymentList`; a resize and the keys typed to an agent told to the store (`passed`), which ends a line of one key |
+| `lib/main.mjs` | the start (arguments, environment, terminal, `tui.json`, deployment, kernel, and outside every deployment this computer's list of deployments) and the loop: events through `reduce`, effects out, the frame drawn; the list's reads, the add of the deployment the run starts in and the switcher's Remove, through the shared `cliDeploymentList`; the kernel's machine sweep of lost sessions (`oats session resume --json`), when the shared resume trigger says (after that add has settled, and when a read shows a lost session), through `changeExec`; a resize and the keys typed to an agent told to the store (`passed`), which ends a line of one key |
 | `lib/actions.mjs` | the action table and its default keys: the reducer, the cheat sheet and the help read the effective one. The keys shared with the Desktop are not written here: the leader's table and the plain keys of the list come from `packages/client/keymap.mjs`, and `test/keymap.test.mjs` fails on a row of the shared table the TUI does not handle |
 | `lib/config.mjs` | `tui.json` (`~/.oats/config/tui.json`): moved once from where earlier versions read it, read once, checked, and the effective action table; the default leader is the shared one (`keymap.mjs` `leaderKey`, Ctrl+X on every platform) |
 | `lib/client.mjs` | the one module that imports the shared readers (`packages/client/`), and the client's terms |
@@ -77,7 +77,7 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   a block that says what its command never says ends that client (THE
   CAPTURE in `lib/panel.mjs`). A
   change (`lib/read.mjs` `changeExec`: the apply of a stop or a retire, a
-  start, a restart, a spawn's apply) is never signalled on the way out: it
+  start, a restart, a spawn's apply, the machine sweep) is never signalled on the way out: it
   is let go, and its output goes to files, so it never meets a closed pipe.
   Only a spawn's apply has a deadline, the shared apply's, at which it is
   sent its signal (`timeout`, `killSignal`), and only while the run lasts:

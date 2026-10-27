@@ -56,7 +56,8 @@ other machines (`oats server roster --json`), one at a time and awaited by
 no cycle; it ends every child; and it makes the one look at the file
 system the workspace switcher needs (whether a picked row is a deployment).
 This computer's list of deployments is the kernel's: `lib/main.mjs` reads
-and changes it through the shared `cliDeploymentList`. `lib/store.mjs` is the state and a pure
+and changes it through the shared `cliDeploymentList`, and runs the kernel's
+machine sweep of lost sessions when the shared resume trigger says, as a change. `lib/store.mjs` is the state and a pure
 `reduce(state, event)`; `lib/model.mjs` turns the state into the rows to
 draw by calling the shared readers through `lib/client.mjs`, the one module
 that imports `packages/client/`; `lib/views/` are pure functions from that

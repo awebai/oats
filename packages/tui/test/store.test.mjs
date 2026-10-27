@@ -10,7 +10,7 @@ import {
   viewModel, workspaceChoices, workspaceChoiceRows,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { LIST_WORDS, OFFERED_SECTION, ROSTER_FAILED, memoryKey, model, roster, switcher, switcherLead, workspaceList } from "../lib/model.mjs";
+import { LIST_WORDS, OFFERED_SECTION, RESUME_WORDS, ROSTER_FAILED, memoryKey, model, roster, switcher, switcherLead, workspaceList } from "../lib/model.mjs";
 import { QUERY_LIMIT, initialState, reduce } from "../lib/store.mjs";
 import { marksOf } from "../lib/views/instances.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
@@ -1390,6 +1390,58 @@ test("the add of the deployment the run started in, refused while the switcher, 
   }
   // Over the list of instances itself it is said at once.
   assert.deepEqual(reduce(stateOf(observed(TREE)), { notListed: reason }).state.outcome, { said: LIST_WORDS.notAdded(reason.message), under: [] });
+});
+
+// --- Lost sessions resumed (#1559): the kernel's machine sweep, read by the shared reader ---------
+
+/** A summary as the shared readResumeSweep makes one: `rows` of each kind, `totals` counted from them. */
+function resumeSummary({ resumed = [], fresh = [], waiting = [], refused = [], optedOut = [], unswept = [] } = {}) {
+  return { resumed, fresh, waiting, refused, optedOut, unswept, omitted: 0, totals: { resumed: resumed.length, fresh: fresh.length, waiting: waiting.length, refused: refused.length } };
+}
+const resumedRow = (instance, deployment = DEPLOYMENT) => ({ instance, deployment, warnings: [], omitted: 0 });
+
+test("a sweep that resumed sessions is said once, in the line under the sidebar's title: the shared headline, its detail under it, a deployment named as the switcher names it; and the rows are read live", () => {
+  const state = stateOf(observed(TREE));
+  const other = "/home/u/work/beta";
+  const summary = resumeSummary({ resumed: [resumedRow("acme-dev"), resumedRow("beta-ops", other)], optedOut: ["/srv/quiet"] });
+  const told = reduce(state, { resumed: { kind: "notice", summary } });
+  assert.deepEqual(told.effect, { refresh: { live: true } }, "a live read, so a resumed row reads running");
+  assert.deepEqual(told.state.outcome, {
+    said: [{ own: "OATS resumed 2 instances whose sessions were lost." }],
+    under: ["acme-dev in /srv/deploy: resumed in its own conversation.", "beta-ops in ~/work/beta: resumed in its own conversation.",
+      "Not checked in /srv/quiet: resuming is turned off for this deployment (session.resume: off)."],
+  });
+  assert.equal(told.state.notice, null);
+  assert.deepEqual({ ...told.state, outcome: null }, { ...state }, "nothing else changes");
+  const d = draw(told.state, { cols: 120, rows: 30 }), side = d.lines.slice(1, 12).map((line) => line.slice(0, d.cols)).join(" ").replace(/\s+/g, " ");
+  for (const text of ["OATS resumed 2 instances whose sessions were lost.", "beta-ops in ~/work/beta: resumed in its own conversation."]) assert.equal(side.includes(text), true, side);
+  // A refused row is the shared summary's like any other: the TUI adds nothing of its own.
+  const refused = reduce(state, { resumed: { kind: "notice", summary: resumeSummary({ refused: [{ instance: "acme-dev", deployment: DEPLOYMENT, reason: "refused-this-boot", code: "E_START_REFUSED", message: "no tmux" }] }) } });
+  assert.deepEqual(refused.state.outcome.said, [{ own: "OATS could not resume 1 lost session." }]);
+  assert.equal(refused.state.outcome.under.at(-1), "OATS says: no tmux");
+  assert.deepEqual(refused.effect, { refresh: { live: true } });
+  // While the switcher is shown it is held, as the refused add is, and said once a view's list is.
+  const held = reduce(press(state, ["w", "w"]).state, { resumed: { kind: "notice", summary } }).state;
+  assert.deepEqual([held.outcome, held.notice?.said], [null, [{ own: "OATS resumed 2 instances whose sessions were lost." }]]);
+  assert.deepEqual(press(held, ["1"]).state.outcome?.said, held.notice.said);
+});
+
+test("a sweep with nothing to tell reads the rows live and says nothing; a busy machine or a kernel without the sweep does neither; a failed sweep says so with a code of the kernel's form, never what it printed", () => {
+  const state = stateOf(observed(TREE));
+  const quiet = reduce(state, { resumed: { kind: "quiet", summary: resumeSummary({ optedOut: ["/srv/quiet"] }) } });
+  assert.deepEqual([quiet.state, quiet.effect], [state, { refresh: { live: true } }]);
+  for (const kind of ["busy", "unsupported"]) {
+    const told = reduce(state, { resumed: { kind } });
+    assert.deepEqual([told.state, told.effect], [state, null], kind);
+  }
+  const failed = reduce(state, { resumed: { kind: "failed", code: "E_RESUME_STATE" } });
+  assert.equal(failed.effect, null);
+  assert.deepEqual(failed.state.outcome, { said: RESUME_WORDS.failed("E_RESUME_STATE"), under: [] });
+  assert.deepEqual(RESUME_WORDS.failed("E_RESUME_STATE"), [{ own: "OATS could not resume lost sessions (E_RESUME_STATE)." }]);
+  for (const code of ["e_lower", "E_", "E_BAD CODE", "\u001b[2JE_X", undefined, 7]) {
+    assert.deepEqual(reduce(state, { resumed: { kind: "failed", code } }).state.outcome.said, RESUME_WORDS.failed(null), String(code));
+  }
+  assert.deepEqual(RESUME_WORDS.failed(null), [{ own: "OATS could not resume lost sessions." }], "the generic line: no code at all");
 });
 
 // --- This computer's deployments list and the deployment the run started in ---------------
