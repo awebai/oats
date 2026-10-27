@@ -95,12 +95,6 @@ import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntr
 import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes, rosterWorkspaceKeys } from "../../client/panel-views.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-/** The routes of the verbs that write one field of an instance's own record (instance-record.mjs): each its
- * boundary and its "nothing ran" answer, for a request that is not even a request. */
-const INSTANCE_RECORD_ROUTES = new Map([
-  ['/api/instance-color', { request: instanceColorRequest, notRun: instanceColorNotRun }],
-  ['/api/instance-background', { request: instanceBackgroundRequest, notRun: instanceBackgroundNotRun }],
-]);
 
 const args = process.argv.slice(2);
 const sub = args[0];
@@ -1294,7 +1288,12 @@ const server = createServer(async (req, res) => {
     // `oats instance color`) and whether it runs in the background (feature instance-background, #1579: `oats
     // instance background`), local or routed to the row's host. POST, so the Origin guard above covers them. A change,
     // or an outcome not known, re-reads the roster at once, so every dot and section follows.
-    const instanceRecord = req.method === 'POST' ? INSTANCE_RECORD_ROUTES.get(path) : undefined;
+    // Each route its boundary and its "nothing ran" answer, for a request that is not even a request. Resolved here, in
+    // the handler, by path: the handler is the unit tests evaluate (workspace-views-fixture.mjs HANDLER), and only the
+    // route asked names its boundary.
+    const instanceRecord = req.method !== 'POST' ? undefined
+      : path === '/api/instance-color' ? { request: instanceColorRequest, notRun: instanceColorNotRun }
+      : path === '/api/instance-background' ? { request: instanceBackgroundRequest, notRun: instanceBackgroundNotRun } : undefined;
     if (instanceRecord) {
       try {
         if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
