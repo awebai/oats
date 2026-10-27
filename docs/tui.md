@@ -1316,7 +1316,9 @@ check, each named as the switcher names its path, then what OATS said
 about this computer as a whole. A refusal an earlier sweep of this run
 already reported is not said again, nor is something about this computer
 that an earlier line of this run said. Text from OATS appears
-only after "OATS says:". The words are the ones the Desktop uses. The list
+only after "OATS says:". The words are the shared client's (`resumeNotice`,
+`packages/client/session-resume.mjs`); OATS Desktop shows nothing of a sweep.
+The list
 is then read at once, so a resumed instance shows running. Nothing is said
 when nothing was lost, when the sessions were already running, or when
 another sweep holds the machine (another `oats tui`, OATS Desktop, or

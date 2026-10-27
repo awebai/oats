@@ -103,13 +103,9 @@ The shell has three navigation contexts:
   (`localDeploymentIds`) in the `api` handler, under the same epoch and
   transition check as the workspaces update. The sweep's child is
   detached and file-backed (`packages/client/session-resume-cli.mjs`), so
-  quitting never cancels it; nothing in `shutdown()` touches it. Each
-  `notice` reading's summary is queued (at most 10, the oldest dropped) and
-  every live window told (`session-resume:ready`); a window takes the whole
-  queue (`session-resume:take`). A `failed` reading is one log line with its
-  code. `renderer/resume-notice.mjs` is its page side: each summary a sticky
-  `app` entry of the notification center, grouped past three, which a
-  workspace switch keeps
+  quitting never cancels it; nothing in `shutdown()` touches it. The Desktop
+  shows nothing of a sweep: a `failed` reading is one log line with its code,
+  and every other reading is dropped. No window hears of it
   ([When Desktop opens](../../docs/desktop-instance-start.md#when-desktop-opens)).
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.

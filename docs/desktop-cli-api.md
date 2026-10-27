@@ -6328,11 +6328,10 @@ TUI decide, run and read it the same way.
   rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings
   and cancels nothing: a sweep in flight runs to its end.
 
-The Desktop's main process queues each `notice` reading's summary (at most
-10, the oldest dropped first) and tells every live window
-(`session-resume:ready`). A window takes the whole queue
-(`session-resume:take`, behind the trusted-frame guard) and posts each summary
-as its own notice.
+The Desktop shows nothing of a reading (the product owner, 2026-10-27): its
+main process writes a `failed` reading's code to its log in one line and drops
+every other reading, a `notice` included. The TUI says what a `notice` holds
+([Resuming lost sessions](tui.md#resuming-lost-sessions)).
 
 **The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):
 
@@ -6391,9 +6390,8 @@ A plan answer (`plan: true`) is quiet.
   "OATS says:", attributed, through the display filter, and never matched.
 - The summary keeps at most 100 rows, in the answer's order, and counts the
   rest. The headline counts the real totals. `resumeSummaryFact` is the
-  summary's decoder at a boundary (the Desktop's main process hands it to a
-  window over IPC), and `resumeNotice` writes the headline and the Details in
-  the clients' own words.
+  summary's decoder at a boundary, and `resumeNotice` writes the headline and
+  the Details in the clients' own words (the TUI's line).
 
 ### Launch configurations
 
