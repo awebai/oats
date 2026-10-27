@@ -2,7 +2,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, createResumeTrigger, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
 import { LIST_WORDS, RESUME_WORDS } from "../lib/model.mjs";
@@ -105,7 +105,7 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
   // `identities`: what the run asked of its identity reads (lib/read.mjs createIdentityReads, faked): each
   // start's paths in order, how many times they were stopped, and what the run made them with.
-  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], observed: [], lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
@@ -137,6 +137,11 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     startExec() { throw new Error("the fake start exec starts nothing"); },
     admitDeployment(path) { log.push(["effect", "admit", path]); return admit(path); },
     createPanel(options) { r.panel = fakePanel(log, options); return r.panel.api; },
+    // The shared resume trigger itself; what each read gave its `observed` is kept (`r.observed`).
+    createResumeTrigger(options) {
+      const made = createResumeTrigger(options);
+      return { ...made, observed(rows, given) { r.observed.push({ rows, options: given }); return made.observed(rows, given); } };
+    },
     sweep(options) { log.push(["panel", "sweep", options.env === env]); return { removed: [] }; },
     runDir() { log.push(["panel", "dir"]); return "/tmp/oats-tui-fixture"; },
     removeDir(dir) { log.push(["panel", "remove", dir]); },
@@ -958,6 +963,50 @@ test("what the sweep did is said under the sidebar's title and the rows are read
   r.reader.read(ENTRY);
   await settle();
   assert.equal(sweepsOf(r).length, 2, "nothing lost, nothing swept");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+/** The kernel's answer to a sweep that found nothing to do. */
+const QUIET_ANSWER = JSON.stringify({ schemaVersion: 1, ok: true, result: { schemaVersion: 1, plan: false, deployments: [], rows: [] } });
+
+test("a lost row of another machine's deployment in the open view sweeps nothing: the trigger is given the view's rows with only this machine's deployments as local", async () => {
+  const r = await started({ columns: 120, kernel: { ok: true, cli: { ...REMOTE_CLI, features: [...REMOTE_CLI.features, "session-resume"] } } });
+  await settle();
+  assert.equal(sweepsOf(r).length, 1, "the sweep at the start");
+  sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
+  await settle();
+  // garnet reports the fixture's workspace: its rows are in the open view, beside this machine's.
+  r.reader.roster({ envelope: rosterAnswer([group("garnet:t1", "/srv/acme-platform", [remoteRow("dev-far", "/srv/acme-platform", { running: false, sessionEnd: "lost" })])]) });
+  r.tick(60_000);
+  r.reader.read(HOME_ENTRY);
+  await settle();
+  const { rows, options } = r.observed.at(-1);
+  assert.deepEqual(options, { localDeploymentIds: [DEPLOYMENT] }, "this machine's deployment alone is local");
+  const far = rows.find((row) => row.instance === "dev-far");
+  assert.deepEqual([far?.sessionEnd, far?.running, far?.deployment?.id === DEPLOYMENT], ["lost", false, false], "another machine's lost row, as the view serves it");
+  assert.deepEqual(rows.filter((row) => row.deployment?.id === DEPLOYMENT).map((row) => row.instance).sort(), ["acme-expert-tui", "acme-maintainer-ops"]);
+  assert.equal(sweepsOf(r).length, 1, "no sweep for another machine's loss");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a lost row of this machine sweeps once; a sweep that answered nothing of it settles it, and the same read later sweeps nothing", async () => {
+  const r = await started({ kernel: { ok: true, cli: RESUME_CLI } });
+  await settle();
+  sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
+  await settle();
+  r.tick(30_000);
+  r.reader.read(lostEntry("acme-expert-tui"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 2, "a sweep for the lost row");
+  assert.deepEqual(r.observed.at(-1).options, { localDeploymentIds: [DEPLOYMENT] });
+  sweepsOf(r)[1].callback(null, QUIET_ANSWER, "");
+  await settle();
+  r.tick(30_000);
+  r.reader.read(lostEntry("acme-expert-tui"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 2, "settled: the same lost row sets off no other sweep");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });

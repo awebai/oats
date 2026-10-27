@@ -1291,10 +1291,12 @@ deployment or in [the switcher](#the-switcher): after the deployment it
 started in has been added to this computer's list (the sweep reads that
 list), and without holding up the first frame or the first read. Then
 again whenever a read of a deployment open in the run shows an instance of
-this computer whose session was lost and that is not running. Never two at
+this computer whose session was lost and that is not running (another
+machine's instances shown in the same workspace never count). Never two at
 a time, and never sooner than 30 seconds after the last one began. Not for
-an instance the last sweep could not resume, found was not lost, or left
-because it was lost long ago: such an instance sets off no sweep until a
+an instance the last sweep could not resume, found was not lost, left
+because it was lost long ago, or did not answer for at all (its deployment
+not ready, say): such an instance sets off no sweep until a
 later read shows it running or no longer lost, or a sweep resumes it. There
 is no timer and no queue: a read that comes too soon starts nothing, and the
 next read asks again. The rule is the Desktop's

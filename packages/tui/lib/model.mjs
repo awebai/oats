@@ -6,7 +6,7 @@
 // their answers, and holds no rule of its own about which group a row is in or what state it is
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
-  TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
+  TERMS, panelData, localDeploymentIds, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
   hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor, instanceDisplayName,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
@@ -56,6 +56,15 @@ export function heldOf(state, at) {
  *  as read: this run's retires in flight are put on them by `build` alone. */
 export function panelOf(state, at) {
   return state.open === null ? null : panelData(heldOf(state, at), state.open, TERMS);
+}
+
+/** What the shared resume trigger observes after a read of served deployment `id` (lib/main.mjs): the rows of
+ *  the view that holds it, each tagged with its deployment, and the ids of that view's deployments of this
+ *  machine, as the Desktop's panel gives them (panel-views.mjs `panelData`, session-resume-trigger.mjs
+ *  `localDeploymentIds`). Another machine's rows in the view are there, and are never local. */
+export function resumeObservation(state, id, at) {
+  const panel = panelData(heldOf(state, at), id, TERMS);
+  return { rows: panel.instances ?? [], localDeploymentIds: localDeploymentIds(panel) };
 }
 
 /** The workspace (the shared view's id: panel-views.mjs viewModel) that holds deployment `id` in `state`,

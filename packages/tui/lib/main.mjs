@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
 import { TERMS, capabilityCatalogKey, cliDeploymentList, deploymentsListSupported, createCapabilityCatalog, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, createResumeTrigger, displayLine, heldHome, pendingEntry, prepareRemoteTerm, runResumeSweep, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig, loadKeys } from "./config.mjs";
-import { ACT_WORDS, LIST_WORDS, RESUME_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
+import { ACT_WORDS, LIST_WORDS, RESUME_WORDS, actContext, actCwd, listRowsOf, localDeployments, model, outcomeOf, reachedMachines, resumeObservation, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createIdentityReads, createReader, findDeployment, leaveInstance, probeKernel, realpath, startExec, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -219,8 +219,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     heard(event);
     if (event.read !== true || state.numbers.get(event.id) !== event.number) return;
     retires.landed(event.number, (t) => !t.server && t.workspace === event.id);
-    // A served deployment is one of this machine: a row of it whose session was lost sweeps again.
-    if (!ended) resume.observed(event.entry?.instances ?? []);
+    // The rows of the view that holds it, with its deployments of this machine: a lost row of one of those
+    // sweeps again; another machine's row never does (the shared trigger's locality).
+    if (ended) return;
+    const { rows, localDeploymentIds } = resumeObservation(state, event.id, clock());
+    resume.observed(rows, { localDeploymentIds });
   }
   /** An event of the roster read: taken, then an outcome covers the rows of each machine it reached
    *  (a read that failed marks every machine not reached, and covers none). */
@@ -245,8 +248,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // `oats session resume --json`, which resumes every lost session of every local deployment of this
   // computer. The shared trigger decides when: once the run has started (`launch`, after the add of the
   // deployment it started in has settled, so the sweep's registry holds it), then whenever a read of a
-  // served deployment shows a row whose session was lost (`observed`), never two at a time nor more
-  // often than its floor, and only with a kernel that has the sweep. The TUI decides nothing of what
+  // served deployment shows a row of a deployment of this machine whose session was lost (`observed`,
+  // given the view's rows and its local deployment ids: lib/model.mjs resumeObservation), never two at
+  // a time nor more often than its floor, and only with a kernel that has the sweep. The TUI decides nothing of what
   // resumes. The sweep is a change of the run (the reader's changeExec: detached, its output in files,
   // never signalled), which outlives the TUI; what it did goes to the store as `{ resumed }`.
   const resume = effects.createResumeTrigger({
