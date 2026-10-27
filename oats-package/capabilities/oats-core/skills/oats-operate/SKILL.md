@@ -206,6 +206,7 @@ oats spawn <soul> --preview                         # nothing is created
 oats spawn <soul> --name <descriptive>-<role> --task "…" --parent "$OATS_INSTANCE"
 oats spawn <soul> --name <descriptive>-<role> --no-launch   # scaffold only
 oats spawn <soul> --name <descriptive>-<role> --harness claude --model <model>   # pick the harness (pi, claude, codex) and model
+oats spawn <soul> --name <descriptive>-<role> --background   # list it under Background (the soul's background: decides without a flag)
 ```
 
 A soul shipped by a package is named `<package>/<soul>` (the bare name works

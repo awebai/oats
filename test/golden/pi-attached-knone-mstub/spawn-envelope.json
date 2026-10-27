@@ -23,6 +23,7 @@
     "relation": null,
     "spawnOrigin": "operator",
     "attach": "oats session attach --home <base>/deployment/agents/dev/instances/dev-pi-attached-knone-mstub",
+    "background": false,
     "launchConfig": null,
     "launch": {
       "version": 2,

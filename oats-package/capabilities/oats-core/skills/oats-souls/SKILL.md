@@ -138,6 +138,15 @@ launch and which layer chose it (`launch.from`, `launch.at`). Commit a soul's
 refuses the key. A changed preference reaches an existing home only through
 `oats session restart --reselect-launch` or a respawn.
 
+A soul may also say `background: true`, so the clients list its new instances
+under their Background section: presentation only, the role's default place.
+`spawn --background` / `--no-background` win over it, and
+`oats instance background <instance> on|off` moves an existing instance. A
+soul edit never moves one. Commit a soul's `background:` only once every
+deployment of the workspace runs the release that adds it (feature
+`instance-background` in `oats version --json`): earlier kernels refuse the
+key.
+
 Changing the workspace itself (its members, defaults, teams or pins) is
 workspace setup and config, not something a soul proposal does.
 
