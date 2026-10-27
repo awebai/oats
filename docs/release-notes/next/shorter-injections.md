@@ -2,7 +2,7 @@
 
 - **Shorter always-loaded instructions.** The kernel's instance-boundary and
   work-mode blocks are about half their former size. The oats.core "You run
-  on OATS" block is shorter too, despite the two new rules below. They keep
+  on OATS" block is shorter too, despite the new rule below. They keep
   their behaviour rules, the pinned home/work boundary sentences among them,
   in emphatic form, and name which skill to load and when for the detail
   (`/oats-operate`, `/oats-souls`, `/oats-token-saving`). The instance-boundary
@@ -13,10 +13,3 @@
   instance's parent rather than to the instance, the instance sends its
   question to the parent, which sets its own needs-input claim naming the
   child and relays the answer ([capabilities.md](../capabilities.md)).
-- **oats.core: parents retire their finished children.** A parent retires
-  its own children without asking, unless its task or human says to keep
-  them, once the child's PRs are merged or closed, nothing waits on it, it has
-  retired its own children, any final knowledge harvest is launched and
-  logged, and its work tree is clean, pushed and has no other instance
-  attached. An instance never retires another's child
-  ([capabilities.md](../capabilities.md)).

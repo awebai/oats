@@ -1067,17 +1067,6 @@ bidi controls (U+202A–202E, U+2066–2069), U+200B, U+2060, U+FEFF and tag
 characters (U+E0000–E007F) are refused, and everything else (emoji ZWJ
 sequences, ZWNJ, LRM, RLM, ALM) is allowed.
 
-**Retiring finished children.** The oats.core inject and `/oats-operate` also
-teach every instance to retire its own children once they are finished,
-without asking a human, unless its task or human says to keep them. Finished
-means: the child's PRs are merged or closed (never merely handed back), or the
-work was dropped; nothing waits on it; it has retired its own children; any
-final knowledge harvest is launched and logged (its done report says "done,
-harvested: <harvester>" or "done, no harvest duty"; "done, harvest pending"
-is not finished); and its work tree is clean, pushed and has no other
-instance attached (`oats instance git`, `oats retire <child> --plan`). An
-instance never retires another's child: it tells that child's parent.
-
 **The Claude Code emitter.** For a Claude instance, oats.core's spawn and
 launch hooks (`bin/oats-core.mjs`, preview-aware) write Claude Code hooks
 into the home's project settings, `<home>/.claude/settings.json`. Each one

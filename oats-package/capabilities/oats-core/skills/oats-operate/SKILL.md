@@ -289,33 +289,12 @@ terminal); when `oats version --json` lists `session-attach-detach-key`, add
 `--detach-key <key>` (`'C-\'` is the suggested one) and that key leaves it.
 
 
-These act on **other** instances, and only when your task or your human says
-so, with one standing exception: **retire your own children when they are
-finished, without asking anyone**, unless your task or your human says to keep
-them. Your children are the instances recorded as yours: those you spawned
-with `--parent`, and those handed to you when a child of yours retired. A
-child is finished when its work has landed (its PRs merged or closed, never
-merely handed back: it may still be needed for fixes), or your task or human
-dropped it; nothing waits on it; it has no children of its own left (each
-instance retires its own finished children before it reports done); and, if it
-has a knowledge harvest duty, its final harvest checkpoint is recorded with a
-receipt (the harvester's name in its log.md) and its harvester launched (the
-harvester snapshots at spawn, and retirement keeps a recovery copy). A child
-runs that checkpoint before it reports done, and says so ("done, harvested:
-<harvester>" or "done, no harvest duty"); ask the child when its report lacks
-that line. "Done, harvest pending: <proposal>" is not finished: once `oats
-status` no longer lists the harvester it waits on, ask the child to launch its
-pending proposal, then wait for its harvested report. Before you retire it,
-check that its work tree has no uncommitted changes or unpushed commits (`oats
-instance git <child>`) and that no other instance is attached to it (`oats
-retire <child> --plan` lists them); if either fails, ask the child to finish
-or hand over first. Then `oats retire <child>` and record it in your state.
-Never retire another's instance: tell its parent instead. Your soul's own
-capabilities may say more about when work has landed.
-Retirement runs every module's retire
-hook (identities, scheduled jobs) and retains a worktree with work in it
-unless told to discard. An extra tree in the home is removed when it is
-clean and retained when it holds work; discarding does not apply to it.
+These act on **other** instances — typically children you spawned — and only
+when your task, your human or your soul's capabilities say so. Retirement
+runs every module's retire hook (identities, scheduled jobs) and retains a
+worktree with work in it unless told to discard. An extra tree in the home is
+removed when it is clean and retained when it holds work; discarding does not
+apply to it.
 From OATS 0.48.0, retiring an instance stops its recorded children first and keeps them; if one
 will not stop, retire refuses with `E_CHILDREN_RUNNING` and retires nothing
 (`--force` does not bypass it), including your own `--self` retirement.
