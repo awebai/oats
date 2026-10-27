@@ -86,8 +86,9 @@ const TAKEN = Object.freeze({
   "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
   "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
   "deployment-label.mjs": ["shortPath", "deploymentLabel", "machineLabels"],
-  "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
-  "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
+  // #1579: the Background section, placed and drawn by the shared home (lib/model.mjs build).
+  "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings", "backgroundPlacement", "BACKGROUND_FEATURE"],
+  "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment", "rosterSectionKey", "sidebarSections"],
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead", "siblingText", "instanceColor"],
   // 0.68.1: an instance row's name as words (lib/model.mjs listRow), the Desktop's sidebar label; the real name everywhere else.
   "instance-display-name.mjs": ["instanceDisplayName"],

@@ -71,8 +71,9 @@ const SURFACE = Object.freeze({
   "deployment-facts.mjs": ["memberLabel", "servedIdentityText", "deploymentUnavailableText"],
   "instance-admission.mjs": ["admitInstance", "instanceSelector"],
   "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "recencyOrder", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
-    "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
-  "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
+    "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings", "backgroundPlacement", "BACKGROUND_FEATURE"],
+  // #1579: the roster's section key and the sidebar's sections (the main tree, then the Background section), both clients'.
+  "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment", "rosterSectionKey", "sidebarSections"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
   // #1559: the kernel's machine sweep, when a client opens and when a read shows a lost session: the
   // shared trigger decides when, and the runner runs it through the client's change exec. The TUI says

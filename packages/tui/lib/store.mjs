@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, backKeyLabel, bindings, chordKeys, chordsRead, paletteKeys } from "./actions.mjs";
 import { CHORDS, chordFamilyFrom, collapseKey, workspaceStep, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { defaultDetachKey } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, WORKSPACE_WORDS, listChoice, listChoices, workspaceList } from "./model.mjs";
+import { BACKGROUND_ID, backgroundOpen, BUTTON_ORDER, SPAWN_WORDS, LEADER_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, capabilitiesHeight, capabilitiesOf, capabilityUsersOf, disclosure, openDecision, paletteItems, paletteStep, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher, switcherHeight, switcherWindow, memoryKey, memoryKeys, LIST_WORDS, WORKSPACE_WORDS, listChoice, listChoices, workspaceList } from "./model.mjs";
 import { backKeyId, backKeySequences, isBackKey } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 import { SPLIT_MIN, splitFits } from "./views/split.mjs";
@@ -53,7 +53,8 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  on purpose (see `scrolledList`); the switcher has its own.
  *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them, with the filter, for
  *  the workspaces left behind (per lib/model.mjs memoryKey; see `opened`), and `collapsed` holds
- *  every view's keys (each carries its `open`).
+ *  every view's keys (each carries its `open`). `background`: the `open` of every view whose
+ *  Background section is open (#1579; lib/model.mjs backgroundOpen): none at the start of a run.
  *  `back`: the view under the help. `listed`: this computer's deployments list as it was last read
  *  (awebai/oats#1390): `rows`, the shared reader's `{ path, name, state }` in the kernel's order, of
  *  the last read that answered, and `failure`, the reason (`{ code, message }`) the last read failed
@@ -128,7 +129,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     entries: new Map(deployment === null ? [] : [[deployment, entry]]), numbers: new Map(),
     remote: Object.freeze({ remoteGroups: Object.freeze([]), rosterAnswered: false, rosterFailure: null }), rosterAt: null,
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
-    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(), workspaceCursor: null, colour,
+    selected: null, collapsed: new Set(), background: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(), unreadKeys: new Map(), workspaceCursor: null, colour,
     switcher: NO_SWITCHER,
     listed: NO_LIST, identities: new Map(),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
@@ -150,8 +151,10 @@ const NO_SWITCHER = Object.freeze({ editing: false, query: "", selected: null, t
 /** This computer's deployments list before its first read. */
 const NO_LIST = Object.freeze({ rows: Object.freeze([]), failure: null });
 const indexOf = (r, id) => (id === null ? -1 : r.index.get(id) ?? -1);
-/** Whether an item of the list is an instance: the only kind the selection stands on. */
+/** Whether an item of the list is one the selection stands on: an instance, or the Background heading. */
 const isRow = (item) => item?.id !== undefined;
+/** Whether an item of the list is an instance. */
+const isInstance = (item) => item?.row !== undefined;
 
 /** The list's `top` as the screen shows it for this state in a pane `page` rows tall. The
  *  window holds the selected instance, unless it was scrolled away from it on purpose (`loose`). */
@@ -164,12 +167,12 @@ const settledTop = (state, r, page) => windowOf({ top: state.top, count: r.items
  *  A new selection starts its detail at the top. */
 function selectAt(state, r, index, page, step = 1) {
   const count = r.items.length;
-  if (!r.rows.length) return state;
+  if (!r.stops.length) return state;
   let at = Math.min(Math.max(0, index), count - 1);
   while (at >= 0 && at < count && !isRow(r.items[at])) at += step;
   if (at < 0 || at >= count) { at = Math.min(Math.max(0, index), count - 1); while (!isRow(r.items[at])) at -= step; }
   const id = r.items[at].id;
-  const from = id === r.rows[0].id ? 0 : id === r.rows.at(-1).id ? count : settledTop(state, r, page);
+  const from = id === r.stops[0].id ? 0 : id === r.stops.at(-1).id ? count : settledTop(state, r, page);
   const top = windowOf({ top: from, count, height: page, keep: at }).top;
   return next(state, { selected: id, top, loose: false, detailTop: id === state.selected ? state.detailTop : 0 });
 }
@@ -185,16 +188,19 @@ function scrolledList(state, r, action, page) {
 }
 
 /** After the rows changed (a read, the filter, a collapse): the selection stays on its instance
- *  while that is still drawn; else it moves to the row now at the same place in the drawn order,
- *  else to the last row, else there is none. With none selected, the first row is.
- *  A filter that matches nothing leaves no row to move to: the selection then stays on its
- *  instance while the view still has it, and is found again when the filter is cleared. */
+ *  (or on the Background heading) while that is still drawn; an instance now in the Background
+ *  section while it is closed hands it to the heading (#1579); else it moves to the row now at the
+ *  same place in the drawn order, else to the last row, else there is none. With none selected, the
+ *  first row is. A filter that matches nothing leaves no row to move to: the selection then stays
+ *  on its instance while the view still has it, and is found again when the filter is cleared. */
 function rehomed(before, state) {
   const now = roster(state);
   if (state.selected !== null && now.index.has(state.selected)) return state;
-  if (state.selected !== null && now.rows.length === 0 && now.instances.some((row) => instanceId(row) === state.selected)) return state;
-  const place = state.selected === null ? 0 : Math.max(0, before.rows.findIndex((item) => item.id === state.selected));
-  const item = now.rows[Math.min(place, now.rows.length - 1)] ?? null;
+  if (state.selected !== null && now.stops.length === 0 && now.instances.some((row) => instanceId(row) === state.selected)) return state;
+  // The heading has no detail: a focus there goes back to the list.
+  if (now.placement.has(state.selected) && now.index.has(BACKGROUND_ID)) return next(state, { selected: BACKGROUND_ID, loose: false, detailTop: 0, ...(state.focus === "detail" ? { focus: "list" } : {}) });
+  const place = state.selected === null ? 0 : Math.max(0, before.stops.findIndex((item) => item.id === state.selected));
+  const item = now.stops[Math.min(place, now.stops.length - 1)] ?? null;
   return next(state, { selected: item ? item.id : null, loose: false, detailTop: 0 });
 }
 
@@ -280,7 +286,7 @@ function opened(state, id) {
   const places = new Map(state.places);
   if (state.open !== null) places.set(memoryKey(state, state.open), Object.freeze({ selected: state.selected, top: state.top, detailTop: state.detailTop, filter: Object.freeze({ ...state.filter, editing: false }) }));
   const place = places.get(memoryKey(state, id)) ?? { selected: null, top: 0, detailTop: 0, filter: NO_FILTER };
-  return rehomed({ rows: [] }, next(shown, { open: id, places, focus: "list", loose: false, ...place }));
+  return rehomed({ stops: [] }, next(shown, { open: id, places, focus: "list", loose: false, ...place }));
 }
 
 /** A picked row of this computer's deployments list that is a deployment (lib/read.mjs made it
@@ -1021,9 +1027,15 @@ function showTab(state, id, { focus = state.terminal?.focus ?? "list", zoom = st
 
 /** The row of instance `id` selected and on view in the list (Settled 5 of T2): a text filter
  *  that hides it is cleared, and a collapsed instance above it is opened. The focus is not moved,
- *  and nothing is selected when the row is not in the roster at all (it went away). */
+ *  and nothing is selected when the row is not in the roster at all (it went away), nor when it is
+ *  in the closed Background section. */
 function revealed(state, id) {
   if (state.view !== "instances" || state.open === null) return state;
+  // An instance of the Background section while it is closed stays out of sight (#1579): showing its
+  // terminal opens no section, clears no filter and opens no collapse, and the selection stays. (A filter
+  // that matches it draws it, in the section drawn open: it is selected there.)
+  const r = roster(state);
+  if (!r.index.has(id) && r.placement.has(id) && !backgroundOpen(state)) return state;
   let s = state;
   if (!roster(s).index.has(id) && (s.filter.query !== "" || s.filter.soul)) s = rehomed(roster(s), next(s, { filter: NO_FILTER, top: 0, loose: false }));
   if (!roster(s).index.has(id) && s.collapsed.size) {
@@ -1534,7 +1546,7 @@ function stepped(state, step, event) {
   if (from < 0) return stay;
   for (let i = from + step; i >= 0 && i < r.items.length; i += step) {
     const item = r.items[i];
-    if (!isRow(item) || !openDecision(s, item.row, instanceActs(item.row)).open) continue;
+    if (!isInstance(item) || !openDecision(s, item.row, instanceActs(item.row)).open) continue;
     const opened = openAgent(selectAt(s, r, i, page, step), item.row);
     return { state: opened.state, effect: both(settled.effect, opened.effect) };
   }
@@ -1731,6 +1743,10 @@ function reduced(state, event, keymap) {
   }
   const r = roster(state, undefined, Number.isInteger(event.cols) ? event.cols : undefined);
   const at = indexOf(r, state.selected);
+  if (at >= 0 && r.items[at].kind === "background") {
+    const step = onBackground(state, r, at, action, event, page);
+    if (step !== null) return step;
+  }
   switch (action) {
     // A soul filter gives way to the text one.
     case "filter": return { state: rehomed(roster(state), next(state, { focus: "list", filter: Object.freeze({ editing: true, query: state.filter.query }) })), effect: null };
@@ -1763,15 +1779,40 @@ function reduced(state, event, keymap) {
       // level less deep; expand to the first child, the next row when it is one level deeper.
       // Both are read from the drawn order, which is the shared grouping's, and neither leaves
       // the run of rows the instance stands in (a gap or a heading ends it).
+      // A root of the Background section's tree has the section's heading for its parent (#1579).
       if (action === "collapse") {
-        for (let i = at - 1; i >= 0 && isRow(r.items[i]); i--) if (r.items[i].depth === item.depth - 1) return { state: selectAt(state, r, i, page), effect: null };
-        return stay;
+        for (let i = at - 1; i >= 0 && isInstance(r.items[i]); i--) if (r.items[i].depth === item.depth - 1) return { state: selectAt(state, r, i, page), effect: null };
+        return item.background && item.depth === 0 ? { state: selectAt(state, r, indexOf(r, BACKGROUND_ID), page), effect: null } : stay;
       }
       const below = r.items[at + 1];
-      return isRow(below) && below.depth === item.depth + 1 ? { state: selectAt(state, r, at + 1, page), effect: null } : stay;
+      return isInstance(below) && below.depth === item.depth + 1 ? { state: selectAt(state, r, at + 1, page), effect: null } : stay;
     }
     default: return stay;
   }
+}
+
+/** A key on the Background section's heading (#1579), selected at `at` of `r`: Enter and Space open the
+ *  section or close it, Right opens it and Left closes it, as a parent row's fold does; Right on it open
+ *  goes to its first row. Its open state is the view's, kept for the run (lib/model.mjs backgroundOpen),
+ *  and the selection stays on the heading. While a filter is on, the section is drawn open whatever is
+ *  stored, and the heading changes nothing, as a filter folds nothing. The heading is no instance: the
+ *  acts, the detail and opening a terminal do nothing on it. Null: the key is not the heading's (a
+ *  movement, the filter, a view, a tab). */
+function onBackground(state, r, at, action, event, page) {
+  const stay = { state, effect: null };
+  // Space has no action of its own in the list (a tui.json that binds it keeps its binding).
+  const toggles = action === "open" || (action === undefined && event.key === "space");
+  if (toggles || action === "collapse" || action === "expand") {
+    if (state.focus !== "list") return stay;
+    const open = backgroundOpen(state), wanted = toggles ? !open : action === "expand";
+    if (!r.filtering && wanted !== open) {
+      const background = new Set(state.background);
+      if (wanted) background.add(state.open); else background.delete(state.open);
+      return { state: rehomed(r, next(state, { background, top: settledTop(state, r, page), loose: false })), effect: null };
+    }
+    return action === "expand" && r.items[at].open && isInstance(r.items[at + 1]) ? { state: selectAt(state, r, at + 1, page), effect: null } : stay;
+  }
+  return ["stop", "retire", "start", "restart", "detail"].includes(action) ? stay : null;
 }
 
 // ── SPAWNING (docs/tui.md, "Spawning an agent"; Spec 6-spawn) ───────────────────────────────────
