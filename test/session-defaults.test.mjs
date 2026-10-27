@@ -22,7 +22,7 @@ function fakeTmux(dir, sessions) {
   const log = join(dir, "tmux-calls.log");
   writeFileSync(log, "");
   const cases = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w) => `'${w}'`).join(" ")};;`).join("\n");
-  const panes = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w, i) => `'${w}\t%${i + 1}\t0\tsleep\t${100 + i}'`).join(" ")};;`).join("\n");
+  const panes = Object.entries(sessions).map(([name, windows]) => `    ${name}) printf '%s\\n' ${windows.map((w, i) => `'${w}\t@${i + 1}\t%${i + 1}\t0\tsleep\t${100 + i}\t'`).join(" ")};;`).join("\n");
   writeFileSync(join(dir, "tmux"), `#!/bin/sh
 printf '%s\\n' "$*" >> ${JSON.stringify(log)}
 target=""; prev=""

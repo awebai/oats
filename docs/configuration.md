@@ -251,6 +251,15 @@ v<semver>` after the logo, which may be caught mid-animation), the error and the
 
 A restart where the notice shows records `flag-ignored`.
 
+**Known limit: a split window.** The confirmation still requires the agent's
+window to have one pane. A start or restart in place on a window that has
+another pane (oats.setup's no-echo prompt, for example) relaunches Claude in
+the agent's pane
+([which pane is the agent's](execution-targets.md#which-pane-is-the-agents))
+but answers nothing: the home records `launchPrompts.status: "blocked"`, and
+Claude waits at its development-channel prompt for a person, as after any
+blocked start. Close the other pane before the restart.
+
 **The two settings that stop it.** OATS confirms the prompt only because the
 deployment launches Claude with the development-channel flag. To keep the prompt
 for a person, stop launching that way: `settings.oats.aweb.delivery: session`

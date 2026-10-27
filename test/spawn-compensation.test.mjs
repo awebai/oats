@@ -141,6 +141,9 @@ test("failed platform launch removes a window created before the failure and com
   const calls = readFileSync(f.tmuxCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   const launched = calls.findIndex((call) => call.includes("new-window"));
   assert.deepEqual(calls[launched].slice(0, 3), ["-u", "-S", socket]);
+  // The window's command, then the mark of its pane as the agent's, in the same call (#1569).
+  assert.match(calls[launched].at(-7), /; exec "\$\{SHELL:-\/bin\/zsh\}"$/);
+  assert.deepEqual(calls[launched].slice(-6), [";", "set-option", "-q", "-p", "@oats-agent", "dev-probe"]);
   const cleanup = calls.slice(launched + 1);
   assert.deepEqual(cleanup.map((call) => call[3]), ["kill-window", "list-windows"], "the kill, then the probe that verifies it");
   for (const call of cleanup) assert.deepEqual(call.slice(0, 3), ["-u", "-S", socket]);

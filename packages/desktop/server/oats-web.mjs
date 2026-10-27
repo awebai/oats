@@ -1199,9 +1199,11 @@ const server = createServer(async (req, res) => {
         // A view with no local deployment is remote, as a remote deployment was before views.
         if (path === "/api/forge-roster") return send(res, 200, await forgeBoundary.roster(request, () => viewForgeContext(held(), url.searchParams.get("ws"), DESKTOP_TERMS), epoch));
         if (path === "/api/instance-review-threads") {
-          // The paste goes to the instance's own anchored tmux target in THIS workspace, looked up fresh.
+          // The paste goes to the instance's agent pane, as the kernel answers it, in its own anchored tmux
+          // window in THIS workspace, looked up fresh.
           const find = (target) => (getContext().instances || []).find((i) => i.home === target.home && i.instance === target.instance) || null;
-          return send(res, 200, await forgeBoundary.reviewThreads(request, getContext, epoch, createReviewPaste({ find, tmuxTarget })));
+          const inspect = (inst) => (cliState.ok ? adapter.cliSessionInspect(cliState.bin, { home: inst?.home }) : Promise.resolve(null));
+          return send(res, 200, await forgeBoundary.reviewThreads(request, getContext, epoch, createReviewPaste({ find, tmuxTarget, inspect })));
         }
         return send(res, 200, await forgeBoundary.pull(request, getContext, epoch));
       } catch {

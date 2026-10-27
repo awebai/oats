@@ -106,7 +106,8 @@ if(a.includes('list-panes')) { console.error("can't find window");process.exit(1
 if(a.includes('show-environment')) process.stdout.write('PATH="'+${JSON.stringify(join(f.base,'bin'))}+'"; export PATH;'+String.fromCharCode(10));
 if(${execute} && (a.includes('new-window') || a.includes('respawn-pane'))) {
  const env=fs.existsSync(serverEnv)?JSON.parse(fs.readFileSync(serverEnv,'utf8')):{}; for(let i=0;i<a.length;i++) if(a[i]==='-e'){const pair=a[++i],k=pair.indexOf('=');env[pair.slice(0,k)]=pair.slice(k+1);}
- const r=cp.spawnSync('/bin/sh',['-c',a.at(-1)],{cwd:a[a.indexOf('-c')+1],env,encoding:'utf8'});
+ // The window's command is the launch's last argument before the chained mark (#1569: \`; set-option … @oats-agent <name>\`).
+ const r=cp.spawnSync('/bin/sh',['-c',a.includes(';')?a[a.indexOf(';')-1]:a.at(-1)],{cwd:a[a.indexOf('-c')+1],env,encoding:'utf8'});
  if(r.status!==0) {console.error(r.stderr);process.exit(r.status||1);}
 }
 if(a.includes('new-window')) console.log('@1');

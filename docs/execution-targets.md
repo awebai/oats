@@ -58,8 +58,13 @@ exists. A fallback shell reads `running: false` with `runtimeState: "shell"`;
 a retained dead pane also reads `false`. A wrapper shell with a live non-shell
 descendant still reads `true`. Status shares session inspection's pane rule,
 with one batched pane read per socket/session and one lazy process scan across
-all panes that need it. A recorded server or pane that cannot be read gives
-`running: null` with `runtimeState: "unreachable"`. A local status read (0.69)
+all panes that need it. It reads the agent's pane alone, so a window with
+another pane reads as one without it
+([which pane is the agent's](#which-pane-is-the-agents)). A recorded server or
+pane that cannot be read gives `running: null` with `runtimeState:
+"unreachable"`, and so do a window where OATS cannot tell which pane is the
+agent's and a session that holds two windows of the instance's name, each
+with its reason as `runtimeError`. A local status read (0.69)
 also records, in a kernel-private file of this machine beside the resume
 sweep's per-boot note, what it saw of each home, for the sweep alone; it
 never changes the answer, and a status routed with `--server` records nothing
@@ -72,6 +77,47 @@ after the default moved, or on another tmux server, does not block it. Session
 commands target each home's exact recorded window, so the two never mix. The
 receipt records the session, window and socket. The spawn result prints the
 attach command.
+
+<a id="which-pane-is-the-agents"></a>
+#### Which pane is the agent's
+
+An agent's window can hold more than one pane: a person or a tool can split
+it, as oats.setup's no-echo prompt does. Status and every session command act
+on one pane of the window, the agent's.
+
+- **The mark.** Whenever OATS creates or respawns the agent's pane (a spawn's
+  window, a start's or restart's new window, a restart in place), it sets the
+  tmux pane option `@oats-agent` on it, its value the instance name, which is
+  the window's name. It is set in the launch's own tmux call, and a mark that
+  cannot be set does not fail the launch. Pane options exist from tmux 3.0.
+  The mark is internal: it is what OATS sets, not an interface for other
+  tools.
+- **The rule.** In a window with one pane, that pane is the agent's, marked or
+  not. With several, it is the pane marked with the instance's name; when
+  none is, the unmarked pane with the lowest pane id (`%N`, tmux's creation
+  order: the window's own pane comes before any split of it). A pane marked
+  with another instance's name is never the agent's.
+- **A window launched by an earlier kernel** has no mark: it resolves to its
+  lowest pane id until the next start or restart marks it.
+- **When OATS cannot tell** (two or more panes marked with the instance's
+  name, or several panes and none unmarked or marked with it), status reads
+  `running: null` with `runtimeState: "unreachable"` and one of these
+  sentences as `runtimeError`, and `session inspect`, `session input` (wakes
+  included), `session attach`, stop and restart refuse with the same sentence:
+
+  ```text
+  the window has 2 panes marked as <name>'s agent pane (%3, %7); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance
+  the window has 2 panes and none is <name>'s agent pane (%2, %7); close the panes that aren't, or close the window and start the instance
+  ```
+
+- **Everything else is the agent's pane alone.** The fallback-shell,
+  dead-pane and descendant rule judges it alone, and a `paneId` in an answer
+  is its id; the
+  other panes never make the instance unknown. Input and wakes paste into it
+  even when the person's focus is in another pane. Stop signals only the
+  processes under it, and a restart in place respawns it and marks it. The
+  size inspect reports stays the window's. The viewer shows the whole window
+  ([attach](#inspect-input-and-attach)).
 
 <a id="the-oats-tmux-server"></a>
 #### The OATS tmux server
@@ -915,7 +961,9 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   run every check before anything starts. `--model` replaces the recorded model
   for this and later starts.
 - A live harness is refused (`E_SESSION_RUNNING`). A fallback shell or a dead
-  pane is reused in place. A missing window, or one whose tmux server cannot
+  pane is reused in place: the agent's pane is respawned and marked, and the
+  window's other panes are left as they are
+  ([which pane is the agent's](#which-pane-is-the-agents)). A missing window, or one whose tmux server cannot
   be reached, is created again on the OATS tmux server, and the start warns when that is
   not the server the home recorded ([Existing instances](#existing-instances)).
   A server whose socket file is missing counts as gone only when no process
@@ -925,7 +973,7 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   is refused (`E_INSTANCE_RETIRING`).
 
 `session restart` takes the same flags. It sends SIGTERM to the harness and
-its children, waits `--stop-grace <seconds>` (default 20, at most 300), then
+its children, the processes under the agent's pane, waits `--stop-grace <seconds>` (default 20, at most 300), then
 starts in place. It never escalates: a harness still running is reported
 (`E_SESSION_STOP_FAILED`) and nothing is launched.
 
@@ -1093,7 +1141,8 @@ bounded authority. A prompt receipt does not assert receive readiness.
 children and uncommitted work, with a `planRevision`. `--apply --plan-revision
 <rev> --idempotency-key <key>` stops the instance and its recorded children
 first (`--no-recursive` stops only the instance), with the same bounded
-SIGTERM. Restart the instance later with `oats session start` or
+SIGTERM, sent only to the processes under the agent's pane
+([which pane is the agent's](#which-pane-is-the-agents)). Restart the instance later with `oats session start` or
 `oats session restart`. An instance whose recorded tmux socket file is
 missing while a process works in its home, or the process scan cannot run,
 is not reported idle: its result is `E_SESSION_UNAVAILABLE` and nothing is
@@ -1336,12 +1385,17 @@ oats session attach --home /abs/home --detach-key 'C-\'
   harness, `shell` for a fallback shell,
   `stopped` for an absent or dead terminal, or `not-launched`. An unavailable
   backend is an error (`E_SESSION_UNAVAILABLE`), never a stopped result.
+  When the window is there, it also reports `paneId`, the tmux id (`%N`) of
+  the agent's pane ([which pane is the agent's](#which-pane-is-the-agents)),
+  a retained dead pane included.
   With feature `session-inspect-size` in `oats version --json`, a present
   terminal also reports `size: { cols, rows }`: positive integer window width
   and height in cells. The kernel reads tmux's `window_width` and
   `window_height` in the same call as the pane identity, so a viewer can open
   its PTY at the window's current size without constructing a tmux target.
-  Split windows remain refused. `size` is absent when `present` is false,
+  A window with several panes still reports the window's size; one where
+  OATS cannot tell which pane is the agent's is refused
+  ([which pane is the agent's](#which-pane-is-the-agents)). `size` is absent when `present` is false,
   including a retained dead pane. Malformed dimensions are an
   `E_SESSION_UNAVAILABLE` error containing `invalid tmux pane response`.
   `session inspect --server <id> --home <home> --json` relays the execution
@@ -1372,8 +1426,9 @@ oats session attach --home /abs/home --detach-key 'C-\'
   for input, nor that it consumed a wake, and it does not prove which
   executable runs if a process inside the pane was replaced. When the backend
   cannot be read, a required process-table read for an explicitly labelled
-  shell fails, or the pane answer is
-  malformed or split, inspect is an error as before, never `running: false`.
+  shell fails, the pane answer is
+  malformed, or OATS cannot tell which of the window's panes is the agent's,
+  inspect is an error as before, never `running: false`.
   That includes a tmux server that is gone (`no server running on` its
   socket, as after a reboot): status reads that row as `running: false`, and
   inspect answers `E_SESSION_UNAVAILABLE`. Wherever inspect answers, its
@@ -1399,8 +1454,10 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `details.fields`.
 - **input** sends UTF-8 text (stdin or `--text-file`, at most 256 KiB, no
   NUL) as exactly one bracketed paste followed by exactly one Enter. The text
-  is never run by a shell. Existing endpoint authority, fallback-shell,
-  stopped-session and split-window checks still refuse before input.
+  is never run by a shell. Existing endpoint authority, fallback-shell and
+  stopped-session checks, and a window where OATS cannot tell which pane is
+  the agent's, still refuse before input. The text goes to the agent's pane
+  (`paneId`), even when the person's focus is in another pane of the window.
 
   Before Enter, a size-based floor (200 ms plus 3 ms per KiB) and read-only
   settling polls share one **monotonic 2-second observation budget**, starting
@@ -1428,7 +1485,14 @@ oats session attach --home /abs/home --detach-key 'C-\'
   operations, not model processing. Broker delivery/ack policy and harness
   acceptance evidence remain separate contracts.
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
-  session linked to the agent's window alone.
+  session linked to the agent's window alone. The viewer shows the whole
+  window, every pane. When the window has more than one pane, the viewer
+  selects the agent's pane before its client attaches, so typing goes to the
+  agent. The viewer has no key or click that moves to another pane: a pane
+  split off while a viewer is open is the active one, and takes its keys,
+  until it closes. A window where OATS cannot tell
+  which pane is the agent's is refused
+  ([which pane is the agent's](#which-pane-is-the-agents)).
   Closing the viewer leaves the agent running. When the agent's window ends
   (for example, the instance is stopped or retired), the viewer ends too: it
   sets tmux's `detach-on-destroy on` for its own session, so a server

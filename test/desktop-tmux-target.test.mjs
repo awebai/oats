@@ -69,7 +69,11 @@ test("only undefined/null mean 'no window' — empty string fails closed", () =>
 const fakeIo = (calls, opts = {}) => ({
   preflight: (t) => { calls.push(["preflight", t]); if (opts.preflightFails) throw new Error("absent"); },
   tmux: (args) => { calls.push(["tmux", ...args]); if (opts.tmuxFails?.(args)) throw new Error("tmux failed"); },
-  tmuxOut: (args) => { calls.push(["tmuxOut", ...args]); return opts.windowId ?? "@7"; },
+  tmuxOut: (args) => {
+    calls.push(["tmuxOut", ...args]);
+    if (args[0] === "list-panes") { if (opts.panesFail) throw opts.panesFail; return opts.panes ?? "%1\t"; }
+    return opts.windowId ?? "@7";
+  },
   spawnPty: (t, c, r) => { calls.push(["spawn", t, c, r]); if (opts.spawnFails) throw new Error("pty failed"); return opts.pty ?? {}; },
   forwardsBoundKey: () => opts.forwardsBoundKey ?? true,
   uniqueName: () => "oatsdesk-test-1",
@@ -100,6 +104,7 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
   const r = openTerm({ session: "s", window: "w", cols: 120, rows: 40 }, fakeIo(calls, { pty: fake }));
   assert.deepEqual(calls, [
     ["preflight", "=s:=w"],
+    ["tmuxOut", "list-panes", "-t", "=s:=w", "-F", "#{pane_id}\t#{@oats-agent}"], // the window's panes (#1569): one here, so nothing is selected
     ["tmuxOut", "new-session", "-d", "-s", "oatsdesk-test-1", "-P", "-F", "#{window_id}"], // placeholder, id captured (index-agnostic)
     ["tmux", "link-window", "-s", "=s:=w", "-t", "=oatsdesk-test-1:"],        // exact window linked; tmux picks a free index
     ["tmux", "kill-window", "-t", "@7"],                                      // placeholder dropped BY ID — link is the ONLY window
@@ -866,5 +871,73 @@ test("live tmux: dedupe + cap 6 + baseline restoration on an isolated server", a
   } finally {
     spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });
     spawnSync("rm", ["-f", sock], { timeout: 5000 });
+  }
+});
+
+// #1569: a window with more than one pane (OATS's own setup splits one for a no-echo prompt). The
+// viewer links the whole window and types into its active pane, so the agent's is selected before
+// the client attaches, by the client's copy of the kernel's rule; nothing else changes.
+test("openTerm (#1569): in a split window the agent's pane is selected before the viewer exists; one pane, or a window it can't tell, selects nothing", () => {
+  const selects = (calls) => calls.filter((c) => c[1] === "select-pane");
+  const cases = [
+    ["one pane", "%4\tw", []],
+    ["marked agent pane, created later and listed first", "%9\t\n%4\tw", [["tmux", "select-pane", "-t", "%4"]]],
+    ["marked agent pane", "%4\t\n%9\tw", [["tmux", "select-pane", "-t", "%9"]]],
+    ["none marked: the lowest id", "%12\t\n%9\t", [["tmux", "select-pane", "-t", "%9"]]],
+    ["another instance's mark is never this one's", "%3\tother\n%9\t", [["tmux", "select-pane", "-t", "%9"]]],
+    ["two marked: can't tell", "%3\tw\n%9\tw", []],
+    ["only another's marks: can't tell", "%3\tother\n%9\tother", []],
+    ["a malformed answer", "%3\tw\nnot-a-pane\t", []],
+  ];
+  for (const [what, panes, expected] of cases) {
+    const calls = [];
+    const r = openTerm({ session: "s", window: "w" }, fakeIo(calls, { panes }));
+    assert.deepEqual(selects(calls), expected, what);
+    const select = calls.findIndex((c) => c[1] === "select-pane"), made = calls.findIndex((c) => c[1] === "new-session");
+    if (expected.length) assert.ok(select > 0 && select < made, `${what}: selected after the preflight, before the viewer`);
+    assert.equal(r.viewer, "oatsdesk-test-1", `${what}: the open goes on`);
+  }
+  const bare = [];
+  openTerm({ session: "s" }, fakeIo(bare, { panes: "%4\t\n%9\t" }));
+  assert.equal(bare.some((c) => c[1] === "list-panes"), false, "a session target names no window, so no pane is resolved");
+});
+
+test("openTerm (#1569): a failed pane read or select opens as before; a changed terminal context still ends the open", () => {
+  for (const opts of [{ panesFail: new Error("tmux failed") }, { panes: "%4\t\n%9\tw", tmuxFails: (a) => a[0] === "select-pane" }]) {
+    const calls = [];
+    assert.equal(openTerm({ session: "s", window: "w" }, fakeIo(calls, opts)).viewer, "oatsdesk-test-1");
+    assert.equal(calls.at(-1)[0], "spawn", "the pty attaches");
+  }
+  const calls = [];
+  const changed = Object.assign(new Error("Terminal context changed"), { code: "E_TERM_CONTEXT_CHANGED" });
+  assert.throws(() => openTerm({ session: "s", window: "w" }, fakeIo(calls, { panesFail: changed })), (e) => e === changed);
+  assert.equal(calls.some((c) => c[1] === "new-session" || c[0] === "spawn"), false, "no viewer, no pty");
+});
+
+test("live tmux (#1569): a split window's viewer opens on the agent's pane, wherever the focus was", (t) => {
+  const server = privateTmuxServer(t);
+  if (!server) return;
+  const src = `oatssplit${process.pid}`;
+  const T = (args) => execFileSync("tmux", [...server, ...args], { encoding: "utf8", timeout: 5000 }).trim();
+  const io = { preflight: (target) => T(["list-panes", "-t", target]), tmux: (args) => T(args), tmuxOut: (args) => T(args), spawnPty: (target) => ({ target }) };
+  let viewer = null;
+  try {
+    // The agent's pane, then a prompt pane split off it, which takes the focus: one marked, then none.
+    const agent = T(["new-session", "-d", "-s", src, "-n", "instA", "-P", "-F", "#{pane_id}", "sh"]);
+    const prompt = T(["split-window", "-t", `=${src}:=instA`, "-P", "-F", "#{pane_id}", "sh"]);
+    const active = () => T(["display-message", "-p", "-t", `=${src}:=instA`, "#{pane_id}"]);
+    for (const marked of [true, false]) {
+      if (marked) T(["set-option", "-p", "-t", agent, "@oats-agent", "instA"]); else T(["set-option", "-p", "-u", "-t", agent, "@oats-agent"]);
+      T(["select-pane", "-t", prompt]);
+      assert.equal(active(), prompt, "the prompt pane has the focus");
+      const r = openTerm({ session: src, window: "instA" }, io);
+      viewer = r.viewer;
+      assert.equal(active(), agent, marked ? "the marked pane is selected" : "unmarked: the window's own pane, the lowest id");
+      assert.deepEqual(T(["list-panes", "-t", `=${src}:=instA`, "-F", "#{pane_id}"]).split("\n"), [agent, prompt], "both panes stay");
+      T(["kill-session", "-t", `=${viewer}`]); viewer = null;
+    }
+  } finally {
+    if (viewer) spawnSync("tmux", [...server, "kill-session", "-t", `=${viewer}`], { timeout: 5000 });
+    spawnSync("tmux", [...server, "kill-session", "-t", `=${src}`], { timeout: 5000 });
   }
 });
