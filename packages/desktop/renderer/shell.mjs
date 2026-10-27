@@ -9,7 +9,8 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, adoptWorkspace, staleWorkspaceSelection, onWorkspaceChange, postJson, rowDeployment, httpError,
-  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout, takenWorkspaceIds } from "./views/common.mjs";
+  switchWorkspace, startWindow, windowState, onWindowState, choosingWorkspaces, chooseWorkspace, refreshChoices, leaveTakenWorkspace, handedLayout, takenWorkspaceIds,
+  landsFocusPlace } from "./views/common.mjs";
 import { describeLayout, composeLayout, validLayout } from "./layout-handover.mjs";
 import { instanceActions, captureInstanceActionMenu, pendingActionReason } from "./instance-actions.mjs";
 import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
@@ -31,6 +32,7 @@ import { createQuickOpen } from "./quick-open.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { createSurfaceReturn } from "./surface-return.mjs";
 import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
+import { createFocusPlaces, isTransit } from "./focus-place.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
@@ -539,10 +541,13 @@ const workspaceLabel = createWorkspaceSwitcher({
   document,
   // Main binds a switch first (#481). A pick from the list always shows the workspace in THIS window: one
   // another window shows moves here (main takes it over from that window, which shows its previous one).
-  selectWorkspace: (id) => switchWorkspace(id, { takeOver: true }),
+  // `how`: a step's (workspaceStep) focusPlace.
+  selectWorkspace: (id, how) => switchWorkspace(id, { ...how, takeOver: true }),
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
   storage: (() => { try { return window.localStorage; } catch { return null; } })(),
+  // Its repaint keeps the focus on the row that had it: no new intent (a switch's waiting roster place stays owned).
+  applyFocus: fn => tabOpenIntents.applyFocus(fn),
   // Feature-detected while tui-dev lands the approved privileged contract.
   // The final adapter names are intentionally isolated to these three lines.
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
@@ -665,10 +670,10 @@ async function reAddRosterWorkspace(ws) {
   renderContextRoster([]);
 }
 
-/** A view that moved under this window (#482) is followed through main without focusing anything; one
- * another window has leaves this window choosing, its tabs kept (#481). */
+/** A view that moved under this window (#482) is followed through main without focusing anything (nor moving
+ * the keyboard: the same work under a new id); one another window has leaves this window choosing, its tabs kept (#481). */
 async function followView(id) {
-  const result = await switchWorkspace(id, { focus: false });
+  const result = await switchWorkspace(id, { focus: false, focusPlace: false });
   if (!result.ok && result.code === "open-elsewhere") await chooseWorkspace(result.workspaces);
 }
 
@@ -736,7 +741,7 @@ async function refreshContextRoster({ user = false } = {}) {
       // The rows are rebuilt once, to disable their actions; a repeat failure keeps them. Without
       // data, the count's pill stops (nothing is loading): the reserved box, empty and still.
       if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(contextInstances); }
-      else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
+      else if (rosterState && !rosterState.hasData) { renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true }); applyRosterPlace(); }
       refreshPanelInstance([], ws);
     }
     return;
@@ -797,7 +802,7 @@ async function refreshContextRoster({ user = false } = {}) {
     refreshPanelInstance([], resolvedWs);
     rosterState?.fail(failure);
     if (rosterState?.hasData && !rosterStale) { rosterStale = true; renderContextRoster(previousInstances); }
-    else if (rosterState && !rosterState.hasData) renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true });
+    else if (rosterState && !rosterState.hasData) { renderRosterCount(contextRosterEl.querySelector(".ctx-count"), [], { failed: true }); applyRosterPlace(); }
     return;
   }
   const reportedFailure = !!failure;
@@ -924,6 +929,7 @@ function renderContextRoster(instances) {
     for (const el of listEl.querySelectorAll(":scope > .ctx-tree-row, :scope > .ctx-group, :scope > .ctx-empty")) el.remove();
     paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
+    if (failed) applyRosterPlace(); // its Retry is the roster's landing
     return;
   }
   listEl.innerHTML = "";
@@ -968,6 +974,7 @@ function renderContextRoster(instances) {
     listEl.innerHTML = `<div class="ctx-empty">No instances.</div>`;
     paintNote();
     tabOpenIntents.applyFocus(restoreTreeState);
+    applyRosterPlace();
     return;
   }
   // Sidebar groups by agent CLUSTER (connected relations), not per repo:
@@ -1216,6 +1223,7 @@ function renderContextRoster(instances) {
   const tabbable = focusedRow || rowsAfter.find((r) => r.classList.contains("active"))
     || rowsAfter[0];
   if (tabbable) tabbable.tabIndex = 0;
+  applyRosterPlace();
 }
 
 /* A pending spawn's row (Spec C): "Spawning…" text and a spinner (never colour alone), announced once;
@@ -2811,6 +2819,123 @@ function focusMainContent() {
   return !!first && document.activeElement === first;
 }
 const focusRegions = createFocusRegions({ doc: document, tabLayerVisible: () => tabLayerVisible, focusMainContent });
+
+// ── a workspace switch puts the keyboard back where it was there ──────────
+// focus-place.mjs describes where the focus is; every focus outside the transit surfaces (the list of
+// workspaces, the palette, dialogs, menus) is kept with the workspace shown, and restoreWorkspaceTabs takes
+// the workspace's place as it is left and applies the arriving one's (focusArrival).
+const focusPlaces = createFocusPlaces({ doc: document, regionOfFocus: () => focusRegions.regionOfFocus(),
+  activeTab: () => (tabLayerVisible && activeTab != null && tabs.has(activeTab) ? { id: activeTab, paneEl: tabs.get(activeTab).paneEl } : null) });
+document.addEventListener("focusin", () => focusPlaces.note(tabWorkspace));
+// The operator's own keys and clicks (spawn-follow.mjs): a roster place waiting for its paint is dropped after them.
+const operator = watchOperator(document);
+let rosterPlace = null; // a roster place waiting for the arriving workspace's roster (applyRosterPlace)
+
+/** Focus `el`; true when it holds the focus. */
+function focusOn(el) {
+  el?.focus();
+  return !!el && document.activeElement === el;
+}
+
+/** A switch landed (restoreWorkspaceTabs): the keyboard goes back where it was in the workspace shown, its focus
+ * `place` (focus-place.mjs), under one intent ticket, so a click, a key, an open or another switch made meanwhile
+ * supersedes it. A place that is gone falls to what the tab rules left active, or its region's landing, never
+ * <body>. With no place, the focus stays where it is while that is shown, else lands on main. Nothing moves for a
+ * landing that places nothing (views/common.mjs landsFocusPlace: a caller focusing its own target, a step from the
+ * list of workspaces, a view followed, a take-over's layout) or under a modal dialog or the palette (their own return
+ * owns the focus). The DOM focus only: the window itself is never focused or raised for it. */
+function focusArrival(place) {
+  rosterPlace = null;
+  pageWatch?.disconnect(); pageWatch = null;
+  const ws = currentWorkspace();
+  if (!ws || !landsFocusPlace(ws) || modalOpen()) return;
+  const owns = tabOpenIntents.begin();
+  const main = () => focusRegions.focusRegion("main");
+  if (place?.kind === "roster") {
+    // Focus mode, or the sidebar hidden: the roster can't be shown for it, and neither is left for it.
+    if (!focusRegions.visible("roster")) { watchPage(owns, main); return; }
+    // Its rows arrive with the roster's read: the first paint of them applies it (applyRosterPlace).
+    rosterPlace = { owns, handle: place.handle, input: operator.input(), pointer: operator.pointer(), focus: document.activeElement };
+    return;
+  }
+  if (place?.kind === "tab" && place.content && selectTab(place.tab, { focusContent: true, intent: owns })) {
+    const t = tabs.get(place.tab);
+    if (t.paneEl.contains(document.activeElement)) return;
+    // A terminal's input takes the focus only while it can be typed in: one attaching or reconnecting takes it once
+    // ready (its readiness focus, still this ticket's), and one whose session ended never does. Its tab has the focus
+    // meanwhile, and nothing typed there reaches a terminal. A tab with no input of its own: the control that had the
+    // focus in it, else its first one.
+    tabOpenIntents.applyFocus(() => (t.focusContent ? focusOn(t.triggerEl) : place.handle.restoreExact()) || main());
+    return;
+  }
+  if (place?.kind === "tab" && tabLayerVisible) {
+    const t = activeTab != null ? tabs.get(activeTab) : null;
+    // A control of the tab layer (the strip, the split controls, an empty group), else the active tab's (its trigger,
+    // or the focused empty group); a content place whose tab closed meanwhile: what the tab rules left active.
+    tabOpenIntents.applyFocus(() => (!place.content && (place.handle.restoreExact() || focusOn(t?.triggerEl ?? tabhost.querySelector(".focused-group > .split-empty")))) || main());
+    return;
+  }
+  // No place: the focus stays where the switch found it while that is still shown once the page has repainted (a
+  // pick keeps its row of the list), else lands on main.
+  if (!place) { watchPage(owns, () => !focusLost() || main()); return; }
+  // The rest lands on the page, the views, the instance panel or the foot: by identity, or a control near it in its
+  // own region (never a transit surface, never another region), else that region's landing.
+  watchPage(owns, () => {
+    if (place?.kind !== "other") return main();
+    const target = place.handle.resolve();
+    if (target && !isTransit(target) && focusOn(target) && focusRegions.regionOfFocus() === place.region) return true;
+    return (!!place.region && focusRegions.focusRegion(place.region)) || main();
+  });
+}
+
+/** The focus is nowhere: on <body>, or on a control no longer shown (a page repaint removed it). */
+function focusLost() {
+  const at = document.activeElement;
+  return !at || at === document.body || !isShown(at);
+}
+
+/** A landing on the page (focusArrival): the mounted views repaint for the workspace in their own listeners, which run
+ * after the shell's, and some again when their reads answer. So `land` runs once every workspace listener has run,
+ * then again at each repaint of the page while it has not landed yet (the page still loading) or the repaint left
+ * the focus on <body> (or on a control no longer shown), until the operator presses a key or clicks, the ticket is
+ * gone (a selection, an open, another switch) or a modal opens. `land` answers whether the focus landed. */
+let pageWatch = null;
+function watchPage(owns, land) {
+  const input = operator.input(), pointer = operator.pointer();
+  const quiet = () => owns() && !modalOpen() && operator.input() === input && operator.pointer() === pointer;
+  queueMicrotask(() => {
+    if (!quiet()) return;
+    let landed = tabOpenIntents.applyFocus(land);
+    if (typeof MutationObserver !== "function") return;
+    const watch = pageWatch = new MutationObserver(() => {
+      if (!quiet()) { watch.disconnect(); if (pageWatch === watch) pageWatch = null; return; }
+      if (!landed || focusLost()) landed = tabOpenIntents.applyFocus(land);
+    });
+    watch.observe(stageHost, { childList: true, subtree: true });
+  });
+}
+
+/** A roster place (focusArrival) is applied by the arriving workspace's first roster paint of rows, or of a failed
+ * read (its Retry): the row by its instance, else the roster's landing (its selected row, else its first control).
+ * Never once its ticket is gone (a selection, an open, another switch) or the operator has acted since the switch
+ * (a key, or a click that moved the focus), nor under a modal dialog or the palette. Every roster paint calls it. */
+function applyRosterPlace() {
+  const place = rosterPlace;
+  if (!place) return;
+  rosterPlace = null;
+  if (!place.owns() || modalOpen() || operator.input() !== place.input
+    || (operator.pointer() !== place.pointer && document.activeElement !== place.focus)) return;
+  tabOpenIntents.applyFocus(() => {
+    if (!focusRegions.visible("roster")) return focusRegions.focusRegion("main");
+    if (place.handle.restoreExact()) {
+      const row = document.activeElement;
+      // The row that has the focus is the roster's tab stop (renderContextRoster's roving rule).
+      if (row.classList.contains("ctx-inst")) setRovingRow(row.closest(".ctx-list"), row);
+      return true;
+    }
+    return focusRegions.focusRegion("roster") || focusRegions.focusRegion("main");
+  });
+}
 /** A modal (a dialog, the palette) keeps focus inside itself: regions don't cycle out of it. */
 const modalOpen = () => [...document.querySelectorAll('[aria-modal="true"]')].some(dialog => isShown(dialog));
 function cycleRegion(delta) {
@@ -3053,7 +3178,9 @@ const leaderDispatch = createLeaderDispatch({
   quickOpen: () => runAction("app.quickOpenSouls"),
   filter: () => runAction("sidebar.focusFilter"),
   workspaces: () => runAction("app.workspaces"),
-  workspaceStep: delta => workspaceLabel.step(delta),
+  // A step made from the list of workspaces leaves the focus there (the operator is browsing workspaces with
+  // the moves); from anywhere else, the workspace shown puts it back where it was there (focusArrival).
+  workspaceStep: delta => workspaceLabel.step(delta, { focusPlace: focusRegions.regionOfFocus() !== "workspaces" }),
   help: () => runAction("app.shortcuts"),
   list: () => {
     if (sidebarHidden() || contextPanel.isFocusMode()) runAction("sidebar.toggle");
@@ -3151,7 +3278,7 @@ async function releaseTakenWorkspace(message) {
  * teardown (its viewer closed). */
 function closeWorkspaceTabs(taken) {
   for (const [id, t] of [...tabs]) if (taken.has(t.workspace)) closeTab(id, false, { explicit: false, background: true, passive: true });
-  for (const workspace of taken) { workspaceTabMemory.forget(workspace); wsActiveTerminal.delete(workspace); }
+  for (const workspace of taken) { workspaceTabMemory.forget(workspace); focusPlaces.forget(workspace); wsActiveTerminal.delete(workspace); }
 }
 /** A take-over's layout (layout-handover.mjs), handed over by the window the workspace came from: its terminals
  * opened here again (fresh viewers; the agents keep running) and laid out as they were, under ONE intent ticket, so
@@ -3206,7 +3333,8 @@ function restoreWorkspaceTabs() {
   brainIntents.invalidate();
   tabOpenIntents.invalidate();
   workspaceLabel.reset(currentWorkspace());
-  workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible });
+  // Where the keyboard was in the workspace left (focus-place.mjs), taken before its tabs are hidden.
+  workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible, place: focusPlaces.take(tabWorkspace) });
   // Hide synchronously and park ALL nodes before replacing group identities.
   // Workspace-local group ids can overlap; deleting old cells first would
   // otherwise orphan their retained tabs/panes (and live terminals).
@@ -3231,6 +3359,7 @@ function restoreWorkspaceTabs() {
     setNavActive(stage?.name || "spawn");
   }
   updateContextTabs();
+  focusArrival(restored.place ?? null);
   refreshContextRoster();
 }
 /** Workspace views (#482): per-workspace state saved under a deployment id — a selection from before
@@ -3248,6 +3377,7 @@ function rehomeWorkspaceState(workspaces) {
   rehomeActiveTerminals(wsActiveTerminal, map, moves);
   instanceRecency.rehome(map);
   workspaceTabMemory.rehome(map);
+  focusPlaces.rehome(map);
   rehomeCollapsed(collapsedInstances, map);
   spawnJobs.rehome(map);
   if (map.has(tabWorkspace)) tabWorkspace = map.get(tabWorkspace);

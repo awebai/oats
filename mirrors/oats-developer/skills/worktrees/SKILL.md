@@ -1,40 +1,36 @@
 ---
 name: worktrees
-description: When and how to use extra worktrees for a piece of work: workflow paths that touch the same files, a spike, another branch or base. Consolidate them into one worktree before review, and clean them up before handing back. Use when your execution strategy needs more than one checkout.
+description: When and how to use extra worktrees (workflow paths that touch the same files, a spike, another branch or base), consolidate them before review and clean them up before handing back. Use when your execution strategy needs more than one checkout.
 ---
 
 # Extra worktrees
 
-Your work-mode briefing gives the command. Create as many worktrees as the work needs, on
-new or existing branches; by default they live in your home as `.work-<purpose>`. What you
-create, you clean up. This skill is about using them well.
+Your work-mode briefing gives the command. Create as many as the work needs, on new or
+existing branches; by default they live in your home as `.work-<purpose>`.
 
 ## When
-- **Workflow paths that touch the same files:** one worktree per path, so agents don't
-  overwrite each other.
-- **A spike** you may throw away, kept apart from the real branch.
-- **Another branch** the work needs: a fix on another base, a stacked change, an open PR
-  you've been asked to rework.
-
-Paths that touch different files share one worktree (`/execution-strategy`).
+- Workflow paths that touch the same files: one worktree per path. Paths on different
+  files share one.
+- A spike you may throw away, kept apart from the real branch.
+- Another branch: a fix on another base, a stacked change, an open PR you're asked to
+  rework.
 
 ## Use
-- Base each worktree on the branch it will merge back into.
-- Each path builds and tests inside its own worktree.
+Base each worktree on the branch it will merge back into; each path builds and tests in
+its own.
 
 ## Consolidate before review
-**Before you launch the reviewer, bring everything into ONE worktree**, the one whose
-branch becomes the PR:
+Before you launch the reviewer, bring everything into one worktree, the one whose branch
+becomes the PR:
 1. Merge each path in, in the planned order, resolving conflicts yourself.
-2. Run the full verification on the consolidated result.
-3. Launch the reviewer on that worktree. It reviews the whole piece of work in one place;
-   the other worktrees are no longer part of it.
+2. Run the full verification there.
+3. Launch the reviewer on it; the other worktrees are no longer part of the work.
 
 ## Before handing back
-- Every other worktree is merged, or its branch is pushed and named in your handback, or it
-  was deliberately abandoned.
-- Then remove every extra worktree that no instance is attached to.
-- **Before you remove a worktree, retire every instance attached to it** (usually the
-  reviewer): its work link would point at a path that is gone. An extra worktree with an
-  instance attached stays until that instance is retired, and is removed then. With the
-  last one removed, the worktree list shows only your main tree.
+- Every other worktree is merged, or its branch is pushed and named in your handback, or
+  it was deliberately abandoned.
+- Remove every extra worktree you created that no instance is attached to.
+- Retire the instances attached to a worktree before you remove it. One with an instance
+  attached (usually the reviewer) stays until that instance is retired after your expert
+  accepts (Close of `/run-the-review-loop`). In the end the worktree list shows only your
+  main tree.

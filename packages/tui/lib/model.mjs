@@ -597,10 +597,10 @@ export const LIST_WORDS = Object.freeze({
 });
 
 /** The lines of the list of workspaces (docs/tui.md, "The list of workspaces"): the leader's Up or
- *  Down at an end of it, and a row picked there that is not a deployment any more. */
+ *  Down with no other row to open (the Desktop's words), and a row picked there that is not a
+ *  deployment any more. */
 export const WORKSPACE_WORDS = Object.freeze({
-  above: () => [{ own: "No workspace above this one." }],
-  below: () => [{ own: "No workspace below this one." }],
+  noOther: () => [{ own: "No other workspace to show." }],
   refused: (name) => [{ shown: name }, { own: ": not an OATS deployment any more." }],
 });
 /** The switcher's choices with no filter, in its order (workspaceList's rows are their keys). */

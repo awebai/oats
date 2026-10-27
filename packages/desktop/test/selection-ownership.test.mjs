@@ -80,7 +80,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     modal: false, modalOpen: () => c.modal,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], collapsedInstances: new Set(), focusRegions: { focusRegion: () => false },
+    contextRosterGen: 0, contextInstances: [], collapsedInstances: new Set(), focusRegions: { focusRegion: () => false, regionOfFocus: () => null },
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
     // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
@@ -145,7 +145,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     },
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { ...ref, tmux: { session: "synthetic", window: ref.instance } }, key: `${ws}:${ref.instance}` }),
     // The leader's ↑/↓ move between workspaces (the list's step, recorded); its X opens the Stop dialog (recorded).
-    steppedWorkspaces: [], workspaceLabel: { step: delta => { c.steppedWorkspaces.push(delta); return true; } },
+    steppedWorkspaces: [], steppedHow: [], workspaceLabel: { step: (delta, how) => { c.steppedWorkspaces.push(delta); c.steppedHow.push({ ...how }); return true; } },
     acts: [], openLifecycleDialog: (verb, instance) => c.acts.push([verb, instance.instance]), openInstanceStart: () => assert.fail("no start here"),
   });
   const functions = [...names, ...(leader ? leaderNames : [])].map(name => {
@@ -748,6 +748,7 @@ test("the leader's ↑/↓ move between workspaces: from a terminal they open no
   s.leaderKey("ArrowDown");
   s.leaderKey("ArrowUp");
   assert.deepEqual(s.c.steppedWorkspaces, [1, -1], "the list's step, down then up");
+  assert.deepEqual(s.c.steppedHow, [{ focusPlace: true }, { focusPlace: true }], "made outside the list: the focus goes back where it was there");
   assert.deepEqual(s.c.opened, [], "no instance step");
 });
 

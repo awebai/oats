@@ -1,5 +1,6 @@
 // The leader's ↑ ↓ over the sidebar's list of workspaces (packages/client/workspace-step.mjs): the next
-// openable row in a direction, passing over the others, with no wrap, from a current row or from none.
+// openable row in a direction, passing over the others, from a current row or from none. Without `wrap` (the
+// TUI's) it stops at the ends; with it (the Desktop's) it goes on from the other end.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { workspaceStep } from '../../client/workspace-step.mjs';
@@ -48,4 +49,37 @@ test('nothing openable, or no rows: null; `openable` is true exactly, and nothin
   // Frozen rows: a write would throw.
   assert.equal(workspaceStep(ROWS, 'c', 1), 'e');
   assert.equal(ROWS.length, 5);
+});
+
+// The Desktop's moves wrap (`wrap: true`); the TUI's call, without the option, is unchanged (above).
+test('wrap: past the last openable row the first, before the first the last, rows that cannot be opened passed over', () => {
+  const wrap = { wrap: true };
+  assert.equal(workspaceStep(ROWS, 'e', 1, wrap), 'a');
+  assert.equal(workspaceStep(ROWS, 'a', -1, wrap), 'e');
+  assert.equal(workspaceStep(ROWS, 'a', 1, wrap), 'c', 'inside the list, as without wrap');
+  assert.equal(workspaceStep(ROWS, 'c', -1, wrap), 'a');
+  const edges = [{ key: 'x', openable: false }, { key: 'a', openable: true }, { key: 'b', openable: true }, { key: 'y', openable: false }];
+  assert.equal(workspaceStep(edges, 'b', 1, wrap), 'a', 'y and x passed over across the wrap');
+  assert.equal(workspaceStep(edges, 'a', -1, wrap), 'b', 'x and y passed over across the wrap');
+  assert.equal(workspaceStep(edges, 'y', 1, wrap), 'a', 'from a row that is not openable itself');
+});
+
+test('wrap: the current row alone openable answers itself ("only this one"); none openable, null', () => {
+  const wrap = { wrap: true };
+  const alone = [{ key: 'x', openable: false }, { key: 'a', openable: true }, { key: 'y', openable: false }];
+  for (const step of [1, -1]) {
+    assert.equal(workspaceStep(alone, 'a', step, wrap), 'a', `${step}: only this one`);
+    assert.equal(workspaceStep([{ key: 'a', openable: true }], 'a', step, wrap), 'a', `${step}: a list of one`);
+    assert.equal(workspaceStep(alone, 'x', step, wrap), 'a', `${step}: from a row that cannot be opened, the one that can`);
+    assert.equal(workspaceStep([{ key: 'x', openable: false }], 'x', step, wrap), null, `${step}: none`);
+    assert.equal(workspaceStep([], null, step, wrap), null);
+    assert.equal(workspaceStep(undefined, 'a', step, wrap), null);
+  }
+});
+
+test('wrap: with no current row, as without it: the first openable row down, the last up', () => {
+  for (const current of [null, undefined, 'gone']) {
+    assert.equal(workspaceStep(ROWS, current, 1, { wrap: true }), 'a', String(current));
+    assert.equal(workspaceStep(ROWS, current, -1, { wrap: true }), 'e', String(current));
+  }
 });

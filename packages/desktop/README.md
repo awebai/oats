@@ -197,9 +197,11 @@ function over what its caller holds:
   words, the new-window hint and context menu, and the Add dialog (this
   computer's deployments to add, the stale rows to remove).
 - **Moving in the list of workspaces** (`workspace-step.mjs`).
-  `workspaceStep(rows, currentKey, step)` is the leader's ↑ / ↓
+  `workspaceStep(rows, currentKey, step, { wrap })` is the leader's ↑ / ↓
   (`workspace-previous`, `workspace-next`): the key of the next row that can
-  be opened in one direction, or null at an end; no wrap. Pure, imports
+  be opened in one direction. Both clients' moves pass `wrap`: it goes on
+  from the other end, and answers the current key when no other row can be
+  opened. Without `wrap` (the TUI list's own cursor) it is null at an end. Pure, imports
   nothing, so the page loads it. Each client draws its own rows and opens
   what it answers.
 - **Who waits in a workspace** (the needs-input mark, the "!" disc). `workspaceChoices`

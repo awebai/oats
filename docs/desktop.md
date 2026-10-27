@@ -191,6 +191,18 @@ workspace on a server: `name — server`).
   window they were opened in, and switching that window back to the
   workspace brings them back. A window whose workspace another window takes
   over closes its tabs of that workspace.
+- Switching back also puts the keyboard back where you left it in that
+  workspace, with no click: in the terminal you were typing in, ready to
+  type; on the instance's row in the list of instances, once that list is
+  read; on the tab, or the control of the page or the views you were on. Going
+  to the list of workspaces to pick one doesn't move that place: the
+  terminal you typed in before is still where the focus comes back. If that
+  tab closed while the workspace was hidden, the focus goes to the tab active
+  in its place, or to the page when no tab is left. An instance retired
+  elsewhere keeps its tab until the workspace's list of instances is read
+  again: the focus goes into that tab, and when it closes, to the next tab. A
+  stopped instance's tab ("session ended") gets the focus, and nothing typed
+  there reaches a terminal.
 - A tab's terminal ends ("session ended") when its instance's tmux window
   goes, whatever your tmux `detach-on-destroy` setting: a tab never shows
   another instance's terminal. Stopping an instance leaves its tab open.
@@ -326,8 +338,9 @@ computer.
   in the Alt family, the default) shows that workspace in this window, with its own tabs, layout and
   selection; one another window shows moves here ([A workspace another window
   shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
-  previous / next row, and stop at the ends ("No workspace above this one." /
-  "No workspace below this one."). Each is a pick, so walking the list with
+  previous / next row, and wrap: past the last row comes the first, and
+  before the first the last. With no other workspace to show, nothing moves
+  and one line says "No other workspace to show." Each is a pick, so walking the list with
   them moves every workspace it passes that another window shows into this
   window.
 - **Open in new window** is in a row's context menu (a right-click, or
