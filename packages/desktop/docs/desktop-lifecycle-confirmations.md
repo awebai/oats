@@ -458,7 +458,8 @@ The roster says what a home is when it is not an ordinary instance, in text
 These states offer **Retire instance…** only: no Start, Stop, Restart, split or
 terminal. The kernel's retire completes the quarantined ones, through the
 ordinary plan → apply dialog. While a retire runs, Retire is *secondary*
-(`instanceActs`): it stays in the row's actions menu, enabled, behind its
+(`instanceActs`): it stays in the row's context menu (right-click, Shift+F10
+or the ContextMenu key), enabled, behind its
 confirmation (the kernel refuses a second one while the first runs), but it is
 never the menu's first focus (the menu opens on itself; the arrows reach it)
 and the instance panel draws no Retire button, its action note saying "<name>
@@ -497,7 +498,7 @@ Every other retire plan keeps "Branches and pull requests are not changed."
 
 The 420px confirmation surface follows the supplied layout, semantic theme
 colors and keyboard focus language. Stop/Retire are separate from existing
-Start/Restart/Inspect; the roster row's menu says **Retire instance…**, the
+Start/Restart/Inspect; the roster row's context menu says **Retire instance…**, the
 context panel's footer **Stop…** and **Retire…**. Stop always requires explicit
 confirmation. The Retire PR row is only an informational 2b overlay: exact
 home/server/workspace, revision, branch and remote host/path must correlate. A

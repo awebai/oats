@@ -97,7 +97,7 @@ test("ARIA: a menu button over a native popover menu, aria-expanded following it
   assert.equal(r.menu.getAttribute("role"), "menu");
   assert.equal(r.menu.getAttribute("aria-label"), "Settings");
   assert.equal(r.menu.tabIndex, -1);
-  assert.ok(r.menu.classList.contains("ctx-instance-menu") && r.menu.classList.contains("sidebar-settings-menu"), "the instance actions' menu style");
+  assert.ok(r.menu.classList.contains("ctx-instance-menu") && r.menu.classList.contains("sidebar-settings-menu"), "the instance row's context menu style");
   for (const item of r.items) {
     assert.equal(item.getAttribute("role"), "menuitem");
     assert.equal(item.tabIndex, -1, "the arrows move between items, not Tab");
@@ -237,9 +237,10 @@ test("with no shortcut reader, every chord is hidden", (t) => {
   assert.deepEqual(r.items.map((item) => item.querySelector("kbd").hidden), [true, true, true]);
 });
 
-// Placed as the instance actions' menu is (instance-actions.mjs): its right edge on the cog's, inside the window's
-// 8px margin; under the cog when it fits, else above it (the cog is at the sidebar's foot: above, as a rule).
-test("placed as the instance actions' menu: its right edge on the cog's, above the cog when there is no room below", (t) => {
+// Its right edge on the cog's, inside the window's 8px margin; under the cog when it fits, else above it (the cog is
+// at the sidebar's foot: above, as a rule). The shared .ctx-instance-menu popovers (a workspace row's, an instance
+// row's context menu) keep the same margin and the same under-else-above rule, from the pointer or the row instead.
+test("placed by the cog: its right edge on the cog's, above the cog when there is no room below", (t) => {
   const r = rig(t);
   const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
   r.menu.getBoundingClientRect = () => box(0, 0, 220, 80);

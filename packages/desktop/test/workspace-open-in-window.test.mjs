@@ -274,3 +274,26 @@ test('the palette\'s entry, from a row it hides: focus goes to the current row; 
   assert.equal(s.controller.currentOnly, false);
   assert.equal(s.document.activeElement, outside, 'where the palette was opened');
 });
+
+// Linux and macOS fire a right-click's contextmenu on the press, with the right button down: opened then, the menu
+// would be light-dismissed by the release outside it (context-menu-release.mjs). It opens once released; a cancelled
+// press opens nothing.
+test('a right-click held down opens the row\'s menu once released, and a cancelled one opens nothing', async () => {
+  const { dom, document, popovers } = setup();
+  const press = (el) => {
+    const event = new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, buttons: 2, view: dom.window });
+    el.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const end = (type) => dom.window.dispatchEvent(new dom.window.MouseEvent(type, { bubbles: true }));
+  const task = () => new Promise((r) => dom.window.setTimeout(r));
+  assert.equal(press(option(document, B.id)), true, 'the native menu is prevented at once');
+  assert.deepEqual(popovers, [], 'nothing opens while the button is down');
+  end('pointerup'); assert.deepEqual(popovers, [], 'not in the release itself (its light dismiss runs there)');
+  await task();
+  assert.deepEqual(popovers, [['show', menu(document)]]); assert.equal(menu(document).getAttribute('aria-label'), 'tsm');
+  assert.equal(document.activeElement, menu(document).querySelector('[role="menuitem"]'));
+  popovers.length = 0;
+  press(option(document, LOOSE.id)); end('pointercancel'); end('pointerup'); await task();
+  assert.deepEqual(popovers, [], 'a cancelled press opens nothing, and a later release is not its own');
+});

@@ -598,7 +598,8 @@ split into sections) is `packages/client/roster-sections.mjs`.
   - The row's context menu (a `contextmenu` event: a right-click, Shift+F10, the Menu key) is
     the page's own `role="menu"` popover (`.ctx-instance-menu.ws-row-menu`, styled as the
     instance menu) with one item, `OPEN_IN_NEW_WINDOW`; the event is default-prevented, so
-    main's native Copy/Paste menu never shows for a row. Esc or Tab close it, back on the row.
+    main's native Copy/Paste menu never shows for a row. A right-click's opens once the button is
+    released (`context-menu-release.mjs`). Esc or Tab close it, back on the row.
     No IPC of its own: the item calls `openInNewWindow`, as ⌘Enter does.
   - `step(±1)` is the leader's ↑ / ↓ (`workspace-previous` / `workspace-next`,
     leader-dispatch.mjs, which says `NO_OTHER_WORKSPACE` when it is false):
@@ -1011,7 +1012,7 @@ visible status line (the sidebar roster, the hierarchy), `statusLine(doc,
 Where each surface wires it: the sidebar roster in `instance-tree-view.mjs`
 (`createRosterLoading`, `rosterSignature`, the pending count pill,
 `markStaleControl` / `staleBlocked`) and `shell.mjs` (`refreshContextRoster`;
-while stale, Start…, the actions menu and a *stopped* row's own activation are
+while stale, Start…, the row's context menu and a *stopped* row's own activation are
 held — a stale `running:false` may be running by now — while a running row
 still opens its terminal; a row of a `stale` deployment, `rowStale` in
 `packages/client/roster-sections.mjs`, is held the same way, and so are its actions in the
@@ -1717,12 +1718,17 @@ section is the module map.
   `KeyboardEvent.code`, as the layout labels it (`readKeyboardLayout`, called
   by the shell at startup and on window focus; `setKeyboardLayoutMap` for
   tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
+- **context-menu-release.mjs** — `whenRightButtonReleased(event, run)`: a row's context menu (the
+  workspace row's, an instance row's) opens once the right-click that asked for it is released, in the
+  task after the release (whose popover light dismiss would close a menu opened on the press, as Linux and
+  macOS fire `contextmenu`); a cancelled press opens nothing; a key's (no button down) opens at once.
+  Tests: `test/instance-actions.test.mjs`, `test/workspace-open-in-window.test.mjs`.
 - **sidebar-settings.mjs** — the settings cog's menu (`createSettingsMenu`, `SETTINGS_ITEMS`,
   `SETTINGS_LABEL`), the cog at the right end of the bar in the sidebar's foot: Theme… (`app.themePicker`),
   Font… (`app.fontPicker`) and Keyboard shortcuts… (`app.shortcuts`), each a `role="menuitem"` with its icon and its chord in a `<kbd>` (hidden without
-  one; `refresh()` reads them again, and the shell calls it from `applyChordTitles`). The instance actions'
-  pattern: a native `popover="auto"` with `role="menu"`, the cog its invoker (`aria-haspopup="menu"`,
-  `aria-expanded` kept by `beforetoggle`, `aria-controls`), placed as the instance actions' menu (its right
+  one; `refresh()` reads them again, and the shell calls it from `applyChordTitles`). A native
+  `popover="auto"` with `role="menu"` and the instance menu's look, the cog its invoker (`aria-haspopup="menu"`,
+  `aria-expanded` kept by `beforetoggle`, `aria-controls`), placed by the cog (its right
   edge on the cog's, clamped to the window's 8px margin, above the cog when there is no room below); ↓ / ↑ on the cog open it on the first / last
   item, ↑/↓ (wrapping) and Home/End move, Esc closes back on the cog, Tab closes. Choosing an item closes
   the menu and focuses the cog before it runs the action, so a dialog it opens returns to the cog. The
@@ -1835,12 +1841,25 @@ the shell's projection guard, a surviving next control or a visible same-scope
 return target. The polite live region is independent of roster repaints and
 continues to work without a roster. Primary foreground/background pairs and
 existing popover shadows adapt to White/Solarized/Dark without raw colors.
-The roster row's actions menu (`instance-actions.mjs`) draws what
-`instanceActs` (`packages/client/instance-acts.mjs`) decides: the acts in its
-order under the menu's own labels and icons, the shell's items (Open in split,
-Open pull request…) in front unless the row is `blocked` or `limited`, an act
-with a reason disabled with it, and for a `blocked` row a disabled trigger
-titled with the reason and no menu. It decides nothing itself. The instance panel's
+The roster row's context menu (`instance-actions.mjs`; #1559: the row draws no ⋯
+trigger for it) draws what `instanceActs` (`packages/client/instance-acts.mjs`)
+decides: the acts in its order under the menu's own labels and icons, the shell's
+items (Open in split, Open pull request…) in front unless the row is `blocked` or
+`limited`, an act with a reason disabled with it, and for a `blocked` row no menu:
+asked for, it says the reason. It decides nothing itself. It opens on the row's
+`contextmenu` (a right-click, Shift+F10 or the ContextMenu key), as the workspace
+row's does (`workspace-switcher.mjs`): the page's own menu, never the native one; at
+the event's point when it falls on the row (a right-click's pointer; Chromium gives
+Shift+F10 and the Menu key the focused row's centre), else under the row's start,
+kept 8px inside the window; on its first enabled act. Both menus open a right-click's
+once the button is released (`context-menu-release.mjs`: Linux and macOS fire
+`contextmenu` on the press, and the release, outside the popover just opened, would
+light-dismiss it). A right-click sends no click, so it never activates the row. Esc and Tab close it with the focus back on the row;
+the row's own keys (`roster-keys.mjs`) and its ARIA are untouched, with no
+`aria-haspopup` (the workspace row has none either). While the menu is held (an act
+of it in flight, a stale roster, a `blocked` row) the row's `contextmenu` opens
+nothing and says why through the leader hint line (`sayInHint`, `role="status"`), the
+focus staying on the row; the row keeps its own marking, the menu adds none. The instance panel's
 lifecycle footer and the overview popover draw from the same answer (#855): a
 footer control (Restart…, Start…, Stop…, Retire…) is shown exactly when its act
 is listed and enabled exactly when the act is, so a stopped row and one whose
@@ -1864,14 +1883,14 @@ roster read after their answer that observed their deployment live
 ([desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#quarantined-and-spawning-rows)).
 The menu reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its
-error in Details. While one of its actions runs, the menu trigger is
-`aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for
-<action> to finish"; clearing that leaves a stale-roster marking in place. Stop
+error in Details. While one of its actions runs, the menu is held and says
+"Waiting for <action> to finish" (`pendingActionReason` gives the same reason to the
+leader's and the sidebar's X R S D); when it settles, a stale roster still holds it. Stop
 and Retire never run from the menu: they open the plan-backed confirmation
 (`lifecycle-dialog.mjs`, phases in
 [desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#ui-states)).
 The one exception to "a `blocked` row has no menu" is the Desktop's own (#1131): a
-row whose reason is `missing` (its host no longer lists it) keeps its trigger and offers
+row whose reason is `missing` (its host no longer lists it) keeps its context menu and offers
 **Forget…** alone when the shell passes `openForget`. Forget… never runs from the menu
 either: it opens `forget-dialog.mjs`, the lifecycle dialog's classes and focus handling
 with no plan, which sends `{server, instance}` once to `/api/server-forget`

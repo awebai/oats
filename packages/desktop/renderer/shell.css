@@ -204,19 +204,6 @@ body {
                  display: flex; align-items: center; gap: 4px; padding-left: 6px;
                  background: var(--row-solid); visibility: hidden; }
 .ctx-tree-row:is(:hover, :focus-within) > .ctx-row-tools { visibility: visible; }
-/* The actions menu is a top-layer popover inside the tools: with the pointer in it the row is neither :hover nor
-   :focus-within, so the tools stay visible while their menu is open (else the menu inherits hidden and cannot be clicked). */
-.ctx-tree-row > .ctx-row-tools:has(.ctx-instance-menu:popover-open) { visibility: visible; }
-.ctx-actions { flex: none; display: flex; }
-.ctx-instance-actions { appearance: none; width: 24px; height: 24px; display: grid; place-items: center;
-  flex: none; border: 0; border-radius: 6px; padding: 0;
-  background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
-/* :focus-visible, not :focus: the menu trigger is focused again when its menu closes
-   after a click, and that must not paint it (rule 2). Keyboard focus (Escape/Tab out of
-   the menu) takes the tint like every other control. */
-.ctx-instance-actions:hover { background: var(--surface-2); color: var(--fg); }
-.ctx-instance-actions:focus-visible { background: var(--sel); color: var(--fg); }
-.ctx-instance-actions:disabled, .ctx-instance-actions[aria-disabled="true"] { color: var(--muted); cursor: default; }
 .ctx-instance-menu { position: fixed; inset: auto; margin: 0; width: 240px; max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow-y: auto;
   padding: 6px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);

@@ -2,6 +2,7 @@ import { iconElement } from "./shell-icons.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { workspaceStep } from "../../client/workspace-step.mjs";
 import { requestDeploymentTab } from "./deployment-tabs.mjs";
+import { whenRightButtonReleased } from "./context-menu-release.mjs";
 // For a view no workspace matched, the deployment its pick opens is the shared home's (workspaceChoiceRows); the
 // row's name (rowNames), the needs-input words, the new-window hint and adding a folder are this module's.
 import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices.mjs";
@@ -715,7 +716,8 @@ export function createWorkspaceSwitcher({
     const button = event.target?.closest?.(".ws-option");
     if (!openInNewWindow || !button || !options.contains(button)) return;
     event.preventDefault();
-    openRowMenu(button, event);
+    const at = { clientX: event.clientX, clientY: event.clientY };
+    whenRightButtonReleased(event, () => { if (button.isConnected) openRowMenu(button, at); });
   });
   rowMenu.addEventListener("keydown", onRowMenuKey);
   // A light dismiss (a click outside, the window losing focus) closes it too: no row is its own any more.
