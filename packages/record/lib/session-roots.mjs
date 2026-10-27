@@ -81,7 +81,16 @@ export function nativeLaunchLocations(harness, { cwd, env = process.env, args = 
   let sessionDir = env.PI_CODING_AGENT_SESSION_DIR;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--session" || arg.startsWith("--session=")) throw new Error("explicit Pi --session has no supported directory custody; capture explicit roots instead");
+    if (arg === "--session" || arg.startsWith("--session=")) {
+      // A resumed launch names its session by bare id; pi looks an id up in the
+      // session directory below, so that directory is still where it writes.
+      // pi opens anything with `/`, `\` or a `.jsonl` suffix as a file path,
+      // which may live anywhere: that has no directory custody.
+      const id = arg === "--session" ? args[++i] : arg.slice("--session=".length);
+      if (!id || id.startsWith("-")) throw new Error("invalid native --session");
+      if (/[/\\\0]/.test(id) || /^[.~]/.test(id) || id.endsWith(".jsonl")) throw new Error("explicit Pi --session has no supported directory custody; capture explicit roots instead");
+      continue;
+    }
     if (arg === "--session-dir" || arg.startsWith("--session-dir=")) {
       sessionDir = arg === "--session-dir" ? args[++i] : arg.slice("--session-dir=".length);
       if (!sessionDir || sessionDir.startsWith("--")) throw new Error("invalid native --session-dir");
