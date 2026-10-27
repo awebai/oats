@@ -20,7 +20,8 @@ test.after(() => { restoreEnvironment(); rmSync(base, { recursive: true, force: 
 
 const TICK = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/oats-schedule-tick.service\n";
 const SESSION_SCOPE = "0::/user.slice/user-1000.slice/session-3.scope\n";
-const PANE_SCOPE = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/tmux-spawn-1a2b.scope\n";
+/** A client launched from a desktop session: a scope of the user manager. */
+const APP_SCOPE = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-oats\\x2ddesktop-1234.scope\n";
 const V1 = "12:cpu,cpuacct:/\n1:name=systemd:/user.slice/user-1000.slice/user@1000.service/app.slice/oats-schedule-tick.service\n";
 
 let n = 0;
@@ -90,9 +91,30 @@ test("inside a service on Linux: the server starts under systemd-run --user --sc
   await killServer();
 });
 
-test("a session scope, an agent's pane, macOS and a running server: the start is today's, byte for byte", async () => {
+test("inside a scope of the user manager (a client's): the server starts in a scope of its own, as from a service", async () => {
+  await killServer();
   const sys = systemDir(RUNS_COMMAND);
-  for (const [platform, cgroup] of [["linux", SESSION_SCOPE], ["linux", PANE_SCOPE], ["darwin", TICK]]) {
+  const { calls, io } = spy({ platform: "linux", cgroup: APP_SCOPE, systemToolDirs: [sys.dir] });
+  const warnings = [];
+  assert.equal(ensureOatsTmuxSession("from-app", base, io, undefined, undefined, warnings), OATS);
+  assert.deepEqual(warnings, []);
+  const [start] = starts(calls);
+  assert.equal(start.bin, join(sys.dir, "systemd-run"));
+  assert.deepEqual(start.args, ["--user", "--scope", "--collect", "--quiet", "--unit", start.args[5], "--", join(sys.dir, "env"), "-u", "INVOCATION_ID", TMUX, ...plainArgs("from-app")]);
+  await killServer();
+  // Without systemd-run: started as before, and the answer says it lives inside that scope.
+  const none = systemDir(null);
+  const plain = spy({ platform: "linux", cgroup: APP_SCOPE, systemToolDirs: [none.dir] });
+  const said = [];
+  ensureOatsTmuxSession("from-app", base, plain.io, undefined, undefined, said);
+  assert.deepEqual(starts(plain.calls)[0].args, plainArgs("from-app"));
+  assert.deepEqual(said, [serverScopeWarning({ unit: "app-gnome-oats\\x2ddesktop-1234.scope", reason: `no executable systemd-run in ${none.dir}` })]);
+  await killServer();
+});
+
+test("a login session's scope, macOS and a running server: the start is today's, byte for byte", async () => {
+  const sys = systemDir(RUNS_COMMAND);
+  for (const [platform, cgroup] of [["linux", SESSION_SCOPE], ["darwin", TICK], ["darwin", APP_SCOPE]]) {
     await killServer();
     const { calls, io } = spy({ platform, cgroup, systemToolDirs: [sys.dir] });
     const warnings = [];

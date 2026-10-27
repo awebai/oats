@@ -64,7 +64,11 @@ another pane reads as one without it
 pane that cannot be read gives `running: null` with `runtimeState:
 "unreachable"`, and so do a window where OATS cannot tell which pane is the
 agent's and a session that holds two windows of the instance's name, each
-with its reason as `runtimeError`. The environment variables are read when the spawn runs, and `oats
+with its reason as `runtimeError`. A local status read (0.69)
+also records, in a kernel-private file of this machine beside the resume
+sweep's per-boot note, what it saw of each home, for the sweep alone; it
+never changes the answer, and a status routed with `--server` records nothing
+here ([Which losses come back](#which-losses-come-back)). The environment variables are read when the spawn runs, and `oats
 inspect --json` reports the session a new spawn would open in as `session`
 (`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
 session it would open in, on the OATS tmux server (`E_INSTANCE_NAME_TAKEN`); a
@@ -183,14 +187,22 @@ options and environment, are left exactly as they were.
   earlier kernel failed a start whose recorded tmux server could not be
   reached when a sizing command was refused; this one does not.
 
-#### A server started from inside a systemd service
+<a id="a-server-started-from-inside-a-systemd-service"></a>
+#### Where sessions run: the server's scope and each agent's
 
-A tmux server lives in the cgroup of the process that started it. When that
-process runs inside a systemd service, the server and every agent pane in it
-end when the service stops. The schedule tick's oneshot service ends after
-each tick, and a Desktop run as a user service restarts at each upgrade. So,
-on Linux, when OATS starts the `oats` server (no server answered) from inside
-a service, it starts it in a transient scope of its own:
+A tmux server lives in the cgroup of the process that started it, and its
+panes with it. On a systemd host that cgroup can end, and take every agent
+with it: a service's cgroup ends when the service stops (the schedule tick's
+oneshot service ends after each tick, a Desktop run as a user service restarts
+at each upgrade), and systemd-oomd, under memory pressure, kills a whole cgroup
+of the user manager's: a client application's `app-*.scope` (OATS Desktop or
+`oats tui` launched from a desktop session) with everything started from it.
+So, on Linux, on the unified cgroup hierarchy, OATS keeps the server out of
+its creator's unit, and each agent's harness out of the server's cgroup.
+
+**The server.** When OATS starts the `oats` server (no server answered) from
+inside a unit of the user manager, or from a system service, it starts it in
+a transient scope of its own:
 
 ```text
 systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> -- env -u INVOCATION_ID tmux -u -L oats new-session -d …
@@ -207,25 +219,29 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
   of the SHA-256 of the server's address, and `<random>` 8 random hex digits.
   `systemd-run` and `env` are the system's own (`/usr/bin`, `/bin`), never
   ones found on `PATH`.
-- **The server outlives the service.** It is a sibling of the service, not
-  part of it: the service can end, stop or restart, and the server and its
-  agents go on. The scope ends when its last process does, and `--collect`
-  removes it then. That is usually the server. On a tmux without systemd
-  support the panes are in the scope too, so a process that outlives the
-  server (one an agent started in the background) keeps the scope until it
-  exits. On a tmux with systemd support each pane has a scope of its own,
-  but the dead server's scope still stays listed (`loaded inactive dead`)
-  while a process from one of its panes lives. Either way, a later start
-  never reuses that scope: it gets one of its own.
-- **See it:** `systemctl --user status 'oats-tmux-<hash>-*.scope'` (or
-  `'oats-tmux-*.scope'` for every OATS server), or
-  `systemd-cgls --user`. A tmux built with systemd support also puts each
-  pane in a `tmux-spawn-<id>.scope` of its own.
-- **When the creator is inside a service:** `/proc/self/cgroup` is the
-  unified hierarchy (one `0::<path>` line) and the path's last component ends
-  in `.service`. An operator's shell (`session-N.scope`), an agent's pane, and
-  macOS are not, and start the server as before. A server that already
-  answers is used as it is.
+- **The server outlives its creator's unit.** It is a sibling of that unit,
+  not part of it: the service can end, stop or restart, and the client can
+  quit or be killed, and the server and its agents go on. The scope ends when
+  its last process does, and `--collect` removes it then. That is usually the
+  server. On a tmux without systemd support the panes are in the scope too
+  (each agent's harness is not: below), so a process that outlives the server
+  (one an agent's shell started in the background) keeps the scope until it
+  exits. On a tmux with systemd support each pane has a scope of its own, but
+  the dead server's scope still stays listed (`loaded inactive dead`) while a
+  process from one of its panes lives. Either way, a later start never reuses
+  that scope: it gets one of its own.
+- **When the creator is inside a unit:** `/proc/self/cgroup` is the unified
+  hierarchy (one `0::<path>` line), and the path's last component ends in
+  `.service` (any service, system or user), or ends in `.scope` and the path
+  runs through the user manager (`…/user@<uid>.service/…`): a desktop
+  application's `app-*.scope`, a terminal's `vte-spawn-*.scope`, an agent's
+  own `oats-agent-*.scope` (an agent that spawns), the manager's `init.scope`.
+  A login session's scope (`/user.slice/user-<uid>.slice/session-N.scope`, an
+  ssh or tty login) sits beside the user manager, not in it, and starts the
+  server as before, as macOS does. So does a Linux host not booted with
+  systemd (a container's own init, another init system): its cgroup paths
+  name no unit of a user manager. A server that already answers is used as
+  it is: one started before this rule keeps the cgroup it has.
 - **The limits.**
   - Only the unified cgroup hierarchy is judged. On the old or hybrid
     hierarchy the server starts as before. When `INVOCATION_ID` shows the
@@ -233,9 +249,9 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
     that service.
   - The scope needs the user's systemd manager and its bus
     (`XDG_RUNTIME_DIR`), and `systemd-run` and `env` in `/usr/bin` or `/bin`:
-    a host without them gets the warning below at every start from a
-    service. A system service (one outside the user's manager) is
-    wrapped the same way, and without a user bus it gets the warning below.
+    a host without them gets the warning below at every start from a unit.
+    A system service (one outside the user's manager) is wrapped the same
+    way, and without a user bus it gets the warning below.
   - When `systemd-run` is missing or fails, and no other creator's server
     answers in the meantime, the server starts as before. The answer's
     `warnings` (spawn, session start and restart), and the schedule tick's
@@ -244,6 +260,57 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
     your own shell, or enable the user systemd bus (<reason>)`.
   - macOS is not wrapped: launchd lets the server, which leaves the job's
     process group, outlive the job.
+
+**Each agent's harness.** Every launch of a harness (spawn, session start and
+restart, and so a resume) runs it in a transient scope of its own, in the
+user manager's default slice, wherever the server is:
+
+```text
+… PATH=<home>/.oats/bin:… systemd-run --user --scope --collect --quiet --unit oats-agent-<hash>-<random> -- env -u INVOCATION_ID /bin/sh -c '<record the start> && exec <harness> …'
+```
+
+- **One agent per kill.** systemd-oomd ends one cgroup at a time: with a scope
+  per agent, memory pressure that selects an agent ends that agent, never the
+  server or the other agents. `<hash>` is the first 12 hex digits of the
+  SHA-256 of the home's canonical path, and `<random>` 8 random hex digits
+  per launch: a scope ends with its last process, so a later launch never
+  reuses its name. `systemd-run` and `env` are the system's own.
+- **Nothing else changes.** Each step execs the next, so the harness keeps the
+  process `systemd-run` began as: it is the pane's direct child, its exit
+  status is the pane shell's, and stop, status and the launch-prompt check see
+  the pane as without the scope. `INVOCATION_ID` is removed as for the server.
+  The scope is decided at each launch and is never recorded: the home's
+  `command`, its launch recipe, the start's receipt and the retirement baseline
+  are as before, and `oats spawn --preview` does not show it.
+- **The conditions.** Linux booted with systemd (`/run/systemd/system` is a
+  directory, as `sd_booted` reads it), and the launching process on the
+  unified cgroup hierarchy, whatever unit it is in. Before it wraps, the launch checks that a
+  scope can be created: it runs `systemd-run --user --scope --collect --quiet
+  -- true` with the pane's own `XDG_RUNTIME_DIR` and
+  `DBUS_SESSION_BUS_ADDRESS`: what the launch's command sets (a launch
+  configuration or a capability), else the session's, else the server's. It
+  is bounded to 5 seconds. One OATS command
+  checks once for each `systemd-run` and pair of values, so a start of many
+  agents checks once.
+- **When it cannot.** On a systemd host, when the check fails, `systemd-run`,
+  `env` or `true` is not in `/usr/bin` or `/bin`, or the pane's environment
+  cannot be read, the harness is launched exactly as before, and the answer's
+  `warnings` (spawn, session start and restart), and a `launch-warning`
+  event once the launch is recorded (a launch refused after the check leaves
+  none), say once `the agent's harness runs in the OATS tmux server's cgroup,
+  not a scope of its own: <reason>`. The sweep (`oats session resume`) says
+  it once in its own `warnings`, not in each row. A pane whose server has no
+  `XDG_RUNTIME_DIR` or bus (a server started where none was set, a user
+  without lingering) fails the check. Off Linux, on a Linux host not booted
+  with systemd (a container's own init, another init system: no user manager
+  and no systemd-oomd), and on the old or hybrid hierarchy, nothing changes
+  and nothing is said.
+- **What is left.** `systemd-run` could still fail between the check and the
+  pane. The pane's shell then reads exit status 1, an ordinary exit that is
+  never taken for a harness to bring back.
+- **See it:** `systemctl --user status 'oats-agent-<hash>-*.scope'` (one home),
+  `systemctl --user list-units 'oats-agent-*'` (every agent), or
+  `systemd-cgls --user`.
 
 <a id="the-servers-start-environment"></a>
 #### The environment of the server and its panes
@@ -613,9 +680,9 @@ operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 the login shell, honoured only for a process whose `HOME` is not your home
 directory; a launch configuration cannot set it),
 `OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS`, `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS`,
-`OATS_TEST_PROCESS_START_PS` (below), `OATS_TEST_CGROUP` and
-`OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's
-[own scope](#a-server-started-from-inside-a-systemd-service)), a `worktree` hook's tree
+`OATS_TEST_PROCESS_START_PS` (below), `OATS_TEST_CGROUP`,
+`OATS_TEST_SYSTEMD_BOOTED` and `OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's and the agents'
+[own scopes](#where-sessions-run-the-servers-scope-and-each-agents)), a `worktree` hook's tree
 (`OATS_TREE`, `OATS_TREE_CLONE`, `OATS_TREE_REMOTE`, `OATS_TREE_MEMBER`,
 `OATS_TREE_BASE`, `OATS_TREE_BASE_OID`, `OATS_PURPOSE`, `OATS_TREE_ORIGIN`), `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
 `OATS_TEAM_ID`, `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAMS`,
@@ -874,6 +941,8 @@ saved route that records `herdrPath` still loads; the field is ignored.
 |---|---|
 | `oats spawn <soul> [--no-launch]` | Creates the home and launches the harness. `--no-launch` creates the home only. |
 | `oats session start --home <abs>` | Starts a stopped or never-launched instance again in its existing home. |
+| `oats session start --resume --home <abs>` | Starts an instance whose session was lost again, in its own last conversation ([Resume after a shutdown](#resume-after-a-shutdown)). |
+| `oats session resume [--deployment <dir>] [--plan]` | Resumes every lost session of this machine's deployments ([Resume after a shutdown](#resume-after-a-shutdown)). |
 | `oats session restart --home <abs>` | Stops the running harness and starts it again in place. |
 | `oats instance stop <instance> --plan` / `--apply` | Stops the harness and keeps home, work and launch recipe. |
 | `oats retire <instance>` | Ends the session and retires the instance ([souls-and-instances.md](souls-and-instances.md#retire)). |
@@ -1081,6 +1150,189 @@ claim of every instance it stops, the one a retire holds (OATS 0.52.0): one
 that meets a retire of any of them answers `E_INSTANCE_RETIRING`, one that
 meets another stop `E_LIFECYCLE_BUSY`, before anything is stopped
 ([the table](desktop-cli-api.md#lifecycle-pairs)).
+
+**Stop an instance with OATS to keep it stopped** (Desktop's Stop, `oats
+instance stop`): the stop's record names the start it ended, and a resume
+never brings that start back. A stop of an instance that already reads
+`lost` signals nothing and records the stop all the same, so the instance
+stays stopped (on a full disk it cannot, and it stays `lost`). A tmux window
+killed by hand, or a harness killed by a signal, leaves no such record and
+reads as lost ([Resume after a shutdown](#resume-after-a-shutdown)).
+
+### Resume after a shutdown
+
+After a shutdown, a reboot or a crash (OATS 0.69, #1559), `oats session
+resume` brings back every instance session that OATS saw alive and then lost
+([Which losses come back](#which-losses-come-back)), on every deployment in
+this computer's list
+([workspaces.md](workspaces.md#this-computers-deployments)), each in its own
+harness conversation, with the launch it recorded. OATS Desktop and `oats
+tui` run it once when they open. Running instances are left alone; instances
+stopped with OATS, or whose harness ended by itself, stay stopped. Stopping an
+instance with OATS is the only way to keep it down: nothing opts a deployment
+or an instance out of the sweep.
+
+#### How a session's end is read
+
+A launched home that does not run reads one of three ends, `sessionEnd` on
+its status row ([desktop-cli-api.md](desktop-cli-api.md#row-session-end)),
+for its current start (`startId` in `instance.json`):
+
+| What the home holds for its current start | `sessionEnd` | Resumed |
+|---|---|---|
+| a stop's record that names it (or, a record from before 0.69, written after the start) | `stopped` | no |
+| an exit marker that names it with an exit status below 128 (`/exit`, Ctrl-C handled by the harness, its own error), or the marker of a kernel before 0.69 | `exited` | no: the row offers Start, as before |
+| an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | when the sweep can vouch for the loss ([below](#which-losses-come-back)) |
+| neither (the host went down, or the tmux server died under the live harness) | `lost` | when the sweep can vouch for the loss |
+
+The window a spawn or a start makes writes the exit marker,
+`.oats-start-exited`, when the harness exits; `oats instance stop` writes its
+record, `.oats-stop.json`. Both are kernel-private files of the home, not a
+contract: read `sessionEnd`. A shutdown kills the window's shell with the
+harness, so a lost session leaves no marker. A home spawned before 0.69 and
+never restarted since names no start: it reads `stopped` only after a stop,
+and otherwise `lost`, also when its harness ended by itself. It comes back only
+when OATS saw it running since the upgrade, so one that ended before the
+upgrade stays down, and one that ends by itself after it comes back once
+(stop it with OATS to keep it down). Its next start records the markers.
+
+#### What a resume runs
+
+`oats session start --resume --home <abs>` runs the recorded recipe as an
+ordinary start does: the same locks and checks, the same harness, model,
+launch configuration, environment and yolo, and the launch hooks again under
+the settings captured at spawn (which is how a messaging capability's
+delivery comes back). It refuses a home that did not lose its session
+(`E_RESUME_NOT_LOST`) and a launch choice (`E_BAD_ARGS`). Two things differ:
+
+- **The conversation.** The newest transcript whose recorded cwd is the home
+  itself, written since the home was created, in the locations its
+  native-record receipts name: Claude gets `--resume <id>`, pi `--session
+  <id>`. "Since the home was created" keeps an earlier instance of the same
+  name, at the same path, out. Only the window runs the selector:
+  `instance.json`, the pending receipt and the recipe keep the ordinary
+  launch, so a later Start opens a fresh conversation.
+- **The prompt.** In place of the task prompt the harness gets one line:
+  "OATS resumed this session after it was lost (the host restarted or its
+  terminal server ended). Continue from where you were." A harness cut off
+  mid-turn would otherwise wait for someone to type.
+
+No conversation found (never filed, deleted, or no receipt names where it
+went): the ordinary fresh start on `TASK.md`, answered `resumed: false` with
+the reason. **Codex is never resumed yet:** a Codex home takes that fresh
+start, reason `resume-unproven`, until a Codex resume is proven end to end on
+a signed-in host.
+
+#### Prompts a resume meets
+
+A resume answers no prompt that an ordinary start does not:
+
+- A development-channel confirmation stops a resume as it stops a start
+  ([Launch prompt outcomes](#launch-prompt-outcomes)): the session is kept and
+  the sweep reports it `blocked`. The approved channel route shows no prompt.
+- **Claude's resume-cost dialog.** On some plans Claude can ask, on the first
+  message after resuming a long, inactive conversation, whether to resume it
+  from a summary or in full. Nothing documented turns it off or answers it,
+  and the choice is the person's: **OATS sends no key.** After a resumed
+  Claude launch the kernel watches the pane for at most 20 seconds, and stops
+  earlier once the session shows itself working. When it recognises the dialog
+  the start still succeeds, answers `waiting: "resume-confirmation"`, and the
+  client says the instance is waiting for its person to choose: open its
+  terminal. The dialog is recognised by its option labels, taken from Claude
+  Code's strings and documentation (`lib/launch-prompt-fixtures/README.md`);
+  a screen it does not recognise is not a block.
+
+#### Which losses come back
+
+The sweep resumes a lost home only when OATS can vouch for the loss, from
+what its own reads of that home saw (`oats status`, OATS Desktop and `oats
+tui` reading it, and the sweep's own read). All four must hold:
+
+1. OATS saw the home running for its current start.
+2. No earlier sweep answered this loss. A sweep answers each lost home once,
+   whatever it did with it (resumed, started fresh, blocked, refused or
+   skipped). A status read never uses a loss up, and `--plan` answers none.
+3. OATS first saw it not running less than 24 hours ago.
+4. Within one boot, OATS first saw it not running less than 24 hours after it
+   last saw it running. Across a reboot this one does not apply.
+
+Any other lost home is reported `skipped`, `not-seen-recently`, with the
+reason, and nothing is started; its status row still reads `sessionEnd:
+lost`, and `oats session start --resume --home <abs>` run by hand still
+resumes it. So:
+
+- a harness killed by an out-of-memory kill at 02:00 and seen by a status at
+  02:01 comes back at a 09:00 sweep;
+- a computer off for two weeks brings back what ran when it went down, at the
+  first client that opens;
+- a tmux server that crashed overnight brings its instances back at the
+  morning's first client;
+- **an agent killed outside OATS (closed from tmux, or killed by a signal)
+  comes back within 24 hours: only `oats instance stop` keeps it down;**
+- a loss first seen a day ago or more, or a session that died before any read
+  of OATS saw it run, stays down.
+
+Two limits follow from reading only what OATS saw:
+
+- **After upgrading to 0.69**, open OATS Desktop or `oats tui`, or run `oats
+  status`, once before you restart the computer, or nothing from before the
+  upgrade comes back.
+- A whole boot with no OATS read leaves that boot unknown: what ran in it and
+  was lost there is not resumed.
+
+Without a boot id (neither Linux nor macOS: both have one), clause 4 applies
+to every loss and the 3-resumes-per-boot guard (below) is off.
+
+**Status records what it sees.** Every local listing of a deployment's
+instances (`oats status`, and every command that lists them) records, per
+home, its current start, when it was last seen running, when it was first
+seen not running, the boot of each, and whether a sweep answered the loss. It
+goes in a kernel-private file, one per deployment,
+`session-resume/seen/<16 hex>.json` under `~/.oats` (`$OATS_HOME_DIR` when
+set), beside the sweep's per-boot note; it is not a contract. Writing it never
+changes what status answers, prints nothing, and is skipped when nothing
+changed: a running home's last look is rewritten at most every 10 minutes in
+a boot. A record that cannot be read counts as empty, which resumes nothing,
+and is rewritten whole; one that cannot be written is left as it is. A status
+routed to another machine with `--server` records nothing on this one.
+`oats session resume --plan` records what its own read sees, as any status
+read does, and answers no loss. The three figures are constants of the
+kernel (`lib/session-seen.mjs`).
+
+#### The sweep
+
+`oats session resume` reads this computer's list of deployments and never
+writes it, and skips a deployment `oats deployments remove` took out of it;
+`--deployment <dir>` sweeps one directory, listed or not. It starts each lost
+home it can vouch for with `--resume` in that home's own deployment scope, at
+most 4 at once. What it answers a lost home, the first that applies: not
+seen recently; refused this boot; keeps getting lost; started.
+`--plan` says what it would do and starts nothing. Its answer is in
+[desktop-cli-api.md](desktop-cli-api.md#the-machine-sweep-oats-session-resume).
+
+- One sweep runs per machine: a second one answers `E_RESUME_BUSY`. A lock
+  left by a process that is gone, or by another boot, is taken over.
+- A loss is answered once: whatever a sweep did with it (resumed, refused,
+  skipped or blocked), no later sweep starts it again, in this boot or after
+  a reboot; a later sweep reports it `not-seen-recently`. A refused resume is
+  never retried automatically: it is also noted for the boot, and reported
+  `refused-this-boot` should that answer be lost.
+- A home is started by sweeps at most 3 times in a boot. A home lost again
+  after each resume (a harness that crashes the host or its terminal server,
+  say) is then reported `keeps-getting-lost`, and that loss is answered: no
+  sweep starts it again, after a reboot either. Start it by hand: its next
+  loss is a new one, with a new count in each boot. Every sweep start that launched
+  something counts (resumed, fresh or blocked), by home, as soon as that start
+  has answered, so a sweep killed while other starts run has counted it; a
+  refused, skipped or busy one does not. `oats session start --resume` run by hand is neither
+  bounded nor counted.
+- The boot is the boot id on Linux and the boot time on macOS. Elsewhere there
+  is no boot: nothing is noted or counted, and every sweep tries again.
+- The lock, the per-boot note and the record of what status saw live in
+  `session-resume/` under `~/.oats` (`$OATS_HOME_DIR` when set). All three
+  are kernel-private, not a contract.
+- Local only: a client does not resume a server's instances. A server runs
+  `oats session resume` itself.
 
 ### Inspect, input and attach
 
@@ -1454,10 +1706,13 @@ removed with the home.
 
 Spawn writes `TASK.md` in the home: the instance's name, soul, home and work
 tree, followed by the `--task` or `--task-file` text, or a note to await
-instructions when no task is given. Every launch, including `session start`
-and `restart`, opens a new harness conversation on `TASK.md`. The instance
-resumes its work from its own state files, as its knowledge capability
-prescribes.
+instructions when no task is given. Every launch, `session start` and
+`restart` included, opens a fresh harness conversation on `TASK.md`, **except a
+resume** ([Resume after a shutdown](#resume-after-a-shutdown)), which continues
+the instance's own last conversation with a one-line resume notice. This
+replaces the earlier rule that every start, without exception, opened a new
+conversation (OATS 0.69, #1559). In a fresh conversation the instance resumes
+its work from its own state files, as its knowledge capability prescribes.
 
 The task's text never travels on a command line, where any local user could
 read it in the process list:
