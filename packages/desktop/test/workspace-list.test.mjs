@@ -269,6 +269,19 @@ test("step: no wrap; false at either end, nothing selected", async (t) => {
   assert.equal(s.controller.step(-1), true); assert.deepEqual(s.calls.selected, [A.id]);
 });
 
+test("step hands the shell's options to its switch (a step from the list places no focus); a click hands none", async (t) => {
+  const asked = [];
+  // Each switch is refused, so A stays current and the next one starts from it again.
+  const s = setup(t, { selectWorkspace: (...args) => { asked.push(args); return { ok: false }; } });
+  s.controller.begin()(A, [A, B]); await tick();
+  const how = { focusPlace: false };
+  assert.equal(s.controller.step(1), true); await tick();
+  assert.equal(s.controller.step(1, how), true); await tick();
+  s.rows().find((row) => row.dataset.workspaceId === B.id).click();
+  assert.deepEqual(asked, [[B.id, undefined], [B.id, how], [B.id, undefined]]);
+  assert.equal(asked[1][1], how, "as it is");
+});
+
 test("step with nothing current: the first row going down, the last going up (an unattached one included)", async (t) => {
   const down = setup(t);
   down.controller.choose([A, LOOSE, B]); await tick();

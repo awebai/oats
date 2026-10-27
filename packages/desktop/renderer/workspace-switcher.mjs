@@ -174,16 +174,16 @@ export function createWorkspaceSwitcher({
   /** Where focus goes in the list: its tab stop, else the current row, else the first row. */
   const focusTarget = () => rowOf(stopKey) || rowOf(activeId) || menuItems()[0] || addOpen;
   const openInWindow = (id) => { openInNewWindow(id); };
-  /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`). It is the pending pick until the
-   * switch lands here (reset) or is refused. */
+  /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`; `how` goes to it as it is).
+   * It is the pending pick until the switch lands here (reset) or is refused. */
   let pickToken = 0;
-  const pick = (id) => {
+  const pick = (id, how) => {
     // Each pick owns its own answer: a refused or superseded older pick never clears a newer one, even of the same id.
     const mine = ++pickToken;
     pickedId = id;
     const done = () => { if (pickToken === mine) pickedId = ""; };
     let answer;
-    try { answer = selectWorkspace(id); } catch { answer = { ok: false }; }
+    try { answer = selectWorkspace(id, how); } catch { answer = { ok: false }; }
     Promise.resolve(answer).then((r) => { if (r?.ok === false) done(); }, done);
   };
   /** The rows as drawn, for the moves: `{ key, openable, open() }`, in order. Every row can be opened (a row
@@ -222,10 +222,10 @@ export function createWorkspaceSwitcher({
       // The whole name, for a name cut off: never a path or a machine.
       button.title = tooltip;
       if (openInNewWindow) button.setAttribute("aria-describedby", hint.id);
-      const choose = () => {
+      const choose = (how) => {
         // Picked unless it is already what this window shows or is about to show: the current row while another
         // pick is on its way supersedes that pick (the latest pick wins).
-        if (workspace.id !== (pickedId || activeId)) pick(workspace.id);
+        if (workspace.id !== (pickedId || activeId)) pick(workspace.id, how);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
         if (row.deployment) requestDeploymentTab(workspace.id, row.deployment);
@@ -794,13 +794,13 @@ export function createWorkspaceSwitcher({
     /** Focus the list's current row, else its tab stop (the `w` key, the leader's `o`, app.workspaces). */
     focusList() { const target = rowOf(activeId) || focusTarget(); target?.focus(); revealInScrollport(options, target); noteMore(); return !!target; },
     /** The leader's ↑/↓ (`step` -1 / 1): select the previous / next row, as a click does (a row another window
-     * shows is taken over). False at an end. */
-    step(delta) {
+     * shows is taken over); `how` goes to selectWorkspace. False at an end. */
+    step(delta, how) {
       // From the pick still on its way, else the current row: presses faster than a switch make as many moves.
       const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), pickedId || activeId || null, delta);
       const row = key === null ? null : drawn.find((entry) => entry.key === key);
       if (!row) return false;
-      row.open();
+      row.open(how);
       return true;
     },
     /** Open the Add dialog (the chooser's button, a window with nothing to show); `opener` gets focus back. */

@@ -1514,8 +1514,9 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
  * when the workspace or the connection changes before that. */
 export async function handOff(s, { workspace, ref, present = false, then }) {
   const connection = s.ctx.connectionGeneration?.() ?? 0;
-  // A workspace another window shows moves to this one (a take-over, as a pick from the list does).
-  if (currentWorkspace() !== workspace && !(await switchWorkspace(workspace, { takeOver: true })).ok) return false;
+  // A workspace another window shows moves to this one (a take-over, as a pick from the list does). The row's
+  // action (`then`) owns the focus: the workspace's remembered focus place is not applied.
+  if (currentWorkspace() !== workspace && !(await switchWorkspace(workspace, { takeOver: true, focusPlace: false })).ok) return false;
   const gen = workspaceGeneration();
   const stillThere = () => gen === workspaceGeneration() && currentWorkspace() === workspace && connection === (s.ctx.connectionGeneration?.() ?? 0);
   let admitted = null;

@@ -13,7 +13,7 @@ bind; see "The chord families"), `renderer/tab-numbers.mjs` (the tabs' numbers, 
 leader's wait), `renderer/leader-keys.mjs` (which rows apply, the Desktop's
 labels), `renderer/leader-dispatch.mjs` (what each key does),
 `renderer/leader-hint.mjs` (the hint's announcement and its line), `renderer/focus-regions.mjs` (F6),
-`renderer/surface-return.mjs` (back to where you were),
+`renderer/surface-return.mjs` (back to where you were), `renderer/focus-place.mjs` (the focus a workspace switch puts back),
 `renderer/instance-recency.mjs` (the palette's last-focus record),
 `renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/terminal-xterm-bytes.test.mjs` (what xterm sends for each terminal-allowlisted chord, and AltGr),
@@ -278,7 +278,7 @@ say why in the same line when they cannot act.
 | `1` | Instances: the workspace's terminals again when any is open, else Workspace › Machines |
 | `2` | Workspace › Souls |
 | `3` | Workspace › Capabilities |
-| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). A row another window shows is not passed over: the move takes it over, and it moves here. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row and ↑ to the last. Also the chords `workspace.previous`, `workspace.next`: Alt+↑ / Alt+↓ on Linux and Windows; none on macOS |
+| ↑, ↓ | shows the previous / next workspace of the sidebar's [list of workspaces](#the-list-of-workspaces) in this window, as a click on its row does (`workspace-previous`, `workspace-next`). A row another window shows is not passed over: the move takes it over, and it moves here. No wrap: at an end nothing moves and the line says "No workspace above this one." / "No workspace below this one." With no workspace shown, ↓ goes to the first row and ↑ to the last. The focus then goes back where it was in the workspace shown ([after a switch](#the-list-of-workspaces)); a move made from the list of workspaces leaves it on the list. Also the chords `workspace.previous`, `workspace.next`: Alt+↑ / Alt+↓ on Linux and Windows; none on macOS |
 | ←, → | previous / next tab of the active tab's strip, in the order drawn: with the tabs split, the focused group's, each press another tab of it; an empty or one-tab group says "There is no other tab." (`tabs.prev`, `tabs.next`; the Desktop's cycling wraps, the TUI's does not) |
 | `z` | focus mode on or off (`app.focusMode`), and the active terminal takes focus. Also `terminal.focusMode` |
 | `w` | closes the active tab (`tabs.close`); the agent keeps running |
@@ -318,7 +318,7 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | Focus the list of workspaces (`app.workspaces`; the leader's `o`, the sidebar's `w`, the palette's **Workspace: switch…**) | ⌥⌘O | Alt+O | Ctrl+Alt+O | Ctrl+Shift+S | yes |
 | Show only the current workspace, or every one again (`workspaces.currentOnly`; the toggle in the sidebar's Workspace heading, the palette's **Show only the current workspace**; no leader key) | ⌥⇧⌘O | Ctrl+Alt+Shift+O | the same | the same | yes (ESC Ctrl+O, which Esc, then Ctrl+O still sends) |
 | Open the previous / next instance's terminal (`roster.openPrevious`, `roster.openNext`; no leader key: the leader's ↑ ↓ move between workspaces) | ⌥⌘↑ / ⌥⌘↓ | Alt+Shift+↑ / ↓ | the same | the same | yes (a named exception, principle 2) |
-| Show the previous / next workspace of the list (`workspace.previous`, `workspace.next`; the leader's ↑ ↓) | ⌥↑ / ⌥↓ | Alt+↑ / Alt+↓ | none (the leader): Alt+↑ / ↓ are the program's | none (the leader) | yes |
+| Show the previous / next workspace of the list (`workspace.previous`, `workspace.next`; the leader's ↑ ↓; the focus goes back where it was in that workspace, or stays on the list when the move is made from there) | ⌥↑ / ⌥↓ | Alt+↑ / Alt+↓ | none (the leader): Alt+↑ / ↓ are the program's | none (the leader) | yes |
 | Focus mode on or off, in the active terminal (`terminal.focusMode`; the leader's `z`) | ⌥⌘Z | Alt+Z | Ctrl+Alt+Z | Ctrl+Shift+M | yes |
 | Souls: choose a soul to spawn (Workspace › Souls) (`app.chooseSoul`) | ⌘N | Ctrl+Shift+N | the same | the same | yes |
 | Close tab (`tabs.close`) | ⌘W | Alt+W | Ctrl+Alt+W | Ctrl+Shift+W | yes |
@@ -922,6 +922,25 @@ on its rows.
   so do Alt+↑ / Alt+↓ on Linux and Windows in the Alt family, and ⌥↑ / ⌥↓ on
   macOS (`workspace.previous`, `workspace.next`). The Ctrl+Alt and Ctrl+Shift
   families have no chord for them: they leave Alt+↑ / ↓ to the program.
+- **Where the focus goes after a switch.** Back where it was in that
+  workspace when this window last showed it, whatever made the switch (a
+  pick, a move, the Workspace page's select, or the window falling back after
+  another one took its workspace over): the terminal's input, ready to type;
+  a tab's content, or the tab, a split control or the empty group it was on;
+  the instance's row in the list of instances, once that list has been read
+  (its selected row, or Retry, when that instance is gone; nothing moves if
+  you have moved on meanwhile); the control of the page, the views or the
+  instance panel, or that region's current item when it is gone. A focus on
+  this list, the palette, a dialog or a menu doesn't count: the place is the
+  last focus before it. With no place (a first visit), the focus stays where
+  it is when that is still shown, and goes to the main area when the switch
+  hid it. A move made while the focus is in this list (Alt+↑ / ↓, ⌥↑ / ↓,
+  the leader's ↑ / ↓) leaves it here: you are browsing workspaces. With focus
+  mode on or the sidebar hidden, a row of the list of instances can't take
+  the focus: the main area does. A spawn that hands off to its new instance in
+  another workspace focuses that instance instead, and a take-over focuses
+  the handed layout's active terminal. Only the focus inside the window moves:
+  a window is never raised for it.
 
 **A workspace another window shows** is a row like any other. Picking it (a
 click, Enter, the

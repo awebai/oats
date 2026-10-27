@@ -1740,6 +1740,11 @@ section is the module map.
 - **surface-return.mjs** — "back to where you were" after a flow that moved
   the main surface (Quick Open's spawn dialog): the same tab or stage and
   control, unless the operator moved on.
+- **focus-place.mjs** — where the keyboard was in a workspace, so a switch back puts it there (a tab's
+  content or control, a roster row, anything else with its F6 region), each with a `captureFocusReturn`
+  handle. The list of workspaces, the palette, dialogs, menus and listboxes are transit surfaces, never a
+  place: the shell keeps the last focus outside them per workspace (a `focusin` tracker), so a pick from
+  the list remembers what was focused before. See "Workspace-local tab memory".
 - **overlay-picker.mjs** — the shared overlay + fuzzy machinery behind the
   command palette and Quick Open: one input over a listbox
   (arrows/Enter/Esc, aria option pattern) and the stale-load generation guard.
@@ -2160,6 +2165,21 @@ falls back to the stage. Restart restoration of tab layouts is not implemented y
 Memory is keyed by the view id; `rehome(map)` moves a deployment id's memory to its view
 (see "Workspace views"). A workspace another window takes over is forgotten here
 (`forget(workspace)`, from shell.mjs `closeWorkspaceTabs`), its tabs closed first.
+
+The memory also holds the workspace's focus place (`focus-place.mjs`), taken by
+`restoreWorkspaceTabs` as the workspace is left, before its panes hide, so `rehome`
+and `forget` cover it. `focusArrival` applies the arriving one's place at the end of
+`restoreWorkspaceTabs` under one `tabOpenIntents` ticket: a tab's content through
+`selectTab(…, { focusContent: true })` (never `term.focus()`), a tab control or page
+control through its handle, else the region's landing (`focusRegion`), never `<body>`.
+A roster place waits for the roster: `applyRosterPlace` runs at the end of every roster
+paint of rows, of the empty copy or of a failed read (not a pending one), and applies it
+once, unless the ticket is gone or the operator pressed a key, or clicked and moved the
+focus (`watchOperator`), since the switch. `views/common.mjs` `landsFocusPlace(ws)` says
+whether a landing places at all: `switchWorkspace(…, { focusPlace: false })` (handOff,
+followView, a step made from the list of workspaces) and a take-over that brought a
+layout (`restoreHandedLayout` owns the focus) do not. Nothing is applied under a modal or
+the palette. Tests: `test/workspace-switch-focus-shell.test.mjs`.
 
 All artifact tabs (terminal, brain, file) are workspace-scoped, including their
 activation boundary and deduplication keys. A retained brain tab has a pinned

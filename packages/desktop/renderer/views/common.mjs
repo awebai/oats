@@ -260,8 +260,11 @@ export async function chooseWorkspace(workspaces) {
    never refused for that: main moves it here from the window that has it (which shows its previous
    workspace, leaveTakenWorkspace), and nothing is focused. Switches run one at a time, so this window's
    state never differs from main's: a switch superseded before it is sent is never sent; one main has
-   already bound is followed even when a newer one waits behind it. */
-let switching = Promise.resolve(), switchIntent = 0, handed = null;
+   already bound is followed even when a newer one waits behind it. As it lands, the keyboard goes back
+   where it was in that workspace (the shell's focus place, renderer/focus-place.mjs), unless
+   `focusPlace` is false: a caller that focuses its own target, a step from the list of workspaces, a
+   view followed. */
+let switching = Promise.resolve(), switchIntent = 0, handed = null, unplaced = null;
 /* The layout a take-over of `workspace` brought (main's claim answer), while the switch to it lands: read
    once by the workspace listener that restores tabs (shell.mjs restoreWorkspaceTabs), null otherwise. */
 export function handedLayout(workspace) {
@@ -269,17 +272,30 @@ export function handedLayout(workspace) {
   handed = null;
   return layout;
 }
-export function switchWorkspace(id, { focus = true, takeOver = false } = {}) {
+/* Does the switch landing on `workspace` put the keyboard back where it was there (the shell's focus place)?
+   Every landing does, a fallback after a take-over away included (leaveTakenWorkspace), except a switch made
+   with `focusPlace: false` and a take-over that brought a layout (its restore owns the focus). Read by the
+   workspace listeners while the switch lands. */
+export function landsFocusPlace(workspace) {
+  return unplaced !== workspace;
+}
+export function switchWorkspace(id, { focus = true, takeOver = false, focusPlace = true } = {}) {
   const intent = ++switchIntent;
   const run = switching.then(async () => {
     if (intent !== switchIntent) return { ok: false, code: "superseded" };
-    if (!claimBridge()) { setWorkspace(id); return { ok: true }; }
+    if (!claimBridge()) {
+      unplaced = focusPlace ? null : id;
+      setWorkspace(id);
+      unplaced = null;
+      return { ok: true };
+    }
     const r = await claim(id, takeOver ? { takeOver: true } : { focus });
     if (r?.ok) {
       // A take-over's layout (renderer/layout-handover.mjs) is the shell's to restore, as the switch lands.
       handed = takeOver && r.layout ? { workspace: boundTo(r, id), layout: r.layout } : null;
+      unplaced = focusPlace && !handed ? null : boundTo(r, id);
       setWorkspace(boundTo(r, id));
-      handed = null;
+      handed = null; unplaced = null;
       return { ok: true };
     }
     return r ?? { ok: false, code: "failed" };
