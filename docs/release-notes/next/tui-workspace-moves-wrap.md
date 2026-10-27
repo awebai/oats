@@ -1,8 +1,8 @@
 ## Changed
 
 - **TUI: the workspace moves wrap around, as the Desktop's do.** The
-  leader then `Down` (or `Alt+Down`, and its key in the other chord
-  families) on the last workspace of the list of workspaces opens the
+  leader then `Down` (or `Alt+Down` in the Alt family and on macOS) on the
+  last workspace of the list of workspaces opens the
   first, and the leader then `Up` on the first opens the last, instead of
   saying "No workspace below this one." / "No workspace above this one."
   With only one workspace to open, nothing moves and one line says "No
