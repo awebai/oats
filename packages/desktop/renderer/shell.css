@@ -92,9 +92,10 @@ body {
 /* A workspace with an instance that needs input: the needs-input mark (.attn-mark, below) at the row's far right,
    after the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
 .ws-waiting { flex: none; margin-left: auto; margin-right: 2px; } /* 14px, centred in the right-hand column */
-/* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows and in an instance's
-   Needs input pill: a --warn disc with the "!" cut out in --surface. Both hold 3:1 on every fill they sit on
-   (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's --attn-bg; the "!" on the disc. */
+/* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows, as a waiting instance's
+   dot (.ctx-dot.waiting) and in the roster's roll-up pill: a --warn disc with the "!" cut out in --surface. Both hold
+   3:1 on every fill they sit on (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's
+   --attn-bg; the "!" on the disc. */
 .attn-mark { display: block; flex: none; stroke: none; }
 .attn-mark .attn-disc { fill: var(--warn); }
 .attn-mark .attn-glyph { fill: var(--surface); }
@@ -294,10 +295,15 @@ body {
 .ctx-dot { position: relative; z-index: 1; box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
            border: 1.5px solid var(--faint); background: var(--surface); box-shadow: 0 0 0 2px var(--row-solid, var(--surface)); }
 .ctx-dot.on { border-color: var(--accent); background: var(--accent); }
-.ctx-dot.unknown { border-color: var(--warn); background: var(--warn); }
+/* Unknown liveness (the product owner, 2026-10-26: yellow means needs input, and only that): a --muted bullseye at
+   the same 8px, its ring and a 2px centre with the row's fill between them (an inset ring of --row-solid), so it is
+   neither filled, nor a plain or dashed ring, nor yellow. Its words ("state unknown", or the row's reason) are in the
+   row's description and the hover card. The palette's and Quick Open's rows draw the same dot (overlay-picker.mjs). */
+.ctx-dot.unknown { border-color: var(--muted); background: var(--muted);
+                   box-shadow: inset 0 0 0 1.5px var(--row-solid, var(--surface)), 0 0 0 2px var(--row-solid, var(--surface)); }
 /* An instance's colour (feature instance-color, #1421 §2; instance-dot.mjs): its dot, wherever it is drawn
    (the roster, a terminal tab, a palette row, the overview card), filled in the colour while running and a
-   ring in it while stopped; the shape still says the state, an unknown state keeps the warning dot (the
+   ring in it while stopped; the shape still says the state, an unknown state keeps its muted bullseye (the
    attribute is set only on a running or stopped dot), and the token is --instance-<colour> (theme.css: the soul palette's -fg, held at 3:1 by "This computer"). */
 [data-instance-color="sand"] { --instance-color: var(--instance-sand); }
 [data-instance-color="sage"] { --instance-color: var(--instance-sage); }
@@ -307,6 +313,11 @@ body {
 [data-instance-color="olive"] { --instance-color: var(--instance-olive); }
 .ctx-dot.on[data-instance-color] { border-color: var(--instance-color); background: var(--instance-color); }
 .ctx-dot.off[data-instance-color] { border-color: var(--instance-color); }
+/* A waiting row's dot (the product owner, 2026-10-26): the needs-input mark (.attn-mark) at 10px, centred on the 8px
+   dot's slot (-1px each side, as the spawn spinner), so the name and the guides keep their place. It keeps the dot's
+   2px ring in the row's fill, and paints that fill under the disc so no guide shows through its edge. */
+.ctx-dot.waiting { width: 10px; height: 10px; margin: 0 -1px; border: 0; background-color: var(--row-solid, var(--surface)); }
+.ctx-dot.waiting > .attn-mark { width: 10px; height: 10px; }
 /* A pending spawn (Spec C): a dot-sized spinner beside "Spawning…" (the text carries the state; the
    spinner only says it moves, and stands still under reduced motion). Its Check result stays visible. */
 .ctx-spawn-spinner { position: relative; z-index: 1; box-sizing: border-box; width: 10px; height: 10px; flex: none; margin: 0 -1px;
@@ -332,7 +343,7 @@ body {
 .ctx-name-line > .ctx-name { min-width: 0; }
 .ctx-new { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10.5px; font-weight: 600; line-height: 15px; }
 .ctx-new-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
-/* Spec D: Needs input. The pill paints its own opaque surface (--warn on --attn-bg passes AA), so it reads the same
+/* Spec D: Needs input, rolled up on a collapsed parent ("! N below"). The pill paints its own opaque surface (--warn on --attn-bg passes AA), so it reads the same
    over every row fill; background-color, never the shorthand (#549). No animation: the dot stays liveness. */
 .ctx-attn { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border: 1px solid var(--attn-border);
   border-radius: 999px; background-color: var(--attn-bg); color: var(--warn); font-size: 10.5px; font-weight: 600; line-height: 15px; white-space: nowrap; }
@@ -763,12 +774,12 @@ body {
 .kb-marks { flex: none; width: 112px; display: flex; justify-content: flex-end; gap: 8px; }
 .kb-mark { color: var(--muted); font-size: 11px; }
 .kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
-/* The settings cog and its Keyboard shortcuts… item, while a stored rebind clashes (keymapConflicts): a warn dot
-   (the words are their aria-description). */
+/* The settings cog and its Keyboard shortcuts… item, while a stored rebind clashes (keymapConflicts): a --danger dot,
+   since a key no longer does what it says (yellow means needs input only; the words are their aria-description). */
 #sidebar-settings.has-clash::after { content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--warn); }
+  border-radius: 50%; background: var(--danger); }
 .sidebar-settings-menu button.has-clash > .sidebar-settings-label::after { content: ""; display: inline-block; width: 7px; height: 7px;
-  margin-left: 6px; border-radius: 50%; background: var(--warn); vertical-align: middle; }
+  margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
 /* The settings menu's items: the icon, the words, the chord. */
 .sidebar-settings-menu { width: 220px; }
 .ctx-instance-menu.sidebar-settings-menu button { grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; }

@@ -60,7 +60,9 @@ ${tabBarCSS('.workspace-tabs')}
 .workspace-count:empty { display:none; }
 /* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
 .workspace-sr-only { position:absolute; top:0; left:0; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-.workspace-attn { width:6px; height:6px; border-radius:50%; background:var(--attn-dot); }
+/* Setup or Teams needs attention (a problem to fix, not an instance's claim): a --danger dot, since yellow means needs
+   input only (the product owner, 2026-10-26); its words are the tab's sr-only text. */
+.workspace-attn { width:6px; height:6px; border-radius:50%; background:var(--danger); }
 .workspace-attn[hidden] { display:none; }
 .workspace-tools { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; flex:none; }
 .workspace-tools[hidden] { display:none; }

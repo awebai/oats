@@ -242,7 +242,10 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   from the host's selection colour and is moved until it holds 3:1 on the
   terminal's background, a UI state like the graph edges (`GRAPHIC_PAIRS`;
   Omarchy's selections are about 1.3:1); its text is then held to 4.5:1 on it
-  (#672).
+  (#672). Each token is moved until it holds every pair the inventory gives it
+  at once: 4.5:1 where it is text (`TEXT_PAIRS`), 3:1 where it is a graphic
+  (`GRAPHIC_PAIRS`). A colour that is both, like `--danger` (its words, and the
+  problem dots on `--sel`), never trades one for the other.
 - **First paint.** The last state shown is kept in `localStorage`
   (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
   reconciled with main's answer, so a dark host does not flash White at launch.
@@ -583,7 +586,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   - The current row is `aria-current="true"`, marked by style alone (its circle filled in
     `--accent`, the name in bold; no fill or edge of its own, `--sel` is the nav's); the section's `aria-description` names the current workspace by its row's name, never a path.
   - The needs-input mark: `choice.waiting`, only `true` draws it (`.ws-waiting` at the row's far right, `margin-left: auto`, the name cut off before it;
-    the `.attn-mark` icon, shell-icons.mjs `attention`: a `--warn` disc with the "!" cut out in `--surface`, the mark of an instance's Needs input pill too, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
+    the `.attn-mark` icon, shell-icons.mjs `attention`: a `--warn` disc with the "!" cut out in `--surface`, the mark of a waiting instance's roster dot and of the roster's roll-up pill too, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
     `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs
     `workspaceChoices`); it never reorders.
   - Keys (`onListKey`): one roving stop (`stopKey`, the row last focused, else the current
@@ -1682,7 +1685,7 @@ section is the module map.
   `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
   Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the settings
-  cog and its **Keyboard shortcuts…** item (`markShortcutClashes`: a warn dot and an `aria-description`)
+  cog and its **Keyboard shortcuts…** item (`markShortcutClashes`: a `--danger` dot and an `aria-description`)
   and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
   fire from a focused terminal: `app.palette` (⌘K / Alt+K) and

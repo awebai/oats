@@ -167,7 +167,7 @@ Show instance panel and the closed sidebar and panel).
   platform default. A stored rebind that now shares its chord with another
   binding (a new default, say) is never changed for you: `keymapConflicts`
   finds it at load and on every keymap change, the sidebar's settings cog and
-  its **Keyboard shortcuts…** item carry a warn dot and a description, and the
+  its **Keyboard shortcuts…** item carry a `--danger` dot and a description, and the
   editor names each clash at the top and on its row until you rebind or reset
   one side.
 - One chord per action. Where the table has two (Ctrl+Tab and Alt+Shift+→; F

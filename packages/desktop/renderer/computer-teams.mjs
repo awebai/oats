@@ -218,7 +218,9 @@ export const computerTeamsCSS = `
 .computer-teams .ct-member-state.run .ct-state-dot { border:0; background:var(--live); }
 .computer-teams .ct-member-state.stop { padding-left:0; }
 .computer-teams .ct-member-state.warn { background:var(--attn-bg); color:var(--warn); font-weight:600; }
-.computer-teams .ct-member-state.warn .ct-state-dot { border:0; background:var(--warn); }
+/* A member whose state is not running or stopped (unknown, gone, not reached): the roster's muted bullseye, never
+   yellow (yellow means needs input only); the pill's words in --warn say which. */
+.computer-teams .ct-member-state.warn .ct-state-dot { border-color:var(--muted); background:radial-gradient(circle, var(--muted) 1px, transparent 1px); }
 .computer-teams .ct-age { color:var(--muted); font-size:12.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .computer-teams .ct-iact { justify-self:end; }
 .oats-view .computer-teams button.ct-member-term { display:inline-flex; align-items:center; gap:6px; height:28px; min-height:28px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-weight:600; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); white-space:nowrap; cursor:pointer; }
