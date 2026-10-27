@@ -78,26 +78,24 @@ is how you fit the OATS workspace.
   - **`lane:desktop`:** the clients (`packages/desktop`, `packages/tui` and
     `packages/client`) and awebai/oats-omarchy, whose tags stay with the release lane. It
     merges once the release lane has signed off at that head; the release lane is its
-    second reader. In oats-omarchy, PRs come from forks and Juan's side merges, once the
-    lane's verdict and the release lane's are on the PR at that head.
+    second reader. oats-omarchy follows the map like the other repositories: author
+    decides first.
   - **`lane:lfx`:** LFX support, the work for LFX's use of OATS (its deployment and its
     requests). It merges once the release lane has signed off at that head; the release
     lane is its second reader, and its verdict is the sign-off.
-  - **`lane:juan`:** Juan's side's work that none of Juan's area maintainers holds. It
-    merges on its own, and asks for the release lane's sign-off on a product decision,
-    the roadmap or a change it judges important.
+  - **`lane:juan`:** merges on its own, and asks for the release lane's sign-off on a
+    product decision, the roadmap or a change it judges important.
   - **`lane:ux`:** Joan's side's work on how people work with agents in OATS
     (human-to-agent interaction in the Desktop and the TUI, the settings that shape it,
     and the delivery changes it needs). It hands each PR to the release lane for the
     final review and the merge.
 
-  `lane:juan` is defined by whose requests it is, and `lane:ux` and `lane:lfx` by a kind
-  of work, so they may overlap the area lanes: a PR from one of their efforts is in their
-  lane, and it names the area lane it touches, whose maintainer is its second reader.
-  Where `lane:lfx` touches an area lane, that lane's maintainer reads it, and the release
-  lane's sign-off is still needed. When Juan takes a seat in an area lane, Juan's side
-  narrows its line to match. The map's lines, their exceptions included, win where this
-  list differs.
+  `lane:juan` is defined by whose requests it is, and `lane:ux` and `lane:lfx` by a kind of
+  work, so they may overlap the area lanes: a PR from one of their efforts is in their
+  lane, and it names the area lane it touches, whose maintainer is its second reader. Where
+  `lane:lfx` touches an area lane, that lane's maintainer reads it, and the release lane's
+  sign-off is still needed. The map's lines, their exceptions included, win where this list
+  differs.
 - **The package repositories** (awebai/oats-okf, awebai/oats-aweb,
   awebai/oats-engineering) follow the same map, with one recorded rule: a PR from Juan's
   side is Juan's side's, with the release lane as its second reader; every other PR there
