@@ -287,6 +287,10 @@ test("routed spawn --background / --no-background need a host that advertises in
   const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
   try {
     const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    // Test output is pristine (awebai/oats#910): under a long temporary path the route warns that ssh
+    // runs without connection reuse; the warning is captured here and asserted below, never printed.
+    const warnings = [];
+    const warn = (m) => warnings.push(m);
     const probe = (features) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.68.1", desktopApi: 1, harnesses: ["pi", "claude"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features });
     const status = { schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", harness: "claude", instances: [] }] } };
     const remote = (features) => {
@@ -303,19 +307,20 @@ test("routed spawn --background / --no-background need a host that advertises in
     };
     for (const flag of ["--background", "--no-background"]) {
       const old = remote(["spawn-preview-2", "spawn-name"]);
-      assert.throws(() => routeCommand("build", "spawn", ["dev", "--purpose", "x", flag], { server, execFileSync: old.exec }),
+      assert.throws(() => routeCommand("build", "spawn", ["dev", "--purpose", "x", flag], { server, execFileSync: old.exec, warn }),
         (e) => e.code === "E_REMOTE_INCOMPATIBLE" && e.message === "remote oats 0.68.1 at h does not advertise instance-background; upgrade it there; nothing was sent", flag);
       assert.deepEqual(old.spawned(), [], `${flag}: nothing sent`);
       const current = remote(["instance-background"]);
-      const routed = routeCommand("build", "spawn", ["dev", "--purpose", "x", flag], { server, execFileSync: current.exec });
+      const routed = routeCommand("build", "spawn", ["dev", "--purpose", "x", flag], { server, execFileSync: current.exec, warn });
       assert.match(current.spawned()[0], new RegExp(` spawn dev --purpose x ${flag} --dir /w --json$`));
       assert.equal(routed.envelope.result.background, true, "the host's answer is relayed");
       rmSync(REMOTE_SNAPSHOT_DIR(), { recursive: true, force: true });
     }
     // Neither flag: an older host is asked nothing new.
     const plain = remote([]);
-    routeCommand("build", "spawn", ["dev", "--purpose", "y"], { server, execFileSync: plain.exec });
+    routeCommand("build", "spawn", ["dev", "--purpose", "y"], { server, execFileSync: plain.exec, warn });
     assert.equal(plain.spawned().length, 1);
+    for (const m of warnings) assert.match(m, /^ssh to build runs without connection reuse: /, "the only warning a route may give here");
   } finally {
     if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
     rmSync(base, { recursive: true, force: true });
