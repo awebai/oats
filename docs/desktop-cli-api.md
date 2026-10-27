@@ -3245,8 +3245,12 @@ its absence.
   "shell"`, even though the window remains; a dead pane or absent window is
   `false`. A wrapper shell with a live non-shell descendant stays `true`;
   `null` with `runtimeState: "unreachable"` and the tmux error as
-  `runtimeError` when that server or its panes cannot be read (including a split
-  agent window or a failed shell-descendant process scan), and also when its socket
+  `runtimeError` when that server or its panes cannot be read (including a
+  window where OATS cannot tell which pane is the agent's
+  ([which pane is the agent's](execution-targets.md#which-pane-is-the-agents)),
+  a session with two windows of the instance's name, or a failed
+  shell-descendant process scan; a window whose agent's pane is found reads by
+  that pane alone), and also when its socket
   file is missing while a process works in the home or the process scan
   cannot run, `runtimeError` then naming the processes or the scan's error
   ([#624](execution-targets.md#missing-socket); with no process in the home

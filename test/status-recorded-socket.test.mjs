@@ -125,7 +125,7 @@ test("stop leaves a fallback shell: status and session inspect agree, while anot
 });
 
 test("status batches pane and process reads across windows, using lifecycle shell classification", async () => {
-  const session = "batch-test", names = ["batch-shell", "batch-wrapper", "batch-dead", "batch-split"];
+  const session = "batch-test", names = ["batch-shell", "batch-wrapper", "batch-dead", "batch-split", "batch-twice"];
   for (const name of names) {
     const home = await recordedHome(name, sockets.b, session);
     setWaiting(home, { producer: "agent", waiting: true, reason: "attention", message: "Review needed" });
@@ -139,10 +139,12 @@ test("status batches pane and process reads across windows, using lifecycle shel
     if (bin === "tmux" && args.includes(`=${session}`)) {
       calls.push({ bin, args });
       if (args.includes("list-windows")) return names.join("\n") + "\n";
+      // Each row: window name, window id, pane id, dead, command, pid, the pane's @oats-agent mark.
       if (args.includes("list-panes")) return [
-        "batch-shell\t%1\t0\tsh\t101", "batch-wrapper\t%2\t0\tzsh\t102",
-        "batch-dead\t%3\t1\tsleep\t105", "batch-split\t%4\t0\tsleep\t106",
-        "batch-split\t%5\t0\tsh\t107",
+        "batch-shell\t@1\t%1\t0\tsh\t101\t", "batch-wrapper\t@2\t%2\t0\tzsh\t102\t",
+        "batch-dead\t@3\t%3\t1\tsleep\t105\t", "batch-split\t@4\t%4\t0\tsleep\t106\t",
+        "batch-split\t@4\t%5\t0\tsh\t107\t", "batch-twice\t@5\t%6\t0\tsleep\t108\tbatch-twice",
+        "batch-twice\t@5\t%7\t0\tsleep\t109\tbatch-twice",
       ].join("\n") + "\n";
       assert.fail(`unexpected tmux call ${args}`);
     }
@@ -155,14 +157,46 @@ test("status batches pane and process reads across windows, using lifecycle shel
   assert.equal(at("batch-shell").waitingOnYou, null);
   assert.equal(at("batch-wrapper").waitingOnYou.message, "Review needed", "claims reuse the batch without a per-window read");
   assert.equal(at("batch-dead").running, false);
-  assert.equal(at("batch-split").running, null, "lifecycle cannot inspect a split agent window");
-  assert.equal(at("batch-split").runtimeState, "unreachable");
-  assert.match(at("batch-split").runtimeError, /multiple panes/);
+  // A split window (#1569): its agent's pane is the unmarked one with the lowest id, %4, which runs.
+  assert.equal(at("batch-split").running, true, "a split window is read through its agent's pane");
+  assert.equal(at("batch-split").runtimeState, undefined);
+  // Two panes marked as the agent's: which one is cannot be told.
+  assert.equal(at("batch-twice").running, null, "lifecycle cannot tell the agent's pane");
+  assert.equal(at("batch-twice").runtimeState, "unreachable");
+  assert.equal(at("batch-twice").runtimeError, "the window has 2 panes marked as batch-twice's agent pane (%6, %7); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance");
   assert.equal(calls.filter(c => c.bin === "tmux" && c.args.includes("list-windows")).length, 1);
   assert.equal(calls.filter(c => c.bin === "tmux" && c.args.includes("list-panes")).length, 1);
   assert.equal(calls.filter(c => c.bin === "ps").length, 1);
 });
 
+
+test("1569: status reads a split window through the agent's pane alone, and a window name two windows share as unreachable", async () => {
+  const session = "split-test", names = ["split-running", "split-shell", "split-twin"];
+  for (const name of names) await recordedHome(name, sockets.b, session);
+  const io = { exec(bin, args, opts) {
+    // 201: the shell of split-shell's agent pane, with only a shell under it. 300: a split's shell,
+    // running a process that is not the agent's.
+    if (bin === "ps" && args.join(" ") === "-axo pid=,ppid=,comm=") return "201 1 zsh\n202 201 sh\n300 1 zsh\n301 300 /usr/bin/vim\n";
+    if (bin === "tmux" && args.includes(`=${session}`)) {
+      if (args.includes("list-windows")) return ["split-running", "split-shell", "split-twin", "split-twin"].join("\n") + "\n";
+      if (args.includes("list-panes")) return [
+        // A split (%1, the lower id, unmarked) and the agent's pane, marked, running its harness.
+        "split-running\t@1\t%1\t0\tzsh\t100\t", "split-running\t@1\t%2\t0\tclaude\t101\tsplit-running",
+        // The agent's pane, marked, at its fallback shell; the split beside it runs something.
+        "split-shell\t@2\t%3\t0\tvim\t300\t", "split-shell\t@2\t%4\t0\tzsh\t201\tsplit-shell",
+        // Two windows of one name, one pane each.
+        "split-twin\t@3\t%5\t0\tclaude\t400\tsplit-twin", "split-twin\t@4\t%6\t0\tclaude\t401\tsplit-twin",
+      ].join("\n") + "\n";
+      assert.fail(`unexpected tmux call ${args}`);
+    }
+    return execFileSync(bin, args, opts);
+  } };
+  const rows = (await fx.inEnv(() => listInstances(fx.root, undefined, io))).flatMap(a => a.instances);
+  const at = name => rows.find(i => i.instance === name);
+  assert.deepEqual([at("split-running").running, at("split-running").runtimeState], [true, undefined]);
+  assert.deepEqual([at("split-shell").running, at("split-shell").runtimeState], [false, "shell"], "the split's running vim is not the agent's");
+  assert.deepEqual([at("split-twin").running, at("split-twin").runtimeState, at("split-twin").runtimeError], [null, "unreachable", "the session has 2 windows named split-twin"]);
+});
 
 test("unreadable batched panes and failed process scans stay unknown, with one failed scan for all shells", async () => {
   const session = "read-failure", names = ["unread-shell-a", "unread-shell-b"];
@@ -179,7 +213,7 @@ test("unreadable batched panes and failed process scans stay unknown, with one f
         if (args.includes("list-panes")) {
           paneCalls++;
           if (failure === "panes") throw Object.assign(new Error("tmux failed"), { stderr: "pane read denied" });
-          return names.map((name, i) => `${name}\t%${i + 1}\t0\tsh\t${101 + i}`).join("\n") + "\n";
+          return names.map((name, i) => `${name}\t@${i + 1}\t%${i + 1}\t0\tsh\t${101 + i}\t`).join("\n") + "\n";
         }
       }
       return execFileSync(bin, args, opts);
