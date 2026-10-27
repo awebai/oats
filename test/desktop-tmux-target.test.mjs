@@ -12,7 +12,9 @@ import { createRequire } from "node:module";
 import { tmpdir as systemTmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmuxAttachTarget, openTerm, sweepViewers, LOCKED_TABLE_BINDINGS } from "../packages/desktop/tmux-target.mjs";
+import { tmuxAttachTarget, openTerm, sweepViewers, viewerTables, listedTables, LOCKED_TABLE_BINDINGS, LOCKED_PREFIX_BINDINGS, PREFIX_KEY, PREFIX_TABLE_SUFFIX } from "../packages/desktop/tmux-target.mjs";
+import { tmuxForwardsBoundKey } from "../packages/desktop/local-tmux-io.mjs";
+import * as kernelViewer from "../lib/session-viewer.mjs";
 import { isolateSessionEnvironment, isolatedTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 const RENDERER_PKG = join(dirname(fileURLToPath(import.meta.url)), "..", "packages", "desktop");
@@ -69,8 +71,21 @@ const fakeIo = (calls, opts = {}) => ({
   tmux: (args) => { calls.push(["tmux", ...args]); if (opts.tmuxFails?.(args)) throw new Error("tmux failed"); },
   tmuxOut: (args) => { calls.push(["tmuxOut", ...args]); return opts.windowId ?? "@7"; },
   spawnPty: (t, c, r) => { calls.push(["spawn", t, c, r]); if (opts.spawnFails) throw new Error("pty failed"); return opts.pty ?? {}; },
+  forwardsBoundKey: () => opts.forwardsBoundKey ?? true,
   uniqueName: () => "oatsdesk-test-1",
 });
+/** The viewer's own two key tables (#1502), named after its session and bound once, as it is made: its
+ * locked table, and, where tmux sends a bound key on (3.3 and later), its C-b table. */
+const PREFIX_CALLS = [
+  ["tmux", "bind-key", "-T", "oatsdesk-test-1", "C-b", "switch-client -T oatsdesk-test-1-prefix"], // the one switch-client: into its own C-b table
+  ...LOCKED_PREFIX_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-test-1-prefix", ...b]),
+];
+/** What killViewer runs: the =-anchored viewer session, then both of its tables, emptied. */
+const CLEANUP_CALLS = [
+  ["tmux", "kill-session", "-t", "=oatsdesk-test-1"],
+  ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-test-1"],
+  ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-test-1-prefix"],
+];
 
 test("openTerm: failed preflight rejects before any viewer/pty exists", () => {
   const calls = [];
@@ -90,9 +105,9 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
     ["tmux", "kill-window", "-t", "@7"],                                      // placeholder dropped BY ID — link is the ONLY window
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "prefix", "None"],         // key lock: no prefix → no window-management ops
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "prefix2", "None"],
-    ["tmux", "set-option", "-t", "oatsdesk-test-1", "key-table", "oatsdesk-locked"],
-    ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-locked"],              // tables are server-global: clear stale bindings first
-    ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked", ...b]), // provisioned wheel and drag bindings
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "key-table", "oatsdesk-test-1"], // its own table, named after it (#1502)
+    ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-test-1", ...b]), // provisioned wheel, drag and Shift+PgUp bindings
+    ...PREFIX_CALLS,                                                            // C-b [ scrolls back; C-b then any other key reaches the agent
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "mouse", "on"],            // wheel events reach tmux
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "status", "off"],          // no duplicate terminal chrome
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "detach-on-destroy", "on"], // source death detaches the pty, never moves it (#1237)
@@ -100,9 +115,10 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
   ]);
   assert.equal(r.pty, fake);
   assert.equal(r.viewer, "oatsdesk-test-1");
-  // cleanup contract: killViewer kills ONLY the =-anchored viewer session
+  // cleanup contract: killViewer kills ONLY the =-anchored viewer session, then empties its own two tables
+  const before = calls.length;
   r.killViewer();
-  assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oatsdesk-test-1"]);
+  assert.deepEqual(calls.slice(before), CLEANUP_CALLS);
 });
 
 test("openTerm (#1237): detach-on-destroy on is set on the viewer before the pty spawns, and no option is set server-wide or globally", () => {
@@ -133,7 +149,7 @@ test("openTerm: viewer is killed (not leaked) when link, lock, or pty spawn fail
   ]) {
     const calls = [];
     assert.throws(() => openTerm({ session: "s", window: "w" }, fakeIo(calls, opts)));
-    assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oatsdesk-test-1"], `viewer cleaned up (${JSON.stringify(Object.keys(opts))})`);
+    assert.deepEqual(calls.slice(-3), CLEANUP_CALLS, `viewer and its tables cleaned up (${JSON.stringify(Object.keys(opts))})`);
   }
 });
 
@@ -157,6 +173,31 @@ test("sweepViewers: kills only dead-pid oatsdesk sessions", () => {
   });
   assert.deepEqual(swept, ["oatsdesk-99999999-1-abc"], "only the dead orphan");
   assert.deepEqual(killed, ["oatsdesk-99999999-1-abc"]);
+});
+
+test("sweepViewers (#1502): a viewer's tables whose session is gone are emptied; a live viewer's, the kernel's and any other are kept", () => {
+  const order = [], emptied = [];
+  const live = `oatsdesk-${process.pid}-1-live`;
+  sweepViewers({
+    // Listed before the sessions: a viewer made in between has its session before its tables, so it is seen live.
+    listTables: () => { order.push("tables"); return [
+      "oatsdesk-99999999-1-abc", "oatsdesk-99999999-1-abc-prefix", // a crashed Desktop's: its session is swept now
+      "oatsdesk-1-2-gone", "oatsdesk-1-2-gone-prefix",            // a live Desktop's viewer that died with its source window
+      live, `${live}-prefix`, "oatsdesk-1-2-x", "oatsdesk-1-2-x-prefix",
+      "oatsdesk-locked", "oatsdesk-locked-prefix",                 // an older Desktop's shared table, maybe still in use
+      "oatsview-123-0123abcd", "oatsview-locked", "copy-mode", "prefix", "root",
+    ]; },
+    listSessions: () => { order.push("sessions"); return ["pi-agents", "oatsdesk-99999999-1-abc", live, "oatsdesk-1-2-x"]; },
+    killSession: () => {},
+    pidAlive: (pid) => pid === 1,
+    emptyTable: (table) => emptied.push(table),
+  });
+  assert.deepEqual(order, ["tables", "sessions"]);
+  assert.deepEqual(emptied, ["oatsdesk-99999999-1-abc", "oatsdesk-99999999-1-abc-prefix", "oatsdesk-1-2-gone", "oatsdesk-1-2-gone-prefix"]);
+  const failing = [];
+  assert.doesNotThrow(() => sweepViewers({ listTables: () => ["oatsdesk-1-2-gone"], listSessions: () => [], killSession() {}, pidAlive: () => true,
+    emptyTable: (table) => { failing.push(table); throw new Error("raced"); } }), "a table another sweep emptied first is no failure");
+  assert.deepEqual(failing, ["oatsdesk-1-2-gone"]);
 });
 
 test("live tmux: anchored target rejects a missing exact window instead of prefix-matching", (t) => {
@@ -252,7 +293,7 @@ test("live tmux: viewer key path cannot leave the linked window; viewer kill spa
     // prefix and key-table are locked
     const opts = spawnSync("tmux", [...server, "show-options", "-t", viewer], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.match(opts, /prefix None/, "prefix disabled");
-    assert.match(opts, /key-table oatsdesk-locked/, "nonexistent key table");
+    assert.match(opts, new RegExp(`key-table ${viewer}\\b`), "its own key table, named after it");
     // attempt window-management via the (disabled) prefix path: C-b n / C-b l /
     // C-b c / C-b 1 — with prefix None these are raw bytes to the pane, not commands
     for (const keys of [["C-b", "n"], ["C-b", "l"], ["C-b", "c"], ["C-b", "1"]]) {
@@ -307,27 +348,105 @@ test("live tmux: viewer construction works under a nonzero base-index (isolated 
   }
 });
 
-test("locked table provisions ONLY the approved wheel bindings — no window management", () => {
+test("openTerm (#1502): below tmux 3.3 (or an unknown version) there is no C-b binding and no C-b table", () => {
+  const calls = [];
+  openTerm({ session: "s", window: "w", cols: 120, rows: 40 }, fakeIo(calls, { forwardsBoundKey: false }));
+  assert.ok(!calls.some(call => call.includes("C-b") || call.includes("oatsdesk-test-1-prefix")), "nothing of the C-b table");
+  assert.ok(LOCKED_TABLE_BINDINGS.every(b => calls.some(call => call.join("\0") === ["tmux", "bind-key", "-T", "oatsdesk-test-1", ...b].join("\0"))),
+    "the wheel, drag and Shift+PgUp still are");
+  const { forwardsBoundKey, ...without } = fakeIo([]);
+  const none = [];
+  openTerm({ session: "s", window: "w" }, { ...without, preflight: (t) => none.push(["preflight", t]), tmux: (args) => none.push(["tmux", ...args]) });
+  assert.ok(!none.some(call => call.includes("C-b")), "an io that cannot say has no C-b");
+});
+
+test("openTerm (#1502): the viewer's tables are its own, named after it, and bound once: nothing is listed, emptied or removed", () => {
+  const calls = [];
+  const r = openTerm({ session: "s", window: "w" }, fakeIo(calls));
+  assert.deepEqual(viewerTables(r.viewer), ["oatsdesk-test-1", "oatsdesk-test-1-prefix"]);
+  assert.ok(!calls.some(call => call.includes("list-keys") || call.includes("unbind-key")), "a fresh name: no stray to look for, nothing to clear");
+  const tables = new Set(calls.filter(call => call[1] === "bind-key").map(call => call[3]));
+  assert.deepEqual([...tables], ["oatsdesk-test-1", "oatsdesk-test-1-prefix"], "it binds only its own two tables");
+});
+
+test("killViewer (#1502): the session first, then both of its tables, emptied; a table that cannot be emptied is left to the sweep", () => {
+  const calls = [];
+  const r = openTerm({ session: "s", window: "w" }, fakeIo(calls));
+  const before = calls.length;
+  r.killViewer();
+  assert.deepEqual(calls.slice(before), CLEANUP_CALLS);
+  const failing = [];
+  const f = openTerm({ session: "s", window: "w" }, fakeIo(failing, { tmuxFails: (a) => a[0] === "unbind-key" }));
+  assert.doesNotThrow(() => f.killViewer(), "the session is gone: a table left behind is the sweep's");
+  assert.ok(failing.some(call => call.join(" ") === "tmux kill-session -t =oatsdesk-test-1"));
+});
+
+test("listedTables: the tables a `tmux list-keys` names, once each", () => {
+  const listing = [
+    "bind-key    -T copy-mode    n                         send-keys -X search-again",
+    "bind-key    -T oatsdesk-123-4-ab12cd  WheelUpPane     if-shell -F x y z",
+    "bind-key    -T oatsdesk-123-4-ab12cd  S-PPage         copy-mode -u",
+    "bind-key -r -T oatsdesk-123-4-ab12cd-prefix  Any      send-keys C-b",
+    "bind-key    -T prefix       n                         next-window",
+  ].join("\n");
+  assert.deepEqual(listedTables(listing), ["copy-mode", "oatsdesk-123-4-ab12cd", "oatsdesk-123-4-ab12cd-prefix", "prefix"]);
+  assert.deepEqual(listedTables(""), []);
+});
+
+const FORBIDDEN = ["next-window", "previous-window", "last-window", "new-window", "select-window", "kill-window", "choose-",
+  "command-prompt", "switch-client", "new-session", "attach-session", "detach-client", "kill-session", "run-shell", "source-file"];
+test("locked table provisions ONLY the approved bindings — no window management", () => {
   // Unit guard on the exported binding set itself (the live test asserts
   // the installed table): exactly the approved keys, and none of the
   // window-management commands can appear in any binding.
   const keys = LOCKED_TABLE_BINDINGS.map(([k]) => k);
-  assert.deepEqual(keys, ["WheelUpPane", "MouseDrag1Pane"], "exactly the approved binding keys");
+  assert.deepEqual(keys, ["WheelUpPane", "MouseDrag1Pane", "S-PageUp"], "exactly the approved binding keys");
   const flat = LOCKED_TABLE_BINDINGS.flat().join(" ");
-  for (const forbidden of ["next-window", "previous-window", "last-window", "new-window", "select-window", "kill-window", "choose-", "switch-client"]) {
-    assert.ok(!flat.includes(forbidden), `no ${forbidden} in the locked table`);
-  }
+  for (const forbidden of FORBIDDEN) assert.ok(!flat.includes(forbidden), `no ${forbidden} in the locked table`);
   assert.match(flat, /copy-mode -e/, "wheel enters exit-at-bottom copy mode");
   assert.match(flat, /send-keys -M/, "mouse event forwarded");
+  assert.deepEqual(LOCKED_TABLE_BINDINGS.find(([k]) => k === "S-PageUp"), ["S-PageUp", "copy-mode -u"], "Shift+PgUp: copy mode, a page up");
   // #520: a plain drag starts a tmux copy selection (its release copies, and tmux sends OSC 52), unless the app grabbed the mouse.
   assert.deepEqual(LOCKED_TABLE_BINDINGS.find(([k]) => k === "MouseDrag1Pane"),
     ["MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"]);
 });
 
-test("live tmux: real wheel events through an attached pty client — installed binding enters copy mode and scrolls; stale table bindings are cleared", async (t) => {
-  // reviewer-wheelbind regressions: (1) key tables are server-global — a
-  // stale forbidden binding seeded into oatsdesk-locked BEFORE openTerm must
-  // be gone after construction; (2) the INSTALLED WheelUpPane binding is
+test("the C-b entry (#1502) is the locked table's one switch-client: always -T, into the viewer's own C-b table, which holds no window management", () => {
+  // The guard as approved for #1502: exactly one switch-client, `-T <viewer>-prefix`, a key table and never a
+  // session; the C-b table holds only the kernel's LOCKED_PREFIX_BINDINGS, mirrored.
+  const calls = [];
+  openTerm({ session: "s", window: "w" }, fakeIo(calls));
+  const switches = calls.filter(call => call.join(" ").includes("switch-client"));
+  assert.deepEqual(switches, [["tmux", "bind-key", "-T", "oatsdesk-test-1", "C-b", "switch-client -T oatsdesk-test-1-prefix"]]);
+  assert.equal(PREFIX_KEY, "C-b");
+  assert.deepEqual(LOCKED_PREFIX_BINDINGS.map(([k]) => k), ["[", "WheelUpPane", "MouseDrag1Pane", "S-PageUp", "Any"]);
+  const flat = LOCKED_PREFIX_BINDINGS.flat().join(" ");
+  for (const forbidden of FORBIDDEN) assert.ok(!flat.includes(forbidden), `no ${forbidden} in the C-b table`);
+  assert.deepEqual(LOCKED_PREFIX_BINDINGS.find(([k]) => k === "["), ["[", "copy-mode"]);
+  for (const [key, command] of LOCKED_PREFIX_BINDINGS.filter(([k]) => k !== "[")) {
+    assert.match(command, /^send-keys C-b ; /, `${key}: the C-b reaches the agent first`);
+  }
+});
+
+test("pinned to the kernel's viewer (#1502): the same bindings, the same C-b table and the same tmux gate", () => {
+  assert.deepEqual(LOCKED_TABLE_BINDINGS, kernelViewer.VIEWER_BINDINGS.map(b => [...b]), "the locked table is the kernel viewer's");
+  assert.deepEqual(LOCKED_PREFIX_BINDINGS, kernelViewer.LOCKED_PREFIX_BINDINGS.map(b => [...b]), "the C-b table is the kernel's");
+  assert.equal(PREFIX_KEY, kernelViewer.PREFIX_KEY);
+  assert.equal(PREFIX_TABLE_SUFFIX, kernelViewer.PREFIX_TABLE_SUFFIX, "a viewer's C-b table is named as the kernel names its own");
+  assert.deepEqual(viewerTables("oatsdesk-1-2-ab"), ["oatsdesk-1-2-ab", `oatsdesk-1-2-ab${kernelViewer.PREFIX_TABLE_SUFFIX}`]);
+  assert.equal(kernelViewer.VIEWER_PREFIX_MIN_TMUX, "3.3");
+  for (const version of ["tmux 3.3", "tmux 3.3a", "tmux 3.2a", "tmux 3.2", "tmux 3.0", "tmux 2.9a", "tmux 3.4", "tmux 3.8", "tmux 3.10",
+    "tmux 4.0", "tmux next-3.3", "tmux next-3.2", "tmux next-3.6", "tmux 10.1-rc", "tmux master", "tmux openbsd-7.4", "not tmux 3.4",
+    "tmux 3.4\n", "  tmux 3.5  ", "tmux", "3.4", "", undefined, null, 3.4]) {
+    assert.equal(tmuxForwardsBoundKey(version), kernelViewer.tmuxForwardsBoundKey(version), JSON.stringify(version));
+  }
+  assert.equal(tmuxForwardsBoundKey("tmux 3.3"), true); assert.equal(tmuxForwardsBoundKey("tmux 3.2a"), false);
+});
+
+test("live tmux: real wheel events through an attached pty client — installed binding enters copy mode and scrolls; the viewer's own table holds only the approved keys", async (t) => {
+  // reviewer-wheelbind regressions, with the viewer's own table (#1502): (1) the
+  // table the viewer reads is its own, named after it, and holds exactly the
+  // approved bindings; (2) the INSTALLED WheelUpPane binding is
   // driven by real SGR mouse bytes from an attached client (node-pty), not
   // by manually running copy-mode: first wheel enters copy mode, second
   // scrolls (position increases), wheel-down returns to bottom and exits.
@@ -362,9 +481,6 @@ test("live tmux: real wheel events through an attached pty client — installed 
     T(["send-keys", "-t", "=src:=instA", "seq 1 200", "Enter"]);
     await sleep(800); // >pane-height history
 
-    // seed a STALE forbidden binding into the (server-global) locked table
-    T(["bind-key", "-T", "oatsdesk-locked", "n", "next-window"]);
-
     const r = openTerm({ session: "src", window: "instA" }, {
       preflight: (target) => T(["list-panes", "-t", target]),
       tmux: (args) => T(args),
@@ -376,12 +492,11 @@ test("live tmux: real wheel events through an attached pty client — installed 
     client = r.pty;
     await sleep(1200); // client attached
 
-    // (1) the stale forbidden binding was cleared by the unbind-all
+    // (1) the viewer's own table: exactly the approved keys.
     // Read every binding and keep this table's lines: tmux 3.7 lists nothing for a CUSTOM
     // table under `list-keys -T <table>` (built-in tables still list), though its bindings exist.
-    const table = T(["list-keys"], true).split("\n").filter(line => /-T oatsdesk-locked\s/.test(line)).join("\n");
-    assert.ok(!table.includes("next-window"), "stale forbidden binding cleared from the server-global table");
-    assert.match(table, /WheelUpPane/, "allow-list installed");
+    const table = T(["list-keys"], true).split("\n").filter(line => new RegExp(`-T ${r.viewer}\\s`).test(line));
+    assert.deepEqual(table.map(line => line.trim().split(/\s+/)[3]).sort(), ["MouseDrag1Pane", "S-PPage", "WheelUpPane"], "the allow-list, and nothing else");
 
     // (2) REAL wheel events (SGR mouse) through the attached client drive
     // the installed binding — mutations breaking the if-shell condition or
@@ -403,6 +518,114 @@ test("live tmux: real wheel events through an attached pty client — installed 
     client = null;
     r.killViewer();
     assert.ok(T(["list-windows", "-t", "=src", "-F", "#{window_name}"], true).includes("instA"), "source intact");
+  } finally {
+    if (client) { try { client.kill(); } catch { /* gone */ } }
+    spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });
+    spawnSync("rm", ["-f", sock], { timeout: 5000 });
+  }
+});
+
+test("live tmux (#1502): through a real attached client, C-b [ and Shift+PgUp scroll back, and C-b then any other key reaches the agent as both keys without leaving the linked window", async (t) => {
+  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
+  if (probe.error || probe.status !== 0) return t.skip("tmux not available");
+  if (!tmuxForwardsBoundKey(probe.stdout)) return t.skip(`${probe.stdout.trim()}: before 3.3 the viewer has no C-b table`);
+  let ptyMod;
+  try {
+    ptyMod = createRequire(join(RENDERER_PKG, "package.json"))("node-pty");
+    const probePty = ptyMod.spawn("true", [], { name: "xterm", cols: 10, rows: 5 });
+    probePty.kill();
+  } catch (error) {
+    return t.skip(`node-pty can't spawn here (${String(error?.message || error).slice(0, 120)})`);
+  }
+  const sock = `/tmp/oatspfx-${process.pid}.sock`;
+  const T = (args, out = false) => {
+    const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
+    if (r.status !== 0) throw new Error(`tmux ${args.join(" ")} failed: ${r.stderr}`);
+    return out ? r.stdout.trim() : undefined;
+  };
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const io = (spawn) => ({
+    preflight: (target) => T(["list-panes", "-t", target]),
+    tmux: (args) => T(args),
+    tmuxOut: (args) => T(args, true),
+    forwardsBoundKey: () => tmuxForwardsBoundKey(T(["-V"], true)),
+    spawnPty: spawn,
+  });
+  const tableKeys = (name) => T(["list-keys"], true).split("\n").filter(line => new RegExp(`-T ${name}\\s`).test(line))
+    .map(line => line.trim().split(/\s+/)[3]).sort();
+  let client = null;
+  try {
+    T(["new-session", "-d", "-s", "src", "-n", "instA", "sh"]);
+    T(["new-window", "-t", "=src", "-n", "instB", "sh"]);
+    T(["send-keys", "-t", "=src:=instA", "seq 1 200", "Enter"]);
+    await sleep(800); // more history than the pane is high
+    const r = openTerm({ session: "src", window: "instA", cols: 80, rows: 24 },
+      io((target, cols, rows) => ptyMod.spawn("tmux", ["-S", sock, "attach-session", "-t", target], { name: "xterm-256color", cols, rows, env: process.env })));
+    client = r.pty;
+    await sleep(1200); // client attached
+    const [table, prefixTable] = viewerTables(r.viewer);
+    const mode = () => T(["display-message", "-p", "-t", r.viewer, "#{pane_in_mode}"], true);
+    const keyTable = () => T(["list-clients", "-F", "#{client_key_table}"], true);
+    assert.equal(mode(), "0");
+    assert.equal(keyTable(), table, "the client reads the viewer's own table");
+    assert.deepEqual(tableKeys(prefixTable), ["Any", "MouseDrag1Pane", "S-PPage", "WheelUpPane", "["], "its own C-b table: the approved keys only");
+
+    // C-b [ enters copy mode; the agent reads nothing.
+    client.write("\x02[");
+    await sleep(600);
+    assert.equal(mode(), "1", "C-b [ entered copy mode");
+    client.write("q"); await sleep(400);
+    assert.equal(mode(), "0", "q left it");
+    assert.equal(keyTable(), table, "back in the locked table after the one key");
+
+    // Shift+PgUp, as the Desktop's key path writes it (CSI 5;2 ~): copy mode, a page up.
+    client.write("\x1b[5;2~");
+    await sleep(600);
+    assert.equal(mode(), "1", "Shift+PgUp entered copy mode");
+    assert.ok(Number(T(["display-message", "-p", "-t", r.viewer, "#{scroll_position}"], true)) > 0, "and scrolled back a page");
+    client.write("q"); await sleep(400);
+    assert.equal(mode(), "0");
+
+    // C-b then any other key: both keys reach the agent, as typed; nothing navigates.
+    T(["send-keys", "-t", "=src:=instA", "clear; cat -v", "Enter"]);
+    await sleep(500);
+    client.write("\x02n\x02c\x02l\x021\x02\x02\r");
+    await sleep(800);
+    const screen = T(["capture-pane", "-p", "-t", "=src:=instA"], true);
+    assert.match(screen, /\^Bn\^Bc\^Bl\^B1\^B\^B/, `the agent read C-b n, C-b c, C-b l, C-b 1 and C-b C-b:\n${screen}`);
+    assert.deepEqual(T(["list-windows", "-t", `=${r.viewer}`, "-F", "#{window_name}"], true).split("\n"), ["instA"], "the viewer still holds only its linked window");
+    assert.equal(T(["list-clients", "-F", "#{client_session}"], true), r.viewer, "the client never left the viewer");
+    assert.equal(keyTable(), table);
+
+    // A second viewer has tables of its own; closing it empties them and leaves the first viewer's.
+    const second = openTerm({ session: "src", window: "instB", cols: 80, rows: 24 }, io(() => ({})));
+    const [secondTable, secondPrefix] = viewerTables(second.viewer);
+    assert.notEqual(secondTable, table);
+    assert.deepEqual(tableKeys(secondPrefix), tableKeys(prefixTable));
+    second.killViewer();
+    assert.deepEqual([tableKeys(secondTable), tableKeys(secondPrefix)], [[], []], "a closed viewer's tables are emptied");
+    assert.deepEqual(tableKeys(prefixTable), ["Any", "MouseDrag1Pane", "S-PPage", "WheelUpPane", "["], "the first viewer's stand");
+
+    // A viewer that dies with its source window leaves its tables; the sweep empties them, and only them.
+    const orphan = openTerm({ session: "src", window: "instB", cols: 80, rows: 24 }, io(() => ({})));
+    const [orphanTable, orphanPrefix] = viewerTables(orphan.viewer);
+    T(["kill-session", "-t", `=${orphan.viewer}`]); // as when its source window dies: the session goes, its tables stay
+    assert.ok(tableKeys(orphanTable).length > 0 && tableKeys(orphanPrefix).length > 0, "left behind");
+    sweepViewers({
+      listTables: () => listedTables(T(["list-keys"], true)),
+      listSessions: () => T(["list-sessions", "-F", "#{session_name}"], true).split("\n"),
+      killSession: (name) => T(["kill-session", "-t", `=${name}`]),
+      pidAlive: () => true,
+      emptyTable: (name) => T(["unbind-key", "-a", "-q", "-T", name]),
+    });
+    assert.deepEqual([tableKeys(orphanTable), tableKeys(orphanPrefix)], [[], []], "an orphan from a dead session is emptied");
+    assert.deepEqual(tableKeys(prefixTable), ["Any", "MouseDrag1Pane", "S-PPage", "WheelUpPane", "["], "a live viewer's are kept");
+
+    client.kill();
+    client = null;
+    r.killViewer();
+    assert.deepEqual([tableKeys(table), tableKeys(prefixTable)], [[], []]);
+    assert.deepEqual(T(["list-windows", "-t", "=src", "-F", "#{window_name}"], true).split("\n"), ["instA", "instB"], "the source is intact");
   } finally {
     if (client) { try { client.kill(); } catch { /* gone */ } }
     spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });

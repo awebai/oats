@@ -98,13 +98,15 @@ export function shortcutMatches({ label = "", group = "", chord = null, keys: sh
   const q = String(query || "").trim().toLowerCase();
   if (!q) return true;
   if (label.toLowerCase().includes(q) || group.toLowerCase().includes(q)) return true;
-  // `keys`: a row's keys as shown when they are not one chord (a leader row: the leader's, then its key's).
-  const keys = (shown ?? (chord ? chordKeys(chord, isMac) : [])).map(k => String(k).toLowerCase());
-  if (!keys.length) return "unbound".includes(q);
+  // `keys`: a row's keys as shown when they are not one chord (a leader row: the leader's, then its key's),
+  // or several chords (each a list), of which one must match: the terminal's scroll row never mixes them.
+  const listed = shown ?? (chord ? chordKeys(chord, isMac) : []);
+  const chords = (Array.isArray(listed[0]) ? listed : [listed]).map(keys => keys.map(k => String(k).toLowerCase())).filter(keys => keys.length);
+  if (!chords.length) return "unbound".includes(q);
   const compact = q.replace(/[\s+]+/g, "");
-  if (compact && keys.join("").includes(compact)) return true;
   const words = q.split(/[\s+]+/).filter(Boolean);
-  return words.length > 0 && words.every(w => keys.some(k => (KEY_WORDS.get(k) || [k]).some(name => name.startsWith(w))));
+  return chords.some(keys => (!!compact && keys.join("").includes(compact))
+    || (words.length > 0 && words.every(w => keys.some(k => (KEY_WORDS.get(k) || [k]).some(name => name.startsWith(w))))));
 }
 
 /** One clash of keymapConflicts, said: when only one side is the user's, the one that runs where
@@ -414,8 +416,9 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
             const stage = (id) => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : "unbound"; };
             extras.textContent = `The leader and the keys after it are the TUI's; the direct shortcuts are Desktop extras. ${leaderText()} then 1 is Instances and ${leaderText()} then 3 is Capabilities, while ${stage("stage.hierarchy")} stays Machines and ${stage("stage.automations")} stays Automations.`;
             h.after(extras);
-            for (const leaderRow of supportedLeaderRows()) section.append(fixedRow(leaderRow));
+            for (const leaderRow of supportedLeaderRows()) section.append(leaderFixedRow(leaderRow));
           }
+          if (group.context === "tabs") section.append(scrollBackRow());
           body.append(section);
         }
         const none = doc.createElement("p");
@@ -552,17 +555,15 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
       return el;
     };
 
-    // A key of the leader's table: read-only (the table is fixed, as in the TUI), reached by Up/Down,
-    // found by its keys ("ctrl+x k") and by "leader".
-    const fixedRow = (leaderRow) => {
+    // A read-only row, reached by Up/Down and never a Tab stop: its label, its keys and the words
+    // between them (`parts`: { cap } or { word }), the keys a search finds it by, what a screen reader
+    // says, and a tooltip when the keys have a condition.
+    const fixedRow = ({ id, label, parts, keys: searchKeys, said, title = null }) => {
       const el = doc.createElement("div");
       el.className = "kb-row kb-row-fixed";
-      const label = leaderLabel(leaderRow.does, labelOf);
-      const leaderChord = getBinding("app.leader", isMac);
-      const leaderCaps = leaderChord ? chordKeys(leaderChord, isMac) : [];
-      const text = `${leaderText()} then ${rowKeysText(leaderRow, isMac)}`;
       el.dataset.label = label;
-      el.dataset.keys = JSON.stringify([...leaderCaps, ...leaderRow.keys.flatMap((key) => keyIdCaps(key, isMac))]);
+      el.dataset.keys = JSON.stringify(searchKeys);
+      if (title) el.title = title;
       el.innerHTML = `
         <span class="kb-main"><span class="kb-label"></span></span>
         <span class="kb-marks" aria-hidden="true"></span>
@@ -570,20 +571,49 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
         <span class="kb-reset-slot"></span>`;
       el.querySelector(".kb-label").textContent = label;
       const chord = el.querySelector(".kb-chord");
-      chord.dataset.actionId = `leader:${leaderRow.does}`;
+      chord.dataset.actionId = id;
       const keys = doc.createElement("span");
       keys.className = "kb-keys";
       keys.setAttribute("aria-hidden", "true");
-      const cap = (k) => { const kbd = doc.createElement("kbd"); kbd.textContent = k; keys.append(kbd); };
-      const word = (w) => { const span = doc.createElement("span"); span.className = "kb-then"; span.textContent = w; keys.append(span); };
-      if (leaderCaps.length) cap(leaderCaps.join(isMac ? "" : "+")); else word("leader");
-      word("then");
-      leaderRow.keys.forEach((key, i) => { if (i) word("or"); cap(keyIdCaps(key, isMac).join(isMac ? "" : "+")); });
-      const said = doc.createElement("span");
-      said.className = "sr-only";
-      said.textContent = `${text}, fixed`;
-      chord.append(keys, said);
+      for (const part of parts) {
+        const node = doc.createElement(part.cap ? "kbd" : "span");
+        if (!part.cap) node.className = "kb-then";
+        node.textContent = part.cap ?? part.word;
+        keys.append(node);
+      }
+      const sr = doc.createElement("span");
+      sr.className = "sr-only";
+      sr.textContent = said;
+      chord.append(keys, sr);
       return el;
+    };
+    const capText = (caps) => caps.join(isMac ? "" : "+");
+
+    // A key of the leader's table: read-only (the table is fixed, as in the TUI), reached by Up/Down,
+    // found by its keys ("ctrl+x k") and by "leader".
+    const leaderFixedRow = (leaderRow) => {
+      const leaderChord = getBinding("app.leader", isMac);
+      const leaderCaps = leaderChord ? chordKeys(leaderChord, isMac) : [];
+      const parts = [leaderCaps.length ? { cap: capText(leaderCaps) } : { word: "leader" }, { word: "then" }];
+      leaderRow.keys.forEach((key, i) => { if (i) parts.push({ word: "or" }); parts.push({ cap: capText(keyIdCaps(key, isMac)) }); });
+      return fixedRow({
+        id: `leader:${leaderRow.does}`, label: leaderLabel(leaderRow.does, labelOf), parts,
+        keys: [...leaderCaps, ...leaderRow.keys.flatMap((key) => keyIdCaps(key, isMac))],
+        said: `${leaderText()} then ${rowKeysText(leaderRow, isMac)}, fixed`,
+      });
+    };
+
+    // How to scroll back in a terminal (#1502), the same in every pane: the wheel, Shift+PgUp, or
+    // Ctrl+B then [, which needs tmux 3.3 or later where the agent runs (the viewer binds it only there).
+    const scrollBackRow = () => {
+      const shiftPgUp = chordKeys("Shift+PageUp", isMac), ctrlB = chordKeys("Ctrl+B", isMac);
+      return fixedRow({
+        id: "terminal:scrollBack", label: "Scroll back in a terminal",
+        parts: [{ word: "Wheel up," }, { cap: capText(shiftPgUp) }, { word: "or" }, { cap: capText(ctrlB) }, { word: "then" }, { cap: "[" }],
+        keys: [["Wheel", "up"], shiftPgUp, [...ctrlB, "["]],
+        said: `Wheel up, ${capText(shiftPgUp)} or ${capText(ctrlB)} then [, fixed`,
+        title: "Ctrl+B [ needs tmux 3.3 or later on the computer the agent runs on",
+      });
     };
 
     const startRecording = (action, btn, conflictEl) => {

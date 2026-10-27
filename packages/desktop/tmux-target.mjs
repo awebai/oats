@@ -90,13 +90,14 @@ export function viewerPrefix(pid) {
  * @param {(args: string[]) => void} io.tmux        run a tmux command (throws on failure)
  * @param {(args: string[]) => string} io.tmuxOut    run a tmux command, return trimmed stdout
  * @param {(target: string, cols: number, rows: number) => any} io.spawnPty
+ * @param {() => boolean} [io.forwardsBoundKey]     this tmux sends a bound key on (3.3+): the C-b table; absent: none
  * @param {() => string} [io.uniqueName]            viewer session name (default: prefix+pid+counter+random)
  * @returns {{ target: string, viewer: string, pty: any,
  *             killViewer: () => void }}
  */
 let viewerSeq = 0;
 
-/** The locked key table's COMPLETE binding set — wheel scrollback and drag-to-select only.
+/** The locked key table's COMPLETE binding set — wheel scrollback, drag-to-select and Shift+PgUp.
  * An inert (nonexistent) table blocked window escape but also killed wheel
  * handling entirely: pi runs on the alternate screen, so scrollback history
  * belongs to tmux and the renderer cannot recover it — scrolling died.
@@ -108,16 +109,60 @@ let viewerSeq = 0;
  * forwards the wheel (copy-mode's own WheelUp/WheelDownPane then do 5-line
  * scrolling until -e exits at the bottom). NO window-management bindings
  * (next/last/new/select-window...) exist here — that is the lock.
+ * The kernel's viewer binds the same (lib/session-viewer.mjs VIEWER_BINDINGS), which a test pins.
  * Exported so tests can assert the exact provisioned set. */
 export const LOCKED_TABLE_BINDINGS = [
-  // argv tail for: tmux bind-key -T oatsdesk-locked <key> <command...>
+  // argv tail for: tmux bind-key -T <viewer> <key> <command...>
   ["WheelUpPane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e; send-keys -M"],
   // tmux's root drag behavior (#520): copy mode's own drag-end binding copies the selection and tmux sends it as
   // OSC 52 (set-clipboard external, its default); an app that grabbed the mouse gets the drag. It serves the CLI
   // viewer (lib/session-viewer.mjs binds the same) and the renderer's far-side fallback only: a Desktop tab keeps
   // the mouse buttons for xterm's own selection (renderer/terminal-mouse.mjs, #672), so no drag reaches tmux there.
   ["MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"],
+  // Shift+PgUp (#1476, #1502): copy mode, a page up. The renderer's key path sends tmux the key (CSI 5;2 ~),
+  // which xterm.js would otherwise keep to scroll its own, empty, viewport.
+  ["S-PageUp", "copy-mode -u"],
 ];
+/** The viewer's C-b table (#1502), where this tmux sends a bound key on (3.3 and later,
+ * local-tmux-io.mjs tmuxForwardsBoundKey). The viewer's locked table binds PREFIX_KEY to the one
+ * `switch-client` it holds, `-T <viewer>-prefix`: a key-table switch, never a session switch. The
+ * client reads its next key there, and tmux takes it back to the locked table after that key, with no
+ * timeout. `[` enters copy mode; the wheel, the drag and Shift+PgUp send the C-b on, then do what the
+ * locked table does; and any other key (`Any`) sends the C-b, then the key itself (`send-keys` with no
+ * key sends the key it is bound to), so C-b n or C-b C-b reaches the agent as typed. Nothing here
+ * manages a window or a session. The bindings are the kernel viewer's
+ * (lib/session-viewer.mjs LOCKED_PREFIX_BINDINGS), which a test pins. */
+export const PREFIX_KEY = "C-b";
+export const LOCKED_PREFIX_BINDINGS = [
+  ["[", "copy-mode"],
+  ["WheelUpPane", "send-keys C-b ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' 'send-keys -M' 'copy-mode -e; send-keys -M'"],
+  ["MouseDrag1Pane", "send-keys C-b ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' 'send-keys -M' 'copy-mode -M'"],
+  ["S-PageUp", "send-keys C-b ; copy-mode -u"],
+  ["Any", "send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'"],
+];
+/** What a viewer's C-b table adds to its name: the kernel's (lib/session-viewer.mjs PREFIX_TABLE_SUFFIX),
+ * which a test pins. */
+export const PREFIX_TABLE_SUFFIX = "-prefix";
+/** A viewer's own two key tables (#1502), named after its session: its locked table and its C-b
+ * table. Key tables are server-global; tables of its own are bound once, as the viewer is made, so
+ * no other viewer, older app or user config shares them, and nothing need be cleared or kept. They
+ * are emptied when the viewer closes (killViewer), and a viewer that dies another way (with its
+ * source window, with a crashed app) leaves them to sweepViewers. tmux resets every client's key
+ * table whenever any session's key-table option is set, so a C-b pending at the instant another
+ * viewer opens is dropped: press it again. */
+export const viewerTables = (viewer) => [viewer, `${viewer}${PREFIX_TABLE_SUFFIX}`];
+/** A table of a Desktop viewer: its session's name (oatsdesk-<pid>-<seq>-<random>), or that and
+ * `-prefix`. An older Desktop's shared oatsdesk-locked table, which may still be in use, is not one. */
+const VIEWER_TABLE = new RegExp(`^oatsdesk-\\d+-\\d+-[0-9a-z]+(?:${PREFIX_TABLE_SUFFIX})?$`);
+/** The key tables a `tmux list-keys` names, once each, in the order it lists them. */
+export function listedTables(listing) {
+  const tables = new Set();
+  for (const line of String(listing).split("\n")) {
+    const match = /\s-T\s+(\S+)\s/.exec(line);
+    if (match) tables.add(match[1]);
+  }
+  return [...tables];
+}
 
 export function openTerm(spec, io) {
   const target = tmuxAttachTarget(spec.session, spec.window);
@@ -148,6 +193,10 @@ export function openTerm(spec, io) {
       const names = io.tmuxOut(["list-sessions", "-F", "#{session_name}"]).split('\n');
       if (names.includes(viewer)) throw error;
     }
+    // Then its own tables, once no client can be reading them. A table left behind is the sweep's.
+    for (const table of viewerTables(viewer)) {
+      try { io.tmux(["unbind-key", "-a", "-q", "-T", table]); } catch { /* sweepViewers empties it */ }
+    }
     cleaned = true;
   };
   try {
@@ -159,20 +208,25 @@ export function openTerm(spec, io) {
     // 3. drop the placeholder BY ID — the linked window is now the ONLY window
     io.tmux(["kill-window", "-t", placeholderId]);
     // 4. lock the viewer's key handling: no prefix → no window-management
-    //    bindings can run; the dedicated key-table carries ONLY the
-    //    provisioned wheel bindings (scrollback stays alive — tmux owns the
-    //    history). (set-option/bind-key targets don't accept '=' — the
-    //    unique random name cannot prefix-collide.)
+    //    bindings can run; the viewer's own key-table (viewerTables, #1502),
+    //    named after it, carries ONLY the provisioned scrollback bindings (the
+    //    wheel, the drag, Shift+PgUp and, on tmux 3.3+, C-b into its own C-b
+    //    table: scrollback stays alive — tmux owns the history). Its name is
+    //    fresh, so its tables hold nothing before these bindings.
+    //    (set-option/bind-key targets don't accept '=' — the unique random name
+    //    cannot prefix-collide.)
+    const [table, prefixTable] = viewerTables(viewer);
     io.tmux(["set-option", "-t", viewer, "prefix", "None"]);
     io.tmux(["set-option", "-t", viewer, "prefix2", "None"]);
-    io.tmux(["set-option", "-t", viewer, "key-table", "oatsdesk-locked"]);
-    // key tables are SERVER-GLOBAL and bind-key only replaces its own key —
-    // a stale/custom binding in oatsdesk-locked (from an older app run or a
-    // user's config) would survive into every viewer. Clear the app-owned
-    // table first, then install exactly the allow-list.
-    io.tmux(["unbind-key", "-a", "-q", "-T", "oatsdesk-locked"]);
+    io.tmux(["set-option", "-t", viewer, "key-table", table]);
     for (const binding of LOCKED_TABLE_BINDINGS) {
-      io.tmux(["bind-key", "-T", "oatsdesk-locked", ...binding]);
+      io.tmux(["bind-key", "-T", table, ...binding]);
+    }
+    // C-b [ scrolls back where tmux sends a bound key on; below that there is no C-b binding and no
+    // C-b table, and C-b reaches the agent as before.
+    if (io.forwardsBoundKey?.()) {
+      io.tmux(["bind-key", "-T", table, PREFIX_KEY, `switch-client -T ${prefixTable}`]);
+      for (const binding of LOCKED_PREFIX_BINDINGS) io.tmux(["bind-key", "-T", prefixTable, ...binding]);
     }
     // wheel needs tmux mouse handling in the viewer
     io.tmux(["set-option", "-t", viewer, "mouse", "on"]);
@@ -208,23 +262,36 @@ export function openTerm(spec, io) {
  * Sweep orphaned viewer sessions (crashed app instances). Safe and exact:
  * only sessions whose name starts with the oatsdesk- prefix are killed —
  * optionally scoped to a specific pid's prefix, else any oatsdesk- session
- * whose pid is no longer alive.
+ * whose pid is no longer alive. Then empty every viewer table (viewerTables,
+ * #1502) whose session is gone: a crashed app's, and a viewer's that died with
+ * its source window. The tables are listed before the sessions, and a viewer
+ * makes its session before its tables, so a viewer made meanwhile is seen live.
  *
  * @param {object} io
+ * @param {() => string[]} [io.listTables]        tmux key-table names (listedTables)
  * @param {() => string[]} io.listSessions        tmux session names
  * @param {(name: string) => void} io.killSession =-anchored kill
  * @param {(pid: number) => boolean} io.pidAlive
- * @returns {string[]} the names swept
+ * @param {(table: string) => void} [io.emptyTable] unbind-key -a -q -T <table>
+ * @returns {string[]} the sessions swept
  */
 export function sweepViewers(io) {
+  const tables = io.listTables?.() ?? [];
+  const sessions = io.listSessions();
   const swept = [];
-  for (const name of io.listSessions()) {
+  for (const name of sessions) {
     const m = name.match(/^oatsdesk-(\d+)-/);
     if (!m) continue;
     const pid = Number(m[1]);
     if (pid === process.pid) continue;      // our own live viewers
     if (io.pidAlive(pid)) continue;         // another live desktop's viewers
     try { io.killSession(name); swept.push(name); } catch { /* raced its owner */ }
+  }
+  const live = new Set(sessions.filter((name) => !swept.includes(name)));
+  for (const table of tables) {
+    if (!VIEWER_TABLE.test(table) || live.has(table)
+      || (table.endsWith(PREFIX_TABLE_SUFFIX) && live.has(table.slice(0, -PREFIX_TABLE_SUFFIX.length)))) continue;
+    try { io.emptyTable(table); } catch { /* another sweep emptied it first */ }
   }
   return swept;
 }
