@@ -1160,14 +1160,15 @@ oats session attach --home /abs/home --detach-key 'C-\'
   another client) is not seen by that hook: `oats` removes the viewer as it
   ends, or, if `oats` has died, the next attach's sweep does. The viewer never uses
   `destroy-unattached`: on tmux 3.4 it crashes the agents' server when another
-  client detaches the viewer. A keyed viewer's key table (below)
-  belongs to the server, not to the session, and its `client-detached` hook
-  unbinds the table as it kills the session. For a viewer session that ends
-  another way (its agent's window ends, a `kill-session`), a keyed viewer sets
-  one global hook entry on the agents' server, `session-closed[900]`: when a
-  session whose name is a viewer's closes, the entry unbinds the key table of
-  that name. It is the only global hook entry OATS owns there.
-  Every keyed viewer sets the same entry again, which leaves it unchanged,
+  client detaches the viewer. A viewer's key tables (below) belong to the
+  server, not to the session, and its `client-detached` hook unbinds them as
+  it kills the session. For a viewer session that ends another way (its
+  agent's window ends, a `kill-session`), every viewer sets one global hook
+  entry on the agents' server, `session-closed[900]`: when a session whose
+  name is a viewer's closes, the entry unbinds the key table of that name
+  and its `C-b` table, `<name>-prefix`. It is the only global hook entry
+  OATS owns there.
+  Every viewer sets the same entry again, which leaves it unchanged,
   and no other index is touched. Keep your own `session-closed` hooks
   (`set-hook -g` in `~/.tmux.conf`) at other indexes: an entry of yours at
   900 is replaced. A global `client-detached` hook of yours does not run
@@ -1179,12 +1180,14 @@ oats session attach --home /abs/home --detach-key 'C-\'
 
   - a viewer session (`oatsview-<pid>-<8 hex>`) with no client attached,
     whose attaching process, the pid in its name, no longer exists;
-  - a viewer key table whose session no longer exists.
+  - a viewer key table whose session no longer exists, a viewer's `C-b`
+    table (`<name>-prefix`) included.
 
   The sweep keeps a viewer whose attach is alive, even with no client: its
   client may not have attached yet. It also never removes an attached
-  viewer, anything not named as a viewer, or the `oatsview-locked` table
-  that every viewer without a key shares. When it removed something, the
+  viewer, or anything not named as a viewer, such as the server-wide
+  `oatsview-locked` and `oatsview-locked-prefix` tables of an earlier
+  kernel. When it removed something, the
   attach prints one line on stderr before the viewer opens:
   `oats: removed <n> leftover viewer session(s) and <m> key table(s) of
   earlier attaches`. A failed sweep is not the attach's failure; the next
@@ -1210,9 +1213,88 @@ oats session attach --home /abs/home --detach-key 'C-\'
   `PageUp` and `PageDown` move a page, and `q` leaves it. The agent never
   receives `Shift+PageUp` while a viewer is attached.
 
+  **`C-b [` in a viewer without a detach key**
+  ([#1502](https://github.com/awebai/oats/issues/1502)) also enters copy mode, as a tmux prefix does, for a keyboard that has no
+  PageUp. It is the viewer's only `C-b` key:
+  - every other key after `C-b` reaches the agent as both keys, in order:
+    `C-b n`, `C-b c` and `C-b C-b` arrive as typed;
+  - the wheel, a drag and `Shift+PageUp` after `C-b` send the `C-b`, then do
+    what they do alone;
+  - a mouse report after `C-b` reaches an agent that asked for one.
+  `C-b` waits for the next key with no timeout: tmux holds the client in the
+  viewer's `C-b` table for that one key.
+
+  **Every viewer's tables are its own.** A viewer reads a key table named
+  as its session (`oatsview-<pid>-<8 hex>`), and a viewer without a detach
+  key has its `C-b` table beside it, `<session>-prefix`. Both are bound
+  once, when the viewer is made and before a client reads them, and are
+  removed with the session: by the viewer's cleanup, its `client-detached`
+  hook, the `session-closed[900]` entry and the next attach's sweep. No
+  other viewer's opening touches them, and a key a `tmux.conf` or another
+  program binds in some other table is never run. A server-wide
+  `oatsview-locked` or `oatsview-locked-prefix` that an earlier kernel left
+  is not a viewer's: it is left as it is, and no viewer reads it. A keyed
+  viewer has no `C-b` key; its caller chooses its keys.
+
+  **A tmux limitation: a `C-b` pressed as another viewer opens is lost.**
+  Setting any session's `key-table` option returns every client of the
+  server to its default table. tmux does this in `options.c` (the
+  `key-table` case runs `server_client_set_key_table(loop, NULL)` for every
+  client: tmux 3.3, 3.4 and 3.8 alike), and every new viewer sets its own.
+  So a `C-b` pressed in the instant another viewer of the same server opens
+  is dropped, and the key after it reaches the agent alone. A test pins
+  this as known behaviour (`test/session-attach-detach-key.test.mjs`,
+  "KNOWN tmux LIMITATION").
+
+  **Only on tmux 3.3 and later** (`VIEWER_PREFIX_MIN_TMUX`). The forwarding
+  below needs a `send-keys` that names no key to send the key it is bound
+  to, which tmux has from 3.3 (its CHANGES, "3.2a to 3.3": "Make send-keys
+  without arguments send the key it is bound to (if bound to a key)"). On
+  tmux 3.0 to 3.2a such a `send-keys` sends nothing, and the key after `C-b`
+  would be lost. There the viewer has no `C-b` key: `C-b` reaches the agent
+  as any key does, and the wheel and `Shift+PageUp` scroll back. The viewer
+  asks `tmux -V` once, before it binds anything. A release `tmux X.Y` is
+  read as X.Y, and a development build `tmux next-X.Y` as X.Y too. Anything
+  else (`tmux master`, no answer) means no `C-b` key. Checked on tmux 3.8.
+
+  How a key after `C-b` is forwarded, exactly (for a client that builds its
+  own viewer, as the Desktop's local one does: `lib/session-viewer.mjs`
+  exports the tables as data, `VIEWER_BINDINGS`, `PREFIX_KEY`,
+  `PREFIX_TABLE_SUFFIX` and `LOCKED_PREFIX_BINDINGS`):
+  - The viewer's table binds `C-b` to `switch-client -T <session>-prefix`.
+  - That table binds `[` to `copy-mode`. It binds `WheelUpPane`,
+    `MouseDrag1Pane` and `S-PageUp` to `send-keys C-b ;` followed by the
+    viewer table's own command for that key.
+  - It binds `Any`, which tmux runs for every key with no binding of its
+    own, to
+    `send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'`.
+    The `C-b` goes to the agent first. A mouse event, the only key that sets
+    `mouse_x`, then goes as one with `-M`. Any other key goes through a
+    `send-keys` that names no key, which sends the key the command is bound
+    to. tmux(1) (3.8), `send-keys`: "If no keys are given and the command is
+    bound to a key, then that key is used."
+
+  **The status line.** A viewer without a detach key shows one line under
+  the agent, `Shift+PgUp or C-b [ to scroll back` (`Shift+PgUp to scroll
+  back` where it has no `C-b` key), so the person reading the agent can see
+  how to scroll back: nobody guesses a key. It takes the
+  client's last row. `--no-status-line` (feature
+  `session-attach-no-status-line`) drops it, for a caller that shows
+  the keys itself (`oats tui`); the keys stay. A routed attach sends
+  `--no-status-line` as it is: a host without
+  `session-attach-no-status-line` ignores it and shows the line. A keyed
+  viewer has no status line.
+
+  **Copy mode is the pane's, not the viewer's.** It is a mode of the agent's
+  pane on the agents' tmux server. While one viewer is scrolled back, every
+  other viewer of that agent (the Desktop, a second `oats tui`, another
+  `oats session attach`) shows the same frozen screen, and keys typed in any
+  of them go to copy mode until it is left (`q`, or scrolling back to the
+  bottom).
+
   **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
-  every other key goes to the agent, the tmux prefix included. Close the
-  terminal.
+  every other key goes to the agent, the tmux prefix included (after `C-b`,
+  as both keys). Close the terminal.
   With `--detach-key <key>` (`--detach-key=<key>` is the same; feature
   `session-attach-detach-key`, OATS 0.51.0), pressing `<key>` detaches that
   viewer's client. The agent's window and every other viewer are untouched.

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
+import { DETACH_KEY_FEATURE, LOCKED_PREFIX_BINDINGS, NO_STATUS_LINE_FEATURE, PREFIX_SCROLL_FEATURE, readSessionViewer, PREFIX_TABLE_SUFFIX, PREFIX_KEY, SESSION_DETACHED_EXIT, VIEWER_BINDINGS, VIEWER_PREFIX_MIN_TMUX, VIEWER_SCROLL_HINT, VIEWER_SCROLL_HINT_WITHOUT_PREFIX, tmuxForwardsBoundKey, VIEWER_CLOSED_HOOK_INDEX, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
-function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "" } = {}) {
+function fixture(failLink = false, { marker = "", version = "", sessions = "", keys = "", clients = "" } = {}) {
   const calls = [], options = [];
   return { calls, options, exec(bin, args, opts) {
     assert.equal(bin, "tmux");
@@ -11,6 +11,7 @@ function fixture(failLink = false, { marker = "", version = "", sessions = "", k
     const cmd = args.slice(3); calls.push(cmd); options.push(opts);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
     if (cmd[0] === "list-keys") return keys;
+    if (cmd[0] === "list-clients") return clients;
     if (cmd[0] === "list-sessions") return sessions;
     if (cmd[0] === "new-session") return "@98\n";
     if (cmd[0] === "link-window" && failLink) throw new Error("target disappeared");
@@ -20,10 +21,20 @@ function fixture(failLink = false, { marker = "", version = "", sessions = "", k
   } };
 }
 const MOUSE = "#{||:#{pane_in_mode},#{mouse_any_flag}}";
+/** The locked viewer's C-b table (#1502 part D): `[` is copy mode; any other key, the C-b first and
+ *  then that key, as the agent would have read them, the viewer's own wheel, drag and S-PageUp
+ *  doing after the C-b what they do without it. */
+const PREFIX_BINDINGS = [
+  ["[", "copy-mode"],
+  ["WheelUpPane", `send-keys C-b ; if-shell -F '${MOUSE}' 'send-keys -M' 'copy-mode -e; send-keys -M'`],
+  ["MouseDrag1Pane", `send-keys C-b ; if-shell -F '${MOUSE}' 'send-keys -M' 'copy-mode -M'`],
+  ["S-PageUp", "send-keys C-b ; copy-mode -u"],
+  ["Any", "send-keys C-b ; if-shell -F '#{!=:#{mouse_x},}' 'send-keys -M' 'send-keys'"],
+];
 /** The one global hook entry the kernel owns: when a session whose name is a viewer's closes, its
  *  key table is unbound. The name is matched before it is used in a command (a format inside
  *  `#{...}` cannot hold `}`, so the 8 hex digits are spelled out). */
-const VIEWER_CLOSED_HOOK = `if-shell -F '#{m/r:^oatsview-([0-9]+)-${"[0-9a-f]".repeat(8)}$,#{hook_session_name}}' "run-shell -C 'unbind-key -a -q -T #{hook_session_name}'"`;
+const VIEWER_CLOSED_HOOK = `if-shell -F '#{m/r:^oatsview-([0-9]+)-${"[0-9a-f]".repeat(8)}$,#{hook_session_name}}' "run-shell -C 'unbind-key -a -q -T #{hook_session_name} ; unbind-key -a -q -T #{hook_session_name}-prefix'"`;
 test("tmux attach isolates one exact window and cleanup kills only the viewer", () => {
   const io = fixture();
   const viewer = prepareSessionViewer(target, io);
@@ -31,11 +42,12 @@ test("tmux attach isolates one exact window and cleanup kills only the viewer", 
   assert.deepEqual(io.calls.find((c) => c[0] === "kill-window"), ["kill-window", "-t", "@98"]);
   const viewerName = io.calls.find((c) => c[0] === "new-session")[3];
   assert.match(viewerName, /^oatsview-/);
-  assert.ok(io.calls.some((c) => c.join(" ") === `set-option -t ${viewerName} status off`), "the status line is hidden on the temporary viewer session only");
+  assert.ok(io.calls.some((c) => c.join(" ") === `set-option -t ${viewerName} status on`), "the status line, its scroll keys, is the temporary viewer session's only");
   assert.equal(io.calls.some((c) => c[0] === "set-option" && c[2] !== viewerName), false, "no option is set on the agents' session");
+  const before = io.calls.length;
   viewer.cleanup();
-  assert.equal(io.calls.at(-1)[0], "kill-session");
-  assert.match(io.calls.at(-1)[2], /^=oatsview-/);
+  assert.deepEqual(io.calls.slice(before).map((c) => c[0]), ["kill-session", "unbind-key"], "the viewer session, then its table");
+  assert.match(io.calls.at(-2)[2], /^=oatsview-/);
   assert.deepEqual(viewer.args.slice(0, 4), ["-u", "-S", target.socket, "attach-session"]);
 });
 test("the viewer's client leaves when the agent's window ends, never moved to another session (#1237)", () => {
@@ -64,7 +76,7 @@ test("every tmux call of the viewer runs in a session and process group of its o
     const calls = viewerCalls(io);
     for (const cmd of ["new-session", "kill-window", "set-option", "-V", "kill-session"]) assert.ok(calls.some(([c]) => c === cmd), cmd);
     if (detachKey !== undefined) for (const cmd of ["show-options", "bind-key"]) assert.ok(calls.some(([c]) => c === cmd), cmd);
-    assert.equal(io.calls.at(-1)[0], detachKey === undefined ? "kill-session" : "unbind-key");
+    assert.equal(io.calls.at(-1)[0], "unbind-key", "cleanup ends with the viewer's table");
     ownGroup(calls, detachKey ?? "no key");
   }
   // And the cleanup of a preparation that failed.
@@ -76,29 +88,30 @@ test("every tmux call of the viewer runs in a session and process group of its o
 test("failed viewer allocation cleans its placeholder without touching source", () => {
   const io = fixture(true);
   assert.throws(() => prepareSessionViewer(target, io), /disappeared/);
-  assert.equal(io.calls.at(-1)[0], "kill-session");
-  assert.match(io.calls.at(-1)[2], /^=oatsview-/);
+  assert.deepEqual(io.calls.slice(-2).map((c) => c[0]), ["kill-session", "unbind-key"]);
+  assert.match(io.calls.at(-2)[2], /^=oatsview-/);
 });
 test("the viewer's locked table lets a drag start a tmux copy selection (#520), passing it through when the app grabbed the mouse", () => {
-  const io = fixture();
+  const io = fixture(false, { version: "tmux 3.8\n" });
   prepareSessionViewer(target, io);
-  const binds = io.calls.filter((c) => c[0] === "bind-key" && c[2] === "oatsview-locked").map((c) => c[3]);
-  assert.deepEqual(binds, ["WheelUpPane", "MouseDrag1Pane", "S-PageUp"]);
+  const name = io.calls.find((c) => c[0] === "new-session")[3];
+  const binds = io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]);
+  assert.deepEqual(binds, ["WheelUpPane", "MouseDrag1Pane", "S-PageUp", "C-b"]);
   assert.deepEqual(io.calls.find((c) => c[0] === "bind-key" && c[3] === "MouseDrag1Pane"),
-    ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"]);
+    ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"]);
 });
 test("every viewer's table binds S-PageUp to copy mode, scrolled up a page, whatever the app does with the mouse (#1476)", () => {
   for (const detachKey of [undefined, "F12"]) {
     const io = fixture();
     prepareSessionViewer(target, { ...io, detachKey });
     const table = io.calls.find((c) => c[0] === "set-option" && c[3] === "key-table")[4];
-    assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[3] === "S-PageUp"), [["bind-key", "-T", table, "S-PageUp", "copy-mode -u"]], String(detachKey));
+    assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === table && c[3] === "S-PageUp"), [["bind-key", "-T", table, "S-PageUp", "copy-mode -u"]], String(detachKey));
   }
 });
 
 // ---- a detach key (awebai/oats#856) --------------------------------------------------------------
 
-test("without a detach key the viewer's tmux calls are exactly these, in this order, and cleanup is one kill-session", () => {
+test("without a detach key the viewer's tmux calls are exactly these, in this order: its own table, named as its session; cleanup kills the session and unbinds the table", () => {
   const io = fixture();
   const viewer = prepareSessionViewer(target, io);
   const name = io.calls.find((c) => c[0] === "new-session")[3];
@@ -112,28 +125,30 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["kill-window", "-t", "@98"],
     ["set-option", "-t", name, "prefix", "None"],
     ["set-option", "-t", name, "prefix2", "None"],
-    ["set-option", "-t", name, "key-table", "oatsview-locked"],
-    ["set-option", "-t", name, "status", "off"],
-    ["set-option", "-t", name, "detach-on-destroy", "on"],
-    ["unbind-key", "-a", "-q", "-T", "oatsview-locked"],
-    ["bind-key", "-T", "oatsview-locked", "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
-    ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
-    ["bind-key", "-T", "oatsview-locked", "S-PageUp", "copy-mode -u"],
-    ["set-option", "-t", name, "mouse", "on"],
     ["-V"],
+    ["set-option", "-t", name, "key-table", name],
+    ["set-option", "-t", name, "status", "on"],
+    ["set-option", "-t", name, "status-format[0]", "Shift+PgUp to scroll back"],
+    ["set-option", "-t", name, "detach-on-destroy", "on"],
+    ["unbind-key", "-a", "-q", "-T", name],
+    ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
+    ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
+    ["bind-key", "-T", name, "S-PageUp", "copy-mode -u"],
+    ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
+    ["set-option", "-t", name, "mouse", "on"],
   ];
   assert.deepEqual(io.calls, prepared);
-  assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-hook", "-t", `=${name}:`, "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'kill-session -t =${name}'`]);
+  assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-hook", "-t", `=${name}:`, "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'unbind-key -a -q -T ${name} ; kill-session -t =${name}'`]);
   assert.equal(viewer.session, name);
   assert.deepEqual(viewer.swept, { sessions: 0, tables: 0 });
   assert.equal(viewer.detached(), false, "a viewer without a key was never left by one");
   assert.deepEqual(io.calls, prepared, "and no tmux call asks");
   viewer.cleanup();
-  assert.deepEqual(io.calls.slice(prepared.length), [["kill-session", "-t", `=${name}`]]);
+  assert.deepEqual(io.calls.slice(prepared.length), [["kill-session", "-t", `=${name}`], ["unbind-key", "-a", "-q", "-T", name]]);
   // The same holds for `detachKey: undefined`, which is how the CLI passes an absent flag.
   const again = fixture();
   prepareSessionViewer(target, { ...again, detachKey: undefined });
-  assert.deepEqual(again.calls.map((c) => c.map((a) => a.replace(/oatsview-\d+-[0-9a-f]{8}/, "V"))), prepared.map((c) => c.map((a) => a.replace(name, "V"))));
+  assert.deepEqual(again.calls.map((c) => c.map((a) => a.replaceAll(/oatsview-\d+-[0-9a-f]{8}/g, "V"))), prepared.map((c) => c.map((a) => a.replaceAll(name, "V"))));
 });
 
 test("with a detach key the viewer reads a table of its own, named as its session: the two mouse bindings and the key, the key's command one constant argument, and nothing names oatsview-locked", () => {
@@ -151,6 +166,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["kill-window", "-t", "@98"],
       ["set-option", "-t", name, "prefix", "None"],
       ["set-option", "-t", name, "prefix2", "None"],
+      ["-V"],
       ["set-option", "-t", name, "key-table", name],
       ["set-option", "-t", name, "status", "off"],
       ["set-option", "-t", name, "detach-on-destroy", "on"],
@@ -161,12 +177,12 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; set-hook -u client-detached ; detach-client"],
       ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
       ["set-option", "-t", name, "mouse", "on"],
-      ["-V"],
     ], key);
     // The hook unbinds the table itself: a session its kill-session ends runs no other hook.
     assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-hook", "-t", `=${name}:`, "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'unbind-key -a -q -T ${name} ; kill-session -t =${name}'`], key);
     assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]), ["WheelUpPane", "MouseDrag1Pane", "S-PageUp", key]);
-    assert.equal(io.calls.some((c) => c.some((a) => a.includes("oatsview-locked"))), false, "no call names the locked table");
+    assert.equal(io.calls.some((c) => c.some((a) => a.includes("oatsview-locked"))), false, "no call names a server-wide table");
+    assert.equal(io.calls.some((c) => c[0] === "bind-key" && c[3] === "C-b"), false, "a keyed viewer has no C-b of its own");
     const before = io.calls.length;
     viewer.cleanup();
     assert.deepEqual(io.calls.slice(before), [["kill-session", "-t", `=${name}`], ["unbind-key", "-a", "-q", "-T", name]], "cleanup kills the session and unbinds its table");
@@ -251,8 +267,84 @@ test("the detach key grammar is closed: what it accepts and what it refuses, and
   }
 });
 
-test("the constants a caller reads: the feature name and the status of a leave by the key", () => {
+test("without its status line (--no-status-line, #1502 part D) a locked viewer has no status line and no hint, and keeps its C-b table and its keys; a keyed viewer has none either way", () => {
+  const io = fixture(false, { version: "tmux 3.8\n" });
+  prepareSessionViewer(target, { ...io, statusLine: false });
+  const name = io.calls.find((c) => c[0] === "new-session")[3];
+  assert.deepEqual(io.calls.filter((c) => c[0] === "set-option" && c[3].startsWith("status")), [["set-option", "-t", name, "status", "off"]]);
+  assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]), ["WheelUpPane", "MouseDrag1Pane", "S-PageUp", "C-b"]);
+  assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === `${name}-prefix`).map((c) => c[3]), PREFIX_BINDINGS.map(([key]) => key));
+  for (const statusLine of [true, false]) {
+    const keyed = fixture();
+    prepareSessionViewer(target, { ...keyed, detachKey: "F12", statusLine });
+    const own = keyed.calls.find((c) => c[0] === "new-session")[3];
+    assert.deepEqual(keyed.calls.filter((c) => c[0] === "set-option" && c[3].startsWith("status")), [["set-option", "-t", own, "status", "off"]], String(statusLine));
+  }
+});
+
+test("the viewer's bindings are data a caller can pin its own table to (the Desktop's local viewer): every viewer's three, the locked viewer's C-b and its table's five, each a bind-key's arguments after the table", () => {
+  assert.deepEqual(VIEWER_BINDINGS, [
+    ["WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
+    ["MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
+    ["S-PageUp", "copy-mode -u"],
+  ]);
+  assert.equal(PREFIX_KEY, "C-b");
+  assert.equal(PREFIX_TABLE_SUFFIX, "-prefix");
+  assert.deepEqual(LOCKED_PREFIX_BINDINGS, PREFIX_BINDINGS);
+  for (const list of [VIEWER_BINDINGS, LOCKED_PREFIX_BINDINGS]) {
+    assert.ok(Object.isFrozen(list) && list.every(Object.isFrozen), "frozen: a caller reads them, never changes the kernel's");
+  }
+});
+
+test("the C-b table only where tmux forwards a bound key (tmux 3.3: send-keys with no key sends the key it is bound to): there the locked viewer binds C-b and its table, and its status line names both keys; on 3.0 to 3.2a, a development build of an earlier one, an unreadable version (master) or none, neither, and the line names Shift+PgUp alone", () => {
+  assert.equal(VIEWER_PREFIX_MIN_TMUX, "3.3");
+  // A development build next-X.Y is newer than X.Y's predecessor: it reads as X.Y.
+  for (const v of ["tmux 3.3", "tmux 3.3a", "tmux 3.8", "tmux 3.10", "tmux 4.0", "tmux 3.8\n", "tmux next-3.3", "tmux next-3.6", "tmux next-4.0\n"]) assert.equal(tmuxForwardsBoundKey(v), true, JSON.stringify(v));
+  for (const v of ["tmux 3.0", "tmux 3.0a", "tmux 3.1c", "tmux 3.2", "tmux 3.2a", "tmux next-3.2", "tmux master", "openbsd-7.4", "tmux 3", "", null, undefined]) assert.equal(tmuxForwardsBoundKey(v), false, JSON.stringify(v));
+  const on = fixture(false, { version: "tmux 3.3\n" });
+  const viewer = prepareSessionViewer(target, on);
+  const name = viewer.session;
+  assert.deepEqual(on.calls.slice(on.calls.findIndex((c) => c[0] === "-V")), [
+    ["-V"],
+    ["set-option", "-t", name, "key-table", name],
+    ["set-option", "-t", name, "status", "on"],
+    ["set-option", "-t", name, "status-format[0]", VIEWER_SCROLL_HINT],
+    ["set-option", "-t", name, "detach-on-destroy", "on"],
+    ["unbind-key", "-a", "-q", "-T", name],
+    ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
+    ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
+    ["bind-key", "-T", name, "S-PageUp", "copy-mode -u"],
+    ["bind-key", "-T", name, "C-b", `switch-client -T ${name}-prefix`],
+    // Its own C-b table, bound once, before any client reads it.
+    ["unbind-key", "-a", "-q", "-T", `${name}-prefix`],
+    ...PREFIX_BINDINGS.map((binding) => ["bind-key", "-T", `${name}-prefix`, ...binding]),
+    ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
+    ["set-option", "-t", name, "mouse", "on"],
+  ]);
+  assert.equal(on.calls.filter((c) => c[0] === "-V").length, 1, "one probe answers both questions");
+  assert.equal(on.calls.some((c) => c[0] === "list-clients" || c[0] === "switch-client" || c.some((a) => String(a).startsWith("oatsview-locked"))), false, "no other client is looked at, and no server-wide table");
+  // Its tables go with it: the client-detached hook and the cleanup unbind both.
+  assert.equal(viewer.args.at(-1), `if-shell -F '#{==:#{session_attached},0}' 'unbind-key -a -q -T ${name} ; unbind-key -a -q -T ${name}-prefix ; kill-session -t =${name}'`);
+  const before = on.calls.length;
+  viewer.cleanup();
+  assert.deepEqual(on.calls.slice(before), [["kill-session", "-t", `=${name}`], ["unbind-key", "-a", "-q", "-T", name], ["unbind-key", "-a", "-q", "-T", `${name}-prefix`]]);
+  assert.deepEqual(viewer.args.slice(0, 5), ["-u", "-S", target.socket, "-T", "sync"]);
+  assert.equal(VIEWER_SCROLL_HINT, "Shift+PgUp or C-b [ to scroll back");
+  assert.equal(VIEWER_SCROLL_HINT_WITHOUT_PREFIX, "Shift+PgUp to scroll back");
+  for (const version of ["tmux 3.2a\n", "tmux 3.0\n", "tmux next-3.2\n", "tmux master\n", "", new Error("no tmux -V")]) {
+    const off = fixture(false, { version });
+    prepareSessionViewer(target, off);
+    assert.equal(off.calls.some((c) => c.includes("C-b") || c.some((a) => String(a).endsWith("-prefix"))), false, `${version}: no C-b and no C-b table`);
+    assert.deepEqual(off.calls.find((c) => c[3] === "status-format[0]"), ["set-option", "-t", off.calls.find((c) => c[0] === "new-session")[3], "status-format[0]", VIEWER_SCROLL_HINT_WITHOUT_PREFIX], String(version));
+  }
+});
+
+
+
+
+test("the constants a caller reads: the feature names and the status of a leave by the key", () => {
   assert.equal(DETACH_KEY_FEATURE, "session-attach-detach-key");
+  assert.equal(NO_STATUS_LINE_FEATURE, "session-attach-no-status-line");
   assert.equal(SESSION_DETACHED_EXIT, 20);
   assert.equal(VIEWER_CLOSED_HOOK_INDEX, 900, "the index of session-closed the kernel owns on the agents' server");
 });
@@ -273,18 +365,19 @@ test("the viewer's client asks for synchronized output (-T sync, before the comm
     const viewer = prepareSessionViewer(target, io);
     const name = io.calls.find((c) => c[0] === "new-session")[3];
     assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, "one probe");
-    return viewer.args.map((a) => a.replace(name, "V"));
+    return viewer.args.map((a) => a.replaceAll(name, "V"));
   };
-  const attach = ["attach-session", "-t", "=V", ";", "set-hook", "-t", "=V:", "client-detached", "if-shell -F '#{==:#{session_attached},0}' 'kill-session -t =V'"];
-  const synced = ["-u", "-S", target.socket, "-T", "sync", ...attach];
-  const today = ["-u", "-S", target.socket, ...attach];
-  assert.deepEqual(args("tmux 3.7c\n"), synced);
-  assert.deepEqual(args("tmux 3.2\n"), synced);
-  assert.deepEqual(args("tmux 3.1c\n"), today);
-  assert.deepEqual(args("tmux 3.0\n"), today);
-  assert.deepEqual(args("tmux next-3.6\n"), today, "unparsed");
-  assert.deepEqual(args(""), today, "no answer");
-  assert.deepEqual(args(new Error("spawnSync tmux ENOENT")), today, "a failed probe is not the attach's failure");
+  // The hook removes the viewer's tables, its C-b table too where it has one (tmux 3.3 and later).
+  const attach = (prefixed) => ["attach-session", "-t", "=V", ";", "set-hook", "-t", "=V:", "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'unbind-key -a -q -T V ; ${prefixed ? "unbind-key -a -q -T V-prefix ; " : ""}kill-session -t =V'`];
+  const synced = (prefixed) => ["-u", "-S", target.socket, "-T", "sync", ...attach(prefixed)];
+  const today = (prefixed) => ["-u", "-S", target.socket, ...attach(prefixed)];
+  assert.deepEqual(args("tmux 3.7c\n"), synced(true));
+  assert.deepEqual(args("tmux 3.2\n"), synced(false));
+  assert.deepEqual(args("tmux 3.1c\n"), today(false));
+  assert.deepEqual(args("tmux 3.0\n"), today(false));
+  assert.deepEqual(args("tmux next-3.6\n"), today(true), "unparsed for -T, a 3.6 in the making for C-b");
+  assert.deepEqual(args(""), today(false), "no answer");
+  assert.deepEqual(args(new Error("spawnSync tmux ENOENT")), today(false), "a failed probe is not the attach's failure");
 });
 
 test("the probe runs once per exec: later viewers reuse its answer, a failed one included", () => {
@@ -315,17 +408,23 @@ test("the sweep removes a viewer session only when no client is attached and the
     `bind-key    -T oatsview-${dead}-feedf00d WheelUpPane send-keys -M`, // the same table, counted once
     `bind-key -r -T oatsview-${dead}-a77ac4ed F12 detach-client`, // its session is attached: kept
     `bind-key    -T oatsview-${live}-5ca1ab1e F12 detach-client`, // its session is kept: kept
-    "bind-key    -T oatsview-locked WheelUpPane send-keys -M", // shared by plain viewers: kept
+    `bind-key    -T oatsview-${dead}-0badc0de-prefix [ copy-mode`, // the C-b table of a removed session: removed
+    `bind-key    -T oatsview-${live}-5ca1ab1e-prefix [ copy-mode`, // the C-b table of a kept session: kept
+    "bind-key    -T oatsview-locked WheelUpPane send-keys -M", // an earlier kernel's server-wide table, no viewer's: kept
+    "bind-key    -T oatsview-locked-prefix [ copy-mode", // the same
     "bind-key    -T prefix d detach-client",
   ].join("\n");
   const io = fixture(false, { sessions, keys });
   const viewer = prepareSessionViewer(target, io);
-  assert.deepEqual(viewer.swept, { sessions: 1, tables: 2 });
-  const removals = io.calls.filter((c) => c[0] === "kill-session" || c[0] === "unbind-key" && c[4] !== "oatsview-locked");
+  assert.deepEqual(viewer.swept, { sessions: 1, tables: 3 });
+  // What the sweep removed: the new viewer's own unbinds (its fresh tables) are not the sweep's.
+  const own = viewer.session;
+  const removals = io.calls.filter((c) => c[0] === "kill-session" || c[0] === "unbind-key" && !String(c[4]).startsWith(own));
   assert.deepEqual(removals, [
     ["kill-session", "-t", `=oatsview-${dead}-0badc0de`],
     ["unbind-key", "-a", "-q", "-T", `oatsview-${dead}-0badc0de`],
     ["unbind-key", "-a", "-q", "-T", `oatsview-${dead}-feedf00d`],
+    ["unbind-key", "-a", "-q", "-T", `oatsview-${dead}-0badc0de-prefix`],
   ]);
   assert.ok(io.calls.findIndex((c) => c[0] === "list-keys") < io.calls.findIndex((c) => c[0] === "list-sessions"), "keys are listed first: a table seen there has its session in the later list");
   assert.ok(io.calls.findIndex((c) => c[2] === `oatsview-${dead}-feedf00d`) < io.calls.findIndex((c) => c[0] === "new-session"), "swept before the viewer exists");
@@ -339,7 +438,7 @@ test("a sweep that tmux refuses is not the attach's failure: what it could not r
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
     if (cmd[0] === "list-keys") return `bind-key -T oatsview-${dead}-feedf00d F12 detach-client\nbind-key -T oatsview-${dead}-0badc0de F12 detach-client\n`;
     if (cmd[0] === "list-sessions") return `oatsview-${dead}-0badc0de\t0\n`;
-    if (cmd[0] === "kill-session" || cmd[0] === "unbind-key" && cmd[4] !== "oatsview-locked") throw new Error("refused");
+    if (cmd[0] === "kill-session" || cmd[0] === "unbind-key" && /-(feedf00d|0badc0de)/.test(cmd[4])) throw new Error("refused");
     if (cmd[0] === "new-session") return "@98\n";
     return "";
   } });
@@ -354,4 +453,17 @@ test("a sweep that tmux refuses is not the attach's failure: what it could not r
     return "";
   } });
   assert.deepEqual(listing.swept, { sessions: 0, tables: 0 });
+});
+
+test("readSessionViewer answers this host's viewer fact, prefixScroll: a viewer without a detach key binds C-b [ here (tmux 3.3 and later, the viewer's own rule); it asks tmux -V afresh at every call, and no answer is false (feature session-attach-prefix-scroll)", () => {
+  assert.equal(PREFIX_SCROLL_FEATURE, "session-attach-prefix-scroll");
+  const calls = [];
+  const host = (answer) => (binary, args) => { calls.push([binary, ...args]); if (answer instanceof Error) throw answer; return answer; };
+  for (const [answer, prefixScroll] of [["tmux 3.4\n", true], ["tmux 3.3a\n", true], ["tmux next-3.6\n", true], ["tmux 3.2a\n", false], ["tmux master\n", false], ["", false], [new Error("spawnSync tmux ENOENT"), false]]) {
+    calls.length = 0;
+    const exec = host(answer);
+    assert.deepEqual(readSessionViewer({ exec }), { prefixScroll }, String(answer));
+    assert.deepEqual(readSessionViewer({ exec }), { prefixScroll }, String(answer));
+    assert.deepEqual(calls, [["tmux", "-V"], ["tmux", "-V"]], "probed fresh, never kept");
+  }
 });
