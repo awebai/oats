@@ -3696,7 +3696,9 @@ An envelope, `ok: true` whenever no step failed, human steps included
 - `registration` is the registration as written or found (`sshHost`,
   `workspace`: the absolute path the host resolved for `--dir`, never `~`;
   `workspaceKey`; and `oatsPath`, `path`,
-  `label` when set), `null` until the `register` step has run.
+  `label` when set, given or, without `--path`, read from the host user's
+  [login shell](servers.md#the-hosts-login-shell-path)), `null` until the
+  `register` step has run.
 - `human` lists the remedies of the `needs-human` steps, in order. A
   `readiness` step that needs a human has one line per problem
   (`<souls>: <subject>: <reason>[ → <remedy>]`, plus `readiness not checked
