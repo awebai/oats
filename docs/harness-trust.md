@@ -35,7 +35,9 @@ reads. The targets of each selected harness are:
   session's or server's `HOME`. It is not the operator's own shell's when
   the server holds another account;
 - one file for each launch configuration (`launch-configs:` in the
-  deployment's `oats-local.yaml`) of that harness whose `env` sets
+  deployment's `oats-local.yaml`, or in this machine's
+  [`~/.oats/config/launch-configs.yaml`](configuration.md#this-machines-launch-configurations))
+  of that harness whose `env` sets
   `CLAUDE_CONFIG_DIR` (claude) or `CODEX_HOME` (codex), as a literal or a
   `{fromEnv: NAME}` reference resolved from the environment the command runs
   in;

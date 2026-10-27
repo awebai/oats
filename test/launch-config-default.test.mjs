@@ -116,7 +116,7 @@ test("spawn --preview, souls, the record and inspect say when a launch comes fro
   assert.equal(preview.launch.from, "soul", "the layer that chose the harness still decides `from`");
   decodes(preview.launch, PREVIEW_FROM);
   const human = fx.cli(["spawn", "writer", "--preview"]);
-  assert.match(human.stdout, /via launch configuration personal \(this machine's claude default\) YOLO/);
+  assert.ok(human.stdout.includes(`via launch configuration personal (this machine's claude default) from ${join(fx.dep, "oats-local.yaml")} YOLO`), human.stdout);
   const souls = Object.fromEntries(ok(fx.cli(["souls", "--json"]), "souls").souls.map((s) => [s.name, s]));
   assert.deepEqual(souls.writer.launch.effective, { harness: "claude", model: "claude-opus-5-5", launchConfig: "personal" });
   decodes(souls.writer.launch);

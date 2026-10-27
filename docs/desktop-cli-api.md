@@ -2453,6 +2453,10 @@ it to a temporary copy (`soulFetched: true`).
   otherwise. Show it, and `yolo`, whenever it is `true`. An explicit
   `--launch-config none` asks for the bare harness and bypasses the default;
   to run the host's default, omit `--launch-config`.
+- `launchConfigSource` (0.69) is the directory of the file that declares
+  `launchConfig`: the deployment, or `~/.oats/config` for
+  [this machine's launch configurations](configuration.md#this-machines-launch-configurations);
+  `null` when there is no `launchConfig`. A spawn records the same value.
 - `modelSource` is `"explicit"`, `"soul default"`, `"launch-config <name>"`,
   `"native default"` or `"native default (explicit)"` (`--model
   @native-default`). Omitting `--model` and asking for the native default are
