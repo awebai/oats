@@ -398,10 +398,11 @@ test("composeSoulInstructions refuses a materialize that wrote something other t
   await assert.rejects(run(async (p, home) => {
     const block = { source: "capability:acme.ops", file: join(fx.base, "elsewhere.md"), content: "x" };
     const { renderInstructionText } = await import("../lib/instruction-composition.mjs");
-    const kernel = p.soulAgentsMd;
-    writeFileSync(join(home, "AGENTS.md"), renderInstructionText(kernel, [block]));
-    return { blocks: [block] };
-  }), (e) => e.code === "E_COMPOSITION_INCOMPLETE");
+    // Written as materialize writes it (the capability block, then the kernel's), so only containment refuses it.
+    const blocks = [block, ...p.blocks];
+    writeFileSync(join(home, "AGENTS.md"), renderInstructionText(p.soulAgentsMd, blocks));
+    return { blocks };
+  }), (e) => e.code === "E_COMPOSITION_INCOMPLETE" && /is not inside the composed home/.test(e.message));
   // materialize's own refusal passes through unchanged.
   await assert.rejects(run(async () => { throw Object.assign(new Error("boom"), { code: "E_MATERIALIZE_SOURCE" }); }), (e) => e.code === "E_MATERIALIZE_SOURCE");
   assert.deepEqual(scratchHomes(tmp), []);
