@@ -166,7 +166,7 @@ export function launchFlagIgnored(answer) {
  * units in total. The first line that does not fit and every line after it are left out, and no line is cut
  * inside; the first line always fits (a display line is at most MAX_DISPLAY_LINE units). `omitted` counts
  * the lines left out, 0 when none; an entry with nothing to show was never a line and is not counted. By
- * position only, never by words. Shared by launchFlagIgnored and the session-resume reader. */
+ * position only, never by words. Used by launchFlagIgnored. */
 export function boundedWarnings(raw) {
   const lines = Array.isArray(raw) ? raw.map(w => displayLine(w)).filter(line => line !== null) : [];
   const warnings = [];
