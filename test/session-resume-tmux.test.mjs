@@ -559,3 +559,27 @@ test("a deployment named through a symlink reads and writes the same record as i
   assert.deepEqual(swept.rows.map((r) => [r.instance, r.outcome]), both);
   assert.deepEqual(plan(I.dep), [["i1", OUTCOME.SKIPPED], ["i2", OUTCOME.SKIPPED]], "judged through the symlink, judged for the real path");
 });
+
+test("the per-boot note names a home by its real path: a budget used up through one spelling of the deployment refuses the home through the other, and a start through a symlink is counted under the real path", TMUX, async () => {
+  const J = v2Deployment({ name: "j", local: { "launch-configs": { "claude-j": config("claude", "dep-j") } } });
+  later.push(J);
+  const homes = await twoLost(J, ["j1", "j2"], "claude-j");
+  const link = join(base, "j-link");
+  symlinkSync(J.dep, link);
+  const boot = "alias-boot", notePath = join(oatsHome, "session-resume", "note.json");
+  const saved = existsSync(notePath) ? readFileSync(notePath) : null;
+  try {
+    // j1 was started 3 times this boot (under its real path): through the symlink it is refused.
+    writeFileSync(notePath, JSON.stringify({ bootId: boot, refused: [], resumes: { [homes.j1]: 3 } }));
+    const answers = [];
+    const sweep = await resumeSessions({ deployment: link, boot, start: (row) => { answers.push(row.instance); return Promise.resolve(RESUMED_ANSWER); } });
+    assert.deepEqual(sweep.rows.map((r) => [r.instance, r.outcome, r.reason ?? null]), [["j1", OUTCOME.REFUSED, ROW_REASON.KEEPS_GETTING_LOST], ["j2", OUTCOME.RESUMED, null]]);
+    assert.deepEqual(answers, ["j2"], "only j2 was started");
+    assert.equal(sweep.rows[0].home, join(link, "agents", "dev", "instances", "j1"), "the row shows the path it listed");
+    // j2's start through the symlink is counted under its real path, where a real-path sweep reads it.
+    assert.deepEqual(readBootNote(boot).resumes, { [homes.j1]: 3, [homes.j2]: 1 });
+  } finally {
+    rmSync(notePath, { force: true });
+    if (saved) writeFileSync(notePath, saved);
+  }
+});
