@@ -1,81 +1,39 @@
-// Lost sessions resumed, main side (session-resume-launch.mjs): the trigger's wiring, the notices queue taken
-// whole, its one channel, and how main.mjs and preload.cjs wire them. The module is driven with fakes (no
-// Electron, no kernel, no sweep is ever run). main.mjs and preload.cjs are read as source and their shipped
-// pieces run in a vm, as host-theme-main.test.mjs does.
+// Lost sessions resumed, main side (session-resume-launch.mjs): the trigger's wiring, which shows nothing and logs
+// a failed sweep, and how main.mjs wires it; neither main.mjs nor preload.cjs carries a notice. The module is driven
+// with fakes (no Electron, no kernel, no sweep is ever run). main.mjs and preload.cjs are read as source and their
+// shipped pieces run in a vm, as host-theme-main.test.mjs does.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
-import { trustedRendererUrl } from "../renderer/window-binding.mjs";
 import { createResumeTrigger, localDeploymentIds } from "../../client/session-resume-trigger.mjs";
 import { readResumeSweep } from "../../client/session-resume.mjs";
 import { RESUME_PROBE, resumedRow, sweepAnswer } from "./helpers/resume-sweep.mjs";
-import { createResumeNotices, createResumeWiring, installResumeHandlers, sendToLiveWindows } from "../session-resume-launch.mjs";
+import { createResumeWiring } from "../session-resume-launch.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
-/** A summary as the reader makes one: `a<n>` resumed. */
-const summary = (n) => readResumeSweep(sweepAnswer([resumedRow(`a${n}`)])).summary;
-const SUMMARY = summary(0);
+/** A summary as the reader makes one: `a0` resumed. */
+const SUMMARY = readResumeSweep(sweepAnswer([resumedRow("a0")])).summary;
 const CLI = Object.freeze({ ...RESUME_PROBE, probedAt: 1 });
-
-// ── The notices queue ────────────────────────────────────────────────────────
-
-test("notices: take returns every pending summary, oldest first, and clears them; [] when none", () => {
-  const notices = createResumeNotices();
-  assert.deepEqual(notices.take(), [], "before any");
-  notices.push(summary(1)); notices.push(summary(2)); notices.push(summary(3));
-  const taken = notices.take();
-  assert.deepEqual(taken, [summary(1), summary(2), summary(3)]);
-  assert.deepEqual(notices.take(), [], "taken once");
-  notices.push(summary(4));
-  assert.deepEqual(taken, [summary(1), summary(2), summary(3)], "a later push never reaches an array already taken");
-  assert.deepEqual(notices.take(), [summary(4)]);
-});
-
-test("notices: at most 10 pending; an 11th drops the oldest", () => {
-  const notices = createResumeNotices();
-  for (let n = 1; n <= 10; n++) notices.push(summary(n));
-  assert.deepEqual(notices.take(), Array.from({ length: 10 }, (_, i) => summary(i + 1)), "10 kept");
-  for (let n = 1; n <= 13; n++) notices.push(summary(n));
-  assert.deepEqual(notices.take(), Array.from({ length: 10 }, (_, i) => summary(i + 4)), "the three oldest dropped");
-  const small = createResumeNotices({ cap: 2 });
-  small.push(summary(1)); small.push(summary(2)); small.push(summary(3));
-  assert.deepEqual(small.take(), [summary(2), summary(3)]);
-});
 
 // ── The reading's routing ────────────────────────────────────────────────────
 
 /** The wiring over a fake trigger maker; `calls` records what the routing did, in order. */
 function wiring() {
-  const calls = [], notices = createResumeNotices();
+  const calls = [];
   let options = null;
   const made = { launch() {}, observed() {}, dispose() {} };
   const cli = () => CLI;
   const trigger = createResumeWiring({
-    createTrigger: (o) => { options = o; return made; }, cli, notices,
-    broadcast: () => calls.push(["broadcast", notices.take().length]),
+    createTrigger: (o) => { options = o; return made; }, cli,
     error: (line) => calls.push(["error", line]),
   });
   assert.equal(trigger, made, "the wiring returns what the maker made");
   assert.equal(options.cli, cli, "the CLI is passed as given");
   assert.deepEqual(Object.keys(options).sort(), ["cli", "onReading"], "run and read are the trigger's defaults");
-  return { calls, notices, onReading: options.onReading };
+  return { calls, onReading: options.onReading };
 }
-
-test("onReading: a notice queues its summary, then every live window is told", () => {
-  const w = wiring();
-  w.onReading({ kind: "notice", summary: SUMMARY });
-  assert.deepEqual(w.calls, [["broadcast", 1]], "queued before the broadcast");
-  w.calls.length = 0;
-  const kept = createResumeNotices(), sends = [];
-  const trigger = createResumeWiring({ createTrigger: (o) => o, cli: () => CLI, notices: kept, error: () => assert.fail("no error"),
-    broadcast: () => sendToLiveWindows([{ webContents: { isDestroyed: () => false, send: (...args) => sends.push(args) } }], "session-resume:ready") });
-  trigger.onReading({ kind: "notice", summary: summary(1) });
-  trigger.onReading({ kind: "notice", summary: summary(2) });
-  assert.deepEqual(sends, [["session-resume:ready"], ["session-resume:ready"]], "on each new summary, no payload");
-  assert.deepEqual(kept.take(), [summary(1), summary(2)]);
-});
 
 test("onReading: failed logs one line with its code only; a code that is not one is E_CLI_PROTOCOL", () => {
   for (const [code, logged] of [["E_CLI_FAILED", "E_CLI_FAILED"], ["E_SESSION_RESUME_9", "E_SESSION_RESUME_9"],
@@ -84,111 +42,65 @@ test("onReading: failed logs one line with its code only; a code that is not one
     const w = wiring();
     w.onReading({ kind: "failed", code, message: "stderr: /home/someone/secret" });
     assert.deepEqual(w.calls, [["error", `oats-desktop: the session resume sweep failed: ${logged}`]], String(code));
-    assert.deepEqual(w.notices.take(), []);
   }
 });
 
-test("onReading: quiet, busy, unsupported and anything else leave nothing and log nothing", () => {
-  for (const reading of [{ kind: "quiet", summary: SUMMARY }, { kind: "busy" }, { kind: "unsupported" }, { kind: "later" }, {}, null, undefined]) {
+test("onReading: a notice, quiet, busy, unsupported and anything else leave nothing and log nothing", () => {
+  for (const reading of [{ kind: "notice", summary: SUMMARY }, { kind: "quiet", summary: SUMMARY }, { kind: "busy" }, { kind: "unsupported" },
+    { kind: "later" }, {}, null, undefined]) {
     const w = wiring();
     w.onReading(reading);
     assert.deepEqual(w.calls, [], JSON.stringify(reading));
-    assert.deepEqual(w.notices.take(), [], JSON.stringify(reading));
   }
 });
 
-test("the wiring over the real trigger: the launch's notice is queued, broadcast, and taken whole", async () => {
-  const notices = createResumeNotices(), calls = [];
-  const trigger = createResumeWiring({
-    createTrigger: (options) => createResumeTrigger({ ...options, run: async () => ({ envelope: true }), read: () => ({ kind: "notice", summary: SUMMARY }) }),
-    cli: async () => CLI, notices, broadcast: () => calls.push("broadcast"), error: (line) => calls.push(line),
-  });
-  await trigger.launch();
-  assert.deepEqual(calls, ["broadcast"]);
-  assert.deepEqual(notices.take(), [SUMMARY]);
-  trigger.dispose();
+test("the wiring over the real trigger: the launch's notice is dropped, a failed sweep logs its line", async () => {
+  for (const [reading, logged] of [[{ kind: "notice", summary: SUMMARY }, []], [{ kind: "failed", code: "E_CLI_FAILED" }, ["oats-desktop: the session resume sweep failed: E_CLI_FAILED"]]]) {
+    const calls = [];
+    let runs = 0;
+    const trigger = createResumeWiring({
+      createTrigger: (options) => createResumeTrigger({ ...options, run: async () => { runs++; return { envelope: true }; }, read: () => reading }),
+      cli: async () => CLI, error: (line) => calls.push(line),
+    });
+    await trigger.launch();
+    assert.equal(runs, 1, `${reading.kind}: the launch sweep ran`);
+    assert.deepEqual(calls, logged, reading.kind);
+    trigger.dispose();
+  }
 });
 
-test("ready reaches every live window; a destroyed or closing one is skipped", () => {
-  const sends = [];
-  sendToLiveWindows([
-    { webContents: { isDestroyed: () => false, send: (...args) => sends.push(["one", ...args]) } },
-    { webContents: { isDestroyed: () => true, send: () => assert.fail("a destroyed window gets nothing") } },
-    { webContents: { isDestroyed: () => false, send: () => { throw new Error("closing"); } } },
-    { webContents: { isDestroyed: () => false, send: (...args) => sends.push(["two", ...args]) } },
-  ], "session-resume:ready");
-  assert.deepEqual(sends, [["one", "session-resume:ready"], ["two", "session-resume:ready"]], "no payload");
-});
-
-// ── The IPC, behind main's guard ─────────────────────────────────────────────
+// ── main.mjs and preload.cjs (source) ─────────────────────────────────────────
 
 const main = readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
 const preload = readFileSync(new URL("../preload.cjs", import.meta.url), "utf8");
-const RENDERER = "file:///fixture/renderer/index.html";
-/** Main's shipped trusted-frame guard, from its source. */
-function shippedGuard() {
-  const start = main.indexOf("function trustedFrame(e) {"), end = main.indexOf("// ---- IPC: the theme of this computer", start);
-  assert.ok(start >= 0 && end > start, "main.mjs defines its guard just before the host theme");
-  return runInNewContext(`${main.slice(start, end)}\nguard`, { trustedRendererUrl, RENDERER_URL: RENDERER });
-}
 
-test("IPC: the one channel refuses an untrusted frame before it takes anything, then takes every pending summary", () => {
-  const handlers = new Map(), notices = createResumeNotices();
-  let takes = 0;
-  const counted = { take: () => { takes++; return notices.take(); } };
-  installResumeHandlers({ ipc: { handle: (channel, fn) => handlers.set(channel, fn) }, guard: shippedGuard(), notices: counted });
-  assert.deepEqual([...handlers.keys()], ["session-resume:take"], "the preference channels are gone");
-  notices.push(summary(1)); notices.push(summary(2));
-  const take = handlers.get("session-resume:take");
-  for (const url of ["https://evil.example/", "file:///fixture/renderer/other.html", "file:///fixture/renderer/index.html#ws=", undefined]) {
-    assert.throws(() => take({ senderFrame: url === undefined ? undefined : { url } }), /forbidden: untrusted frame/, String(url));
-  }
-  assert.equal(takes, 0, "refused before the take");
-  const ok = { senderFrame: { url: RENDERER } };
-  assert.deepEqual(take(ok), [summary(1), summary(2)]);
-  assert.deepEqual(take(ok), []);
-  assert.equal(takes, 2);
-});
-
-// ── main.mjs wiring (source) ─────────────────────────────────────────────────
-
-test("main builds one trigger with the settled CLI, its notices, the ready broadcast and the guard", async () => {
-  const start = main.indexOf("const resumeNotices = createResumeNotices();"), tail = "installResumeHandlers({ ipc: ipcMain, guard, notices: resumeNotices });";
+test("main builds one trigger with the settled CLI and the error log, and nothing else", async () => {
+  const start = main.indexOf("const resumeTrigger = createResumeWiring({"), tail = "\n});";
   const end = main.indexOf(tail, start);
   assert.ok(start >= 0 && end > start, "main.mjs wires the trigger");
-  const calls = {}, sends = [], guard = () => {}, ipcMain = {}, readServedCli = () => {}, createResumeTrigger = () => {};
-  const made = { launch() {}, observed() {} }, queue = { push() {}, take() {} };
-  const out = runInNewContext(`${main.slice(start, end + tail.length)}\n;({ resumeTrigger, resumeNotices })`, {
-    ipcMain, guard, readServedCli, createResumeTrigger,
+  const calls = {}, readServedCli = () => {}, createResumeTrigger = () => {};
+  const made = { launch() {}, observed() {} };
+  const out = runInNewContext(`${main.slice(start, end + tail.length)}\n;({ resumeTrigger })`, {
+    readServedCli, createResumeTrigger,
     settledCli: (read, options) => { calls.settled = [read, options]; return "cli"; },
-    createResumeNotices: (...args) => { calls.notices = args; return queue; },
     createResumeWiring: (io) => { calls.io = io; return made; },
-    installResumeHandlers: (options) => { calls.handlers = options; },
-    sendToLiveWindows: (windows, channel) => sends.push([windows, channel]),
-    BrowserWindow: { getAllWindows: () => ["w1", "w2"] },
     console: { log: () => assert.fail("nothing is logged as log"), error: (line) => { calls.errored = line; } },
   });
-  assert.equal(out.resumeTrigger, made); assert.equal(out.resumeNotices, queue);
-  assert.deepEqual(calls.notices, [], "the queue's default cap");
+  assert.equal(out.resumeTrigger, made);
   const io = calls.io;
   assert.equal(io.createTrigger, createResumeTrigger, "the shared trigger, with its own run and read");
-  assert.deepEqual(Object.keys(io).sort(), ["broadcast", "cli", "createTrigger", "error", "notices"]);
-  assert.equal(io.notices, queue);
+  assert.deepEqual(Object.keys(io).sort(), ["cli", "createTrigger", "error"]);
   assert.equal(await io.cli(), "cli");
   assert.equal(calls.settled[0], readServedCli);
   assert.equal(JSON.stringify(calls.settled[1]), '{"attempts":60}', "as startupDeploymentList reads it");
-  io.broadcast();
-  assert.deepEqual(sends, [[["w1", "w2"], "session-resume:ready"]]);
   io.error("b");
   assert.equal(calls.errored, "b");
-  assert.equal(calls.handlers.guard, guard, "the existing trusted-frame guard");
-  assert.equal(calls.handlers.ipc, ipcMain); assert.equal(calls.handlers.notices, queue);
-  assert.deepEqual(Object.keys(calls.handlers).sort(), ["guard", "ipc", "notices"]);
 });
 
-test("main and preload carry nothing of the preference", () => {
+test("main and preload carry nothing of a notice or the preference: no channel, no queue, no bridge", () => {
   for (const [name, source] of [["main.mjs", main], ["preload.cjs", preload]]) {
-    assert.doesNotMatch(source, /session-resume:(set-)?preference|resumeAtLaunch|ResumeAtLaunch|ResumePreference|RESUME_PREFERENCE|session-resume\.json/, name);
+    assert.doesNotMatch(source, /session-resume:|ResumeNotice|resumeNotices|installResumeHandlers|sendToLiveWindows/, name);
+    assert.doesNotMatch(source, /resumeAtLaunch|ResumeAtLaunch|ResumePreference|RESUME_PREFERENCE|session-resume\.json/, name);
   }
 });
 
@@ -225,7 +137,6 @@ test("main launches the trigger once, in the startup callback only, after the de
   // Nowhere else: the trigger is named only where it is made, launched and observed.
   assert.equal([...main.matchAll(/\bresumeTrigger\b/g)].length, 3);
   assert.equal([...main.matchAll(/\bcreateResumeTrigger\b/g)].length, 2, "imported, and given only to the wiring");
-  assert.equal([...main.matchAll(/\bresumeNotices\b/g)].length, 3, "made, given to the wiring and to the handler");
   assert.doesNotMatch(main, /resume\w*\.dispose\(/i, "the trigger is never disposed in main");
   // Not on focus, window creation, activate, a workspace switch or a server replacement.
   for (const [what, re] of [
@@ -341,28 +252,16 @@ test("shutdown leaves the sweeps' children alone: quit names nothing of the trig
 
 // ── preload.cjs ──────────────────────────────────────────────────────────────
 
-test("preload: the take invokes its channel, the ready event hands over nothing and unsubscribes, and the preference is gone", async () => {
+test("preload: the bridge offers nothing of a resume notice or the preference", () => {
   const require = createRequire(import.meta.url);
   let api = null;
-  const listeners = new Map(), invoked = [];
   const electron = {
     contextBridge: { exposeInMainWorld: (name, value) => { assert.equal(name, "oatsDesktop"); api = value; } },
-    ipcRenderer: {
-      invoke: (...args) => { invoked.push(args); return Promise.resolve("answer"); },
-      on: (channel, fn) => { listeners.set(channel, fn); }, removeListener: (channel, fn) => { if (listeners.get(channel) === fn) listeners.delete(channel); },
-      send() {},
-    },
+    ipcRenderer: { invoke: () => Promise.resolve(), on() {}, removeListener() {}, send() {} },
     webUtils: {},
   };
   runInNewContext(preload,
     { process: { argv: [] }, require: (name) => (name === "electron" ? electron : require(name === "./terminal-bridge.cjs" ? "../terminal-bridge.cjs" : name)) });
-  assert.equal(await api.takeResumeNotice("ignored"), "answer");
-  assert.deepEqual(invoked, [["session-resume:take"]]);
-  assert.equal(api.resumeAtLaunch, undefined); assert.equal(api.setResumeAtLaunch, undefined);
-  const heard = [];
-  const off = api.onResumeNoticeReady((...args) => heard.push(args));
-  listeners.get("session-resume:ready")({ sender: "the IPC event stays in the preload" }, "a payload is never passed on");
-  assert.deepEqual(heard, [[]]);
-  off();
-  assert.equal(listeners.has("session-resume:ready"), false);
+  assert.ok(api, "the bridge is exposed");
+  assert.deepEqual(Object.keys(api).filter((key) => /resume/i.test(key)), []);
 });

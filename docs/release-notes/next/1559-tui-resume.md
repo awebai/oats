@@ -7,7 +7,7 @@
   its first screen. It asks again whenever a read shows a session lost while
   it is open, at most every 30 seconds. When an instance was resumed, started
   fresh, is waiting for you or could not be resumed, the line under the list
-  of workspaces says so once, in the Desktop's words, and the list is read
+  of workspaces says so once, and the list is read
   again. Quitting while the sessions are being resumed does not cut that
   short. There is no setting: stop an instance with OATS to keep it down.
   `S` and `R` are unchanged and never resume a conversation. See
