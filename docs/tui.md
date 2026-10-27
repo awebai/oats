@@ -1332,8 +1332,11 @@ and the sweep leaves it alone.
 **Quitting does not stop a sweep.** It is a change, like an act you
 confirmed ([above](#stopping-starting-restarting-and-retiring)): it runs in
 a session of its own, writes its answer to files of its own, and is never
-signalled by `oats tui`. Quitting while it runs leaves it to finish, and
-one line is printed after the screen is left:
+signalled by `oats tui`. Quitting while it runs leaves it to finish. The
+sweep that runs as `oats tui` opens is let go without a word: it runs at
+every start and usually finds nothing lost. One that a read of a lost
+session started is starting sessions, and one line is printed after the
+screen is left, on standard error, when that is a terminal or a file:
 
     oats: the resume of lost sessions is still running; `oats status` shows the instances.
 

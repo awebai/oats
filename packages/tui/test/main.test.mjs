@@ -894,7 +894,7 @@ test("with a kernel that has the sweep, a run started in a deployment resumes lo
   const [sweep, ...more] = sweepsOf(r);
   assert.deepEqual(more, [], "one sweep");
   assert.deepEqual(sweep.argv, ["session", "resume", "--json"]);
-  assert.deepEqual(sweep.options.label, { verb: "resume" }, "the sweep's own label, for the line after leaving");
+  assert.deepEqual(sweep.options.label, { verb: "resume", launch: true }, "the launch sweep's own label: let go in silence on the way out");
   assert.equal(sweep.options.cwd, "/");
   assert.equal(sweep.options.env.OATS_HOME_DIR, "/scratch/oats-home", "the run's environment, as the other kernel calls have it");
   const at = (what, which) => r.log.findIndex(([w, x]) => w === what && (which === undefined || x === which));
@@ -1011,23 +1011,41 @@ test("a lost row of this machine sweeps once; once that sweep has completed the 
   assert.equal(await r.status, 0);
 });
 
-test("the sweep is a change the run never signals: quitting before its answer lets it go, names it after the screen is left, and its late answer is not shown", async () => {
-  for (const [tell, lines] of [[true, [`${RESUME_WORDS.leaving}\n`]], [false, []]]) {
+test("the sweep is a change the run never signals: quitting before its answer lets it go and its late answer is not shown; the launch sweep is let go in silence, and one a lost row started is named after the screen is left", async () => {
+  for (const tell of [true, false]) {
     const r = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
     await settle();
-    const [sweep] = sweepsOf(r);
-    r.reader.running = [{ pid: 4001, label: sweep.options.label }];
+    const [launch] = sweepsOf(r);
+    r.reader.running = [{ pid: 4001, label: launch.options.label }];
     r.stdin.type("q");
     assert.equal(await r.status, 0, String(tell));
     assert.deepEqual(r.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
-    assert.deepEqual(r.errors, lines, String(tell));
+    assert.deepEqual(r.errors, [], `the launch sweep is not named (${tell}): it runs at every open and usually finds nothing`);
     r.stdout.take();
-    sweep.callback(null, resumedAnswer("acme-expert-tui"), "");
+    launch.callback(null, resumedAnswer("acme-expert-tui"), "");
     await settle();
     assert.equal(r.stdout.take(), "", "the late answer draws nothing");
   }
+  for (const [tell, lines] of [[true, [`${RESUME_WORDS.leaving}\n`]], [false, []]]) {
+    const r = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
+    await settle();
+    sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
+    await settle();
+    r.tick(30_000);
+    r.reader.read(lostEntry("acme-expert-tui"));
+    await settle();
+    const [, observed] = sweepsOf(r);
+    assert.deepEqual(observed.options.label, { verb: "resume" }, "a sweep a lost row started: its own label");
+    r.reader.running = [{ pid: 4001, label: launchLabel(r) }, { pid: 4002, label: observed.options.label }];
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, String(tell));
+    assert.deepEqual(r.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
+    assert.deepEqual(r.errors, lines, `one line, for the sweep that is starting sessions, and none for the launch sweep (${tell})`);
+  }
   assert.equal(RESUME_WORDS.leaving, "oats: the resume of lost sessions is still running; `oats status` shows the instances.");
 });
+/** The label the run gave its launch sweep. */
+const launchLabel = (r) => sweepsOf(r)[0].options.label;
 
 test("w opens the switcher: this computer's list of deployments is read through the reader's exec, and its rows this run does not serve are listed under the workspaces; r there reads it again and asks for a live read; one read runs at a time, and a read asked for while one is on its way is one more after it, whose answer is the one taken", async () => {
   // The list holds the deployment the run serves too: it is not offered.
