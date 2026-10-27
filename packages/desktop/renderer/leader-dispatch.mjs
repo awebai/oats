@@ -15,7 +15,8 @@
      the sidebar's; the leader's ↑ / ↓ are the workspace moves;
    - workspace-previous / workspace-next (the leader's ↑ / ↓): the previous / next workspace of the
      sidebar's list that can be opened, shown in this window as a click on its row shows it (the
-     shell's `workspaceStep`, workspace-switcher.mjs `step`); no wrap;
+     shell's `workspaceStep`, workspace-switcher.mjs `step`); past the last row, the first, and before
+     the first, the last; with no other row to show, one line says so;
    - stop / restart / start / retire: the same availability as the row's actions menu
      (packages/client/instance-acts.mjs, and the menu's own block while the roster is stale or an
      act is pending); when the menu would not offer it, nothing runs and one line says why;
@@ -27,8 +28,7 @@ import { instanceActs } from "../../client/instance-acts.mjs";
 import { reasonLine } from "./speaker-line.mjs";
 
 export const NO_TARGET = "No instance is focused or selected.";
-export const NO_WORKSPACE_ABOVE = "No workspace above this one.";
-export const NO_WORKSPACE_BELOW = "No workspace below this one.";
+export const NO_OTHER_WORKSPACE = "No other workspace to show.";
 
 /** The openable row after (`delta` 1) or before (-1) the target, in the order drawn, or null; no
  * wrap. `rows`: [{ id, openable }]. A target that is not drawn counts as none: then 1 is the
@@ -66,8 +66,8 @@ export function actAvailability(instance, verb, menuReason = null) {
  *   targetId(origin) / target(origin)   the target instance's id / its current roster row, or null
  *   stepFrom(origin)                 the instance id previous / next go on from (default: targetId)
  *   rosterRows()                     [{ id, openable, open() }] as drawn
- *   workspaceStep(delta)             show the workspace before (-1) / after (1) the current one in the list;
- *                                    false when there is none that way
+ *   workspaceStep(delta)             show the workspace before (-1) / after (1) the current one in the list,
+ *                                    wrapping; false when there is no other one to show
  *   menuReason(instance)             the row menu's own block, or null
  *   openAct(verb, instance)          the menu's dialog for the act (Stop…/Retire… plans, Start…/Restart…)
  *   spawnSoul(instance)              the spawn dialog for the instance's soul, as Quick Open opens it
@@ -88,7 +88,7 @@ export function createLeaderDispatch(d) {
     else d.say(delta > 0 ? "No instance below this one has a terminal to open." : "No instance above this one has a terminal to open.");
   };
   const moveWorkspace = (delta) => () => {
-    if (!d.workspaceStep(delta)) d.say(delta > 0 ? NO_WORKSPACE_BELOW : NO_WORKSPACE_ABOVE);
+    if (!d.workspaceStep(delta)) d.say(NO_OTHER_WORKSPACE);
   };
   const RUN = Object.freeze({
     __proto__: null,

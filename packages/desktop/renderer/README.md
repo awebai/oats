@@ -601,9 +601,10 @@ split into sections) is `packages/client/roster-sections.mjs`.
     main's native Copy/Paste menu never shows for a row. Esc or Tab close it, back on the row.
     No IPC of its own: the item calls `openInNewWindow`, as ⌘Enter does.
   - `step(±1)` is the leader's ↑ / ↓ (`workspace-previous` / `workspace-next`,
-    leader-dispatch.mjs, which says `NO_WORKSPACE_ABOVE` / `NO_WORKSPACE_BELOW` at an end):
-    `packages/client/workspace-step.mjs` over the rows as drawn (`drawn`, every one openable);
-    it opens the row as a click does.
+    leader-dispatch.mjs, which says `NO_OTHER_WORKSPACE` when it is false):
+    `packages/client/workspace-step.mjs` with `wrap` over the rows as drawn (`drawn`, every
+    one openable, the hidden ones of Show only the current workspace included); it opens
+    the row as a click does, and is false when no row but the current one can be shown.
   - A pick (click, Enter, `step`) calls `selectWorkspace`, which the shell runs as
     `switchWorkspace(id, { takeOver: true })` (see common.mjs above).
   - **Show only the current workspace** (2026-10-23): `#ws-current-only`, a `.side-icon-button` toggle before

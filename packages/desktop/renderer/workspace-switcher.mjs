@@ -18,7 +18,7 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
    A list of buttons, not a listbox (the sidebar's plain keys stay live on it): one tab stop (the current row,
    else the row last focused), Up/Down/Home/End move, Enter opens. ⌘Enter / Ctrl+Enter opens a row in a new
    window, and so does its context menu (a right-click, Shift+F10 or the Menu key): no button is drawn for it.
-   `step(±1)` (the leader's ↑/↓) selects the previous / next row, as a click does.
+   `step(±1)` (the leader's ↑/↓) selects the previous / next row, as a click does, wrapping at the ends.
 
    This computer's deployments not opened are not rows: Add local workspace… offers them, each one a button that
    adds it and opens it here (#518), and after them the rows of this computer's list that can't be opened, each
@@ -794,11 +794,13 @@ export function createWorkspaceSwitcher({
     /** Focus the list's current row, else its tab stop (the `w` key, the leader's `o`, app.workspaces). */
     focusList() { const target = rowOf(activeId) || focusTarget(); target?.focus(); revealInScrollport(options, target); noteMore(); return !!target; },
     /** The leader's ↑/↓ (`step` -1 / 1): select the previous / next row, as a click does (a row another window
-     * shows is taken over); `how` goes to selectWorkspace. False at an end. */
+     * shows is taken over), going on from the other end past the last / first; `how` goes to selectWorkspace.
+     * False when no other row can be shown. */
     step(delta, how) {
       // From the pick still on its way, else the current row: presses faster than a switch make as many moves.
-      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), pickedId || activeId || null, delta);
-      const row = key === null ? null : drawn.find((entry) => entry.key === key);
+      const from = pickedId || activeId || null;
+      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), from, delta, { wrap: true });
+      const row = key === null || key === from ? null : drawn.find((entry) => entry.key === key);
       if (!row) return false;
       row.open(how);
       return true;

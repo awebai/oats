@@ -336,8 +336,9 @@ computer.
   in the Alt family, the default) shows that workspace in this window, with its own tabs, layout and
   selection; one another window shows moves here ([A workspace another window
   shows](#a-workspace-another-window-shows)). The leader's ↑ / ↓ go to the
-  previous / next row, and stop at the ends ("No workspace above this one." /
-  "No workspace below this one."). Each is a pick, so walking the list with
+  previous / next row, and wrap: past the last row comes the first, and
+  before the first the last. With no other workspace to show, nothing moves
+  and one line says "No other workspace to show." Each is a pick, so walking the list with
   them moves every workspace it passes that another window shows into this
   window.
 - **Open in new window** is in a row's context menu (a right-click, or
