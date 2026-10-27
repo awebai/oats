@@ -1394,28 +1394,23 @@ test("the add of the deployment the run started in, refused while the switcher, 
 
 // --- Lost sessions resumed (#1559): the kernel's machine sweep says nothing --------------------------
 
-/** A summary as the shared readResumeSweep makes one: `rows` of each kind, `totals` counted from them. */
-function resumeSummary({ resumed = [], fresh = [], waiting = [], refused = [], unswept = [], host = [] } = {}) {
-  return { resumed, fresh, waiting, refused, unswept, host: { warnings: host, omitted: 0 }, omitted: 0, totals: { resumed: resumed.length, fresh: fresh.length, waiting: waiting.length, refused: refused.length } };
-}
-const resumedRow = (instance, deployment = DEPLOYMENT) => ({ instance, deployment, warnings: [], omitted: 0 });
 /** One reading of each kind the shared reader gives, and what is not one. */
 const RESUME_READINGS = Object.freeze([
-  ["notice", { kind: "notice", summary: resumeSummary({ resumed: [resumedRow("acme-dev")], refused: [{ instance: "acme-ops", deployment: DEPLOYMENT, reason: "refused-this-boot", code: "E_START_REFUSED", message: "no tmux" }], unswept: [{ deployment: "/srv/quiet", reason: "unreadable" }], host: ["tmux is older than 3.2"] }) }],
-  ["quiet", { kind: "quiet", summary: resumeSummary() }],
+  ["answered", { kind: "answered" }],
   ["failed", { kind: "failed", code: "E_RESUME_STATE" }],
   ["failed without a code", { kind: "failed" }],
   ["busy", { kind: "busy" }],
   ["unsupported", { kind: "unsupported" }],
+  ["a kind the reader does not give", { kind: "later" }],
   ["no reading", null],
 ]);
 
-test("the sweep's reading says nothing, whatever its kind: no line and no notice; a sweep that ran (notice, quiet) asks for a live read, so a resumed row reads running, and the others ask for nothing", () => {
+test("the sweep's reading says nothing, whatever its kind: no line and no notice; a sweep that answered asks for a live read, so a resumed row reads running, and the others ask for nothing", () => {
   const state = stateOf(observed(TREE));
   for (const [what, reading] of RESUME_READINGS) {
     const told = reduce(state, { resumed: reading });
     assert.equal(told.state, state, `${what}: the state is untouched`);
-    assert.deepEqual(told.effect, what === "notice" || what === "quiet" ? { refresh: { live: true } } : null, what);
+    assert.deepEqual(told.effect, what === "answered" ? { refresh: { live: true } } : null, what);
     const side = draw(told.state, { cols: 120, rows: 30 }).lines.join("\n");
     assert.doesNotMatch(side, /resume|lost session/i, `${what}: nothing drawn of it`);
   }

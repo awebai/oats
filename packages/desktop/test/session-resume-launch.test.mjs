@@ -8,13 +8,10 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { createResumeTrigger, localDeploymentIds } from "../../client/session-resume-trigger.mjs";
-import { readResumeSweep } from "../../client/session-resume.mjs";
-import { RESUME_PROBE, resumedRow, sweepAnswer } from "./helpers/resume-sweep.mjs";
+import { RESUME_PROBE } from "./helpers/resume-sweep.mjs";
 import { createResumeWiring } from "../session-resume-launch.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
-/** A summary as the reader makes one: `a0` resumed. */
-const SUMMARY = readResumeSweep(sweepAnswer([resumedRow("a0")])).summary;
 const CLI = Object.freeze({ ...RESUME_PROBE, probedAt: 1 });
 
 // ── The reading's routing ────────────────────────────────────────────────────
@@ -45,8 +42,8 @@ test("onReading: failed logs one line with its code only; a code that is not one
   }
 });
 
-test("onReading: a notice, quiet, busy, unsupported and anything else leave nothing and log nothing", () => {
-  for (const reading of [{ kind: "notice", summary: SUMMARY }, { kind: "quiet", summary: SUMMARY }, { kind: "busy" }, { kind: "unsupported" },
+test("onReading: answered, busy, unsupported and anything else leave nothing and log nothing", () => {
+  for (const reading of [{ kind: "answered" }, { kind: "busy" }, { kind: "unsupported" },
     { kind: "later" }, {}, null, undefined]) {
     const w = wiring();
     w.onReading(reading);
@@ -54,8 +51,8 @@ test("onReading: a notice, quiet, busy, unsupported and anything else leave noth
   }
 });
 
-test("the wiring over the real trigger: the launch's notice is dropped, a failed sweep logs its line", async () => {
-  for (const [reading, logged] of [[{ kind: "notice", summary: SUMMARY }, []], [{ kind: "failed", code: "E_CLI_FAILED" }, ["oats-desktop: the session resume sweep failed: E_CLI_FAILED"]]]) {
+test("the wiring over the real trigger: the launch's answered reading is dropped, a failed sweep logs its line", async () => {
+  for (const [reading, logged] of [[{ kind: "answered" }, []], [{ kind: "failed", code: "E_CLI_FAILED" }, ["oats-desktop: the session resume sweep failed: E_CLI_FAILED"]]]) {
     const calls = [];
     let runs = 0;
     const trigger = createResumeWiring({
