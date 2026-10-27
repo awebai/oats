@@ -1,7 +1,8 @@
 // Settings → Terminal: the visible way to change the terminal font size (spec F,
 // the operator's 2026-10-02 decision). A stepper (− [15] +, or a typed value)
 // over the same typography store the keys and the palette use (theme.mjs), so
-// ⌘= / ⌘- / ⌘0 and this control always agree. The font family stays on the
+// ⌘= / ⌘- / ⌘0 and this control always agree. Like them it reads, writes and
+// resets the size of the terminals' face in effect (#1571). The font family stays on the
 // palette's prompt. Built from the Settings dialog's own components (.forge-*).
 import {
   terminalTypography, setTerminalFontSize, resetTerminalFontSize, onTerminalTypographyChange,
@@ -38,9 +39,10 @@ export function createTerminalSettings({ doc, store = {
   const bigger = button("+", "Increase font size", () => { if (current < TERMINAL_FONT_MAX) store.set(current + 1); });
   const row = node("div", undefined, "term-size");
   row.append(label, smaller, input, unit, bigger);
-  // A store without a default of its own reads this window's (theme.mjs terminalDefaultSize).
+  // A store without a default of its own reads this window's (theme.mjs terminalDefaultSize): the default of
+  // the terminals' face, which a font change can change, so the label is set on every show().
   const defaultSize = typeof store.defaultSize === "function" ? store.defaultSize : terminalDefaultSize;
-  const reset = button(`Reset to default (${defaultSize()})`, undefined, () => store.reset());
+  const reset = button("", undefined, () => store.reset());
   const actions = node("div", undefined, "forge-actions"); actions.append(reset);
   const keys = [chords.bigger, chords.smaller, chords.reset].every(Boolean) ? ` ${chords.bigger} / ${chords.smaller} / ${chords.reset} change it too.` : "";
   const hint = node("p", `Applies to every open terminal, from ${TERMINAL_FONT_MIN} to ${TERMINAL_FONT_MAX}px.${keys}`, "forge-hint");
@@ -52,6 +54,7 @@ export function createTerminalSettings({ doc, store = {
   function show(size) {
     current = clampTerminalFontSize(size);
     input.value = String(current);
+    reset.textContent = `Reset to default (${defaultSize()})`;
     smaller.setAttribute("aria-disabled", String(current <= TERMINAL_FONT_MIN));
     bigger.setAttribute("aria-disabled", String(current >= TERMINAL_FONT_MAX));
   }

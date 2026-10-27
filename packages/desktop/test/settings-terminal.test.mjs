@@ -1,6 +1,7 @@
 // Settings → Terminal (spec F, the operator's 2026-10-02 decision): the default
-// terminal size is 15px, 13px on Omarchy (the product owner, 2026-10-26), and every reset lands there; a stepper in Settings
-// changes the size live, clamped to 9–28 and persisted, on the same store as
+// terminal size is the face's, 15px for Inconsolata and 13px for Omarchy's font (the product owner, 2026-10-26;
+// per face since #1571), and every reset lands there; a stepper in Settings
+// changes the size live, clamped to 9–28 and persisted for the face in effect, on the same store as
 // ⌘= / ⌘- / ⌘0 and the palette, so the keys and the control always agree.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +16,7 @@ const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url
 const themeSource = read("theme.mjs"), shell = read("shell.mjs");
 
 /** The shipped theme module over a jsdom document and a real-shaped storage. */
-function rig(t, stored = {}, { isOmarchy = false } = {}) {
+function rig(t, stored = {}, { isOmarchy = false, draws = () => true } = {}) {
   const dom = new JSDOM('<!doctype html><body><button id="opener">Settings</button></body>', { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -26,8 +27,8 @@ function rig(t, stored = {}, { isOmarchy = false } = {}) {
     localStorage: { getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = String(value); }, removeItem: key => { delete stored[key]; } },
   };
   const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}
-({ terminalTypography, setTerminalFontSize, resetTerminalFontSize, resetTerminalTypography, onTerminalTypographyChange, terminalDefaultSize, initFont })`, context);
-  theme.initFont(false, () => true, { isOmarchy }); // the shell's start: the host's defaults
+({ terminalTypography, setTerminalFontSize, resetTerminalFontSize, resetTerminalTypography, onTerminalTypographyChange, terminalDefaultSize, initFont, setFont })`, context);
+  theme.initFont(false, draws, { isOmarchy }); // the shell's start: the host's defaults
   // The section's default store, composed from this theme instance (the same five calls).
   const store = { read: () => theme.terminalTypography().fontSize, set: theme.setTerminalFontSize,
     reset: theme.resetTerminalFontSize, subscribe: theme.onTerminalTypographyChange, defaultSize: theme.terminalDefaultSize };
@@ -44,7 +45,7 @@ function rig(t, stored = {}, { isOmarchy = false } = {}) {
     smaller: () => theme.setTerminalFontSize(theme.terminalTypography().fontSize - 1) };
   return { dom, doc, theme, stored, section, ui, type, keys };
 }
-const SIZE = "oats.desktop.terminal.fontSize";
+const SIZE = "oats.desktop.terminal.fontSize", OMARCHY_SIZE = "oats.desktop.terminal.fontSize.omarchy";
 
 test("the default terminal size is 15px, and every reset (⌘0, the palette, Settings) lands on 15", t => {
   const r = rig(t, { [SIZE]: "20", "oats.desktop.terminal.fontFamily": "Menlo" });
@@ -62,16 +63,48 @@ test("the default terminal size is 15px, and every reset (⌘0, the palette, Set
   assert.equal(shell.match(/run: \(\) => resetTerminalTypography\(\) \}/g)?.length, 2, "both shell resets use the forgetting reset");
 });
 
-test("on Omarchy the default terminal size is 13px: shown, reset to, and a stored size still wins", t => {
-  const r = rig(t, { [SIZE]: "20" }, { isOmarchy: true });
+// Until #1571 this test stored 20 under the one size key and expected it on Omarchy: that key is now Inconsolata's,
+// and Omarchy's font keeps its own.
+test("in Omarchy's font the default terminal size is 13px: shown, reset to, and a size stored for it still wins", t => {
+  const r = rig(t, { [SIZE]: "15", [OMARCHY_SIZE]: "20" }, { isOmarchy: true });
   assert.equal(r.theme.terminalDefaultSize(), 13);
   assert.equal(r.dom.window.getComputedStyle(r.doc.documentElement).getPropertyValue("--term-font-size").trim(), "13px");
-  assert.equal(r.ui.input.value, "20", "a stored user size wins over the default");
+  assert.equal(r.ui.input.value, "20", "a size stored for Omarchy's font wins over the default");
   assert.equal(r.ui.reset.textContent, "Reset to default (13)");
   r.ui.reset.click();
-  assert.equal(r.theme.terminalTypography().fontSize, 13); assert.equal(r.ui.input.value, "13"); assert.equal(r.stored[SIZE], undefined);
+  assert.equal(r.theme.terminalTypography().fontSize, 13); assert.equal(r.ui.input.value, "13"); assert.equal(r.stored[OMARCHY_SIZE], undefined);
+  assert.equal(r.stored[SIZE], "15", "Inconsolata's size is not Settings' to reset in Omarchy's font");
   r.theme.setTerminalFontSize(22); r.theme.resetTerminalTypography(); // ⌘0
-  assert.equal(r.theme.terminalTypography().fontSize, 13);
+  assert.equal(r.theme.terminalTypography().fontSize, 13); assert.equal(r.stored[SIZE], "15");
+});
+
+test("a stored 15 (chosen for Inconsolata) opens at 13 in Omarchy's font; the stepper writes the face in effect only, and the label follows the font", t => {
+  const r = rig(t, { [SIZE]: "15" }, { isOmarchy: true });
+  const heard = [];
+  r.theme.onTerminalTypographyChange(value => heard.push(value.fontSize)); // what every open terminal listens to
+  assert.equal(r.ui.input.value, "13"); assert.equal(r.ui.reset.textContent, "Reset to default (13)");
+  r.ui.bigger.click();
+  assert.deepEqual([r.stored[OMARCHY_SIZE], r.stored[SIZE]], ["14", "15"]);
+  r.theme.setFont("system");
+  assert.equal(r.ui.input.value, "15", "System font: the stored Inconsolata size, in the open control");
+  assert.equal(r.ui.reset.textContent, "Reset to default (15)", "the label is the face's default, updated in place");
+  assert.deepEqual(heard, [14, 15], "open terminals hear the new face's size");
+  r.ui.smaller.click(); r.type("11");
+  assert.deepEqual([r.stored[OMARCHY_SIZE], r.stored[SIZE]], ["14", "11"]);
+  r.ui.reset.click();
+  assert.deepEqual([r.stored[OMARCHY_SIZE], r.stored[SIZE]], ["14", undefined]); assert.equal(r.ui.input.value, "15");
+  r.theme.setFont("omarchy");
+  assert.equal(r.ui.input.value, "14"); assert.equal(r.ui.reset.textContent, "Reset to default (13)");
+});
+
+test("the defaults are the face's on every host: Inconsolata 15 on Omarchy with System font, Omarchy's font 13 elsewhere; the fallback is Inconsolata's", t => {
+  const system = rig(t, { "oats.desktop.font": "system" }, { isOmarchy: true });
+  assert.deepEqual([system.ui.input.value, system.ui.reset.textContent], ["15", "Reset to default (15)"]);
+  const chosen = rig(t, { "oats.desktop.font": "omarchy" });
+  assert.deepEqual([chosen.ui.input.value, chosen.ui.reset.textContent], ["13", "Reset to default (13)"]);
+  const fallback = rig(t, { [SIZE]: "16", [OMARCHY_SIZE]: "11" }, { isOmarchy: true, draws: () => false });
+  assert.deepEqual([fallback.ui.input.value, fallback.ui.reset.textContent], ["16", "Reset to default (15)"],
+    "Omarchy's font showing System font's faces: Inconsolata's size and default");
 });
 
 test("the stepper changes the size live, clamps to 9–28 and persists; its bounds stay focusable", t => {
