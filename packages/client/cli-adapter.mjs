@@ -332,6 +332,15 @@ export function cliServerRemove(bin, id, io = {}) {
   if (typeof id !== "string" || !MACHINE_ID.test(id)) return Promise.resolve(badMachineArgs());
   return runJson(bin, ["server", "remove", id, "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
 }
+/** `oats session inspect --home <home> --json` on this computer (#1569): the kernel's observation of an
+ * instance's terminal, whose `paneId` is the agent's pane by the kernel's own rule, in a window of one pane
+ * or several. A clean exit is required for success (`strictExit`). */
+export function cliSessionInspect(bin, { home } = {}, io = {}) {
+  if (typeof bin !== "string" || !isAbsolute(bin) || typeof home !== "string" || !isAbsolute(home) || home.includes("\0")) {
+    return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid inspect home" } });
+  }
+  return runJson(bin, ["session", "inspect", "--home", home, "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 15_000, strictExit: true });
+}
 /** `oats server forget <server> --instance <instance> --json` (#1131): drop this computer's saved route to a
  * remote instance its host no longer lists. Both values are one roster row's identity, each one argv entry,
  * never option-shaped. A clean exit is required for success (`strictExit`): an answer the CLI did not finish

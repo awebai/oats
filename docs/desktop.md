@@ -598,7 +598,8 @@ roster row reads **Retiring…** while:
   changed, runs nothing, and the row reads as the roster says at once.
 
 A retiring row offers no Start, Stop, Restart or Open, and no inline
-button. **Retire instance…** stays in the row's menu, after its usual
+button. **Retire instance…** stays in the row's context menu (right-click,
+Shift+F10 or the ContextMenu key), after its usual
 confirmation: OATS refuses a second retire while one runs, and when the
 holder can't be read it may be the only way on.
 
@@ -643,7 +644,7 @@ heading. The tab you chose is
   is disabled, and says why, when that soul can't be told or shown exactly:
   the instance records none, it is no longer among the deployment's souls,
   several match, another soul of the deployment has the same name, or the
-  instance is on a deployment other than the one the Workspace page shows. Restart with… stays in the instance's menu and its panel.
+  instance is on a deployment other than the one the Workspace page shows. Restart with… stays in the row's context menu (right-click, Shift+F10 or the ContextMenu key) and its panel.
 - **Not shown live.** A deployment that can't be shown live says why in a few
   words on its heading ("ssh needs a prompt", "Timed out", "OATS too old to
   report its workspace"), and **How to fix** under it gives the full sentence
@@ -803,7 +804,7 @@ than showing nothing. A row that can't be opened says why on the row:
 Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
 For an instance a server no longer lists, the reason names the command that removes it from this
 computer (`oats server forget <server> --instance <name>`), and the row offers **Forget…**, in its
-actions menu and in the context panel, which runs that command for that row after a confirmation.
+context menu (right-click, Shift+F10 or the ContextMenu key) and in the context panel, which runs that command for that row after a confirmation.
 Only this computer's saved route goes; nothing changes on the server, and the roster is read again.
 
 ## Remote terminals
@@ -937,6 +938,18 @@ hears "Needs input" after the name, and the hover card gives the reason and
 how long it has waited. A collapsed parent shows "! N below" on its second
 line for the rows it hides that need input, beside its own mark when it waits
 too. Rows never move or grow, and nothing animates.
+
+A row has no ⋯ button. Its actions (Open in split, Open pull request…,
+Knowledge & capabilities…, Start…, Restart with…, Stop…, Retire instance…, and
+Forget… for an instance its server no longer lists) are in the row's context
+menu (right-click, Shift+F10 or the ContextMenu key), as a workspace row's are.
+It opens where you right-click, or on the row from the keyboard; the arrow keys,
+Home and End move in it, and Esc or Tab close it with the focus back on the
+row. A right-click never opens the row's terminal. While the menu can't be used
+(the roster is out of date, one of its actions is still running, or the row
+can't be used from this computer), it opens nothing, and one line at the
+bottom of the main area says why, as a leader key that can't act does. The row's own tools stay: its pull request link and, on a
+stopped row, **Start…**.
 
 ## An instance's colour
 

@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "id": "claude-resume-cost-2.1.308",
+      "kind": "resume-confirmation",
+      "input": "none",
+      "labels": ["Resume from summary", "Resume full session as-is"],
+      "note": "Derived, not captured. The first option reads `Resume from summary (recommended)` or `Resume from summary (instant, recommended)`; the label matches either as a whole label. Context the dialog shows, recorded but never required: title `This session is <age> old and <n> tokens.`; body `Resuming the full session will consume a substantial portion of your usage limits. We recommend resuming from a summary.`; option `Don't ask me again`.",
+      "provenance": [
+        {
+          "source": "derived",
+          "claudeVersion": "2.1.308",
+          "evidence": "strings of the Claude Code 2.1.308 binary (the resume-cost dialog's option labels); no real capture of the dialog exists"
+        }
+      ]
+    },
+    {
+      "id": "claude-resume-conversation-documented",
+      "kind": "resume-confirmation",
+      "input": "none",
+      "labels": ["Resume this conversation?", "Start a new conversation"],
+      "note": "Derived, not captured: the dialog as Claude's documentation names it.",
+      "provenance": [
+        {
+          "source": "derived",
+          "claudeVersion": "2.1.304",
+          "evidence": "Claude Code documentation, sessions page, section \"The 'Resume this conversation?' dialog\"; Claude Code changelog 2.1.304; no real capture of the dialog exists"
+        }
+      ]
+    }
+  ]
+}

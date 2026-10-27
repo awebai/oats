@@ -234,7 +234,7 @@ export function renderRosterCount(el, instances, { pending = false, stale = fals
 }
 
 /* ── the roster's loading state (desktop/loading-states) ─────────────────── */
-/** Why Start… and the row actions menu are disabled while the roster is stale: the reason a
+/** Why Start… is disabled, and the row's context menu held, while the roster is stale: the reason a
  * disabled control carries for the pointer (title) and for assistive tech (aria-description),
  * since a greyed look alone says nothing. */
 export { ROSTER_STALE_TITLE };

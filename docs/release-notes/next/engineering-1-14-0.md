@@ -1,8 +1,8 @@
 ## Provider updates
 
 - **oats.engineering 1.14.0: maintainers per human, and shorter instructions.**
-  The catalog and this workspace pin `oats.engineering: v1.14.0`; the floor
-  is unchanged.
+  The catalog and this workspace now pin 1.15.0, which carries it (below);
+  the floor is unchanged.
   - **What a lane is.** A lane is a standing area of work: areas of the
     repository, a kind of work, or one human's requests. Work that would be
     finished when one goal lands is an effort in an existing lane. Any

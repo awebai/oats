@@ -499,7 +499,7 @@ const retireListeners = new Set();
 // pending skeleton, "Refreshing…", the stale line and Retry; shell owns the
 // latest-intent tokens (contextRosterGen / owns()) and calls it only for a
 // read it still owns. rosterStale: the last owned read failed with data on
-// screen, so Start… and the row actions menu are disabled until one succeeds.
+// screen, so Start… and the row's context menu are held until one succeeds.
 // rosterSignaturePainted: what the list last painted; an identical poll skips the rebuild.
 let rosterState = null;
 let rosterStale = false;
@@ -588,7 +588,7 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   else if (stage) set.add(`stage:${stage.name}`);
   // The sidebar's plain keys (context `sidebar`, sidebar.key.*): live while focus is in the sidebar
   // (the list of workspaces, its nav, the roster rows, the headings' controls, the foot), never inside an open
-  // popup there (an instance's actions menu, the settings cog's menu) and never in an editable field (the sidebar has none since its roster filter
+  // popup there (an instance row's context menu, the settings cog's menu) and never in an editable field (the sidebar has none since its roster filter
   // went; one added later keeps its own keys), where a rebind to a modified chord would otherwise take the
   // field's own key. Editable as the engine's plain-key guard reads it (keybindings.mjs isEditableTarget).
   const focused = document.activeElement;
@@ -1034,11 +1034,11 @@ function renderContextRoster(instances) {
         rowWrap.classList.toggle("active", isActive);
         if (hasChildren) row.setAttribute("aria-expanded", String(!collapsed));
         // A row that can't open (unknown state, a remote row the kernel does not report addressable) stays
-        // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Retire — must
-        // stay reachable from the keyboard. Its activation does nothing and says why.
+        // focusable (aria-disabled, spec F): its tools and its context menu (Shift+F10, the Menu key: Inspect/Stop/
+        // Retire) must stay reachable from the keyboard. Its activation does nothing and says why.
         const unavailable = i.running == null || !canAddressRemote(i);
         // #802: a home a spawn or a retire left half cleaned, or one being retired (#1247; held: the spawning one drew
-        // above), opens and starts nothing either; its actions menu offers Retire only (secondary while retiring).
+        // above), opens and starts nothing either; its context menu offers Retire only (secondary while retiring).
         if (unavailable || held) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
         // Why it can't open: a short label on the meta line, the full sentence as its title and description.
         // A sentence that is the row's own text is said with who made it (speaker-line.mjs).
@@ -1134,7 +1134,7 @@ function renderContextRoster(instances) {
         row.tabIndex = -1;
         row.addEventListener("keydown", onRosterRowKey);
         rowWrap.append(guides, row);
-        // Row tools (Start…, actions) overlay the row end on hover/focus only.
+        // Row tools (the PR link, Start…) overlay the row end on hover/focus only.
         const tools = document.createElement("span");
         tools.className = "ctx-row-tools";
         if (pr?.url) {
@@ -1155,7 +1155,11 @@ function renderContextRoster(instances) {
         const actionTarget = instanceActionTarget(ws, i), menuConnection = connectionGeneration;
         const menuOwner = () => currentWorkspace() === ws && workspaceGeneration() === rosterGeneration && connectionGeneration === menuConnection
           && (!actionTarget || ownsInstanceTarget(actionTarget));
-        tools.append(instanceActions(document, i, {
+        // The row's context menu (#1559: a right-click, Shift+F10 or the Menu key on the row; no ⋯ button): beside the
+        // row, never in its tools, which hide by visibility. A stale roster's or a stale deployment's row holds it:
+        // asked, it opens nothing and says why in the hint's line, as the leader's keys do.
+        const rowMenu = instanceActions(document, i, {
+          row, say: sayInHint, stale: heldStale ? ROSTER_STALE_TITLE : null,
           scope: ws, owner: menuOwner, onMenuState: menuState, onFocusChange: () => updateActiveContexts(), dispatch: runAction,
           shortcut: id => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : ''; },
           extra: [
@@ -1195,14 +1199,10 @@ function renderContextRoster(instances) {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
             notifications.notify(headline, { detail });
           },
-        }));
-        // Stale roster: actions that need current state wait for a refresh;
-        // opening an existing terminal (the row itself) stays available.
-        if (heldStale) {
-          const trigger = tools.querySelector(".ctx-instance-actions");
-          if (trigger) markStaleControl(trigger);
-        }
-        rowWrap.append(tools);
+        });
+        // Only what the row holds overlays its end: a running row without a known pull request has no tools.
+        if (tools.childElementCount) rowWrap.append(tools);
+        rowWrap.append(rowMenu);
         listEl.append(rowWrap);
       }
     }
@@ -2409,8 +2409,11 @@ const palette = createPalette({
     ...(typeof desktopBridge.windowOpenWorkspace === "function" ? [{ label: "Window: new window",
       detail: () => chordDetail("app.newWindow")() || (isMac ? formatChord("Mod+Shift+N", true) : ""), run: () => runAction("app.newWindow") }] : []),
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
-    // The instance it acts on is the leader's target when the palette opened (paletteTargetId).
-    { label: "Instance: name and colour…", detail: chordDetail("instance.edit"), run: () => openInstanceEdit(paletteTargetId) },
+    // The instance it acts on is the leader's target when the palette opened (paletteTargetId). The palette hands
+    // focus back where it was opened first, as the Workspaces toggle does: with no target ("No instance is focused or
+    // selected.") the focus stays there, never on <body>; the dialog returns to it when it closes.
+    { label: "Instance: name and colour…", detail: chordDetail("instance.edit"),
+      run: () => { takePickerFocusReturn(document)?.restore(); openInstanceEdit(paletteTargetId); } },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
     { label: "Sidebar: reset width", detail: chordDetail("sidebar.resetWidth"), run: () => runAction("sidebar.resetWidth") },
     { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
@@ -3093,7 +3096,7 @@ function leaderState() {
  * terminal tab's (a key pressed in a terminal, or nowhere), else none. Its instanceId. A terminal
  * holding focus counts only as the shown one: focus can stay in a pane hidden since. */
 function leaderTargetId(el) {
-  // The row itself, or one of its tools (Start…, the actions trigger, the PR link), which sit beside
+  // The row itself, or one of its tools (Start…, the PR link) or its context menu's items, which sit beside
   // it in its .ctx-tree-row.
   const row = el?.closest?.("#instance-roster .ctx-inst") ?? el?.closest?.("#instance-roster .ctx-tree-row")?.querySelector(".ctx-inst");
   if (row?.dataset.treeInstance) return row.dataset.treeInstance;
@@ -3131,10 +3134,10 @@ function notApplicable(does) {
   if (does === "split-right" || does === "split-down") return "The active tab can't be split that way now.";
   return "The tabs are not split.";
 }
-/** The row menu's own block for `instance`, or null: an act of its menu still in flight (its
- * trigger marked pending, instance-actions.mjs), or a stale roster or a stale deployment's row
- * (renderContextRoster's rowHeldStale, then markStaleControl). Read from that state, not from the
- * drawn trigger, so a row a collapse leaves undrawn is held the same. */
+/** The row's context menu's own block for `instance`, or null: an act of its menu still in flight
+ * (instance-actions.mjs pendingActionReason), or a stale roster or a stale deployment's row
+ * (renderContextRoster's heldStale, which holds the menu). Read from that state, not from the
+ * drawn row, so a row a collapse leaves undrawn is held the same. */
 function rosterActsHeld(instance) {
   const waiting = pendingActionReason(contextWorkspace || currentWorkspace(), instance);
   if (waiting) return waiting;

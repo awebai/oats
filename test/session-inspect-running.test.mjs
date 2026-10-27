@@ -90,7 +90,7 @@ test("1381: inspect and status resolve missing command labels from the same pane
         if (args.includes("list-windows")) { calls.windows++; return `${name}\n`; }
         assert.ok(args.includes("list-panes"), "status only reads windows and panes");
         calls.panes++;
-        return `${name}\t%7\t0\t${facts.command}\t${PANE_PID}\n`;
+        return `${name}\t@3\t%7\t0\t${facts.command}\t${PANE_PID}\t\n`;
       } };
       const rows = await fx.inEnv(() => listInstances(fx.root, SESSION, io));
       const row = rows.flatMap((soul) => soul.instances).find((r) => r.home === home);
@@ -160,11 +160,28 @@ test("an observation that cannot be made is an error, never running: false", asy
   // The backend cannot be read: a lost socket is not absence.
   unavailable(observing({ panes: tmuxError(`error connecting to ${SOCKET} (Permission denied)`) }), "tmux failed");
   unavailable(observing({ panes: tmuxError(`no server running on ${SOCKET}`) }), "tmux failed");
-  // Malformed answers and a split window.
+  // Malformed answers, and a split window whose agent's pane cannot be told (#1569): two panes
+  // marked as this instance's.
   unavailable(observing({ panes: "garbage\n" }), "invalid tmux pane response");
   unavailable(observing({ panes: `%7\t0\tcodex\t${PANE_PID}\twide\t40\n` }), "invalid tmux pane response");
   unavailable(observing({ panes: `%7\t0\tzsh\tnot-a-pid\t120\t40\n` }), "tmux returned no pane process id");
-  unavailable(observing({ panes: pane("codex") + pane("zsh").replace("%7", "%8") }), "session window has multiple panes");
+  const marked = (row, mark) => row.replace(/\n$/, `\t${mark}\n`);
+  unavailable(observing({ panes: marked(pane("codex"), "unobservable") + marked(pane("zsh"), "unobservable").replace("%7", "%8") }),
+    "the window has 2 panes marked as unobservable's agent pane (%7, %8); close all but the agent's with tmux kill-pane -t <id>, or close the window and start the instance");
+});
+
+test("1569: a split window is observed through the agent's pane alone", async () => {
+  const { home } = await recordedHome("split", { launchConfig: "codex-yolo" });
+  const marked = (row, mark) => row.replace(/\n$/, `\t${mark}\n`);
+  // Unmarked (a pane from before the mark, beside a later split): the lowest id is the agent's.
+  let seen = observing({ panes: pane("codex") + pane("zsh").replace("%7", "%8") });
+  let result = inspectInstanceSession(home, { io: seen.io });
+  assert.deepEqual([result.paneId, result.state, result.running], ["%7", "unknown", true]);
+  // Marked as this instance's, listed second: its fallback shell beside a pane that runs something.
+  seen = observing({ panes: pane("vim").replace("%7", "%2").replace(PANE_PID, "4100") + marked(pane("zsh"), "split"), ps: `4100 1 zsh\n4101 4100 vim\n${PANE_PID} 1 zsh\n` });
+  result = inspectInstanceSession(home, { io: seen.io });
+  assert.deepEqual([result.paneId, result.state, result.running, result.present], ["%7", "shell", false, true]);
+  assert.deepEqual(result.size, { cols: 120, rows: 40 });
 });
 
 test("a home that never launched, and a home that is gone, are not running and are never observed", async () => {

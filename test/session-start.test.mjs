@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, withSafeTaskPrompt, startInstanceSession, restartInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
+import { inspectSessionTarget } from "../lib/session-input.mjs";
 import { liveWaiting, readEvents, setWaiting } from "../lib/instance-events.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -484,21 +485,35 @@ test("a recorded pending target that differs from the metadata is reconciled bef
 
 test("a pending target that cannot be observed is kept and the start refuses; a dead pane restarts in place", async () => {
   const f = await makeHome("unobservable");
-  // A recorded tmux window on a reachable server that tmux answers but OATS cannot read as one
-  // agent pane (it was split): not absence, no allocation, receipt kept.
+  // A recorded tmux window on a reachable server that tmux answers but in which OATS cannot tell the
+  // agent's pane (#1569: it was split, and both panes are marked as its agent's pane): not absence,
+  // no allocation, receipt kept.
   try { tmux("has-session", "-t", session); } catch { tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base); }
   tmux("new-window", "-t", session, "-n", "unobservable-split", "-c", base, "sleep 60");
   tmux("split-window", "-t", `=${session}:=unobservable-split`, "sleep 60");
+  const panes = tmux("list-panes", "-t", `=${session}:=unobservable-split`, "-F", "#{pane_id}").split("\n");
+  for (const pane of panes) tmux("set-option", "-p", "-t", pane, "@oats-agent", "unobservable-split");
   writeFileSync(join(f.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(f, { backend: "tmux", session, window: "unobservable-split", socket })));
   try {
-    assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt .* is kept/.test(e.message));
+    assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_UNKNOWN" && /receipt .* is kept/.test(e.message) && /the window has 2 panes marked as unobservable-split's agent pane/.test(e.message));
     assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true);
     assert.deepEqual(windows().filter((w) => w === "unobservable"), []);
+    // The same split window on a real server, read with one mark, then none: the marked pane, then
+    // the window's own pane (the lowest id), whichever tmux made active.
+    const split = { backend: "tmux", session, window: "unobservable-split", socket };
+    const [own, added] = panes.sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+    tmux("set-option", "-p", "-u", "-t", own, "@oats-agent");
+    assert.deepEqual(inspectSessionTarget(split, undefined, { includePanes: true }), { backend: "tmux", present: true, state: "unknown", paneId: added, panes: 2 });
+    tmux("set-option", "-p", "-u", "-t", added, "@oats-agent");
+    assert.equal(inspectSessionTarget(split).paneId, own);
   } finally { tmux("kill-window", "-t", `=${session}:=unobservable-split`); }
   rmSync(join(f.home, ".oats-start-pending.json"));
   // Dead pane: the harness exited and tmux retained the pane (remain-on-exit).
   const d = await makeHome("deadpane");
   await heldWindow(d);
+  // A window from before the agent's pane was marked (#1569): a restart in place marks it.
+  const mark = () => tmux("display-message", "-p", "-t", `=${session}:=deadpane`, "#{@oats-agent}");
+  assert.equal(mark(), "", "a pane OATS did not launch carries no mark");
   tmux("set-option", "-w", "-t", `=${session}:=deadpane`, "remain-on-exit", "on");
   releaseHarness(d.home);
   await waitUntil(() => inspectInstanceSession(d.home).state === "stopped", "retained dead pane");
@@ -509,6 +524,7 @@ test("a pending target that cannot be observed is kept and the start refuses; a 
   const r = startInstanceSession(d.home, { model: "claude-z" });
   assert.equal(r.reused, "pane");
   assert.deepEqual(windows().filter((w) => w === "deadpane"), ["deadpane"], "restarted in the retained pane, no second window");
+  assert.equal(mark(), "deadpane", "the respawned pane is marked as the agent's");
   await waitUntil(() => inspectInstanceSession(d.home).state === "unknown", "dead pane relaunch");
   assert.equal(inspectInstanceSession(d.home).present, true);
   assert.equal(readJson(join(d.home, "instance.json")).model, "claude-z");
@@ -612,6 +628,8 @@ test("a live startup shell is protected until its command actually exits", async
   const first = startInstanceSession(f.home);
   const pane = tmux("display-message", "-p", "-t", `=${session}:=slow-shell`, "#{pane_id}");
   assert.equal(first.reused, "new");
+  const mark = () => tmux("display-message", "-p", "-t", pane, "#{@oats-agent}");
+  assert.equal(mark(), "slow-shell", "the start marked the pane it created as the agent's (#1569)");
   await waitUntil(() => existsSync(join(f.home, "slow-ready")), "startup shell ready");
   assert.throws(() => startInstanceSession(f.home), (e) => ["E_SESSION_START_BUSY", "E_SESSION_RUNNING"].includes(e.code));
   assert.equal(tmux("display-message", "-p", "-t", `=${session}:=slow-shell`, "#{pane_id}"), pane);
@@ -620,6 +638,7 @@ test("a live startup shell is protected until its command actually exits", async
   await waitUntil(() => existsSync(join(f.home, ".oats-start-exited")) && inspectInstanceSession(f.home).state === "shell", "slow shell completion marker");
   assert.equal(inspectInstanceSession(f.home).state, "shell");
   assert.equal(startInstanceSession(f.home).reused, "pane", "the matching exit marker permits a real restart");
+  assert.equal(mark(), "slow-shell", "and the restart in place keeps the pane marked");
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 2, "reconciling a recorded attempt does not count it twice");
 });
 
@@ -698,12 +717,45 @@ test("successful launch responses omit the private launch command too", async ()
     if (args.includes("list-panes")) throw Object.assign(new Error("absent"), { stderr: "can't find window: private-result" });
     if (args.includes("list-sessions")) return `${session}\t${socket}\n`;
     if (args.includes("list-windows")) return "hq\n";
-    if (args.includes("set-option")) return "";
-    assert.ok(args.includes("new-window"));
-    return "@1\n";
+    // The launch's new-window carries the mark's set-option (#1569): it is answered first.
+    if (args.includes("new-window")) return "@1\n";
+    assert.ok(args.includes("set-option"));
+    return "";
   } };
   const result = startInstanceSession(f.home, { io });
   assert.equal("command" in result, false);
   assert.equal(JSON.stringify(result).includes(secret), false);
   assert.ok(readJson(join(f.home, "instance.json")).command.includes(secret));
+});
+
+test("1569: a start's new window and a restart in place mark the agent's pane in the launch's own tmux call", async () => {
+  const launches = [];
+  /** No tmux runs. `pane`: the recorded window's one pane, at a shell (the start respawns it), or
+   *  none (the window is gone: the start creates one). */
+  const io = (pane) => ({ exec: (binary, args) => {
+    if (binary === "ps") return "100 1 /bin/zsh\n";
+    if (args.includes("list-panes")) {
+      if (!pane) throw Object.assign(new Error("absent"), { stderr: "can't find window: mark" });
+      return pane;
+    }
+    if (args.includes("list-sessions")) return `${session}\t${socket}\n`;
+    if (args.includes("list-windows")) return "hq\n";
+    if (args.includes("new-window") || args.includes("respawn-pane")) { launches.push(args.slice(3)); return "@1\n"; }
+    return "";
+  } });
+  const windowCommand = /; exec "\$\{SHELL:-\/bin\/zsh\}"$/;
+  const created = await makeHome("mark-new");
+  assert.equal(startInstanceSession(created.home, { io: io(null) }).reused, "new");
+  const [window] = launches;
+  assert.equal(window[0], "new-window");
+  assert.match(window.at(-7), windowCommand, "the window's command, then the mark");
+  assert.deepEqual(window.slice(-6), [";", "set-option", "-q", "-p", "@oats-agent", "mark-new"], "the new pane: tmux's current one after new-window");
+  // A pane from before the mark (unmarked, %5) restarted in place: the respawn marks it by its id.
+  const legacy = await makeHome("mark-legacy");
+  assert.equal(startInstanceSession(legacy.home, { io: io("%5\t0\tzsh\t100\n") }).reused, "pane");
+  const respawn = launches[1];
+  assert.deepEqual(respawn.slice(0, 4), ["respawn-pane", "-k", "-t", "%5"]);
+  assert.match(respawn.at(-9), windowCommand);
+  assert.deepEqual(respawn.slice(-8), [";", "set-option", "-q", "-p", "-t", "%5", "@oats-agent", "mark-legacy"]);
+  assert.equal(launches.length, 2);
 });

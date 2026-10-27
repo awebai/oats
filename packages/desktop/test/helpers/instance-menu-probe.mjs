@@ -1,6 +1,7 @@
-// What the roster row's actions menu is, as plain data: its trigger, its items in order, whether any
-// path opens it, and what each item does. instance-acts-menu.test.mjs compares this against the capture
-// taken with this same probe before the menu was rebuilt on packages/client/instance-acts.mjs.
+// What the roster row's context menu is, as plain data: what its row says when it is held, its items in order,
+// whether any path opens it, and what each item does. instance-acts-menu.test.mjs compares this against the
+// capture taken with this probe before the menu was rebuilt on packages/client/instance-acts.mjs, when it had
+// a ⋯ trigger of its own (#1559 removed it; that test maps the trigger's report onto the row's).
 import { JSDOM } from "jsdom";
 
 // jsdom has no top-layer API. Model its open/close events: `beforetoggle` is cancelable, as in Chromium.
@@ -14,12 +15,6 @@ function menuDom() {
       this.lastToggleRefused = event.defaultPrevented;
     };
   }
-  const click = dom.window.HTMLButtonElement.prototype.click;
-  dom.window.HTMLButtonElement.prototype.click = function () {
-    click.call(this);
-    const target = this.popoverTargetElement;
-    if (!this.disabled && target) target[target.dataset.instanceMenuOpen === "true" ? "hidePopover" : "showPopover"]();
-  };
   return dom;
 }
 
@@ -62,16 +57,19 @@ const settle = () => new Promise((done) => setImmediate(done));
 
 /**
  * Build the menu for `row` with the two items the shell puts in front, and report it.
- * @returns {{ trigger: object, items: object[], opens: object, handedOut: number, acts: object }}
+ * @returns {{ row: object, items: object[], opens: object, handedOut: number, acts: object }}
+ *   row: `held`, whether its context menu says why instead of opening; `said`, each distinct line it said, by every way
+ *   of opening; `marked`, the attributes the menu put on the row (none: the row keeps its own marking);
  *   opens: per way of opening, whether the menu ended open (and, for the popover's own toggle, whether it was refused);
  *   handedOut: how many times the menu gave its `run` (execute) to the shell, which it does only when it opens;
  *   acts: per item, what activating it did, by a click with the menu closed and through `run` with it open.
  */
 export async function probeMenu(instanceActions, row) {
   const dom = menuDom(), doc = dom.window.document;
-  const calls = [], states = [];
+  const calls = [], states = [], said = [];
+  const button = doc.createElement("button"); button.type = "button"; button.className = "ctx-inst";
   const control = instanceActions(doc, row, {
-    scope: "ws", owner: () => true,
+    row: button, say: (line) => said.push(line), scope: "ws", owner: () => true,
     invoke: async (action) => { calls.push(`invoke ${action}`); return {}; },
     openLifecycle: (operation) => calls.push(`lifecycle ${operation}`),
     dispatch: (actionId) => calls.push(`dispatch ${actionId}`),
@@ -83,8 +81,8 @@ export async function probeMenu(instanceActions, row) {
       { action: "open-pr", actionId: "instance.openPullRequest", label: "Open pull request…", reason: row.server ? "Remote PR inspection is unavailable; no local fallback." : "" },
     ],
   });
-  doc.body.append(control);
-  const trigger = control.querySelector(".ctx-instance-actions"), menu = control.querySelector(".ctx-instance-menu");
+  doc.body.append(button, control);
+  const menu = control;
   const itemsOf = () => [...menu.querySelectorAll('[role="menuitem"]')];
   const describe = (item) => ({
     action: item.dataset.action, label: item.querySelector("span:not(.ctx-menu-icon)").textContent, disabled: item.disabled, title: item.title,
@@ -93,18 +91,19 @@ export async function probeMenu(instanceActions, row) {
     icon: item.querySelector(".ctx-menu-icon").childElementCount > 0, lifecycle: item.classList.contains("ctx-menu-lifecycle"), autofocus: item.autofocus,
   });
   const report = {
-    trigger: { disabled: trigger.disabled, ariaDisabled: trigger.getAttribute("aria-disabled"), title: trigger.title,
-      description: trigger.getAttribute("aria-description"), label: trigger.getAttribute("aria-label") },
     menuLabel: menu.getAttribute("aria-label"),
     items: itemsOf().map(describe),
   };
   const open = () => menu.dataset.instanceMenuOpen === "true";
   const close = () => { if (open()) menu.hidePopover(); };
-  const key = (name) => trigger.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+  // A right-click (a pointer on the row) and a key's (Shift+F10, the Menu key: no pointer).
+  const contextMenu = (x, y) => button.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
   report.opens = {};
-  for (const [way, act] of [["a click on the trigger", () => trigger.click()], ["openActionMenu", () => menu.openActionMenu()], ["ArrowDown on the trigger", () => key("ArrowDown")],
-    ["ArrowUp on the trigger", () => key("ArrowUp")]]) { act(); report.opens[way] = open(); close(); }
+  for (const [way, act] of [["a right-click on the row", () => contextMenu(1, 1)], ["openActionMenu", () => menu.openActionMenu()],
+    ["a key on the row (Shift+F10, the Menu key)", () => contextMenu(0, 0)]]) { act(); report.opens[way] = open(); close(); }
   menu.showPopover(); report.opens["the popover's own toggle"] = { opened: open(), refused: menu.lastToggleRefused }; close();
+  report.row = { held: said.length > 0, said: [...new Set(said)],
+    marked: [...button.attributes].map((attribute) => attribute.name).filter((name) => !["type", "class"].includes(name)) };
   report.handedOut = states.length;
   // What each item does: clicked with the menu closed (the click handler), and run by the shell with it open (execute).
   report.acts = {};

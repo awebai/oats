@@ -242,21 +242,26 @@ test("cases B and C: the server holds a CLAUDE_CONFIG_DIR and the spawner has an
   }
 });
 
-test("case D: a launch configuration's CLAUDE_CONFIG_DIR decides, whatever the spawner and the server hold; with its PATH too, the folder-trust check and the lookup read nothing of tmux, and the gate reads it once, for HOME", async () => {
+test("case D: a launch configuration's CLAUDE_CONFIG_DIR decides, whatever the spawner and the server hold; with its PATH too, the folder-trust check and the lookup read nothing of tmux, the agent's scope reads the bus once, and the gate's read of HOME is that same one", async () => {
   await startServer({ CLAUDE_CONFIG_DIR: serverAccount.dir });
   const env = { CLAUDE_CONFIG_DIR: spawnerAccount.dir, PATH: `${front}:${SERVER_PATH}` };
   let child = spawned(spawn("d", { config: "own", env }));
   assert.deepEqual(trustWarnings(child), [trustWarning(configAccount.claude, "the CLAUDE_CONFIG_DIR of launch configuration own")]);
   await ready(child.home);
   assert.equal(paneEnv(child.home).CLAUDE_CONFIG_DIR, configAccount.dir);
-  // PATH and the selector both from the configuration: no check needs the pane's environment.
+  // PATH and the selector both from the configuration: neither the folder-trust check nor the lookup
+  // needs the pane's environment. The agent's scope does (lib/tmux-server-scope.mjs agentScope): its
+  // probe runs with the pane's XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS, which the configuration
+  // does not set, so the session the spawn got is read once and the server once, and no more.
   rmSync(SHOWN, { force: true });
   child = spawned(spawn("d-both", { config: "both", env }));
   assert.deepEqual(trustWarnings(child), [trustWarning(configAccount.claude, "the CLAUDE_CONFIG_DIR of launch configuration both")]);
-  assert.deepEqual(shown(), [], "no show-environment was run");
+  assert.deepEqual(shown().map((l) => l.replace(/^.* show-environment /, "show-environment ")), ["show-environment -t =base -s", "show-environment -g -s"], "the scope's one read of the pane, session then server");
   // With a requirement the probe needs the pane's HOME: one read of the session and one of the server
-  // before anything is created, and the same two on the session the spawn got.
+  // before anything is created, and the same two on the session the spawn got, which the agent's
+  // scope shares: no third read.
   configAccount.plugin(true);
+  rmSync(SHOWN, { force: true });
   spawned(spawn("d-gated", { soul: "gated", config: "both", env }));
   assert.equal(probed().CLAUDE_CONFIG_DIR, configAccount.dir, "the probe ran with the configuration's selector");
   assert.equal(probed().HOME, serverHome.dir, "and the pane's HOME");

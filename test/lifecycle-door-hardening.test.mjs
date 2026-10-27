@@ -312,10 +312,13 @@ test("a self-retire that cannot write its marker ends the completion it had star
 
 // ---- B. a stop whose tmux call fails ----
 
-/** A preload that makes ONE call of a stop fail: the `tmux … list-panes … -F #{pane_pid}` that only
- *  the step that signals the harness makes (lib/core.mjs harnessProcesses), after the plan was made
- *  and the stop has begun. `thrown` is the expression it throws there; every other call is the
- *  original. → its path. */
+/** The format of the list-panes that only the step that signals the harness makes (lib/core.mjs
+ *  harnessProcesses): each pane's id, process id and agent mark (#1569). */
+const SIGNAL_STEP_FORMAT = "#{pane_id}\t#{pane_pid}\t#{@oats-agent}";
+/** A preload that makes ONE call of a stop fail: the `tmux … list-panes … -F <SIGNAL_STEP_FORMAT>`
+ *  that only the step that signals the harness makes (lib/core.mjs harnessProcesses), after the plan
+ *  was made and the stop has begun. `thrown` is the expression it throws there; every other call is
+ *  the original. → its path. */
 function failingPanePid(fx, file, thrown) {
   const preload = join(fx.base, file);
   writeFileSync(preload, `// Written by test/lifecycle-door-hardening.test.mjs.
@@ -323,7 +326,7 @@ import cp from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 const execFileSync = cp.execFileSync;
 cp.execFileSync = function (file, args, ...rest) {
-  if (file === "tmux" && Array.isArray(args) && args.includes("list-panes") && args[args.length - 1] === "#{pane_pid}") {
+  if (file === "tmux" && Array.isArray(args) && args.includes("list-panes") && args[args.length - 1] === ${JSON.stringify(SIGNAL_STEP_FORMAT)}) {
     const command = [file, ...args].join(" ");
     throw ${thrown};
   }
@@ -348,7 +351,7 @@ test("instance stop --apply whose tmux call exits non-zero: the target is E_SESS
   const session = await launchHarness(w);
   const plan = await stopPlanOfRunning(fx, name);
   assert.deepEqual(plan.targets.map((target) => target.instance), [name]);
-  const command = `tmux -u -S ${session.socket} list-panes -t =${session.session}:=${name} -F #{pane_pid}`;
+  const command = `tmux -u -S ${session.socket} list-panes -t =${session.session}:=${name} -F ${SIGNAL_STEP_FORMAT}`;
   // The stop fails before it signals anything, and says that it does not know: it had reached the
   // step that signals, and that step gave no answer.
   const HARNESS = "whether its harness was signalled is not known";

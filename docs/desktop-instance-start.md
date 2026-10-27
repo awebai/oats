@@ -43,9 +43,12 @@ entry, or falls back to the recorded launch when it is no longer offered.
 
 Enter a model or leave the field blank to use the selected launch's default.
 An old harness's model is not carried to a different harness. Available local model
-suggestions are advisory; a model ID can also be typed. Start uses the saved
-briefing and state in a new harness conversation; it does not resume an old
-harness conversation ID. Once the kernel accepts the start or restart, the
+suggestions are advisory; a model ID can also be typed. Start opens a fresh
+harness conversation on the saved briefing and state. The one exception is a
+resume after a shutdown, a reboot or a crash, which continues the instance's
+own last conversation ([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown));
+it replaces the earlier rule that no start resumes a conversation (OATS 0.69).
+A Start or Restart from this dialog is never a resume. Once the kernel accepts the start or restart, the
 dialog closes and Desktop opens the instance's terminal as soon as its row is
 running with a terminal session, so whatever the harness shows first (a
 confirmation such as Claude Code's development-channels prompt, an error, the

@@ -98,6 +98,12 @@ unless a coordinator does this for it, finds its own as it starts:
    the one whose lane the work is in, and when you can't tell, ask one of them, never all.
    None named or reachable: note it in your state, tell your requester, spawn none.
 
+**Relaying a decision you made with your human** (to your maintainer, or in a PR): record it
+first where it applies (the spec, the PR or the issue, in your human's words where you have
+them), then say "Decided with <human>: <decision>" and where it is recorded. Your maintainer
+takes it as your human's decision and gates it; anything you say without that is a
+proposal.
+
 ## Across machines and people
 When your coordinator, or experts you coordinate, run on another machine or for another
 human, you can't spawn, retire or direct their agents. Agree at the start, in writing both
