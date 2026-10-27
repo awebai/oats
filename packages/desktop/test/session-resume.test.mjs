@@ -424,6 +424,27 @@ test('sweepSettlement: refused (any reason) and skipped not-lost or not-seen-rec
   }
 });
 
+test('sweepSettlement and withoutReported read only what readResumeSweep reads: a result that is not the document, or a plan, settles nothing and leaves nothing out', () => {
+  const rows = [refusedRow('x', { reason: REFUSED_REASONS[0], code: 'E_X' }), resumedRow('r')];
+  const valid = answer(rows);
+  const reported = new Set(withoutReported(valid, new Set()).keys.map(k => k.key));
+  const not = [
+    answer(rows, [], { schemaVersion: 2 }), answer(rows, null), answer(rows, [], { plan: 'no' }), answer(rows, [], { plan: undefined }),
+    answer(rows, new Array(RESUME_ANSWER_ENTRIES + 1).fill({ deployment: A, swept: true })),
+  ];
+  for (const envelope of not) {
+    assert.equal(readResumeSweep(envelope).kind, 'failed', 'the reader fails it');
+    assert.deepEqual(sweepSettlement(envelope), { settle: [], release: [] });
+    const out = withoutReported(envelope, reported);
+    assert.equal(out.envelope, envelope);
+    assert.deepEqual(out.keys, []);
+  }
+  const plan = answer(rows, [], { plan: true });
+  assert.equal(readResumeSweep(plan).kind, 'quiet', 'a plan started nothing');
+  assert.deepEqual(sweepSettlement(plan), { settle: [], release: [] });
+  assert.deepEqual(withoutReported(plan, reported), { envelope: plan, keys: [] });
+});
+
 test('withoutReported: a copy without the refusals already reported, and every refusal\'s key of this answer', () => {
   const x = (more = {}) => refusedRow('x', { reason: REFUSED_REASONS[0], code: 'E_START_REFUSED', ...more });
   const first = answer([x(), x(), resumedRow('r')]);

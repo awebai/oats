@@ -234,6 +234,19 @@ test('news, not repeats: a released home forgets its reported refusals, so a ref
   assert.equal(h.readings.at(-1).kind, 'quiet');
 });
 
+test('an answer the reader fails or reads as nothing (not the document, or a plan) settles nothing and reports nothing', async () => {
+  const x = () => refusedRow('x', { reason: START_REFUSED, code: 'E_START_REFUSED' });
+  for (const bad of [answer([x()], [], { schemaVersion: 2 }), answer([x()], null), answer([x()], [], { plan: true })]) {
+    const h = harness();
+    await launched(h, bad);
+    assert.notEqual(h.readings[0].kind, 'notice');
+    // x was not settled: its lost read at the floor sweeps.
+    assert.equal(await starts(h, RESUME_MIN_INTERVAL_MS, [lost('x')], [x()]), true);
+    // And its refusal was never reported: the valid one is news.
+    assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.instance), ['x']);
+  }
+});
+
 test('news, not repeats: read gets a copy; the run\'s envelope is never changed; other answers pass unchanged', async () => {
   const seen = [];
   const h = harness({ read: envelope => { seen.push(envelope); return readResumeSweep(envelope); } });

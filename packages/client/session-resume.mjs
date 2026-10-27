@@ -88,12 +88,15 @@ function decodeDeployment(d) {
 const empty = () => ({ resumed: [], fresh: [], waiting: [], refused: [], unswept: [], omitted: 0,
   totals: { resumed: 0, fresh: 0, waiting: 0, refused: 0 } });
 
+/** Whether `result` is the sweep's document: the one check the summary and the trigger's helpers share. */
+const sweepDocument = result => record(result) && result.schemaVersion === 1 && typeof result.plan === 'boolean'
+  && Array.isArray(result.deployments) && Array.isArray(result.rows)
+  && result.deployments.length <= RESUME_ANSWER_ENTRIES && result.rows.length <= RESUME_ANSWER_ENTRIES;
+
 /** The sweep's `result` as a summary, or null when it is not the document. A plan (`plan: true`) started
  * nothing, so it is the empty summary: none of its rows or deployments is read. */
 function summarize(result) {
-  if (!record(result) || result.schemaVersion !== 1 || typeof result.plan !== 'boolean'
-    || !Array.isArray(result.deployments) || !Array.isArray(result.rows)
-    || result.deployments.length > RESUME_ANSWER_ENTRIES || result.rows.length > RESUME_ANSWER_ENTRIES) return null;
+  if (!sweepDocument(result)) return null;
   const s = empty();
   if (result.plan) return s;
   let rows = 0, lines = 0;
@@ -133,11 +136,12 @@ export function readResumeSweep(envelope) {
   return { kind: sum(summary.totals) > 0 ? 'notice' : 'quiet', summary };
 }
 
-/** The rows of an answer the trigger reads (session-resume-trigger.mjs): an `ok: true` envelope's `result.rows`
- * when an array within RESUME_ANSWER_ENTRIES, else null (nothing to settle or leave out). */
+/** The rows of an answer the trigger reads (session-resume-trigger.mjs): the rows of an `ok: true` envelope
+ * whose result is the sweep's document (sweepDocument, as readResumeSweep reads it) and not a plan, else null:
+ * an answer the reader fails or reads as nothing settles nothing and leaves nothing out. */
 function answerRows(envelope) {
-  const rows = record(envelope) && envelope.ok === true && record(envelope.result) ? envelope.result.rows : undefined;
-  return Array.isArray(rows) && rows.length <= RESUME_ANSWER_ENTRIES ? rows : null;
+  const result = record(envelope) && envelope.ok === true ? envelope.result : undefined;
+  return sweepDocument(result) && result.plan === false ? result.rows : null;
 }
 /** A row's home as the trigger keys it: a non-empty string, else null. */
 const homeOf = row => record(row) && typeof row.home === 'string' && row.home !== '' ? row.home : null;
