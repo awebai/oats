@@ -1044,7 +1044,8 @@ latest-state capability.
 
 ### oats.core: needs input
 
-oats.core (2.4.0 and later, kernel 0.40.0 and later) tells the deployment
+oats.core (since 2.4.0, which needs kernel 0.40.0; 2.8.0 needs 0.49.0, as
+"Across `oats instance upgrade`" below says) tells the deployment
 when an instance is waiting on a human, in two independent ways. Each shows
 on `oats status` and in `oats instance events`. The verbs' contract
 (`oats instance waiting`, `oats instance attention`, the `waiting` event) is
