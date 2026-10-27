@@ -13,13 +13,14 @@ own verification passes there. Not per commit, not before the work runs.
 ## Spawn it once, attached to your tree
 ```bash
 oats spawn code-reviewer --work attached --work-dir <the consolidated worktree> \
-  --parent "$OATS_INSTANCE" --repo <repository> \
+  --parent "$OATS_INSTANCE" --same-work --repo <repository> \
   --purpose <short-slug> --task-file <review-brief.md>
 ```
 Always give both `--work-dir` and `--repo`. `<repository>` is the absolute path of the
 worktree's clone: `repo` in your `instance.json`, or the clone you made an extra worktree
-from. The reviewer is your child, shares your tree to read the code and run the tests, and
-must not edit it.
+from. The reviewer is your child, on your work (`--same-work`), shares your tree to read
+the code and run the tests, and must not edit it. On a kernel whose `oats version --json`
+doesn't list the `instance-same-work` feature, leave `--same-work` out.
 
 ## Pick a different model
 A reviewer on your model shares your blind spots. Before spawning, compare:
