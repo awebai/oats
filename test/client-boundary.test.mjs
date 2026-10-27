@@ -74,6 +74,11 @@ const SURFACE = Object.freeze({
     "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
+  // #1559: the kernel's machine sweep, when a client opens and when a read shows a lost session: the
+  // shared trigger decides when, the runner runs it through the client's change exec, the reader words it.
+  "session-resume-cli.mjs": ["runResumeSweep"],
+  "session-resume.mjs": ["resumeNotice"],
+  "session-resume-trigger.mjs": ["createResumeTrigger", "localDeploymentIds"],
   "client-terms.mjs": ["clientTerms"],
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
   "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
@@ -502,7 +507,9 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 70);
+  assert.equal(Object.keys(SURFACE).length, 73);
+  // #1559: the machine sweep's runner, its reader's notice and the shared trigger, with the trigger's locality.
+  assert.deepEqual(["session-resume-cli.mjs", "session-resume.mjs", "session-resume-trigger.mjs"].map((module) => SURFACE[module]), [["runResumeSweep"], ["resumeNotice"], ["createResumeTrigger", "localDeploymentIds"]]);
   // #482 in a switcher: a listed deployment's identity, read before it is served.
   assert.ok(Object.hasOwn(SURFACE, "deployment-identity.mjs"), "deployment-identity.mjs");
   // #1395: the keys both clients share; the TUI reads its defaults from them.

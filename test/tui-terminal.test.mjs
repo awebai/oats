@@ -32,6 +32,7 @@ const REAL_TMUX = hostTool("tmux");
 /** Outside CI a host without tmux skips the terminal tests; in CI test/tmux-in-ci.test.mjs fails. */
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui` in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const STTY = REAL_TMUX ? systemExecutable("stty") : null; // not one of the fixture's tools: called by its path
+const PS = REAL_TMUX ? systemExecutable("ps") : null; // the same: front/tmux asks it who started it
 const base = fixtureBase("oats-tui-"); // short: a socket path lives in it
 const restoreEnvironment = REAL_TMUX ? isolateSessionEnvironment(base) : () => {};
 const TERM = join(base, "term.sock");
@@ -73,10 +74,13 @@ const withPath = async (path, fn) => { const saved = process.env.PATH; process.e
  *  collector asks the default tmux server, which no test may reach. So the first `tmux` on that
  *  PATH is `front/tmux`: it asks the fixture's own `oats` server instead, which nothing started,
  *  and real tmux answers that no server runs: every row is `stopped`. It writes down the
- *  environment it was started with. While the file `hold` exists it does not answer: it starts a
- *  `sleep` of half a minute, writes that pid to `held` and waits for it: a read that stays in
- *  flight. The sleep is in the collector's process group and outlives the four seconds the
- *  collector gives its tmux, so when it is gone long before its time, the TUI ended the group. */
+ *  environment it was started with. While the file `hold` exists it does not answer the collector
+ *  (the process that started it runs liveness-main.mjs): it starts a `sleep` of half a minute,
+ *  writes that pid to `held` and waits for it: a read that stays in flight. The sleep is in the
+ *  collector's process group and outlives the four seconds the collector gives its tmux, so when it
+ *  is gone long before its time, the TUI ended the group. Every other caller is answered as ever:
+ *  the kernel's machine sweep, which the TUI runs when it opens (`oats session resume`), reads the
+ *  deployment's status and with it tmux, and is a change the TUI never ends, not a read. */
 async function deployment(t, { souls = { dev: {}, reviewer: {} }, capabilities = {} } = {}) {
   const fx = v2Deployment({ souls, capabilities, t });
   const world = { fx, dep: fx.dep, enter: join(fx.base, "enter.sh"), holdFile: join(fx.base, "hold"), heldFile: join(fx.base, "held"), seenFile: join(fx.base, "collector-tmux.env") };
@@ -88,7 +92,7 @@ async function deployment(t, { souls = { dev: {}, reviewer: {} }, capabilities =
   mkdirSync(front);
   writeFileSync(join(front, "tmux"), `#!/bin/sh
 env > ${shq(world.seenFile)}
-if [ -e ${shq(world.holdFile)} ]; then sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.heldFile)}; wait; exit 1; fi
+if [ -e ${shq(world.holdFile)} ]; then case "$(${shq(PS)} -o args= -p $PPID 2>/dev/null)" in *liveness-main*) sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.heldFile)}; wait; exit 1;; esac; fi
 exec ${shq(join(base, "system-bin", "tmux"))} -L oats "$@"
 `, { mode: 0o755 });
   const env = world.env = { ...fx.env, PATH: `${front}:${fx.env.PATH}` };

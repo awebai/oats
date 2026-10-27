@@ -2,10 +2,10 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, createResumeTrigger, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
-import { LIST_WORDS } from "../lib/model.mjs";
+import { LIST_WORDS, RESUME_WORDS } from "../lib/model.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
 import { ENTER, LEAVE, POP, PUSH, QUERY } from "../lib/term/tty.mjs";
 import { CLI, DEPLOYMENT, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
@@ -105,7 +105,7 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
   // `identities`: what the run asked of its identity reads (lib/read.mjs createIdentityReads, faked): each
   // start's paths in order, how many times they were stopped, and what the run made them with.
-  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
+  const r = { stdin, stdout, proc, timers, errors, log, listed, keysAsked: [], observed: [], lists: [], identities: { starts: [], stops: 0, options: null }, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, capabilityReads: [], capabilityExec: null, tick(ms) { clock += ms; },
     spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   r.listAnswer = listAnswer ?? ((asked) => (asked.action === "list" ? { ok: true, value: { ok: true, rows: r.listed } } : { ok: true, value: asked.action === "add" ? { path: asked.path, added: true } : { path: asked.path, removed: true } }));
   let up;
@@ -137,6 +137,11 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     startExec() { throw new Error("the fake start exec starts nothing"); },
     admitDeployment(path) { log.push(["effect", "admit", path]); return admit(path); },
     createPanel(options) { r.panel = fakePanel(log, options); return r.panel.api; },
+    // The shared resume trigger itself; what each read gave its `observed` is kept (`r.observed`).
+    createResumeTrigger(options) {
+      const made = createResumeTrigger(options);
+      return { ...made, observed(rows, given) { r.observed.push({ rows, options: given }); return made.observed(rows, given); } };
+    },
     sweep(options) { log.push(["panel", "sweep", options.env === env]); return { removed: [] }; },
     runDir() { log.push(["panel", "dir"]); return "/tmp/oats-tui-fixture"; },
     removeDir(dir) { log.push(["panel", "remove", dir]); },
@@ -310,7 +315,7 @@ test("the action table binds each key to one action, and a key bound twice is re
   for (const id of ["stop", "retire", "start", "restart"]) assert.equal(ACTIONS.find((action) => action.id === id).keys.every((key) => /^[A-Z]$/.test(key)), true, id);
 });
 
-test("the arguments are --ascii, --help and --dir with a path, in both spellings; anything else is refused with E_BAD_ARGS and the usage, --server included", () => {
+test("the arguments are --ascii, --help and --dir with a path, in both spellings; anything else is refused with E_BAD_ARGS and the usage, --server and --no-resume included", () => {
   assert.deepEqual(parseArgs([]), { options: { ascii: false, help: false, dir: null } });
   assert.deepEqual(parseArgs(["--ascii"]).options, { ascii: true, help: false, dir: null });
   assert.equal(parseArgs(["-h"]).options.help, true);
@@ -320,7 +325,7 @@ test("the arguments are --ascii, --help and --dir with a path, in both spellings
   assert.equal(parseArgs(["--dir", "--ascii"]).options.dir, "--ascii", "what follows --dir is its path, whatever it looks like");
   assert.equal(parseArgs(["--dir=a=b"]).options.dir, "a=b");
   for (const argv of [["--dir"], ["--dir="], ["--ascii", "--dir"], ["--dir", ""]]) assert.equal(parseArgs(argv).error, `oats: \`oats tui --dir\` takes a path (E_BAD_ARGS); usage: ${USAGE}`, argv.join(" "));
-  for (const argv of [["--server", "build"], ["--json"], ["instances"], ["--ascii", "--no"], ["--ascii=1"], ["--directory", "/x"]]) {
+  for (const argv of [["--server", "build"], ["--json"], ["instances"], ["--ascii", "--no"], ["--ascii=1"], ["--directory", "/x"], ["--no-resume"], ["--resume"]]) {
     const { error, options } = parseArgs(argv);
     assert.equal(options, undefined);
     assert.equal(error, `oats: \`oats tui\` takes no argument ${argv.find((a) => a !== "--ascii")} (E_BAD_ARGS); usage: ${USAGE}`);
@@ -857,6 +862,190 @@ test("a change to this computer's list still running when the run ends is named 
   }
   assert.equal(LIST_WORDS.leaving, "oats: a change to this computer's list of deployments is still running; `oats deployments` shows the list.");
 });
+
+// ── Lost sessions resumed (#1559; docs/tui.md, "Resuming lost sessions"): the kernel's machine sweep,
+// through the shared trigger, the shared runner and the shared reader, over the fake reader's changeExec.
+
+/** The run's kernel with the machine sweep (`oats version --json` features). */
+const RESUME_CLI = Object.freeze({ ...CLI, features: Object.freeze([...CLI.features, "session-resume"]) });
+/** The sweeps the run started: its changes that are `oats session resume --json`. */
+const sweepsOf = (r) => r.reader.changed.filter(({ argv }) => argv[0] === "session");
+/** The kernel's answer to a sweep that resumed `instance` of the fixture's deployment, as its stdout. */
+const resumedAnswer = (instance) => JSON.stringify({ schemaVersion: 1, ok: true, result: { schemaVersion: 1, plan: false,
+  deployments: [{ deployment: DEPLOYMENT, state: "ok", swept: true }], rows: [{ deployment: DEPLOYMENT, instance, outcome: "resumed" }] } });
+/** An observed entry of the fixture's deployment whose `instance` has lost its session. */
+const lostEntry = (instance) => {
+  const entry = observedAt(DEPLOYMENT, [instanceRow("acme-expert", instance, { running: false, runtimeState: "stopped" })]);
+  return { ...entry, instances: entry.instances.map((row) => ({ ...row, sessionEnd: "lost" })) };
+};
+
+test("with a kernel that has the sweep, a run started in a deployment resumes lost sessions once the add of that deployment has settled: after the first frame and the reader's start, as a change of the run labelled as the sweep, from /, with the run's environment", async () => {
+  let add = null;
+  const env = { TERM: "xterm-256color", LANG: "en_US.UTF-8", OATS_HOME_DIR: "/scratch/oats-home" };
+  const r = await started({ env, kernel: { ok: true, cli: RESUME_CLI }, listAnswer: (asked, call) => {
+    if (asked.action === "add") { add = call; return undefined; }
+    return { ok: true, value: { ok: true, rows: [] } };
+  } });
+  await settle();
+  assert.notEqual(add, null, "the add is on its way");
+  assert.deepEqual(sweepsOf(r), [], "no sweep while the add is on its way");
+  add.answer({ ok: true, value: { path: DEPLOYMENT, added: true } });
+  await settle();
+  const [sweep, ...more] = sweepsOf(r);
+  assert.deepEqual(more, [], "one sweep");
+  assert.deepEqual(sweep.argv, ["session", "resume", "--json"]);
+  assert.deepEqual(sweep.options.label, { verb: "resume", launch: true }, "the launch sweep's own label: let go in silence on the way out");
+  assert.equal(sweep.options.cwd, "/");
+  assert.equal(sweep.options.env.OATS_HOME_DIR, "/scratch/oats-home", "the run's environment, as the other kernel calls have it");
+  const at = (what, which) => r.log.findIndex(([w, x]) => w === what && (which === undefined || x === which));
+  const swept = r.log.findIndex(([w, x, argv]) => w === "reader" && x === "change" && argv?.[0] === "session");
+  assert.equal(at("write") < swept && at("reader", "start") < swept, true, "after the first frame and the reader's start");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+
+  // A refused add holds the sweep up no more than a done one.
+  const refused = await started({ kernel: { ok: true, cli: RESUME_CLI }, listAnswer: (asked) => (asked.action === "add" ? { ok: false, reason: BUSY } : { ok: true, value: { ok: true, rows: [] } }) });
+  await settle();
+  assert.equal(sweepsOf(refused).length, 1);
+  refused.stdin.type("q");
+  assert.equal(await refused.status, 0);
+});
+
+test("a run started in the switcher, outside every deployment, resumes lost sessions too: the sweep is the machine's, with no add to wait for", async () => {
+  const r = await started({ deployment: { ok: false, dir: "/work/here" }, listed: LISTED, kernel: { ok: true, cli: RESUME_CLI } });
+  await settle();
+  assert.deepEqual(r.lists.map(({ asked }) => asked.action), ["list"], "no add");
+  assert.deepEqual(sweepsOf(r).map(({ argv }) => argv), [["session", "resume", "--json"]]);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("with a kernel without the sweep nothing is run: not at the start, not when a read shows a lost session", async () => {
+  const r = await started({});
+  await settle();
+  r.reader.read(lostEntry("acme-expert-tui"));
+  r.tick(60_000);
+  r.reader.read(lostEntry("acme-expert-ops"));
+  await settle();
+  assert.deepEqual(sweepsOf(r), []);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("what the sweep did is said under the sidebar's title and the rows are read live; a read showing a lost session sweeps again, never while one is in flight nor within the floor", async () => {
+  const r = await started({ columns: 120, kernel: { ok: true, cli: RESUME_CLI } });
+  await settle();
+  r.reader.answer(ENTRY);
+  assert.equal(sweepsOf(r).length, 1, "the sweep at the start");
+  // A lost session read while the first sweep is in flight starts no second.
+  r.reader.read(lostEntry("acme-expert-tui"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 1, "one in flight at a time");
+  r.log.length = 0;
+  sweepsOf(r)[0].callback(null, resumedAnswer("acme-expert-tui"), "");
+  await settle();
+  assert.deepEqual(readerDid(r).filter(([what]) => what === "request"), [["request", { live: true }]], "a live read, so the resumed row reads running");
+  assert.match(sidebarOf(r), /OATS resumed 1 instance whose session was lost\. acme-expert-tui: resumed in its own conversation\./);
+  // Within the floor a lost session read starts none; once it has passed, the next does.
+  r.reader.read(lostEntry("acme-expert-ops"));
+  r.tick(29_000);
+  r.reader.read(lostEntry("acme-expert-ops"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 1, "not within 30 s of the last");
+  r.tick(1_000);
+  r.reader.read(lostEntry("acme-expert-ops"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 2, "again once 30 s have passed");
+  // A read with no lost session starts none.
+  r.tick(60_000);
+  sweepsOf(r)[1].callback(null, resumedAnswer("acme-expert-ops"), "");
+  await settle();
+  r.reader.read(ENTRY);
+  await settle();
+  assert.equal(sweepsOf(r).length, 2, "nothing lost, nothing swept");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+/** The kernel's answer to a sweep that found nothing to do. */
+const QUIET_ANSWER = JSON.stringify({ schemaVersion: 1, ok: true, result: { schemaVersion: 1, plan: false, deployments: [], rows: [] } });
+
+test("a lost row of another machine's deployment in the open view sweeps nothing: the trigger is given the view's rows with only this machine's deployments as local", async () => {
+  const r = await started({ columns: 120, kernel: { ok: true, cli: { ...REMOTE_CLI, features: [...REMOTE_CLI.features, "session-resume"] } } });
+  await settle();
+  assert.equal(sweepsOf(r).length, 1, "the sweep at the start");
+  sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
+  await settle();
+  // garnet reports the fixture's workspace: its rows are in the open view, beside this machine's.
+  r.reader.roster({ envelope: rosterAnswer([group("garnet:t1", "/srv/acme-platform", [remoteRow("dev-far", "/srv/acme-platform", { running: false, sessionEnd: "lost" })])]) });
+  r.tick(60_000);
+  r.reader.read(HOME_ENTRY);
+  await settle();
+  const { rows, options } = r.observed.at(-1);
+  assert.deepEqual(options, { localDeploymentIds: [DEPLOYMENT] }, "this machine's deployment alone is local");
+  const far = rows.find((row) => row.instance === "dev-far");
+  assert.deepEqual([far?.sessionEnd, far?.running, far?.deployment?.id === DEPLOYMENT], ["lost", false, false], "another machine's lost row, as the view serves it");
+  assert.deepEqual(rows.filter((row) => row.deployment?.id === DEPLOYMENT).map((row) => row.instance).sort(), ["acme-expert-tui", "acme-maintainer-ops"]);
+  assert.equal(sweepsOf(r).length, 1, "no sweep for another machine's loss");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a lost row of this machine sweeps once; once that sweep has completed the row waits, and the same read later sweeps nothing", async () => {
+  const r = await started({ kernel: { ok: true, cli: RESUME_CLI } });
+  await settle();
+  sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
+  await settle();
+  r.tick(30_000);
+  r.reader.read(lostEntry("acme-expert-tui"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 2, "a sweep for the lost row");
+  assert.deepEqual(r.observed.at(-1).options, { localDeploymentIds: [DEPLOYMENT] });
+  sweepsOf(r)[1].callback(null, QUIET_ANSWER, "");
+  await settle();
+  r.tick(30_000);
+  r.reader.read(lostEntry("acme-expert-tui"));
+  await settle();
+  assert.equal(sweepsOf(r).length, 2, "settled: the same lost row sets off no other sweep");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the sweep is a change the run never signals: quitting before its answer lets it go and its late answer is not shown; the launch sweep is let go in silence, and one a lost row started is named after the screen is left", async () => {
+  for (const tell of [true, false]) {
+    const r = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
+    await settle();
+    const [launch] = sweepsOf(r);
+    r.reader.running = [{ pid: 4001, label: launch.options.label }];
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, String(tell));
+    assert.deepEqual(r.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
+    assert.deepEqual(r.errors, [], `the launch sweep is not named (${tell}): it runs at every open and usually finds nothing`);
+    r.stdout.take();
+    launch.callback(null, resumedAnswer("acme-expert-tui"), "");
+    await settle();
+    assert.equal(r.stdout.take(), "", "the late answer draws nothing");
+  }
+  for (const [tell, lines] of [[true, [`${RESUME_WORDS.leaving}\n`]], [false, []]]) {
+    const r = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
+    await settle();
+    sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
+    await settle();
+    r.tick(30_000);
+    r.reader.read(lostEntry("acme-expert-tui"));
+    await settle();
+    const [, observed] = sweepsOf(r);
+    assert.deepEqual(observed.options.label, { verb: "resume" }, "a sweep a lost row started: its own label");
+    r.reader.running = [{ pid: 4001, label: launchLabel(r) }, { pid: 4002, label: observed.options.label }];
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, String(tell));
+    assert.deepEqual(r.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
+    assert.deepEqual(r.errors, lines, `one line, for the sweep that is starting sessions, and none for the launch sweep (${tell})`);
+  }
+  assert.equal(RESUME_WORDS.leaving, "oats: the resume of lost sessions is still running; `oats status` shows the instances.");
+});
+/** The label the run gave its launch sweep. */
+const launchLabel = (r) => sweepsOf(r)[0].options.label;
 
 test("w opens the switcher: this computer's list of deployments is read through the reader's exec, and its rows this run does not serve are listed under the workspaces; r there reads it again and asks for a live read; one read runs at a time, and a read asked for while one is on its way is one more after it, whose answer is the one taken", async () => {
   // The list holds the deployment the run serves too: it is not offered.
