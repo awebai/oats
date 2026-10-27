@@ -190,10 +190,13 @@ export const FRAME_MS = 16;
 export const VIEW_SCRIPT = 'exec "$0" "$@" 2>"$E"';
 /** The control client's subscription to every pane's end (THE END OF A VIEWER): its name, and
  *  the line tmux prints when a pane's value changes, `1 <status> ` for a dead pane whose process
- *  exited, `1  <signal>` for one a signal ended (a name, or its number), `1  ` for one whose status
- *  tmux does not have yet (or, on tmux 3.2, a signal's), `0  ` for a live one. */
+ *  exited, `1  <signal>` for one a signal ended, `1  ` for one whose status tmux does not have yet
+ *  (or, on tmux 3.2, a signal's), `0  ` for a live one. The signal is as tmux's sig2name says it:
+ *  the libc's own name where it has `sys_signame`, as macOS's does (`kill`, `hup`), and its number
+ *  elsewhere, as on Linux (`9`); on macOS a viewer a signal ended was never over while only upper
+ *  case was read (awebai/oats#1613). A status and a signal together is no line of tmux's. */
 const DEAD_SUBSCRIPTION = "oats-tui-dead";
-const DEAD_LINE = /^%subscription-changed oats-tui-dead \$\d+ (@\d+) \d+ %\d+ : ([01]) (\d{0,3}) ([A-Z0-9]{0,12})$/;
+const DEAD_LINE = /^%subscription-changed oats-tui-dead \$\d+ (@\d+) \d+ %\d+ : ([01]) (?:(\d{1,3}) | ([A-Za-z0-9]{1,12})| )$/;
 /** On tmux 3.2 (no `pane_dead_signal`), how long a viewer heard dead with no status and no signal
  *  (`1  `) waits for the line that has one, in milliseconds: two checks of the subscription past
  *  the one that heard it. */
@@ -597,7 +600,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
     else if (kind === "%subscription-changed") {
       const dead = DEAD_LINE.exec(line);
       if (first === DEAD_SUBSCRIPTION) traced(dead ? line : `${DEAD_SUBSCRIPTION}: a line not of its shape`);
-      if (dead && dead[2] === "1") paneDied(dead[1], dead[3] !== "" ? Number(dead[3]) : dead[4] !== "" ? null : PENDING);
+      if (dead && dead[2] === "1") paneDied(dead[1], dead[3] !== undefined ? Number(dead[3]) : dead[4] !== undefined ? null : PENDING);
     }
   }
 

@@ -516,6 +516,8 @@ describe("the panel", { concurrency: 8 }, () => {
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1 more",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1234 ",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1 9",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 0 kill",
     ]) world.emit(line);
     await waitFor("the panel to hear them", () => heard().includes(": 1 1234 \n"));
     assert.deepEqual([closed, panel.current, world.control().filter((line) => line.startsWith("kill-pane"))], [[], id, []]);
@@ -532,6 +534,17 @@ describe("the panel", { concurrency: 8 }, () => {
     await waitFor("the panel to hear its window's end", () => heard().includes(`%unlinked-window-close ${second.id}\n`));
     assert.equal(closed.length, 2, "over once");
     panel.end();
+  });
+
+  test("a signal's end is heard however tmux says the signal: its number (Linux), or the libc's name, in lower case on macOS (sys_signame: `kill`, `hup`); the viewer is over with no status and its pane killed (awebai/oats#1613)", async () => {
+    for (const signal of ["9", "kill", "hup"]) {
+      const { world, panel, closed, id } = await opened();
+      world.emit(dead(id, "", signal));
+      await waitFor(`the end by ${signal}`, () => closed.length === 1);
+      assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false }, `${signal}: a signal ended it, no status`);
+      await waitFor(`the dead pane killed, ${signal}`, () => world.control().includes("kill-pane -t %1"));
+      panel.end();
+    }
   });
 
   test("a pane heard dead before tmux has its status (`1  `) is not over: the viewer ends with the status of the line that follows (CI, tmux 3.4)", async () => {
