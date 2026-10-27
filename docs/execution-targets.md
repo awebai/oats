@@ -889,6 +889,8 @@ saved route that records `herdrPath` still loads; the field is ignored.
 |---|---|
 | `oats spawn <soul> [--no-launch]` | Creates the home and launches the harness. `--no-launch` creates the home only. |
 | `oats session start --home <abs>` | Starts a stopped or never-launched instance again in its existing home. |
+| `oats session start --resume --home <abs>` | Starts an instance whose session was lost again, in its own last conversation ([Resume after a shutdown](#resume-after-a-shutdown)). |
+| `oats session resume [--deployment <dir>] [--plan]` | Resumes every lost session of this machine's deployments ([Resume after a shutdown](#resume-after-a-shutdown)). |
 | `oats session restart --home <abs>` | Stops the running harness and starts it again in place. |
 | `oats instance stop <instance> --plan` / `--apply` | Stops the harness and keeps home, work and launch recipe. |
 | `oats retire <instance>` | Ends the session and retires the instance ([souls-and-instances.md](souls-and-instances.md#retire)). |
@@ -1093,6 +1095,112 @@ claim of every instance it stops, the one a retire holds (OATS 0.52.0): one
 that meets a retire of any of them answers `E_INSTANCE_RETIRING`, one that
 meets another stop `E_LIFECYCLE_BUSY`, before anything is stopped
 ([the table](desktop-cli-api.md#lifecycle-pairs)).
+
+**Stop an instance with OATS to keep it stopped** (Desktop's Stop, `oats
+instance stop`): the stop's record names the start it ended, and a resume
+never brings that start back. A tmux window killed by hand, or a harness
+killed by a signal, leaves no such record and reads as lost
+([Resume after a shutdown](#resume-after-a-shutdown)).
+
+### Resume after a shutdown
+
+After a shutdown, a reboot or a crash (OATS 0.69, #1559), `oats session
+resume` brings back every instance session that was alive, on every
+deployment in this computer's list
+([workspaces.md](workspaces.md#this-computers-deployments)), each in its own
+harness conversation, with the launch it recorded. OATS Desktop and `oats
+tui` run it once when they open. Running instances are left alone; instances
+stopped with OATS, or whose harness ended by itself, stay stopped.
+
+#### How a session's end is read
+
+A launched home that does not run reads one of three ends, `sessionEnd` on
+its status row ([desktop-cli-api.md](desktop-cli-api.md#row-session-end)),
+for its current start (`startId` in `instance.json`):
+
+| What the home holds for its current start | `sessionEnd` | Resumed |
+|---|---|---|
+| a stop's record that names it (or, a record from before 0.69, written after the start) | `stopped` | no |
+| an exit marker that names it with an exit status below 128 (`/exit`, Ctrl-C handled by the harness, its own error), or the marker of a kernel before 0.69 | `exited` | no: the row offers Start, as before |
+| an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | yes |
+| neither (the host went down, or the tmux server died under the live harness) | `lost` | yes |
+
+The window a spawn or a start makes writes the exit marker,
+`.oats-start-exited`, when the harness exits; `oats instance stop` writes its
+record, `.oats-stop.json`. Both are kernel-private files of the home, not a
+contract: read `sessionEnd`. A shutdown kills the window's shell with the
+harness, so a lost session leaves no marker. A home spawned before 0.69 and
+never restarted since names no start: it reads `stopped` only after a stop,
+and otherwise `lost`, so one whose harness ended by itself before the upgrade
+comes back once. Its next start records the markers.
+
+#### What a resume runs
+
+`oats session start --resume --home <abs>` runs the recorded recipe as an
+ordinary start does: the same locks and checks, the same harness, model,
+launch configuration, environment and yolo, and the launch hooks again under
+the settings captured at spawn (which is how a messaging capability's
+delivery comes back). It refuses a home that did not lose its session
+(`E_RESUME_NOT_LOST`) and a launch choice (`E_BAD_ARGS`). Two things differ:
+
+- **The conversation.** The newest transcript whose recorded cwd is the home
+  itself, written since the home was created, in the locations its
+  native-record receipts name: Claude gets `--resume <id>`, pi `--session
+  <id>`. "Since the home was created" keeps an earlier instance of the same
+  name, at the same path, out. Only the window runs the selector:
+  `instance.json`, the pending receipt and the recipe keep the ordinary
+  launch, so a later Start opens a fresh conversation.
+- **The prompt.** In place of the task prompt the harness gets one line:
+  "OATS resumed this session after it was lost (the host restarted or its
+  terminal server ended). Continue from where you were." A harness cut off
+  mid-turn would otherwise wait for someone to type.
+
+No conversation found (never filed, deleted, or no receipt names where it
+went): the ordinary fresh start on `TASK.md`, answered `resumed: false` with
+the reason. **Codex is never resumed yet:** a Codex home takes that fresh
+start, reason `resume-unproven`, until a Codex resume is proven end to end on
+a signed-in host.
+
+#### Prompts a resume meets
+
+A resume answers no prompt that an ordinary start does not:
+
+- A development-channel confirmation stops a resume as it stops a start
+  ([Launch prompt outcomes](#launch-prompt-outcomes)): the session is kept and
+  the sweep reports it `blocked`. The approved channel route shows no prompt.
+- **Claude's resume-cost dialog.** On some plans Claude can ask, on the first
+  message after resuming a long, inactive conversation, whether to resume it
+  from a summary or in full. Nothing documented turns it off or answers it,
+  and the choice is the person's: **OATS sends no key.** After a resumed
+  Claude launch the kernel watches the pane for at most 20 seconds, and stops
+  earlier once the session shows itself working. When it recognises the dialog
+  the start still succeeds, answers `waiting: "resume-confirmation"`, and the
+  client says the instance is waiting for its person to choose: open its
+  terminal. The dialog is recognised by its option labels, taken from Claude
+  Code's strings and documentation (`lib/launch-prompt-fixtures/README.md`);
+  a screen it does not recognise is not a block.
+
+#### The sweep
+
+`oats session resume` reads this computer's list of deployments and never
+writes it; `--deployment <dir>` sweeps one directory. Per deployment it skips
+one whose `oats-local.yaml` says `session.resume: off`
+([configuration](configuration.md#the-file)), then starts each lost home with
+`--resume` in that home's own deployment scope, at most 4 at once. `--plan`
+says what it would do and starts nothing. Its answer is in
+[desktop-cli-api.md](desktop-cli-api.md#the-machine-sweep-oats-session-resume).
+
+- One sweep runs per machine: a second one answers `E_RESUME_BUSY`. A lock
+  left by a process that is gone, or by another boot, is taken over.
+- A refused resume is not retried in the same boot: a later sweep reports it
+  again (`refused-this-boot`) and starts nothing. The boot is the boot id on
+  Linux and the boot time on macOS; elsewhere every sweep tries again. A home
+  that resumed and is lost again in the same boot is resumed again.
+- The lock and the refusal note live in `session-resume/` under
+  `~/.oats` (`$OATS_HOME_DIR` when set). Both are kernel-private, not a
+  contract.
+- Local only: a client does not resume a server's instances. A server runs
+  `oats session resume` itself.
 
 ### Inspect, input and attach
 
@@ -1451,10 +1559,13 @@ removed with the home.
 
 Spawn writes `TASK.md` in the home: the instance's name, soul, home and work
 tree, followed by the `--task` or `--task-file` text, or a note to await
-instructions when no task is given. Every launch, including `session start`
-and `restart`, opens a new harness conversation on `TASK.md`. The instance
-resumes its work from its own state files, as its knowledge capability
-prescribes.
+instructions when no task is given. Every launch, `session start` and
+`restart` included, opens a fresh harness conversation on `TASK.md`, **except a
+resume** ([Resume after a shutdown](#resume-after-a-shutdown)), which continues
+the instance's own last conversation with a one-line resume notice. This
+replaces the earlier rule that every start, without exception, opened a new
+conversation (OATS 0.69, #1559). In a fresh conversation the instance resumes
+its work from its own state files, as its knowledge capability prescribes.
 
 The task's text never travels on a command line, where any local user could
 read it in the process list:

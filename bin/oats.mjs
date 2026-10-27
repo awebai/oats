@@ -5113,6 +5113,13 @@ Usage:
       [--reselect-launch]                   applies the launch preferences now (oats-local.yaml
                                             souls.launch, the soul's launch); a changed preference
                                             never reaches an existing home without it or a respawn
+  oats session start --resume --home <abs>   start a home whose session was LOST (a reboot, a dead
+                                            tmux server) in its own last conversation, the
+                                            recorded launch as is; fresh on TASK.md when none is
+                                            found (docs/execution-targets.md#resume-after-a-shutdown)
+  oats session resume [--deployment <dir>]   resume every lost session of this computer's
+      [--plan] [--json]                     deployments (one sweep per machine; session.resume:
+                                            off opts a deployment out); --plan starts nothing
   oats session restart --home <abs-home>     stop the running harness (SIGTERM, bounded wait,
       [same flags] [--stop-grace <s>]        never escalated) and start it again in place under
                                             the same lock; a stop that is not observed is

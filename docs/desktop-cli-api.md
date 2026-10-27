@@ -153,6 +153,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 | `instance-suggest-name` | `oats instance suggest-name --soul <soul> (--task <t> \| --task-file <f>) [--harness claude\|pi] [--model <m>] [--launch-config <n>] --json`: the name a `--suggest-name` spawn of `<soul>` would get, chosen on this machine for a spawn that may land on another, not made unique ([A name for a spawn elsewhere](#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)). Local only: `--server` is `E_BAD_ARGS`. Gate on the local probe; without it, the spawn goes unnamed (numbered, or named where it lands) | |
 | `spawn-apply-suggest-name` | `--suggest-name` on a spawn apply, without `--preview`: the apply names the instance as a preview's `--suggest-name` would, on the machine that spawns, and its result carries `naming` ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)). Routed, the host needs the feature (`E_REMOTE_INCOMPATIBLE`, nothing sent): gate on the host's `probe.features` and don't send the flag to a host without it | |
+| `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`; `oats-local.yaml` `session.resume`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -3297,6 +3298,21 @@ its absence.
   An older kernel's `running` is the window's presence, and it checks a row
   with a claim against its session (as `oats session inspect` observes it),
   reading `null` unless a harness runs there.
+- <a id="row-session-end"></a>**`sessionEnd`** (feature `session-resume`, OATS
+  0.69): how the last session of a launched home that does not run ended:
+  `lost` (the host went down, its tmux server died, or the harness was killed
+  by a signal: a resume brings it back), `stopped` (stopped with OATS:
+  `oats instance stop`, Desktop's Stop) or `exited` (the harness ended by
+  itself: `/exit`, its own error). Present only on a row that reads
+  `running: false` and records `launched: true`, a row at its fallback shell
+  (`runtimeState: "shell"`) included; absent while it runs or reads unknown
+  (`running: null`), for a home never launched, on rows with `retirePending`,
+  `rollbackIncomplete` or `spawnInProgress`, and from older kernels. Read
+  from the home's current start (`startId`; its time is the last
+  `restarts[].startedAt`, else `createdAt`) and two kernel-private files of
+  the home, not a contract ([execution-targets.md](execution-targets.md#how-a-sessions-end-is-read)).
+  A home spawned before 0.69 and never restarted since reads `lost` when its
+  harness ended on its own; its next start covers it.
 - **`color`** (feature `instance-color`): the instance's colour, one of
   `sand`, `sage`, `slate`, `mauve`, `clay`, `olive`, or `null` for none,
   from the home's own record ([An instance's colour](#an-instances-colour-oats-instance-color));
@@ -5898,7 +5914,9 @@ harness receipt. See [execution targets](execution-targets.md).
 
 ```text
 oats session start --home <abs> [--launch-config <name>|none] [--harness pi|claude|codex] [--model <id>] [--yolo|--no-yolo] [--server <id>] --json
+oats session start --resume --home <abs> --json
 oats session restart --home <abs> [the same options] [--stop-grace <1-300 s>] --json
+oats session resume [--deployment <dir>] [--plan] --json
 ```
 
 Features `session-start`, `session-restart`, and `launch-config` for the
@@ -5977,6 +5995,122 @@ warning naming the same-key cleanup retry.
   (any error that is not the kernel's; with
   [`details.cause`](#kernel-codes) when it has a code of its own or is a
   defect, and without it when it is a refusal without a code).
+
+#### Resume a lost session (`--resume`)
+
+`oats session start --resume --home <abs> --json` (feature `session-resume`,
+OATS 0.69) is the ordinary start of a home whose session was lost
+([`sessionEnd: "lost"`](#row-session-end)), in the harness's own last
+conversation: the same locks, checks, recorded recipe and launch hooks under
+the captured settings, with the conversation's selector and the resume
+notice in place of the task prompt
+([execution-targets.md](execution-targets.md#resume-after-a-shutdown)). Its
+answer is the ordinary start answer plus one object:
+
+```json
+"resume": {
+  "resumed": true,
+  "reason": "no-conversation",
+  "harness": "claude",
+  "sessionId": "<the harness's session id>",
+  "waiting": "resume-confirmation"
+}
+```
+
+- `resumed: true` with `sessionId` when it continues that conversation;
+  `resumed: false` with `reason` when it started fresh on `TASK.md` instead:
+  `no-conversation` (no transcript of this incarnation whose cwd is the
+  home), `no-receipts` (no native-record receipt of this incarnation names
+  where the harness writes), `resume-unproven` (Codex, until a resume of it
+  is proven end to end on a signed-in host).
+- `waiting: "resume-confirmation"`: the start **succeeded** (exit 0, the
+  session runs and is kept) and Claude is waiting for its human to choose how
+  to resume a long conversation (its resume-cost dialog). No key was sent.
+  Absent otherwise, an unrecognised screen after the bound included.
+- Refused before anything is read, `E_BAD_ARGS`: `--resume` with
+  `--launch-config`, `--harness`, `--model`, `--yolo`, `--no-yolo` or
+  `--reselect-launch`; `--resume` on `session restart`; `--server`.
+- Refused `E_RESUME_NOT_LOST` when the home did not lose its session
+  (`stopped`, `exited`, never launched), read under the start lock before
+  any launch hook runs; nothing was started.
+- Every refusal of an ordinary start answers as it does there
+  (`E_SESSION_RUNNING`, `E_SESSION_START_BUSY`, `E_SESSION_UNKNOWN`,
+  `E_LAUNCH_LEGACY` for a home with no recipe, `E_LAUNCH_ENV_MISSING`, …); a
+  development-channel prompt that stops it is `E_SPAWN_INCOMPLETE` with
+  `details.launchPrompts`, unchanged. `session.resume: off` does not apply:
+  it governs the sweep only.
+- What is persisted is the ordinary launch: `instance.json` `command`, the
+  pending receipt and the recipe never carry the selector or the notice, so a
+  later ordinary start opens a fresh conversation.
+
+### The machine sweep (`oats session resume`)
+
+`oats session resume [--deployment <dir>] [--plan] --json` (feature
+`session-resume`, OATS 0.69) starts with `--resume` every home of this
+machine's deployments whose session was lost. A client runs it once when it
+opens. It reads this computer's list of deployments without writing it
+([This computer's deployments](#this-computers-deployments-oats-deployments));
+`--deployment <dir>` sweeps that one directory instead, listed or not. Each
+home starts as a child process of the kernel, in its own deployment's scope,
+at most 4 at once.
+
+The answer is the standard envelope, exit 0 whenever the sweep ran,
+whatever the rows say:
+
+```json
+{"schemaVersion":1,"ok":true,"result":{
+  "schemaVersion": 1,
+  "plan": false,
+  "deployments": [
+    { "deployment": "/abs/dep", "state": "ok", "swept": true },
+    { "deployment": "/abs/other", "state": "ok", "swept": false, "reason": "opted-out" },
+    { "deployment": "/abs/gone", "state": "missing", "swept": false, "reason": "not-ok" }
+  ],
+  "rows": [
+    { "deployment": "/abs/dep", "instance": "x", "home": "/abs/dep/agents/s/instances/x", "outcome": "resumed", "sessionId": "…" },
+    { "deployment": "/abs/dep", "instance": "y", "home": "…", "outcome": "fresh", "reason": "no-conversation" },
+    { "deployment": "/abs/dep", "instance": "z", "home": "…", "outcome": "already-running" }
+  ]}}
+```
+
+- **`deployments[]`**: one entry per deployment considered, sorted by path.
+  `state` is the list's state of it (`ok`, `missing`, `not-a-deployment`,
+  `unreadable`). `swept: false` has a `reason`: `opted-out`
+  (`session.resume: off`, [configuration](configuration.md#the-file)),
+  `not-ok` (its state is not `ok`) or `unreadable` (its configuration or its
+  status could not be read; `code` and `message` then). An opted-out
+  deployment's homes are not listed.
+- **`rows[]`**: one row per home that is lost (whatever its outcome),
+  running (`already-running`) or unknown (`skipped`, `unknown`); stopped,
+  exited and never-launched homes are not listed. Fields: `deployment`,
+  `instance`, `home`, `outcome`, and only when they apply `reason`, `code`,
+  `message`, `launchPrompts`, `sessionId` (resumed) and `warnings` (the
+  start's warnings verbatim, an array of strings, present only when not
+  empty: a client lists `channel-cache-unchecked` from here).
+
+  | `outcome` | `reason` |
+  |---|---|
+  | `resumed` | none |
+  | `fresh` | `no-conversation`, `no-receipts`, `resume-unproven` |
+  | `already-running` | none |
+  | `skipped` | `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`: it stopped or started between the read and the start) |
+  | `blocked` | `resume-confirmation` (Claude's resume-cost dialog: the session runs and waits for its human), `launch-prompt` (`code` `E_SPAWN_INCOMPLETE`, with `launchPrompts`: the session is kept) |
+  | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start: reported again with that `code` and `message`, nothing started) |
+
+- `--plan`: the same shape with `"plan": true`; nothing is started, no lock
+  taken, no note written. A lost home's outcome is the prediction: `resumed`
+  (with `sessionId`) or `fresh` with its reason, `refused` for a noted
+  refusal or a home with no recipe. Clients should not call `--plan` on open.
+- **One sweep per machine.** A second sweep while one runs answers
+  `E_RESUME_BUSY` through the standard failure envelope
+  (`{"schemaVersion":1,"ok":false,"error":{"code":"E_RESUME_BUSY","message":"…"}}`,
+  exit 1); nothing was started, and a client shows no notice. The lock and
+  the per-boot note are kernel-private, not a contract.
+- Errors: `E_RESUME_BUSY`; `E_BAD_ARGS` (`--deployment` that is not a
+  deployment directory, `--server`, an unknown flag or an argument); without
+  `--deployment`, the list's own errors (`E_DEPLOYMENTS_INVALID`,
+  `E_DEPLOYMENTS_VERSION`). A home's start failure is a row, never the
+  sweep's failure.
 
 ### Upload
 
