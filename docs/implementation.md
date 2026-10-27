@@ -120,7 +120,7 @@ and the rules its tests pin.
 | `write-through-private-file.mjs` | the one writer of a file written through a private file beside it and renamed over it (`writeThroughPrivateFile`): a failed write or rename removes the private file and throws that failure's error (#1076). The caller gives the private name, the bytes and the mode. A writer that needs more (an exclusive link, an exact mode, a failed removal reported, a sync) keeps its own code |
 | `worktree-hooks.mjs` | the `worktree` event's runner (cwd the tree, detached process group, log under `.oats/logs/`, fixed timeout, interrupt handling), process identity by pid and start time, and the credential-free `origin` URL. Two questions, two functions: `processStart` says whose a pid is (a zombie still holds its pid and start, which is what proves a recorded process group), `processLiveness` says whether the `oats` command a record names can still act (a zombie cannot: it is gone). Ask `processLiveness` only about an `oats` command's own process, never about a hook's or a harness's pid. `runPs` is the one way the kernel calls `ps` where an identity is read: the program, the fixed environment and how the answer is classified. `isStartToken` says the shape of a start token, once, beside its writer: it decides what of a record may be shown (`claim.mjs` `shownHolder`, `unknownGroupNote`), never whether a process lives |
 | `system-tools.mjs` | `systemTool`: a program the kernel runs from the system directories (`SYSTEM_TOOL_DIRS`), never from the caller's `PATH`. `ps` runs on the same directories: `worktree-hooks.mjs`'s `PS_ENV` takes its `PATH` from them |
-| `tmux-server-scope.mjs` | whether the OATS tmux server starts in a systemd scope of its own: the creator's cgroup judged (Linux, inside a `.service`, unified hierarchy), the scope's name and the warning when it cannot |
+| `tmux-server-scope.mjs` | where sessions run on a systemd host: whether the OATS tmux server starts in a scope of its own (the creator's cgroup judged: Linux, unified hierarchy, inside a `.service` or a scope of the user manager), and whether each agent's harness is launched in one (`agentScope`: the probe, run with the pane's bus variables and cached per process, and the wrapper `nativeRecordCommand` renders); the scopes' names and the warnings when they cannot |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer as one nonce-framed block on its stdout, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`) as problems and warnings (`manifestContract`: an unknown, non-required hook event is a warning every reader reports), the hook environment rules, the readiness wire |
@@ -711,22 +711,36 @@ and acts on every existing session through its recorded socket
 - A server a test starts is killed by its socket, never by name and never
   with a bare `tmux kill-server`.
 - A test never reaches the host's `systemd-run` (#915). A Linux creator
-  inside a systemd service starts the server through the system's own
-  `systemd-run`, found by absolute path, not on `PATH`, so a fake-free `PATH`
-  does not stop it. The fixtures (`isolateSessionEnvironment`, `fixtureEnv`)
-  therefore set `OATS_TEST_CGROUP` to a scope, never a service, whatever runs
-  the suite. Two test-only seams select where the kernel judges itself and
+  inside a systemd service or a user-manager scope starts the server through
+  the system's own `systemd-run`, and every launch on the unified hierarchy
+  probes it for the agent's scope, found by absolute path, not on `PATH`, so
+  a fake-free `PATH` does not stop it. The fixtures (`isolateSessionEnvironment`,
+  `fixtureEnv`) therefore set `OATS_TEST_CGROUP` to a scope outside the user
+  manager, never a service, whatever runs the suite, and
+  `OATS_TEST_SYSTEM_TOOL_DIRS` to the fixture's own `fixture-system-tools`:
+  the host's `env` and `true`, and a `systemd-run` that runs what follows
+  `--` in its own process. So every fixture launch is wrapped, and passes
+  through that fake, never the host's user manager. A test of a scope sets
+  its own. Three test-only seams select where the kernel judges itself and
   which `systemd-run` it runs:
-  - `OATS_TEST_CGROUP`: the text of a `/proc/self/cgroup`, judged as Linux;
+  - `OATS_TEST_CGROUP`: the text of a `/proc/self/cgroup`, judged as Linux
+    booted with systemd;
+  - `OATS_TEST_SYSTEMD_BOOTED`: `1` or `0`, in place of whether
+    `/run/systemd/system` is a directory (sd_booted): `0` is a Linux host
+    without systemd, where no agent scope is judged;
   - `OATS_TEST_SYSTEM_TOOL_DIRS`: absolute directories separated by `:`, in
     place of `/usr/bin:/bin`. Any other value means no system tool, never a
     `PATH` lookup.
 
-  Both are reserved launch names (a launch configuration cannot set them),
+  All three are reserved launch names (a launch configuration cannot set them),
   are removed from a server's environment, and are stripped from the tick's
   children like every reserved name. In process, `io.cgroup`, `io.platform`,
-  `io.invocationId` and `io.systemToolDirs` do the same for
-  `ensureOatsTmuxSession`.
+  `io.invocationId`, `io.systemdBooted` and `io.systemToolDirs` do the same for
+  `ensureOatsTmuxSession`, and `agentScope` takes `io.scopeProbe` in place
+  of the real probe. A start given an `io` with no `scopeProbe` judges no
+  agent scope at all (its tmux is a test's). The one test that reaches the
+  host's user manager (`test/tmux-server-scope.test.mjs`, "for real") runs
+  only where the real probe passes, and says why it skipped otherwise.
 - A test that needs a terminal (an attached tmux client, a key press) runs
   the command in a pane of a second private server and types at that pane
   with `send-keys`; the pane's shell records the exit status

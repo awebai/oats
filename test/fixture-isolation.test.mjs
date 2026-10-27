@@ -106,6 +106,10 @@ test("#816 fixtureEnv: HOME and XDG under the base, git without host config, no 
   // (a CI job in a service): it starts no systemd-run of the host's (#915).
   assert.deepEqual(serverScopePlan(creatorPlacementIn(env)), { wrap: false });
   assert.match(env.OATS_TEST_CGROUP, /^0::\/.*\.scope\n$/);
+  // Its agents' harnesses are launched in scopes through the fixture's systemd-run, which runs the
+  // command as a scope would and asks no service manager: never through the host's user manager.
+  assert.equal(env.OATS_TEST_SYSTEM_TOOL_DIRS, join(b, "fixture-system-tools"));
+  assert.equal(spawnSync(join(env.OATS_TEST_SYSTEM_TOOL_DIRS, "systemd-run"), ["--user", "--scope", "--unit", "u", "--", join(env.OATS_TEST_SYSTEM_TOOL_DIRS, "env"), "sh", "-c", "echo ran"], { encoding: "utf8" }).stdout, "ran\n");
   // The host's service manager is never asked: the fixture's launchctl and systemctl answer "not loaded".
   for (const [tool, args] of [["launchctl", ["print", "gui/501/ai.oats.schedule"]], ["systemctl", ["--user", "is-active", "oats-schedule.timer"]]]) {
     const r = spawnSync(tool, args, { env, encoding: "utf8" });
