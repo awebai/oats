@@ -376,7 +376,7 @@ try {
   assert.equal(meta.modules["oats.okf"].from.package, "oats.okf");
   const okfRow = meta.capabilities.find((c) => c.id === "oats.okf");
   assert.ok(okfRow, "instance.json.capabilities lists oats.okf");
-  assert.deepEqual([...okfRow.hooks].sort(), ["soul-scaffold", "spawn"], "5.0 has no retire capture hook");
+  assert.deepEqual([...okfRow.hooks].sort(), ["soul-scaffold", "spawn", "upgrade"], "5.x has no retire capture hook; 5.4.0 adds the upgrade hook");
   assert.equal(meta.capabilityMeta?.["oats.okf"], undefined, "the spawn hook creates no external custody or compensation debt");
   assert.equal(okfRow.settings?.["bindings-file"], bindings, "effective settings come from oats-local.yaml");
   const okfModule = join(probeHome, ".oats/modules/oats.okf");
