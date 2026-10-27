@@ -1208,7 +1208,8 @@ The record is two kernel-private files in the home, not a contract:
 `.oats-start-env.json` holds, for one start, a keyed one-way digest
 (HMAC-SHA256) of each referenced value, and `.oats-start-env.key` (mode 0600)
 holds the key. A value, which may be a credential, is never written, and the
-key never leaves the home. Writing the record never fails a start. A start
+key never leaves the home: a retire's recovery copy of the home leaves both
+files out. Writing the record never fails a start. A start
 that could not write it leaves its resume to the warning above.
 
 #### Prompts a resume meets

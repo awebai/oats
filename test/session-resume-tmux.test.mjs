@@ -305,6 +305,27 @@ test("a home launched by spawn whose harness exits on its own retires without a 
   assert.deepEqual(existsSync(recovery) ? readdirSync(recovery).filter((e) => e.includes("r1-")) : [], [], "no recovery copy");
 });
 
+test("a retire that keeps a recovery copy of a launched home leaves its launch environment's key and record out of it: work is kept, no key material leaves the home", TMUX, async () => {
+  const { A } = deployments;
+  const home = ok(cli(A, ["spawn", "dev", "--name", "r2", "--launch-config", "exit-a", "--json"]), "spawn r2").home;
+  await waitUntil(() => readStartExited(home) !== null, "r2's harness to end");
+  assert.ok(existsSync(join(home, START_ENV_FILE)) && existsSync(join(home, START_ENV_KEY_FILE)), "premise: the spawn recorded");
+  const key = readFileSync(join(home, START_ENV_KEY_FILE));
+  // Work the retire must keep, and a temporary file a cut-short write left.
+  writeFileSync(join(home, "NOTES.md"), "kept\n");
+  writeFileSync(join(home, `${START_ENV_FILE}.tmp-1-abc`), "partial");
+  const retired = cli(A, ["retire", "r2", "--json"]);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(home), false, "the home is gone");
+  const recovery = join(dirname(home), ".oats-retirement", "recovery");
+  const copies = readdirSync(recovery).filter((e) => e.includes("r2-"));
+  assert.equal(copies.length, 1, `one recovery copy: ${copies}`);
+  const copied = join(recovery, copies[0], "home");
+  assert.equal(readFileSync(join(copied, "NOTES.md"), "utf8"), "kept\n", "the work is kept");
+  assert.deepEqual(readdirSync(copied).filter((n) => n.startsWith(".oats-start-env")), [], "no key, record or temporary file of them");
+  assert.deepEqual(filesHolding(recovery, key), [], "the key's bytes are in no recovered file");
+});
+
 test("`session resume --deployment <dir>` sweeps that deployment alone, registered or not; a deployment removed from the registry is not swept; a stop of a lost home, and of an exited home from before 0.69, records the stop and keeps it stopped", TMUX, async () => {
   const D = v2Deployment({ name: "d", local: { "launch-configs": { "claude-d": config("claude", "dep-d"), "exit-d": config("claude", "dep-d", { env: { EXIT_NOW: "1", NO_TRANSCRIPT: "1" } }) } } });
   later.push(D);
@@ -611,9 +632,9 @@ test("a sweep of 3 homes on a host whose harnesses get no scope of their own say
   assert.equal(Object.hasOwn(plan, "warnings"), false);
 });
 
-/** Every file under `dir`, links not followed, that holds `needle`'s bytes. */
+/** Every file under `dir`, links not followed, that holds `needle` (a string's UTF-8 bytes, or bytes). */
 function filesHolding(dir, needle) {
-  const found = [], want = Buffer.from(needle);
+  const found = [], want = Buffer.isBuffer(needle) ? needle : Buffer.from(needle);
   const walk = (d) => { for (const e of readdirSync(d)) { const p = join(d, e), st = lstatSync(p); if (st.isDirectory()) walk(p); else if (st.isFile() && readFileSync(p).includes(want)) found.push(p); } };
   walk(dir);
   return found;

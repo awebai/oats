@@ -93,3 +93,13 @@ test("a record that cannot be written fails nothing: the start goes on, no file 
   assert.deepEqual(readdirSync(home).sort(), [START_ENV_FILE, START_ENV_KEY_FILE]);
   assert.deepEqual(checkStartEnv(home, "s2", ["A"], { A: "a" }), { unverified: true });
 });
+
+test("every valid source name is recorded as its own entry, `__proto__` included: its unchanged value checks ok", (t) => {
+  const home = scratch(t);
+  const env = Object.defineProperty({}, "__proto__", { value: "v", enumerable: true });
+  assert.equal(recordStartEnv(home, "s", ["__proto__"], env), true);
+  assert.deepEqual(Object.keys(readRecord(home).digests), ["__proto__"]);
+  assert.deepEqual(checkStartEnv(home, "s", ["__proto__"], env), { ok: true });
+  const other = Object.defineProperty({}, "__proto__", { value: "w", enumerable: true });
+  assert.deepEqual(checkStartEnv(home, "s", ["__proto__"], other), { changed: ["__proto__"] });
+});
