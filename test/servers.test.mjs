@@ -903,6 +903,10 @@ else process.exit(9);
     r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "checkout", runtime: "pi", model: "m1", launchConfig: "fast", launchConfigDefault: true, yolo: false });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.stdout, "preview dev → dev-x on legacy (checkout) harness pi model m1 via launch configuration fast (the server's pi default); nothing was created\n");
+    // A host that names where the configuration was declared: its directory, as the host answered it.
+    r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "checkout", runtime: "pi", model: "m1", launchConfig: "fast", launchConfigSource: "/srv/home/.oats/config", launchConfigDefault: true, yolo: false });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.stdout, "preview dev → dev-x on legacy (checkout) harness pi model m1 via launch configuration fast (the server's pi default) from /srv/home/.oats/config; nothing was created\n");
     assert.equal(existsSync(REMOTE_SNAPSHOT_DIR()), false, "nothing written here");
 
     // A host that spawned although asked for a preview: the apply's lines, and its route, as the apply records it.
