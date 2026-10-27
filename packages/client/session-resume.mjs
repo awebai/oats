@@ -172,11 +172,12 @@ export function sweepSettlement(envelope) {
  * News, not repeats: the answer without the refused rows already reported, and this answer's refused keys.
  * `envelope` is a copy (the given one is never changed) that leaves out each `refused` row with a string home
  * whose (home, reason, code) key is in `reported`; every other row is kept, in order. `keys` are the keys of
- * every such refused row of this answer, those left out too, for the caller to add to `reported` after.
+ * every such refused row of this answer, those left out too, each with its home, for the caller to add to
+ * `reported` after (and to forget by home). The key is opaque outside this module.
  * An envelope that is not `ok: true` with a rows array is given back as it came, with no keys.
  * @param {unknown} envelope
  * @param {Set<string>} reported  keys an earlier answer gave
- * @returns {{envelope: unknown, keys: string[]}}
+ * @returns {{envelope: unknown, keys: {home: string, key: string}[]}}
  */
 export function withoutReported(envelope, reported) {
   const rows = answerRows(envelope);
@@ -186,7 +187,7 @@ export function withoutReported(envelope, reported) {
     const home = homeOf(row);
     if (home === null || row.outcome !== RESUME_OUTCOMES.refused) return true;
     const key = reportedKey(home, row);
-    keys.push(key);
+    keys.push({ home, key });
     return !reported.has(key);
   });
   return { envelope: { ...envelope, result: { ...envelope.result, rows: kept } }, keys };

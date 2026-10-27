@@ -292,11 +292,12 @@ most 100 instances, then say how many more there are.
 
 Each sweep with something to report gives a notice of its own. An instance
 that could not be resumed is reported once: a later sweep that finds it the
-same way leaves it out, and says nothing if that was all it found. More than
-three notices fold into one entry, "N notices about resumed sessions". Desktop
-keeps the last 10 notices no window has shown yet, so a window that opens
-after a sweep has finished still gets them, and only one window ever shows
-each. Closing that window loses it.
+same way leaves it out, and says nothing if that was all it found. Once it has
+been resumed, or shown running or no longer lost, a later refusal is reported
+again. More than three notices fold into one entry, "N notices about resumed
+sessions". Desktop keeps the last 10 notices no window has shown yet, so a
+window that opens after a sweep has finished still gets them, and only one
+window ever shows each. Closing that window loses it.
 
 There is no notice when nothing was lost, when the sessions were already
 running, when another sweep holds the machine (another Desktop, the TUI, or

@@ -6028,7 +6028,9 @@ TUI decide, run and read it the same way.
   holds. When it does not, nothing runs and the floor does not move.
 - Before reading an answer, it drops each `refused` row whose
   `(home, reason, code)` an earlier sweep of this trigger already reported,
-  so a standing refusal is reported once. Every other row is kept.
+  so a standing refusal is reported once. A home released (above) forgets its
+  reported refusals: refused again after it recovered, it is news. Every other
+  row is kept.
 - `onReading(reading)` is called for every finished sweep, whatever the
   reading. `launch()` and `observed()` never throw or reject; a `run` that
   rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings

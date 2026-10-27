@@ -211,6 +211,29 @@ test('news, not repeats: a refused row already reported is dropped; a changed re
   assert.equal(h.readings.at(-1).kind, 'notice');
 });
 
+test('news, not repeats: a released home forgets its reported refusals, so a refusal after it recovered is news', async () => {
+  const h = harness();
+  let t = 0;
+  const later = () => (t += RESUME_MIN_INTERVAL_MS);
+  const x = () => refusedRow('x', { reason: START_REFUSED, code: 'E_START_REFUSED' });
+  const y = () => refusedRow('y', { reason: START_REFUSED, code: 'E_START_REFUSED' });
+  await launched(h, [x(), y()]);
+  assert.deepEqual(h.readings[0].summary.refused.map(r => r.instance), ['x', 'y']);
+  // x and y are settled by their refusals, so another lost home starts each sweep.
+  // A sweep resumes x: released, its refusal forgotten. y is untouched.
+  assert.equal(await starts(h, later(), [lost('other')], [resumedRow('x'), y()]), true);
+  assert.deepEqual(h.readings.at(-1).summary.refused, [], 'y is still a repeat');
+  assert.equal(await starts(h, later(), [lost('other')], [x(), y()]), true);
+  assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.instance), ['x'], 'x refused again after it recovered: news');
+  // A read shows y running: released too, and its next refusal is news.
+  await h.trigger.observed([lost('y', { running: true })]);
+  assert.equal(await starts(h, later(), [lost('other')], [x(), y()]), true);
+  assert.deepEqual(h.readings.at(-1).summary.refused.map(r => r.instance), ['y'], 'x a repeat again; y news');
+  // A read that does not show a home releases nothing: x stays reported.
+  assert.equal(await starts(h, later(), [lost('other')], [x()]), true);
+  assert.equal(h.readings.at(-1).kind, 'quiet');
+});
+
 test('news, not repeats: read gets a copy; the run\'s envelope is never changed; other answers pass unchanged', async () => {
   const seen = [];
   const h = harness({ read: envelope => { seen.push(envelope); return readResumeSweep(envelope); } });

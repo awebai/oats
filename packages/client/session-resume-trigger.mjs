@@ -18,7 +18,8 @@
  *
  * News, not repeats. The kernel reports a refusal again in every sweep: before `read`, the refusals an earlier
  * sweep of this trigger reported are left out of a copy of the envelope (session-resume.mjs withoutReported; the
- * run's own is never changed). Every other row is this sweep's event and kept. This module reads nothing of the
+ * run's own is never changed). Every other row is this sweep's event and kept. A home released (above) forgets
+ * the refusals reported for it, so a refusal after it recovered is news again. This module reads nothing of the
  * answer itself: its shape is session-resume.mjs's alone.
  *
  * `onReading` gets the reading of every finished sweep, whatever its kind (the caller ignores what it does not
@@ -60,16 +61,27 @@ export function lostLocalHomes(rows) {
  */
 export function createResumeTrigger({ cli, run = runResumeSweep, read = readResumeSweep, now = Date.now, onReading }) {
   let launched = null, disposed = false, flying = false, lastStart = null;
-  const settled = new Set(), reported = new Set();
+  const settled = new Set(), reported = new Set(), reportedFor = new Map(); // reportedFor: home → its reported keys
+
+  /** A home no longer settled, and the refusals reported for it forgotten. */
+  function release(home) {
+    settled.delete(home);
+    for (const key of reportedFor.get(home) ?? []) reported.delete(key);
+    reportedFor.delete(home);
+  }
 
   /** Settle and release from this answer (sweepSettlement); the envelope `read` is given, without the refusals
    * an earlier answer reported (withoutReported), whose keys are then added. */
   function digest(envelope) {
-    const { settle, release } = sweepSettlement(envelope);
+    const { settle, release: released } = sweepSettlement(envelope);
     for (const home of settle) settled.add(home);
-    for (const home of release) settled.delete(home);
+    for (const home of released) release(home);
     const news = withoutReported(envelope, reported);
-    for (const key of news.keys) reported.add(key);
+    for (const { home, key } of news.keys) {
+      reported.add(key);
+      if (!reportedFor.has(home)) reportedFor.set(home, new Set());
+      reportedFor.get(home).add(key);
+    }
     return news.envelope;
   }
 
@@ -102,7 +114,7 @@ export function createResumeTrigger({ cli, run = runResumeSweep, read = readResu
       if (!launched || disposed) return done;
       // A local home this read shows and lostLocalHomes does not name is no longer lost, or runs: released.
       const lostNow = new Set(lostLocalHomes(rows));
-      if (Array.isArray(rows)) for (const row of rows) if (localRow(row) && !lostNow.has(row.home)) settled.delete(row.home);
+      if (Array.isArray(rows)) for (const row of rows) if (localRow(row) && !lostNow.has(row.home)) release(row.home);
       if (flying || lastStart !== null && now() - lastStart < RESUME_MIN_INTERVAL_MS) return done;
       if (![...lostNow].some(home => !settled.has(home))) return done;
       return sweep();

@@ -431,8 +431,9 @@ test('withoutReported: a copy without the refusals already reported, and every r
   assert.deepEqual(once.envelope, first, 'nothing reported yet: every row');
   assert.notEqual(once.envelope, first);
   assert.equal(once.keys.length, 2);
-  assert.equal(once.keys[0], once.keys[1], 'the same refusal twice in one answer: both kept, one key');
-  const reported = new Set(once.keys);
+  assert.deepEqual(once.keys[0], once.keys[1], 'the same refusal twice in one answer: both kept, one key');
+  assert.equal(once.keys[0].home, sweepHome('x'), 'each key with its home');
+  const reported = new Set(once.keys.map(k => k.key));
   // Again: the repeat is left out, everything else kept, in order; the given envelope is not changed.
   const second = answer([resumedRow('r'), x(), freshRow('f'), x({ message: 'said otherwise' })], [{ deployment: A, swept: false }]);
   const before = structuredClone(second), rows = second.result.rows;
@@ -440,14 +441,15 @@ test('withoutReported: a copy without the refusals already reported, and every r
   assert.deepEqual(second, before);
   assert.equal(second.result.rows, rows);
   assert.deepEqual(again.envelope, { ...before, result: { ...before.result, rows: [before.result.rows[0], before.result.rows[2]] } });
-  assert.deepEqual(again.keys, [...reported, ...reported], 'a message is not part of the key');
+  assert.deepEqual(again.keys.map(k => k.key), [...reported, ...reported], 'a message is not part of the key');
   assert.equal(reported.size, 1, 'the caller adds the keys; the set is only read');
   // A changed reason, code or home is news; so is a reason or code that was absent.
   for (const changed of [x({ reason: REFUSED_REASONS[2] }), x({ code: 'E_RESUME_REFUSED' }), x({ home: sweepHome('y') }), refusedRow('x')]) {
     const out = withoutReported(answer([changed]), reported);
     assert.deepEqual(out.envelope.result.rows, [changed]);
     assert.equal(out.keys.length, 1);
-    assert.equal(reported.has(out.keys[0]), false);
+    assert.equal(reported.has(out.keys[0].key), false);
+    assert.equal(out.keys[0].home, changed.home);
   }
   // A refusal without a home to key it by is always kept, with no key; other outcomes are never keyed.
   const homeless = refusedRow('h', { home: 7 });
