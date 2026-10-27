@@ -82,7 +82,8 @@ const NO_CAPABILITIES = Object.freeze({ wanted: false, held: new Map(), selected
  *  by the leader's Up or Down, and the leader cancelled by its own read) until the next key of any kind (the leader's: the key after it), one
  *  typed to the agent included, or a resize (the loop's `{ passed }`). `notice`: such a line that came while no view that
  *  draws one at every width was shown (the switcher, the help, a detail or a terminal with the
- *  focus: see `drawsOutcome`), held until one is; or null.
+ *  focus: see `drawsOutcome`), or while a line stood there, held until one is shown and the line
+ *  has gone (`noticed`); or null.
  *  It is the add of the deployment the run started in, refused, or what the machine sweep did.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"; without one,
  *  the default, C-x on every platform: config.mjs defaultDetachKey), and `leaderKey` the key id it is read as
@@ -805,10 +806,13 @@ function drawsOutcome(state) {
   return false;
 }
 /** A notice waiting for a view that draws the line under the sidebar's title (`notice`), made the
- *  line there as soon as one is shown. */
+ *  line there as soon as one is shown and no line stands there: a notice comes from what the run did
+ *  by itself (the add of the deployment it started in, the machine sweep), and never hides the
+ *  answer to what the person did. It is said once that line has gone (the next key bound to an
+ *  action). */
 function noticed(step) {
   const s = step.state;
-  if (s.notice === null || !drawsOutcome(s)) return step;
+  if (s.notice === null || s.outcome !== null || !drawsOutcome(s)) return step;
   return { ...step, state: next(s, { outcome: s.notice, notice: null }) };
 }
 /** A Remove asked stands only while its row is the switcher's selected choice: once the row is

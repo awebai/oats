@@ -1428,6 +1428,27 @@ test("a sweep that resumed sessions is said once, in the line under the sidebar'
   assert.deepEqual(press(held, ["1"]).state.outcome?.said, held.notice.said);
 });
 
+test("a sweep's notice never hides the answer to what the person did: it waits while that line stands, and is said once the line has gone", () => {
+  // The person picked a row of the list of workspaces that is not a deployment any more: the line says so.
+  const answered = reduce(stateOf(observed(TREE)), { refused: "/srv/gone" }).state;
+  const line = answered.outcome;
+  assert.notEqual(line, null);
+  const summary = resumeSummary({ resumed: [resumedRow("acme-dev")] });
+  const told = reduce(answered, { resumed: { kind: "notice", summary } });
+  assert.deepEqual(told.effect, { refresh: { live: true } }, "the rows are read live all the same");
+  assert.equal(told.state.outcome, line, "the person's line stands");
+  assert.deepEqual(told.state.notice?.said, [{ own: "OATS resumed 1 instance whose session was lost." }], "the notice waits");
+  // What the loop reports in the meantime (a read) leaves both as they are.
+  const read = reduce(told.state, { collecting: true }).state;
+  assert.deepEqual([read.outcome, read.notice], [line, told.state.notice]);
+  // The next key bound to an action puts the person's line away, and the notice is said in its place.
+  const after = press(told.state, ["j"]).state;
+  assert.deepEqual([after.outcome?.said, after.notice], [[{ own: "OATS resumed 1 instance whose session was lost." }], null]);
+  // A failed sweep's line waits the same way.
+  const failed = reduce(answered, { resumed: { kind: "failed", code: "E_RESUME_STATE" } }).state;
+  assert.deepEqual([failed.outcome, failed.notice?.said], [line, RESUME_WORDS.failed("E_RESUME_STATE")]);
+});
+
 test("a sweep with nothing to tell reads the rows live and says nothing; a busy machine or a kernel without the sweep does neither; a failed sweep says so with a code of the kernel's form, never what it printed", () => {
   const state = stateOf(observed(TREE));
   const quiet = reduce(state, { resumed: { kind: "quiet", summary: resumeSummary({ unswept: [{ deployment: "/srv/quiet", reason: "unreadable" }] }) } });
