@@ -11,8 +11,8 @@
   pane's environment, that a scope can be created. When it cannot (no user
   manager or bus in the pane, no `systemd-run`), the harness is launched as
   before, and the answer's `warnings` say `the agent's harness runs in the OATS
-  tmux server's cgroup, not a scope of its own: <reason>` (a start also as a
-  `launch-warning` event). Off Linux and on the old or hybrid hierarchy
+  tmux server's cgroup, not a scope of its own: <reason>`, as does a
+  `launch-warning` event. Off Linux and on the old or hybrid hierarchy
   nothing changes (#1559).
 - The OATS tmux server is now started in a scope of its own from inside any
   unit of the user manager, not only a service: a client launched from a

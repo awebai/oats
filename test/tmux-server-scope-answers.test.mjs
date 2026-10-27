@@ -162,12 +162,14 @@ test("a failed probe: the spawn and the start launch as before, and say once why
   assert.deepEqual(agentWarnings(spawned), [warning], "said once");
   assert.doesNotMatch(paneStartCommand(spawned.home), /systemd-run|INVOCATION_ID/, "the pane's command is today's");
   assert.equal(calls(dir).length, 1, "the probe alone ran systemd-run");
+  const launchWarnings = () => readEvents(spawned.home).events.filter((e) => e.kind === "launch-warning" && e.data.message === warning).length;
+  assert.equal(launchWarnings(), 1, "the spawn's warning is a launch-warning event");
   const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);
   const started = answer(fx.cli(["session", "start", "--home", spawned.home, "--json"], { env }));
   assert.deepEqual(agentWarnings(started), [warning]);
   assert.doesNotMatch(paneStartCommand(spawned.home), /systemd-run|INVOCATION_ID/);
-  assert.deepEqual(readEvents(spawned.home).events.filter((e) => e.kind === "launch-warning" && e.data.message === warning).length, 1, "the start's warning is a launch-warning event");
+  assert.equal(launchWarnings(), 2, "and the start's");
   // Without systemd-run at all: the same, naming that.
   const none = systemDir(fx, "none", null);
   execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);

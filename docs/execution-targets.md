@@ -242,8 +242,7 @@ user manager's default slice, wherever the server is:
 - **When it cannot.** When the check fails, `systemd-run`, `env` or `true` is
   not in `/usr/bin` or `/bin`, or the pane's environment cannot be read, the
   harness is launched exactly as before, and the answer's `warnings` (spawn,
-  session start and restart; a start also as a `launch-warning` event) say
-  once `the agent's harness runs in the OATS tmux server's cgroup, not a scope
+  session start and restart), and a `launch-warning` event, say once `the agent's harness runs in the OATS tmux server's cgroup, not a scope
   of its own: <reason>`. A pane whose server has no `XDG_RUNTIME_DIR` or bus
   (a server started where none was set) fails the check. Off Linux and on the
   old or hybrid hierarchy nothing changes and nothing is said.
