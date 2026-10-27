@@ -11,6 +11,7 @@ import { createTerminalIo } from "../terminal-io.mjs";
 import { resolveLoginPath } from "../login-path.mjs";
 import { forgeEnvironment } from "../forge-cli.mjs";
 import { cliWorkspace } from "../../client/workspace-cli.mjs";
+import { NO_STATUS_LINE_FEATURE } from "../../client/session-attach.mjs";
 import { serverSpawnSpec } from "../server-host.mjs";
 import { desktopEnvironment, assertUserEnvironment, USER_PATH } from "./helpers/desktop-environment.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
@@ -27,11 +28,11 @@ const remote = { remote: { serverId: "peer", instance: "dev-1", home: "/memory/h
 const control = { current: () => true };
 
 /** createTerminalIo over recorders for everything it can start: execFileSync, spawnPty and run. */
-function recordedIo(env) {
+function recordedIo(env, served = cli) {
   const sync = [], ptys = [], runs = [];
   const io = createTerminalIo({
     base: () => "http://127.0.0.1:1111", context: () => "epoch", attachmentDirectory: () => "/memory/files", env,
-    fetch: async () => new Response(JSON.stringify(cli)),
+    fetch: async () => new Response(JSON.stringify(served)),
     fs: { stat: async () => ({ isFile: () => true, size: 1 }), mkdir: async () => {}, writeFile: async () => {} },
     execFileSync: (bin, args, options) => { sync.push({ bin, args, options }); return args.includes("new-session") ? "@99\n" : ""; },
     spawnPty: (bin, args, options) => { ptys.push({ bin, args, options }); return {}; },
@@ -61,7 +62,11 @@ test("a local viewer: every tmux call and the PTY get the user's environment; th
   assert.equal(ptys[0].options.env.HERDR_SESSION, "local");
   assert.equal(ptys[0].options.cwd, "/home/fixture");
   await opened.killViewer();
-  assert.deepEqual(runs.map(call => call.args[3]), ["kill-session", "list-sessions"]);
+  // The session (already gone, so the inventory is read), then (#1502) both of the viewer's own tables, emptied.
+  const viewer = runs[0].args.at(-1).slice(1);
+  assert.match(viewer, /^oatsdesk-/);
+  assert.deepEqual(runs.map(call => call.args.slice(3)), [["kill-session", "-t", `=${viewer}`], ["list-sessions", "-F", "#{session_name}"],
+    ["unbind-key", "-a", "-q", "-T", viewer], ["unbind-key", "-a", "-q", "-T", `${viewer}-prefix`]]);
   for (const call of runs) {
     assertUserEnvironment(call.options.env, MOUNT, `cleanup tmux ${call.args[3]}`);
     assert.equal(call.options.timeout, 4000, "the call's own options are kept");
@@ -85,6 +90,16 @@ test("a remote terminal: `oats session inspect`, the PTY and `oats session uploa
   assertUserEnvironment(ptys[0].options.env, MOUNT, "the remote PTY");
   assert.equal(ptys[0].options.env.SSH_AUTH_SOCK, "/run/agent", "the operator's SSH agent is kept");
   for (const name of Object.keys(NESTING)) assert.equal(Object.hasOwn(ptys[0].options.env, name), false, name);
+});
+
+test("a remote viewer opens without the kernel's status line where the CLI can leave it out (#1502): the Desktop teaches the keys itself", async () => {
+  for (const [features, quiet] of [[[NO_STATUS_LINE_FEATURE], true], [[], false]]) {
+    const { io, ptys } = recordedIo(desktopEnvironment(MOUNT, { HOME: "/home/fixture" }), { ...cli, features });
+    const spec = io.admit(structuredClone(remote)).spec;
+    io.create(spec, await io.prepare(spec, control), control);
+    assert.equal(ptys[0].args.includes("--no-status-line"), quiet, JSON.stringify(features));
+    assert.deepEqual(ptys[0].args.slice(0, 6), ["session", "attach", "--server", "peer", "--home", "/memory/home"]);
+  }
 });
 
 test("the environment is computed when the child starts, not when the terminals were composed", () => {

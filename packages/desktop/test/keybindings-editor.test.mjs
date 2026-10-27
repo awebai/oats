@@ -50,7 +50,8 @@ test("editor renders an ARIA dialog listing every action with effective chords",
   assert.ok(dialog);
   assert.equal(dialog.getAttribute("aria-modal"), "true");
   const rows = [...doc.querySelectorAll(".kb-row")];
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 5, "the four actions, and the Tabs group's read-only scroll row (#1502)");
+  assert.equal(rows.filter((r) => r.classList.contains("kb-row-fixed")).map((r) => r.querySelector(".kb-label").textContent).join(), "Scroll back in a terminal");
   const labels = rows.map((r) => r.querySelector(".kb-label").textContent);
   assert.ok(labels.includes("Command palette"));
   const paletteRow = rows.find((r) => r.querySelector(".kb-label").textContent === "Command palette");
@@ -401,7 +402,7 @@ test("search: focused on open; filters by label, by group name and by the chord 
   assert.deepEqual(f.shown(), ["Sidebar: show or hide"]);
   assert.equal(f.doc.querySelector('.kb-group[data-label="Tabs"]').hidden, true, "a group with no match disappears");
   f.type("TABS");
-  assert.deepEqual(f.shown(), ["Close tab", "Go to tab 1", "Next tab"], "the group's name finds its rows");
+  assert.deepEqual(f.shown(), ["Close tab", "Go to tab 1", "Next tab", "Scroll back in a terminal"], "the group's name finds its rows");
   assert.equal(f.doc.querySelector('.kb-group[data-label="Global"]').hidden, true);
   for (const q of ["shift+b", "ctrl shift b", "Ctrl+Shift+B", "ctrlshiftb", "shift ctrl b", " Shift + B "]) {
     f.type(q);
@@ -429,7 +430,7 @@ test("search: focused on open; filters by label, by group name and by the chord 
   f.type("unbound");
   assert.deepEqual(f.shown(), ["Focus mode: toggle"], "an unbound row's chord reads unbound");
   f.type("");
-  assert.equal(f.shown().length, 9, "clearing the search shows every row");
+  assert.equal(f.shown().length, 10, "clearing the search shows every row, the scroll row too");
 });
 
 test("search: the count is announced politely; nothing matching shows one quiet line", (t) => {
@@ -483,7 +484,9 @@ test("keyboard: Down from the search enters the rows, Up/Down move between them,
   f.press(f.doc.activeElement, "ArrowDown"); f.press(f.doc.activeElement, "ArrowDown");
   assert.equal(f.doc.activeElement, chordOf("Next tab"));
   f.press(f.doc.activeElement, "ArrowDown");
-  assert.equal(f.doc.activeElement, chordOf("Next tab"), "Down on the last row stays");
+  assert.equal(f.doc.activeElement, chordOf("Scroll back in a terminal"), "the group's read-only row is a row too");
+  f.press(f.doc.activeElement, "ArrowDown");
+  assert.equal(f.doc.activeElement, chordOf("Scroll back in a terminal"), "Down on the last row stays");
   // A row's reset button moves along the rows too.
   setBinding("tabs.close", "Ctrl+Shift+X");
   f.rowFor("Close tab").querySelector(".kb-reset").focus();
@@ -500,8 +503,8 @@ test("keyboard: Esc clears a non-empty search first (from the search or a row), 
   assert.equal(esc.defaultPrevented, true);
   assert.equal(f.search().value, "");
   assert.equal(f.doc.activeElement, f.search(), "focus goes back to the search");
-  assert.equal(f.shown().length, 9);
-  assert.equal(f.doc.querySelector(".kb-count").textContent, "9 shortcuts");
+  assert.equal(f.shown().length, 10);
+  assert.equal(f.doc.querySelector(".kb-count").textContent, "10 shortcuts");
   assert.equal(f.editor.isOpen(), true);
   // Recording: Esc cancels the recording, the search stays as it is.
   f.type("side");
@@ -1153,4 +1156,47 @@ for (const isMac of [true, false]) test(`Show only the current workspace: the sh
   assert.equal(toggled, 0, "listing it runs nothing");
   runAction("workspaces.currentOnly"); runAction("workspaces.currentOnly");
   assert.equal(toggled, 2, "each run toggles once");
+});
+
+// #1502: the Tabs group's one read-only row says how to scroll back in a terminal: the wheel, Shift+PgUp and
+// Ctrl+B [, which every pane takes (the local viewer and the kernel's alike; Ctrl+B [ from tmux 3.3).
+test("the Tabs group ends with a read-only row: scroll back with the wheel, Shift+PgUp or Ctrl+B [", (t) => {
+  for (const [isMac, caps, said] of [[false, ["Shift+PgUp", "Ctrl+B", "["], "Wheel up, Shift+PgUp or Ctrl+B then [, fixed"],
+    [true, ["⇧PgUp", "⌃B", "["], "Wheel up, ⇧PgUp or ⌃B then [, fixed"]]) {
+    const f = setupLinux(t, { isMac });
+    f.editor.open();
+    const tabs = f.doc.querySelector('.kb-group[data-label="Tabs"]');
+    const row = [...tabs.querySelectorAll(".kb-row")].at(-1);
+    assert.equal(row.querySelector(".kb-label").textContent, "Scroll back in a terminal");
+    assert.ok(row.classList.contains("kb-row-fixed") && !row.querySelector("button"), "read-only: no button to record or reset");
+    assert.deepEqual([...row.querySelectorAll(".kb-keys kbd")].map((k) => k.textContent), caps);
+    assert.equal(row.querySelector(".kb-keys").textContent, `Wheel up,${caps[0]}or${caps[1]}then${caps[2]}`, "the words between the keys");
+    assert.equal(row.querySelector(".kb-chord .sr-only").textContent, said);
+    assert.equal(row.title, "Ctrl+B [ needs tmux 3.3 or later on the computer the agent runs on", "the one condition, in the tooltip");
+    assert.equal(row.querySelector(".kb-chord").tabIndex, -1, "reached by the arrows, not a Tab stop");
+  }
+});
+
+test("the scroll row is found by its words and each of its keys, and adds no match to another chord's search", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  for (const q of ["scroll", "wheel", "wheel up", "Wheel up", "shift+pgup", "pgup", "ctrl+b", "ctrl b [", "terminal"]) {
+    f.type(q);
+    assert.ok(f.shown().includes("Scroll back in a terminal"), q);
+  }
+  for (const q of ["shift+b", "Ctrl+Shift+B", "ctrl+shift+pgup"]) {
+    f.type(q);
+    assert.ok(!f.shown().includes("Scroll back in a terminal"), `${q}: its keys are three chords, never mixed`);
+  }
+});
+
+test("shortcutMatches: a row whose keys are several chords matches when one chord does", () => {
+  const row = { label: "Scroll back in a terminal", group: "Tabs", keys: [["Wheel", "up"], ["Shift", "PgUp"], ["Ctrl", "B", "["]] };
+  assert.equal(shortcutMatches(row, "shift pgup", false), true);
+  assert.equal(shortcutMatches(row, "ctrl+b", false), true);
+  assert.equal(shortcutMatches(row, "wheel", false), true);
+  assert.equal(shortcutMatches(row, "wheel up", false), true, "the gesture as shown");
+  assert.equal(shortcutMatches(row, "ctrl+shift+b", false), false, "Ctrl and B from one chord, Shift from another, is no match");
+  assert.equal(shortcutMatches(row, "ctrlb[", false), true, "a chord typed without separators");
+  assert.equal(shortcutMatches({ ...row, keys: [] }, "ctrl", false), false);
 });
