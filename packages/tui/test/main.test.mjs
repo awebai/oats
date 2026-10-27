@@ -472,7 +472,7 @@ test("a run says it is reading, draws the instances when the reader answers (the
   assert.equal(r.stdout.take(), "", "an answer that arrives after the end draws nothing");
 });
 
-test("on macOS the help's chords are the Alt (Option) arrows alone, each with its leader key, and at 24 rows its first page ends before Esc", async () => {
+test("on macOS the help's chords are the Alt (Option) arrows alone, and at 24 rows its first page ends before Esc", async () => {
   const r = await started({ platform: "darwin" });
   r.reader.answer(ENTRY);
   r.stdout.take();
