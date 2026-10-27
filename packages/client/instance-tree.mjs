@@ -6,6 +6,7 @@ import { waitingClaim } from './waiting-on-you.mjs';
 import { byRuntimeState } from './instance-presentation.mjs';
 import { retireData } from './retire-state.mjs';
 import { displayLine } from './display-text.mjs';
+import { drawingFirst } from './same-work.mjs';
 
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
@@ -114,6 +115,10 @@ export function instanceSiblings(instances) {
  * cluster members related only by sibling links sit at depth 0.
  * Nodes are keyed by instanceId (composite identity), never bare name —
  * duplicate names across repos render as distinct nodes.
+ * Under one parent, the children that draw their parent line come first (same-work.mjs `drawingFirst`: on a
+ * host that declares instance-same-work, the flagged ones), each part in the roster's order (#1577). The product
+ * owner's contract (awebai/oats#1577, comment 6441606665) refines the name order (the Desktop expert's decision
+ * roster-name-order-preserves-recognition) inside one parent's children only: roots, clusters and groups keep it.
  * Returns [{ key, instances: [{...instance, depth}] }] with clusters ranked by
  * their first ROOT in the roster's order (`rosterOrder`), never by another member (#1262): a bundle sits where
  * its root sits, and gaining or losing a child, or a start or a stop, moves nothing. A cluster without a root
@@ -170,7 +175,7 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
       if (placed.has(instanceId(i))) return;
       placed.add(instanceId(i));
       ordered.push({ ...i, depth });
-      kids(i).sort(rank).forEach((k) => walk(k, depth + 1));
+      kids(i).sort((a, b) => drawingFirst(a, b) || rank(a, b)).forEach((k) => walk(k, depth + 1));
     };
     roots.forEach((r) => walk(r, 0));
     for (const i of [...members].sort(rank)) walk(i, 0); // malformed cycles must not hide members
@@ -191,7 +196,8 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
  * recent first, and so is each set of nodes at one level of a cluster: its depth-0 roots, and the children of
  * each parent. Nodes without a key follow every node with one, in their input order (a stable sort), so an
  * empty record returns the input order. A child stays under its parent: each cluster is walked again in
- * pre-order, every depth unchanged. Parentage is read from the pre-order and the depths alone (a node's
+ * pre-order, every depth unchanged. A parent's children keep the roster's split (#1577): those that draw their
+ * parent line first (same-work.mjs `drawingFirst`), recency deciding within each part; roots are not split. Parentage is read from the pre-order and the depths alone (a node's
  * children are the following rows one level deeper, until a row at its depth or above), never from names: the
  * tree was built by identity, and a malformed cycle's depth-0 leftovers are roots like any other. Returns new
  * cluster objects over the same rows; the input is not mutated. */
@@ -219,12 +225,13 @@ export function recencyOrder(clusters, lastFocus) {
       return node.key;
     };
     const instances = [];
-    const walk = (nodes) => {
-      for (const node of [...nodes].sort(recentFirst)) { instances.push(node.inst); walk(node.kids); }
+    const childOrder = (a, b) => drawingFirst(a.inst, b.inst) || recentFirst(a, b);
+    const walk = (nodes, order) => {
+      for (const node of [...nodes].sort(order)) { instances.push(node.inst); walk(node.kids, childOrder); }
     };
     const top = { key: null, kids: roots };
     keyOf(top);
-    walk(roots);
+    walk(roots, recentFirst);
     return { key: top.key, cluster: { ...cluster, instances } };
   });
   return ranked.sort(recentFirst).map(({ cluster }) => cluster);
@@ -381,7 +388,7 @@ export function rosterRank(sortBy) {
 
 /** Group a roster list repo → agent family (soul), each family's items in
  * lineage order (parents before children, depth annotated) with siblings
- * sorted by `sortBy`. Lineage links crossing family/repo boundaries are cut:
+ * sorted by `sortBy` (those that draw their parent line first, #1577). Lineage links crossing family/repo boundaries are cut:
  * such children render as roots of their own family group. Returns
  * Map<repoLabel, Map<familyName, item[]>> with deterministic group order:
  * repos and families alphabetical. */
@@ -412,7 +419,8 @@ export function groupRosterFamilies(list, sortBy = "status") {
         if (seen.has(i.instance)) return; // cycle-safe
         seen.add(i.instance);
         ordered.push({ ...i, depth });
-        kids(i).sort(rank).forEach((k) => walk(k, depth + 1));
+        // #1577: children that draw their parent line first, as clusterInstances orders them.
+        kids(i).sort((a, b) => drawingFirst(a, b) || rank(a, b)).forEach((k) => walk(k, depth + 1));
       };
       roots.sort(rank).forEach((r) => walk(r, 0));
       for (const i of items) if (!seen.has(i.instance)) ordered.push({ ...i, depth: 0 });

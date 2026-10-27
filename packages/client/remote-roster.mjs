@@ -44,7 +44,8 @@ export function remotePanel(group, at) {
   // A row's soul subtitle: its own group's soul list only, a string as the host reported it, never synthesized.
   const described = name => { const soul = (group.souls || []).find((a) => a?.name === name); return typeof soul?.description === "string" ? soul.description : null; };
   // A Herdr-recorded row is unsupported whatever the host's probe said: it cannot open or start.
-  const instances = (group.instances || []).map(({ runtime: _released, runtimeErrorOrigin: _sent, retire: sentRetire, ...i }) => {
+  const instances = (group.instances || []).map(({ runtime: _released, runtimeErrorOrigin: _sent, retire: sentRetire, sameWork: sentSameWork,
+    sameWorkKnown: _gate, ...i }) => {
     const unsupported = unsupportedSession(i);
     const origin = unsupported ? unsupportedSessionOrigin(i) : group.probe.ok || (group.probe.error?.message && madeByKernel(group.probe.error)) ? "kernel" : "roster-read";
     const row = {
@@ -61,6 +62,9 @@ export function remotePanel(group, at) {
       ...(Object.hasOwn(i, "waitingOnYou") ? { waitingOnYou: waitingOnYouData(i.waitingOnYou) } : {}),
       // #1247: the host's retire state, relayed unchanged when it is in the contract (retire-state.mjs), else absent.
       ...(retireData(sentRetire) ? { retire: retireData(sentRetire) } : {}),
+      // #1577: the host's same-work flag, true only (anything else reads unflagged). `sameWorkKnown` is this
+      // client's own field (same-work.mjs), never a host's: whatever a host sent under it is dropped.
+      ...(sentSameWork === true ? { sameWork: true } : {}),
       ...(unsupported ? { running: null, runtimeState: "unsupported", runtimeError: unsupported } : {}),
     };
     return hasRuntimeError(row) && origin ? { ...row, runtimeErrorOrigin: origin } : row;
