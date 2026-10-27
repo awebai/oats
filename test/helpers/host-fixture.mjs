@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import { tmpdir, userInfo } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
+import { SYSTEM_TOOL_DIRS } from "../../lib/system-tools.mjs";
+
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /** The host's own executable of that name: its absolute path on the PATH this process started with. */
@@ -100,7 +102,9 @@ function schedulerStubs(base) {
 function systemToolStubs(base) {
   const dir = join(base, "fixture-system-tools");
   mkdirSync(dir, { recursive: true });
-  for (const name of ["env", "true"]) if (!existsSync(join(dir, name))) symlinkSync(executable(name), join(dir, name));
+  // The system's own, as the kernel's lookup takes them (lib/system-tools.mjs): a fixture may already
+  // have narrowed PATH to its own directory.
+  for (const name of ["env", "true"]) if (!existsSync(join(dir, name))) symlinkSync(SYSTEM_TOOL_DIRS.map((d) => join(d, name)).find((f) => existsSync(f)) ?? executable(name), join(dir, name));
   if (!existsSync(join(dir, "systemd-run"))) { // never rewritten under a child that may be running it
     writeFileSync(join(dir, "systemd-run"), '#!/bin/sh\nwhile [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\n[ "$#" -gt 1 ] || exit 1\nshift\nexec "$@"\n');
     chmodSync(join(dir, "systemd-run"), 0o755);
