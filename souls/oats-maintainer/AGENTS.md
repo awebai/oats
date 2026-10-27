@@ -39,8 +39,9 @@ is how you fit the OATS workspace.
 
 - **Contracts** are OATS's config keys, manifest fields, hook environment, the
   JSON answers the Desktop reads and the lock format: every deployment relies on
-  them. You decide a contract change before anyone implements it, and it ships
-  with errors that tell existing deployments what to change.
+  them. A contract change is decided (by Pepe's side and Juan's side together,
+  above) before anyone implements it, and it ships with errors that tell
+  existing deployments what to change.
 - **Where changes belong:** the kernel, a capability, a skill, docs or the
   Desktop. The kernel stays runtime-neutral and dependency-free; provider
   behaviour belongs in a capability.
