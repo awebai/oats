@@ -199,9 +199,9 @@ function over what its caller holds:
 - **Moving in the list of workspaces** (`workspace-step.mjs`).
   `workspaceStep(rows, currentKey, step, { wrap })` is the leader's ↑ / ↓
   (`workspace-previous`, `workspace-next`): the key of the next row that can
-  be opened in one direction. Without `wrap` (the TUI) it is null at an end;
-  with it (the Desktop) it goes on from the other end, and answers the current
-  key when no other row can be opened. Pure, imports
+  be opened in one direction. Both clients' moves pass `wrap`: it goes on
+  from the other end, and answers the current key when no other row can be
+  opened. Without `wrap` (the TUI list's own cursor) it is null at an end. Pure, imports
   nothing, so the page loads it. Each client draws its own rows and opens
   what it answers.
 - **Who waits in a workspace** (the needs-input mark, the "!" disc). `workspaceChoices`
