@@ -170,21 +170,24 @@ by a full commit id, with the exact version in a comment beside it:
 
 A tag is the action owner's to move, and a commit is not: the code that runs
 with the publishing rights is the code that was read. `build-installers.yml`
-runs the same installer steps, so it names the same commits. Every other
-workflow keeps tags (`actions/checkout@v4`): nothing is published from them.
+runs the same installer steps, so it names the same commits. So does
+`tui-macos.yml`, the TUI's tests on macOS at pull-request time, by the release
+lane's call of 2026-10-28 ([Implementation](implementation.md#the-tuis-tests-on-macos)).
+Every other workflow keeps tags (`actions/checkout@v4`): nothing is published
+from them.
 
 `test/workflow-no-cache.test.mjs` holds this. Its table of the actions that
-were read has a row for each action: `action`, `id`, `version`. In the two files
-every `uses:` is a row's id, the same action is the same id in both, and the
-comment beside an id is the row's version. In every other workflow a `uses:`
-is the major of a row's version.
+were read has a row for each action: `action`, `id`, `version`. In the three
+files every `uses:` is a row's id, the same action is the same id in all of
+them, and the comment beside an id is the row's version. In every other
+workflow a `uses:` is the major of a row's version.
 
 **An id is moved by a pull request, reviewed like any change to that
-workflow.** It changes these together, and nothing else in the two workflow
+workflow.** It changes these together, and nothing else in the three workflow
 files:
 
 - the id and the version comment, on every `uses:` line of that action in
-  `release.yml` and `build-installers.yml`;
+  `release.yml`, `build-installers.yml` and `tui-macos.yml`;
 - the action's row in the table.
 
 **The id is read from an exact version tag of the action's own repository**
@@ -216,9 +219,9 @@ and packages it depends on, and what its entry points call of a cache.
   needs `package-manager-cache: false` on every step. The test takes the
   version of an id from the row, so it refuses a step without it.
 
-**The two files name their runners by version too** (`ubuntu-24.04`, as they
-name `macos-14`), never by a label that GitHub moves to another system by
-itself (`ubuntu-latest`). The Linux installers are built on that runner, and
+**`release.yml` and `build-installers.yml` name their runners by version
+too** (`ubuntu-24.04`, as they name `macos-14`), never by a label that GitHub
+moves to another system by itself (`ubuntu-latest`). The Linux installers are built on that runner, and
 what they need of a system follows the system that built them.
 `pull-request.yml` keeps `ubuntu-latest` on purpose: when the label moves, a
 break on the new system shows in pull-request CI first and not at a release.

@@ -1,8 +1,10 @@
 # Named test runs on macOS and Linux
 
 Pull-request CI runs the tests on Linux, in its own way: sharded, and with no
-working `systemctl --user`. Some tests need something CI does not give them,
-and two workflows run them by hand:
+working `systemctl --user`. One exception: a pull request that touches the TUI
+runs the TUI's tests on macOS as well ([The TUI's tests on
+macOS](implementation.md#the-tuis-tests-on-macos)). Some tests need something
+CI does not give them, and two workflows run them by hand:
 
 - **macOS.** Some tests rest on what only macOS does: a file system that
   ignores case, `/var` and `/tmp` as links, long temporary paths, the BSD
