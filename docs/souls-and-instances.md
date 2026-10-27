@@ -452,6 +452,30 @@ extra trees: see [`attached`](#attached--another-instances-tree)),
 because an attached agent serves that owner; relation flags other than a
 redundant child-of-owner are rejected.
 
+`--same-work` (feature `instance-same-work`) records that the new instance
+does the same work as its parent; clients draw the parent→child line for an
+instance that carries it. It is bound to the parent the new home records,
+whichever relation gave it: a child, a sibling of an anchor that has a
+parent, a `parent` relation whose anchor had a parent (the new instance
+inherits it), or an attached spawn (the owner). A spawn that would record no
+parent (unrelated, a sibling of a root, a `parent` relation over a root
+anchor) is refused with `E_BAD_ARGS` before anything is created, a preview
+included. The flag is the home's own file, `.oats-same-work.json`, naming the
+parent it was set against, and it is on only while that is still the home's
+recorded `parentInstance`: after a reparent (a retire's lineage splice, or a
+`parent` spawn re-pointing its anchor) it reads off. It survives a restart, a
+stop and a start, a resume and `oats instance upgrade`; only `off` or
+retirement clears it.
+
+`oats instance same-work <instance> on|off` sets or clears the flag on an
+existing instance, addressed as `oats instance color` addresses it and routed
+with `--server`. `on` needs a recorded parent and binds the flag to the
+current one, so it also rebinds after a reparent; `off` always succeeds. An
+instance with the flag on carries `sameWork: true` on its `oats status
+--json` row; otherwise the key is absent. The answer, the errors and the
+remote relay are in
+[desktop-cli-api.md](desktop-cli-api.md#same-work-as-the-parent-oats-instance-same-work).
+
 `spawnOrigin` records the caller independently of these links. For new spawns
 from OATS 0.64.0, it is `instance` when the caller's `OATS_INSTANCE` and/or
 `OATS_INSTANCE_HOME` resolve consistently to an extant home in this deployment;

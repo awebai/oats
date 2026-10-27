@@ -1098,3 +1098,37 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
     assert.equal(r.target.window, name, "the recorded target"); assert.equal(m.capabilityMeta["test.renew"].grant.id, "grant-7"); assert.equal(readJson(pendingPath).id, m.startId); }
   process.kill(runningPid(home), "SIGKILL"); // test cleanup only
 });
+
+import { readSameWork, sameWorkOf, writeSameWork } from "../lib/instance-same-work.mjs";
+test("#1577 the same-work flag lasts as long as the home: through a start, a restart, a stop and a start, and a resume of a lost session, which rewrite instance.json only", async () => {
+  const name = "dev-same-work";
+  const { home } = await makeHome(name, { command: renderFor(homeOf(name), name, join(binDir, "polite")), launch: recipeFor(homeOf(name), name, { executable: join(binDir, "polite") }) });
+  const metaFile = join(home, "instance.json");
+  write(metaFile, JSON.stringify({ ...readJson(metaFile), parentInstance: "dev-lead" }, null, 2) + "\n");
+  writeSameWork(home, "dev-lead");
+  const flagged = (step) => {
+    assert.equal(readSameWork(home), "dev-lead", `${step}: the record is kept`);
+    assert.equal(sameWorkOf(home, readJson(metaFile).parentInstance), true, `${step}: still bound to the recorded parent`);
+  };
+  startInstanceSession(home, { env: env() });
+  assert.ok(await waitFor(() => runningPid(home) !== null), "the harness is up");
+  flagged("start");
+  const before = runningPid(home);
+  restartInstanceSession(home, { env: env(), stopGraceMs: 5000 });
+  assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== before), "a new harness is up");
+  flagged("restart");
+  assert.equal(stopInstanceSession(home, { graceMs: 5000 }).stopped, true);
+  await waitFor(() => runningPid(home) === null, "harness gone");
+  flagged("stop");
+  startInstanceSession(home, { env: env() });
+  assert.ok(await waitFor(() => runningPid(home) !== null), "started again");
+  flagged("start after stop");
+  // The session is lost (its window goes while the harness runs, no stop), then brought back with --resume.
+  const lost = runningPid(home);
+  tmux("kill-window", "-t", `${session}:${name}`);
+  await waitFor(() => runningPid(home) !== lost, "the lost harness is gone");
+  startInstanceSession(home, { resume: true, env: env() });
+  assert.ok(await waitFor(() => runningPid(home) !== null), "resumed");
+  flagged("resume");
+  process.kill(runningPid(home), "SIGTERM"); await waitFor(() => runningPid(home) === null, "polite harness exit");
+});
