@@ -58,13 +58,16 @@ order:
    - **Before you open it,** tell the person what to type there. Open it only
      while they are at the screen and already have your terminal open in the
      Desktop, the TUI or `oats session attach`: the new pane takes the keys
-     of a viewer that is open, but a viewer opened later selects your pane,
-     and the person can't move to the prompt's pane from it. If their viewer
-     opened after the pane, close the pane and open it again while they
-     watch.
-   - **While it is open,** wakes and `oats session input` keep reaching your
-     pane, and status reads you as before. The pane closes when its command
-     ends.
+     of a viewer that is open. From OATS 0.69.0, a viewer opened later
+     selects your pane, and the person can't move to the prompt's pane from
+     it; an earlier Desktop or TUI doesn't open a split window at all. If
+     their viewer opened after the pane, close the pane and open it again
+     while they watch.
+   - **While it is open,** from OATS 0.69.0, wakes and `oats session input`
+     keep reaching your pane, and status reads you as before. An earlier
+     OATS refuses your window while it has two panes: wakes and input can't
+     reach you, and status reports you `unreachable`. The pane closes when
+     its command ends.
    - **Before you go on,** check that `tmux list-panes -t "$TMUX_PANE"`
      lists one pane. If the person can't finish, close it with
      `tmux kill-pane -t <the id split-window printed>`.
