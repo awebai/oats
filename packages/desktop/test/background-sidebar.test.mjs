@@ -29,8 +29,8 @@ const tree = { ...treeShared, ...treeView };
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const html = read("index.html"), shell = read("shell.mjs");
 const fn = name => shell.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
-const source = ["renderContextRoster", "needsInputMark", "setBackgroundOpen", "onRosterRowKey", "setRovingRow"]
-  .map(name => { const s = fn(name); assert.ok(s, name); return s; }).join("\n");
+const source = ["renderContextRoster", "needsInputMark", "setBackgroundOpen", "onRosterRowKey", "setRovingRow", "showInRoster", "showPendingSpawn", "revealPendingSpawn"]
+  .map(name => { const s = fn(name); assert.ok(s, name); return shell.includes(`async ${s}`) ? `async ${s}` : s; }).join("\n");
 // The previous / next instance steps read the rows drawn, by the shipped selector (shell.mjs leaderDispatch rosterRows).
 const STEP_ROWS = shell.match(/rosterRows: \(\) => \[\.\.\.\(contextRosterEl\?\.querySelectorAll\("([^"]+)"\)/)?.[1];
 
@@ -74,7 +74,7 @@ function fixture(t, { feature = true, deployments = [] } = {}) {
   context.splitOpenState = () => ({ split: null, activeId: null, tabs: context.tabs, workspace: "A", visible: false });
   context.ownsInstanceTarget = () => true;
   Object.defineProperty(context, "Date", { get: () => Date, enumerable: true });
-  const s = runInNewContext(`${source}\n({ renderContextRoster, setBackgroundOpen, onRosterRowKey })`, context);
+  const s = runInNewContext(`${source}\n({ renderContextRoster, setBackgroundOpen, onRosterRowKey, showInRoster, showPendingSpawn })`, context);
   const list = doc.querySelector(".ctx-list");
   const render = rows => { context.contextInstances = rows; s.renderContextRoster(rows); };
   const heading = () => list.querySelector(".ctx-background-toggle");
@@ -297,4 +297,33 @@ test("two deployments: the section keeps the machine sub-headings, a level under
   const headings = [...u.list.querySelectorAll('[role="heading"]')].map(h => [h.classList.contains("ctx-background") ? "Background" : h.dataset.deployment, h.getAttribute("aria-level")]);
   assert.deepEqual(headings, [["far", "3"], ["Background", "3"], ["here", "4"], ["far", "4"]]);
   assert.equal(u.heading().getAttribute("aria-label"), "Background, 2 instances");
+});
+
+test("an explicit ask to see a row opens the section: Show in roster and Show its row (the expert, 2026-10-27)", async t => {
+  const u = fixture(t);
+  u.render(ROSTER);
+  assert.equal(u.heading().getAttribute("aria-expanded"), "false");
+  const helper = ROSTER.find(r => r.instance === "helper");
+  // A background row's ancestors are folded: Show in roster opens the section and them, and focuses the row.
+  u.context.collapsedInstances.add(treeShared.collapseKey("A", treeShared.instanceId(ROSTER.find(r => r.instance === "maint"))));
+  assert.equal(await u.s.showInRoster({ home: helper.home }), true);
+  assert.equal(u.heading().getAttribute("aria-expanded"), "true");
+  assert.equal(u.doc.activeElement, u.rowEl("helper"));
+  // Show its row: a pending spawn the decision binds background is drawn in the section, which opens for it.
+  u.s.setBackgroundOpen("A", false);
+  const pending = { id: "spawn-1", instance: "newbie", agent: "dev", agentsRoot: "/synthetic/agents", home: "/synthetic/newbie", background: true,
+    deployment: { id: "A" }, pending: "spawning", startedAt: 0 };
+  u.context.spawnJobs = { rows: () => [pending], reveal: () => true, announce: () => false, check() {}, isNew: () => false, seen() {} };
+  // The pending row's own drawing is Spec C's (shell.mjs pendingSpawnRow): a stand-in with the row's identity and name.
+  u.context.pendingSpawnRow = i => {
+    const wrap = u.doc.createElement("div"); wrap.className = "ctx-tree-row"; wrap.style.setProperty("--depth", String(i.depth || 0));
+    const row = u.doc.createElement("button"); row.className = "ctx-inst"; row.dataset.treeInstance = treeShared.instanceId(i);
+    const name = u.doc.createElement("span"); name.className = "ctx-name"; name.dataset.name = i.instance;
+    row.append(name); wrap.append(row); return wrap;
+  };
+  u.render(ROSTER);
+  assert.equal(u.drawn().includes("newbie@0"), false, "closed: the pending row is in the section");
+  assert.equal(u.s.showPendingSpawn("spawn-1"), true);
+  assert.equal(u.heading().getAttribute("aria-expanded"), "true");
+  assert.ok(u.drawn().indexOf("newbie@0") > u.drawn().indexOf("|Background|"), "the pending row stands in the section");
 });

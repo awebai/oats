@@ -236,7 +236,9 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       if (flightOf(spec.workspace, spec.soul)) return null;
       tokens.add(spec.token);
       const job = { id: `spawn-${++serial}`, workspace: spec.workspace, deployment: text(spec.deployment) ? spec.deployment : spec.workspace, soul: spec.soul, selector: spec.selector, input: structuredClone(spec.input),
-        decision: structuredClone(spec.decision), instance: spec.decision.instance, home: spec.decision.home, placement: { ...(spec.placement || {}) },
+        decision: structuredClone(spec.decision), instance: spec.decision.instance, home: spec.decision.home,
+        // #1579: a spawn the decision binds background is placed in the Background section from its press, where its real row will stand.
+        placement: { ...(spec.placement || {}), ...(spec.decision.effective?.background === true ? { background: true } : {}) },
         // Why a spawn the dialog would have named from its task was numbered (spawn-naming.mjs numberedLine), said once it
         // is created. This window's only: a reload does not bring it back.
         named: text(spec.named, 512) ? spec.named : null,
@@ -313,6 +315,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           || !text(e.selector?.soul, 256) || [...jobs.values()].some(j => j.spawnRef === e.spawnRef)) continue;
         const placement = {};
         for (const k of ['parentInstance', 'siblingInstance']) if (text(e.placement?.[k], 256)) placement[k] = e.placement[k];
+        if (e.placement?.background === true) placement.background = true;
         const job = { id: `spawn-${++serial}`, workspace: e.workspace, deployment: text(e.deployment) ? e.deployment : e.workspace, soul: { name: e.soul.name, agentsRoot: e.soul.agentsRoot },
           selector: { soul: e.selector.soul, agentsRoot: e.selector.agentsRoot }, input: null, decision: null, instance: e.instance, home: e.home, placement,
           // Reopen after a reload restores the soul and the exact name; the opening instruction is never stored.

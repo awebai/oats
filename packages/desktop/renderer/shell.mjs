@@ -968,7 +968,7 @@ function renderContextRoster(instances) {
   // Only what the kernel decided (name, home, soul, relation): never a guessed runtime state.
   const decided = jobs.map((p) => ({ instance: p.instance, agent: p.agent, agentsRoot: p.agentsRoot, home: p.home,
     ...(p.parentInstance ? { parentInstance: p.parentInstance } : {}), ...(p.siblingInstance ? { siblingInstance: p.siblingInstance } : {}),
-    ...(p.deployment ? { deployment: p.deployment } : {}), pendingSpawn: p }));
+    ...(p.background === true ? { background: true } : {}), ...(p.deployment ? { deployment: p.deployment } : {}), pendingSpawn: p }));
   const inFlight = new Map(decided.filter((d) => ["spawning", "checking"].includes(d.pendingSpawn.pending)).map((d) => [instanceId(d), d.pendingSpawn]));
   const reported = new Set(instances.map(instanceId));
   if (inFlight.size) instances = instances.map((i) => inFlight.has(instanceId(i)) && !i.rollbackIncomplete
@@ -1366,8 +1366,9 @@ function announceSpawn(text) {
 }
 
 /* #1579: open or close this window's Background section of workspace `ws` (in memory, per workspace) and repaint;
-   the heading keeps the focus it had (renderContextRoster restores it). Only the heading opens it: a tab, the
-   palette, a reveal or a step to a background row never does. */
+   the heading keeps the focus it had (renderContextRoster restores it). The heading opens and closes it, and an
+   explicit ask to see a row (showInRoster, revealPendingSpawn) opens it; passive tab selection, the palette or a
+   step to a background row never does. */
 function setBackgroundOpen(ws, open) {
   if (open) backgroundOpen.add(ws); else backgroundOpen.delete(ws);
   renderContextRoster(contextInstances);
@@ -1446,8 +1447,8 @@ function setRovingRow(listEl, row) {
 }
 
 /** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through any
- * collapsed ancestor. False when the roster does not list it (yet). #1579: a row the closed Background section
- * holds is shown at its heading, which this never opens; only the ancestors of its own part are expanded. */
+ * collapsed ancestor. False when the roster does not list it (yet). #1579: an explicit ask to see the row, so a
+ * row the Background section holds opens the section; only the ancestors of its own part are expanded. */
 async function showInRoster(instance) {
   const ws = currentWorkspace();
   const find = () => contextWorkspace === ws ? contextInstances.find(i => (i.server || null) === (instance?.server || null) && i.home === instance?.home) : null;
@@ -1458,10 +1459,10 @@ async function showInRoster(instance) {
   for (let id = rosterParentId(contextInstances, instanceId(row)), seen = new Set(); id && !seen.has(id) && placed.has(id) === inBackground; id = rosterParentId(contextInstances, id)) {
     seen.add(id); collapsedInstances.delete(collapseKey(ws, id));
   }
+  if (inBackground) backgroundOpen.add(ws);
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
-  const target = listEl && ([...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row))
-    || (inBackground ? listEl.querySelector(".ctx-background-toggle") : null));
+  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(row));
   if (!target) return false;
   tabOpenIntents.invalidate(); // an explicit navigation, not a polling restoration
   setRovingRow(listEl, target);
@@ -1479,24 +1480,25 @@ function showPendingSpawn(id) {
 
 /* Spec E: after a press, the pending row is revealed and highlighted (its ancestors expanded, scrolled
    into view) without taking focus or cancelling anything pending. Returns the row, or null. #1579: a pending
-   row under a background parent, while the Background section is closed, is revealed at the section's heading
-   (returned in its place), which this never opens; only the ancestors of its own part are expanded. */
+   row the Background section holds (its own choice, or a background parent) opens the section, as an ask to see
+   the row; only the ancestors of its own part are expanded. */
 function revealPendingSpawn(id) {
   const ws = currentWorkspace();
   const pending = spawnJobs.rows(ws).find(p => p.id === id);
   if (!pending || !contextRosterEl) return null;
   const all = [...contextInstances, { instance: pending.instance, agent: pending.agent, agentsRoot: pending.agentsRoot, home: pending.home,
-    ...(pending.parentInstance ? { parentInstance: pending.parentInstance } : {}), ...(pending.siblingInstance ? { siblingInstance: pending.siblingInstance } : {}) }];
+    ...(pending.parentInstance ? { parentInstance: pending.parentInstance } : {}), ...(pending.siblingInstance ? { siblingInstance: pending.siblingInstance } : {}),
+    ...(pending.background === true ? { background: true } : {}) }];
   const self = all.at(-1);
   const placed = backgroundPlacement(all, backgroundShown()), inBackground = placed.has(instanceId(self));
   for (let pid = rosterParentId(all, instanceId(self)), seen = new Set(); pid && !seen.has(pid) && placed.has(pid) === inBackground; pid = rosterParentId(all, pid)) {
     seen.add(pid); collapsedInstances.delete(collapseKey(ws, pid));
   }
+  if (inBackground) backgroundOpen.add(ws);
   spawnJobs.reveal(id);
   renderContextRoster(contextInstances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
-  const target = listEl && ([...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self))
-    || (inBackground ? listEl.querySelector(".ctx-background-toggle") : null));
+  const target = listEl && [...listEl.querySelectorAll(".ctx-inst")].find(r => r.dataset.treeInstance === instanceId(self));
   if (!target) return null;
   revealInScrollport(listEl, target.closest(".ctx-tree-row") || target);
   return target;

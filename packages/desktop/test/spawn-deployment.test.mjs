@@ -464,6 +464,23 @@ test('spawn jobs: post addresses the deployment, ownership and storage keep the 
   assert.equal(r.rows('ws:v')[0].deployment.id, '/b');
 });
 
+test('spawn jobs (#1579): a decision that binds background places the pending row in the Background section, and recovery keeps it', async () => {
+  const storage = memory();
+  const s = createSpawnJobs({ post: async () => new Promise(() => {}), notify: () => ({}), currentWorkspace: () => '/w', storage });
+  const spec = (instance, effective) => ({ token: {}, workspace: '/w', soul: { name: instance, agentsRoot: '/w/agents' }, selector: { soul: instance, agentsRoot: '/w/agents' },
+    input: { action: 'prepare' }, decision: { instance, home: `/w/agents/${instance}/instances/${instance}`, ...(effective ? { effective } : {}) } });
+  s.submit(spec('bg', { background: true })); s.submit(spec('fg', {})); s.submit(spec('plain'));
+  await settle();
+  assert.deepEqual(s.rows('/w').map(r => [r.instance, r.background ?? null]), [['bg', true], ['fg', null], ['plain', null]]);
+  // Recovery after a reload keeps the placement as it was stored, `background: true` exactly.
+  const stored = (instance, placement) => ({ workspace: '/w', spawnRef: `r-${instance}`, soul: { name: 'dev', agentsRoot: '/w/agents' }, selector: { soul: 'dev', agentsRoot: '/w/agents' },
+    instance, home: `/w/agents/dev/instances/${instance}`, placement, startedAt: 1 });
+  storage.setItem('oats.spawnJobs.v1', JSON.stringify([stored('kept', { background: true }), stored('odd', { background: 'yes' })]));
+  const r = createSpawnJobs({ post: async () => new Promise(() => {}), notify: () => ({}), storage });
+  assert.equal(r.recover(), 2);
+  assert.deepEqual(r.rows('/w').map(row => [row.instance, row.background ?? null]), [['kept', true], ['odd', null]]);
+});
+
 test('a local deployment not read yet blocks Spawn with "hasn\'t been read yet", never "isn\'t reachable" (expert, #482)', async () => {
   const doc = new JSDOM('<body></body>').window.document;
   const unread = local(B, '…/other/northwind', { reachable: false, identityFrom: null });

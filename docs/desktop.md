@@ -994,7 +994,9 @@ listed. It starts, opens, takes input, messages and retires as any other.
   left arrows open and close it as they do a parent row. It stays as you left
   it while the window shows the workspace, as a parent row's fold does.
   Selecting an instance's tab, or opening one from the command palette, never
-  opens it. The command palette lists every instance, background ones
+  opens it; **Show in roster** and a spawn's **Show its row** do, since they
+  ask to see the row. A spawn you run in the background is listed there from
+  the start. The command palette lists every instance, background ones
   included, and the previous and next instance keys pass over the rows of a
   closed section. When the row you are on moves to a closed section, the
   focus goes to the heading.
