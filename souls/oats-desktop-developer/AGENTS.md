@@ -40,4 +40,5 @@ the tasks they cover.
   compositing over text.
 - Desktop-only changes run the Desktop suites (`cd packages/desktop && node
   --test`); terminal and identity behaviour is verified live through CDP, with
-  tmux state asserted before and after, not only in the UI.
+  tmux state asserted before and after, not only in the UI. A test Desktop
+  never takes the operator's screen or focus (`/electron-live-verification`).
