@@ -76,17 +76,20 @@ export function shownEnd(value, width, { ascii = false } = {}) {
  *  broken at spaces where it can be and between graphemes where it cannot, the last row ending
  *  in the cut mark when more was left. For a sentence that must be read whole (a kernel's
  *  reason). Filtered first and cut after, as shownEnd is; nothing to show gives no row, and
- *  neither does a row too narrow for the first grapheme. */
-export function shownLines(value, width, max, { ascii = false } = {}) {
+ *  neither does a row too narrow for the first grapheme. `first` is the first row's width, when
+ *  something else stands before the text on that row; every other row is `width` cells. */
+export function shownLines(value, width, max, { ascii = false, first = width } = {}) {
   const line = displayLine(value);
-  if (line === null || width < 1 || max < 1) return [];
+  if (line === null || width < 1 || first < 1 || max < 1) return [];
   if (line === DETAIL_WITHHELD) return [WITHHELD];
   const rows = [];
+  const roomOf = (row) => (row === 0 ? first : width);
   let rest = cells(line);
   while (rest.length && rows.length < max) {
-    if (widthOf(rest) <= width) { rows.push(rest); rest = []; break; }
+    const room = roomOf(rows.length);
+    if (widthOf(rest) <= room) { rows.push(rest); rest = []; break; }
     let end = 0;
-    for (let used = 0; end < rest.length && used + rest[end].width <= width; used += rest[end].width) end++;
+    for (let used = 0; end < rest.length && used + rest[end].width <= room; used += rest[end].width) end++;
     // Back to the last space inside the row, when there is one: the row ends before it.
     let cut = end;
     while (cut > 0 && rest[cut]?.text !== " " && rest[cut - 1].text !== " ") cut--;
@@ -98,12 +101,12 @@ export function shownLines(value, width, max, { ascii = false } = {}) {
     while (rest.length && rest[0].text === " ") rest.shift();
     rows.push(row);
   }
-  const mark = cutMark(ascii);
-  if (rest.length && rows.length && mark.length <= width) {
+  const mark = cutMark(ascii), lastRoom = roomOf(rows.length - 1);
+  if (rest.length && rows.length && mark.length <= lastRoom) {
     // More was left: the last row gives up its end to the mark. (A row too narrow for the mark
-    // keeps what it has: no row is ever wider than `width`.)
+    // keeps what it has: no row is ever wider than its room.)
     const last = rows[rows.length - 1];
-    while (last.length && widthOf(last) + mark.length > width) last.pop();
+    while (last.length && widthOf(last) + mark.length > lastRoom) last.pop();
     while (last.length && last[last.length - 1].text === " ") last.pop();
     last.push(...cells(mark));
   }
