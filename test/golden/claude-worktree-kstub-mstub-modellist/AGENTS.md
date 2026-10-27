@@ -6,6 +6,19 @@ You are the golden-fixture developer soul.
 
 - Do repository work in `./work`.
 
+<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist/.oats/modules/golden.knowledge/inject.md -->
+## Knowledge (stub)
+
+Your durable knowledge is at `soul/knowledge/index.md`.
+Your working state for this instance is `STATE.md` and `notes/`.
+<!-- /oats:capability:golden.knowledge -->
+
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist/.oats/modules/golden.messaging/inject.md -->
+## Messaging (stub)
+
+You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.
+<!-- /oats:capability:golden.messaging -->
+
 <!-- oats:kernel:instance-boundary src=<kernel>/injects/instance-boundary.md -->
 ## Your two directories
 
@@ -66,16 +79,3 @@ to start from, or the one you rework):
   Retirement may keep a tree with uncommitted work; don't rely on it.
   Details: `oats worktree --help`, and `/oats-operate` if you have it.
 <!-- /oats:work-mode:worktree -->
-
-<!-- oats:capability:golden.knowledge src=<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist/.oats/modules/golden.knowledge/inject.md -->
-## Knowledge (stub)
-
-Your durable knowledge is at `soul/knowledge/index.md`.
-Your working state for this instance is `STATE.md` and `notes/`.
-<!-- /oats:capability:golden.knowledge -->
-
-<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist/.oats/modules/golden.messaging/inject.md -->
-## Messaging (stub)
-
-You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.
-<!-- /oats:capability:golden.messaging -->

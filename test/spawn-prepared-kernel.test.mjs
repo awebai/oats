@@ -134,7 +134,8 @@ test("H1/M3/M11/S1: a prepared spawn runs with the resolution's capability rows 
     assert.equal("team" in meta.workspace.soul, false, "a soul's teams are the workspace's souls:, never the soul's");
     // S1: instructions and composition.expected include the materialized capability blocks.
     const capabilityMarkers = (readFileSync(join(home, "AGENTS.md"), "utf8").match(/<!-- oats:capability:[^\s]+ src=/g) || []).map((m) => m.slice("<!-- oats:".length, -" src=".length));
-    assert.deepEqual(capabilityMarkers, ["capability:nw-house-style", "capability:nw-release-tooling", "capability:oats.core", "capability:oats.okf"]);
+    // The soul's own capability, then the workspace defaults as the workspace lists them (capabilities, then knowledge).
+    assert.deepEqual(capabilityMarkers, ["capability:nw-release-tooling", "capability:oats.core", "capability:nw-house-style", "capability:oats.okf"]);
     assert.deepEqual(meta.instructions.map((b) => b.source).filter((s) => s.startsWith("capability:")), capabilityMarkers, "S1: meta.instructions lists every capability block in the written AGENTS.md");
     for (const b of meta.instructions.filter((b) => b.source.startsWith("capability:"))) assert.ok(b.file.startsWith(join(home, ".oats", "modules")), `S1: ${b.source} block file is the module copy (${b.file})`);
     assert.deepEqual(meta.composition.expected.filter((r) => r.type === "instruction-block").map((r) => r.source).filter((s) => s.startsWith("capability:")), capabilityMarkers, "S1: composition.expected carries the capability blocks");

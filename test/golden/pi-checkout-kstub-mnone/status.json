@@ -72,16 +72,16 @@
           ],
           "instructions": [
             {
+              "source": "capability:golden.knowledge",
+              "file": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+            },
+            {
               "source": "kernel:instance-boundary",
               "file": "<kernel>/injects/instance-boundary.md"
             },
             {
               "source": "work-mode:checkout",
               "file": "<kernel>/injects/work-checkout.md"
-            },
-            {
-              "source": "capability:golden.knowledge",
-              "file": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
             }
           ],
           "composition": {
@@ -104,6 +104,12 @@
               },
               {
                 "type": "instruction-block",
+                "source": "capability:golden.knowledge",
+                "declared": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
+                "resolved": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+              },
+              {
+                "type": "instruction-block",
                 "source": "kernel:instance-boundary",
                 "declared": "<kernel>/injects/instance-boundary.md",
                 "resolved": "<kernel>/injects/instance-boundary.md"
@@ -113,12 +119,6 @@
                 "source": "work-mode:checkout",
                 "declared": "<kernel>/injects/work-checkout.md",
                 "resolved": "<kernel>/injects/work-checkout.md"
-              },
-              {
-                "type": "instruction-block",
-                "source": "capability:golden.knowledge",
-                "declared": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
-                "resolved": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
               }
             ],
             "materialized": {
@@ -131,16 +131,16 @@
               ],
               "instructions": [
                 {
+                  "source": "capability:golden.knowledge",
+                  "file": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+                },
+                {
                   "source": "kernel:instance-boundary",
                   "file": "<kernel>/injects/instance-boundary.md"
                 },
                 {
                   "source": "work-mode:checkout",
                   "file": "<kernel>/injects/work-checkout.md"
-                },
-                {
-                  "source": "capability:golden.knowledge",
-                  "file": "<base>/deployment/agents/dev/instances/dev-pi-checkout-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
                 }
               ],
               "harnessPackages": [],

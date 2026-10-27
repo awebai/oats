@@ -60,16 +60,16 @@
   ],
   "instructions": [
     {
+      "source": "capability:golden.knowledge",
+      "file": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+    },
+    {
       "source": "kernel:instance-boundary",
       "file": "<kernel>/injects/instance-boundary.md"
     },
     {
       "source": "work-mode:worktree",
       "file": "<kernel>/injects/work-worktree.md"
-    },
-    {
-      "source": "capability:golden.knowledge",
-      "file": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
     }
   ],
   "composition": {
@@ -92,6 +92,12 @@
       },
       {
         "type": "instruction-block",
+        "source": "capability:golden.knowledge",
+        "declared": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+      },
+      {
+        "type": "instruction-block",
         "source": "kernel:instance-boundary",
         "declared": "<kernel>/injects/instance-boundary.md",
         "resolved": "<kernel>/injects/instance-boundary.md"
@@ -101,12 +107,6 @@
         "source": "work-mode:worktree",
         "declared": "<kernel>/injects/work-worktree.md",
         "resolved": "<kernel>/injects/work-worktree.md"
-      },
-      {
-        "type": "instruction-block",
-        "source": "capability:golden.knowledge",
-        "declared": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
       }
     ],
     "materialized": {
@@ -119,16 +119,16 @@
       ],
       "instructions": [
         {
+          "source": "capability:golden.knowledge",
+          "file": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+        },
+        {
           "source": "kernel:instance-boundary",
           "file": "<kernel>/injects/instance-boundary.md"
         },
         {
           "source": "work-mode:worktree",
           "file": "<kernel>/injects/work-worktree.md"
-        },
-        {
-          "source": "capability:golden.knowledge",
-          "file": "<base>/deployment/agents/dev/instances/dev-pi-worktree-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
         }
       ],
       "harnessPackages": [],
