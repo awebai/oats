@@ -6428,7 +6428,9 @@ TUI decide, run and read it the same way.
 
 The Desktop shows nothing of a reading (the product owner, 2026-10-27): its
 main process writes a `failed` reading's code to its log in one line and drops
-every other reading, a `notice` included. The TUI says what a `notice` holds
+every other reading, a `notice` included. The TUI says nothing of a reading
+either: a `notice` or a `quiet` reading asks it for a live read, and every
+other reading for nothing
 ([Resuming lost sessions](tui.md#resuming-lost-sessions)).
 
 **The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):

@@ -285,8 +285,8 @@ several clients safe. It runs only when the installed OATS CLI advertises the
 it resumed, started fresh, left waiting for you or could not resume (the
 product owner, 2026-10-27). A resumed instance shows running in the roster
 once a read sees it running. A sweep that fails writes one line with its code
-to Desktop's log. `oats tui` still says what a
-sweep did ([Resuming lost sessions](tui.md#resuming-lost-sessions)).
+to Desktop's log. `oats tui` says nothing about a sweep either
+([Resuming lost sessions](tui.md#resuming-lost-sessions)).
 
 **Quitting does not stop a sweep.** The sweep runs in a process session of its
 own, and writes its answer to files rather than to Desktop. Quitting Desktop,

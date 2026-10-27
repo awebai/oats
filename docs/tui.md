@@ -1285,9 +1285,9 @@ deployments only, never another machine's) and resumes each lost session as
 it decides. What it does to a session, when it starts one fresh from its
 briefing instead, and when it stops trying for one that keeps losing its
 session, is the kernel's rule, written beside the command. A session lost
-long ago is not resumed automatically, and `oats tui` says nothing about it;
-`oats session start --resume` still brings it back by hand. `oats tui` owns
-no session: it runs the command and shows a summary.
+long ago is not resumed automatically; `oats session start --resume` still
+brings it back by hand. `oats tui` owns no session: it runs the command, and
+says nothing about it.
 
 **When it runs.** Once the run has started, whether it started in a
 deployment or in [the switcher](#the-switcher): after the deployment it
@@ -1305,30 +1305,17 @@ longer lost, or a sweep resumes it. There
 is no timer and no queue: a read that comes too soon starts nothing, and the
 next read asks again. The rule is the shared client's
 (`packages/client/session-resume-trigger.mjs`). It runs only when the kernel
-advertises the `session-resume` feature; without it, nothing runs and
-nothing is said.
+advertises the `session-resume` feature; without it, nothing runs.
 
-**What it says.** When the sweep resumed an instance, started one fresh,
-left one waiting for you or could not resume one, the line under the list
-of workspaces says so once, as it says any other line there: a headline
-that counts them ("OATS resumed 3 instances whose sessions were lost. 1 of
-them is waiting for you: open its terminal."), and under it a line for each
-instance (waiting for you, could not be resumed, started fresh and why,
-resumed in its own conversation), then the deployments the sweep did not
-check, each named as the switcher names its path, then what OATS said
-about this computer as a whole. A refusal an earlier sweep of this run
-already reported is not said again, nor is something about this computer
-that an earlier line of this run said. Text from OATS appears
-only after "OATS says:". The words are the shared client's (`resumeNotice`,
-`packages/client/session-resume.mjs`); OATS Desktop shows nothing of a sweep.
-The list
-is then read at once, so a resumed instance shows running. Nothing is said
-when nothing was lost, when the sessions were already running, or when
-another sweep holds the machine (another `oats tui`, OATS Desktop, or
-`oats session resume` run by hand). A sweep that fails says
-`OATS could not resume lost sessions (<code>).`, with the kernel's code and
-nothing else it printed (with no code when there is none of the kernel's
-form).
+**What it says.** Nothing. `oats tui` says nothing about a resume: no line
+when the sweep resumed an instance, started one fresh, left one waiting for
+you or could not resume one, none when the sweep failed or another sweep
+held the machine, and none after leaving. The list shows each instance as
+it is after the next read: after a sweep that ran, the list is read at
+once, so a resumed instance shows running, and one the sweep did not resume
+shows not running. To see what a sweep would do, run
+`oats session resume --plan --json`; `oats session resume` run by hand says
+what it did, and why it could not resume an instance.
 
 **There is no setting to turn it off.** To keep an instance down, stop it
 with OATS (`X`, or `oats instance stop`): a stopped instance is not lost,
@@ -1337,13 +1324,9 @@ and the sweep leaves it alone.
 **Quitting does not stop a sweep.** It is a change, like an act you
 confirmed ([above](#stopping-starting-restarting-and-retiring)): it runs in
 a session of its own, writes its answer to files of its own, and is never
-signalled by `oats tui`. Quitting while it runs leaves it to finish. The
-sweep that runs as `oats tui` opens is let go without a word: it runs at
-every start and usually finds nothing lost. One that a read of a lost
-session started is starting sessions, and one line is printed after the
-screen is left, on standard error, when that is a terminal or a file:
-
-    oats: the resume of lost sessions is still running; `oats status` shows the instances.
+signalled by `oats tui`. Quitting while it runs leaves it to finish, without
+a word: unlike an act, a sweep still running is not named after the screen
+is left.
 
 `S` and `R` are unchanged: a start or restart from `oats tui` starts the
 instance as it was last launched, and never resumes a conversation. Only
@@ -2420,7 +2403,8 @@ with the Desktop (`packages/client/`).
 - **The kernel's machine sweep**, `oats session resume --json`, by the same
   kernel, from `/`, with no time limit: when the run starts, and when a
   read shows a lost session ([Resuming lost sessions](#resuming-lost-sessions)).
-  It is a change, as an add is.
+  It is a change, as an add is, but one still running as `oats tui` leaves
+  is not named.
 - **The workspace of each row of that list the run has not opened** is
   one more read, `oats status --dir <path> --json` with `--max-age 60`, by
   the same kernel ([the switcher](#the-switcher)): at the start, when the
