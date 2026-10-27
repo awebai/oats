@@ -270,10 +270,15 @@ shortcut unless you give it one in the shortcuts editor), with two choices:
 
 Desktop knows a computer runs Omarchy when Omarchy's theme directory
 (`~/.local/state/omarchy/current`) is there, the same one the **This computer**
-theme reads. A font you chose always wins over the default. On Omarchy the
-terminal's default size is also smaller, 13px (JetBrains Mono, Omarchy's
-default face, at 13px), where it is 15px elsewhere. A size you set wins, and
-resetting the size or the zoom goes back to the computer's default.
+theme reads. A font you chose always wins over the default.
+
+The terminal's size belongs to the face its terminals are in, since the same
+size looks larger in a wider face. Omarchy's font in the terminals defaults to
+13px (JetBrains Mono, Omarchy's default face, at 13px), and Inconsolata, with
+System font, on macOS or when Omarchy's font shows System font's faces, to
+15px, on every computer. A size you set is kept for that face only, and a
+font change never carries it to the other. Resetting the size or the zoom
+goes back to the default of the face in use.
 
 The computer's monospace font is used only once it draws at a fixed width.
 Desktop checks it at start and on each choice in the picker. Where the
@@ -284,10 +289,11 @@ font**. The choice stays Omarchy's font, so the computer's font is used once
 it draws.
 
 The choice is kept on this computer, like the theme, and applies at once:
-open terminals switch font in place and keep what they show. The terminal's
-font size, Settings → Terminal and the zoom keys are not changed by it, and a
-terminal font family set with the palette's **Terminal: set font family…**
-still wins until **Terminal: reset typography**.
+open terminals switch font and take that face's size in place, and keep what
+they show. Settings → Terminal shows the size and the default of the face in
+use. A terminal font family set with the palette's **Terminal: set font
+family…** still wins until **Terminal: reset typography**, and the size stays
+the one of the font chosen underneath it.
 
 The list of workspaces is always shown. Its heading holds **Add local
 workspace…** (the **+**). The list has one row per workspace this window can show, whatever

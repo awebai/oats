@@ -33,7 +33,7 @@ function fixture(t, { stored = {}, noStorage = false, palette, fonts } = {}) {
   };
   if (!noStorage) context.localStorage = { getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = String(value); }, removeItem: key => { delete stored[key]; } };
   const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}\n({ terminalTypography, onTerminalTypographyChange, setTerminalFontFamily, setTerminalFontSize, resetTerminalTypography, BUNDLED_MONO, terminalDefaultSize,
-    terminalFontWeight, TERMINAL_FONT_WEIGHT, xtermTheme, applyTheme, onThemeChange, initTheme, setTheme, refreshHostTheme })`, context);
+    terminalFontWeight, TERMINAL_FONT_WEIGHT, xtermTheme, applyTheme, onThemeChange, initTheme, setTheme, refreshHostTheme, initFont, setFont })`, context);
   const rule = selector => {
     for (const sheet of dom.window.document.styleSheets) {
       for (const r of sheet.cssRules) if (r.selectorText === selector) return r.style;
@@ -337,4 +337,26 @@ test("the sign-in terminal: a font or size change reaches its resize listeners (
   assert.equal(fits, 2, "a disposed listener is not told");
   adapter.dispose();
   assert.equal(typography, null, "disposing the terminal stops listening");
+});
+
+// #1571: a font change gives the open sign-in terminal the new face's size (Omarchy's 13, Inconsolata's stored 15) too.
+test("the sign-in terminal takes the new face's size in place when the font changes, and refits", t => {
+  const u = fixture(t, { stored: { "oats.desktop.terminal.fontSize": "15" } });
+  u.theme.initFont(false, () => true, { isOmarchy: true });
+  let term = null, fits = 0;
+  const Terminal = class {
+    constructor(options) { this.options = { ...options }; term = this; }
+    loadAddon() {} open() {} dispose() {} onData() {} attachCustomKeyEventHandler() {}
+  };
+  const context = { ...u.theme, terminalOptions, Terminal, FitAddon: { FitAddon: class { fit() { fits++; } } },
+    ResizeObserver: class { observe() {} disconnect() {} } };
+  const adapter = runInNewContext(`({ ${slice("terminalFactory: mount => {", "\n  },\n")} })`, context).terminalFactory({});
+  adapter.onResize(() => adapter.fit());
+  assert.equal(term.options.fontSize, 13, "created in Omarchy's font at its default");
+  u.theme.setFont("system");
+  assert.equal(term.options.fontSize, 15, "the stored Inconsolata size, in place"); assert.match(stack(term.options.fontFamily), /^"Inconsolata",/);
+  assert.equal(fits, 1, "and refits");
+  u.theme.setFont("omarchy");
+  assert.equal(term.options.fontSize, 13); assert.equal(fits, 2);
+  adapter.dispose();
 });

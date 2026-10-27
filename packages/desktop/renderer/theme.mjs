@@ -25,15 +25,30 @@ const normalizeTheme = name => validTheme(name) ? name : "light";
 const listeners = new Set();
 const terminalListeners = new Set();
 const TERM_FONT_KEY = "oats.desktop.terminal.fontFamily";
-const TERM_SIZE_KEY = "oats.desktop.terminal.fontSize";
 /** Whether this computer runs Omarchy (main's check, preload's oatsDesktop.isOmarchy), as initFont was told:
- * it picks the font's and the terminal size's defaults, and nothing else. */
+ * it picks the default font choice (defaultFont), and nothing else. */
 let hostOmarchy = false;
-/** The terminal's default size, where none is stored: 13px on Omarchy, where the terminals are in its
- * font (JetBrains Mono by default) at that size (the product owner, 2026-10-26); elsewhere Inconsolata at
- * 15px (the operator's decision, 2026-10-02; spec F item 6), theme.css's --term-font-size, which initFont
- * sets inline on Omarchy. Every reset lands here. */
-export function terminalDefaultSize(isOmarchy = hostOmarchy) { return isOmarchy ? 13 : 15; }
+/* A terminal size belongs to the face it was chosen for (#1571): JetBrains Mono's advance is 0.6em against
+   Inconsolata's 0.5em, so a size carried from one to the other is a fifth larger or smaller. Each face keeps
+   its own stored size and default; switching the face never carries a size over. The one face→key and
+   face→default mapping, which every reader and writer goes through:
+   - "bundled", Inconsolata (System font, macOS, the fallback): the key every size was stored under before
+     Omarchy's font reached the terminals, so those stay Inconsolata sizes; 15px (the operator's decision,
+     2026-10-02; spec F item 6), theme.css's --term-font-size.
+   - "omarchy", Omarchy's font in the terminals (fontconfig's monospace, JetBrains Mono by default): 13px
+     (the product owner, 2026-10-26), which applyFont sets inline as --term-font-size. */
+const TERMINAL_FACES = Object.freeze({
+  bundled: Object.freeze({ sizeKey: "oats.desktop.terminal.fontSize", size: 15 }),
+  omarchy: Object.freeze({ sizeKey: "oats.desktop.terminal.fontSize.omarchy", size: 13 }),
+});
+const terminalFaceOf = face => TERMINAL_FACES[face] ?? TERMINAL_FACES.bundled;
+/** The face the terminals are in: "omarchy" when the font choice's stacks set --term-font-family (Omarchy's
+ * font on Linux or Windows, drawing at a fixed width), else "bundled" (System font, macOS, the fallback). A
+ * family set with "Terminal: set font family…" changes the family, not the face. */
+export function terminalFace() { return fontFace; }
+/** The terminal's default size, where none is stored for the face (the one in effect unless named): 13px
+ * for Omarchy's, 15px for the bundled Inconsolata, on every host. Every reset lands here. */
+export function terminalDefaultSize(face = terminalFace()) { return terminalFaceOf(face).size; }
 /** The range every size control clamps to (keys, palette, Settings). */
 export const TERMINAL_FONT_MIN = 9, TERMINAL_FONT_MAX = 28;
 
@@ -116,16 +131,16 @@ export function onThemeChange(fn) {
 
 /* tmux carries cells/colors, never the host terminal emulator's font. Keep
    desktop typography as an explicit persisted preference, seeded from
-   semantic CSS tokens (the bundled Inconsolata, then the OS monospace stack,
-   at terminalDefaultSize()). A stored family or size wins; the defaults apply
-   only where nothing is stored. */
+   semantic CSS tokens (the bundled Inconsolata, then the OS monospace stack)
+   at the face's size. A stored family, or a size stored for the face in
+   effect, wins; the defaults apply only where nothing is stored. */
 export function terminalTypography(el = document.documentElement) {
   const css = getComputedStyle(el);
   let family = css.getPropertyValue("--term-font-family").trim() || `"${BUNDLED_MONO}", ui-monospace, monospace`;
-  let size = Number.parseFloat(css.getPropertyValue("--term-font-size")) || terminalDefaultSize();
+  let size = terminalDefaultSize();
   try {
     family = localStorage.getItem(TERM_FONT_KEY) || family;
-    size = Number(localStorage.getItem(TERM_SIZE_KEY)) || size;
+    size = Number(localStorage.getItem(terminalFaceOf(terminalFace()).sizeKey)) || size;
   } catch { /* storage-less */ }
   // xterm measures its cell from the font when a terminal is created, and again
   // only when the font option changes. Until the bundled face has loaded, hand
@@ -164,15 +179,16 @@ function notifyTerminalTypography() {
 }
 /** A whole pixel size within TERMINAL_FONT_MIN..MAX. Any finite number is
  * rounded and clamped (0, -3 and 0.4 all give the minimum); only an unreadable
- * value (missing, blank, not a number) falls back to the default. */
+ * value (missing, blank, not a number) falls back to the face's default. */
 export function clampTerminalFontSize(size) {
   const n = typeof size === "number" ? size : typeof size === "string" && size.trim() !== "" ? Number(size) : NaN;
   if (!Number.isFinite(n)) return terminalDefaultSize();
   return Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, Math.round(n)));
 }
+/** Stored for the face in effect only; the other face's size is untouched. */
 export function setTerminalFontSize(size) {
   const value = clampTerminalFontSize(size);
-  try { localStorage.setItem(TERM_SIZE_KEY, String(value)); } catch { /* storage-less */ }
+  try { localStorage.setItem(terminalFaceOf(terminalFace()).sizeKey, String(value)); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
 export function setTerminalFontFamily(family) {
@@ -183,15 +199,16 @@ export function setTerminalFontFamily(family) {
   } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
-/** Back to the defaults: forget the stored family and size, so the tokens
- * (and any later change to them) apply again instead of a pinned copy. */
+/** Back to the defaults: forget the stored family and the face's size, so the
+ * tokens and the face's default (and any later change to them) apply again
+ * instead of a pinned copy. The other face's size stays. */
 export function resetTerminalTypography() {
-  try { localStorage.removeItem(TERM_FONT_KEY); localStorage.removeItem(TERM_SIZE_KEY); } catch { /* storage-less */ }
+  try { localStorage.removeItem(TERM_FONT_KEY); localStorage.removeItem(terminalFaceOf(terminalFace()).sizeKey); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
-/** Settings' "Reset to default": the size only; a chosen family stays. */
+/** Settings' "Reset to default": the face's size only; a chosen family and the other face's size stay. */
 export function resetTerminalFontSize() {
-  try { localStorage.removeItem(TERM_SIZE_KEY); } catch { /* storage-less */ }
+  try { localStorage.removeItem(terminalFaceOf(terminalFace()).sizeKey); } catch { /* storage-less */ }
   notifyTerminalTypography();
 }
 export function onTerminalTypographyChange(fn) {
@@ -267,7 +284,7 @@ export function fontDraws(stack, doc = document) {
   } catch { return true; }
 }
 
-let fontChosen = "system", fontIsMac = false, fontOverrides = [], fontFallback = false, fontCheck = fontDraws;
+let fontChosen = "system", fontIsMac = false, fontOverrides = [], fontFallback = false, fontCheck = fontDraws, fontFace = "bundled";
 const fontListeners = new Set();
 
 /** The font choice: an id of FONTS. */
@@ -288,24 +305,27 @@ function applyFont(id) {
   for (const [property, value] of Object.entries(stacks)) {
     root.style.setProperty(property, value); fontOverrides.push(property);
   }
+  // The terminals' face follows their family: Omarchy's when the stacks set it, else Inconsolata. Its default
+  // size goes on the size token too, where it is not theme.css's own (the bundled face's 15px).
+  fontFace = "--term-font-family" in stacks ? "omarchy" : "bundled";
+  if (fontFace !== "bundled") {
+    root.style.setProperty("--term-font-size", `${terminalDefaultSize()}px`); fontOverrides.push("--term-font-size");
+  }
   root.dataset.font = fontChosen;
   if (fontChosen === "omarchy" && fontFallback) root.dataset.fontFallback = "system"; else delete root.dataset.fontFallback;
   for (const fn of [...fontListeners]) { try { fn(fontChosen); } catch { /* one listener must not break others */ } }
-  // Open terminals take the new family in place, and refit (a stored terminal family still wins).
+  // Open terminals take the new family and the new face's size in place, and refit (a stored terminal family still wins).
   if (terminalListeners.size) notifyTerminalTypography();
   return fontChosen;
 }
 
 /** At start: the saved choice, else defaultFont(), which is not stored (it stays a default, as the
  * theme's does). `isMac` picks the platform's stacks and `isOmarchy` (oatsDesktop.isOmarchy, true only
- * as a boolean) the defaults, for this window's life; on Omarchy --term-font-size is set inline to
- * terminalDefaultSize().
+ * as a boolean) the default choice, for this window's life; the terminals' size follows their face
+ * (terminalFace), not the host.
  * `check` is fontDraws but for tests. */
 export function initFont(isMac = false, check = fontDraws, { isOmarchy = false } = {}) {
   fontIsMac = !!isMac; fontCheck = check; hostOmarchy = isOmarchy === true;
-  // On Omarchy the size token follows the default; elsewhere theme.css's 15px stands, with nothing inline.
-  if (hostOmarchy) document.documentElement.style.setProperty("--term-font-size", `${terminalDefaultSize()}px`);
-  else document.documentElement.style.removeProperty("--term-font-size");
   let saved = null;
   try { saved = localStorage.getItem(FONT_KEY); } catch { /* storage-less */ }
   return applyFont(validFont(saved) ? saved : defaultFont());
