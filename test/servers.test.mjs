@@ -872,6 +872,49 @@ test("routed spawn --suggest-name on an apply (#1490 §3) needs the host's spawn
   }
 });
 
+test("routed spawn --same-work (#1577) needs the host's instance-same-work: refused before the spawn is sent, a preview's included; else the flag travels as given", () => {
+  const base = mkdtempSync("/tmp/oats-rsw-");
+  const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
+  try {
+    const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    const probe = (features) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.68.1", desktopApi: 1, harnesses: ["pi", "claude"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features });
+    const status = { schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", harness: "claude", instances: [] }] } };
+    const made = { instance: "dev-kid", agent: "dev", home: "/w/agents/dev/instances/dev-kid", work: "checkout", harness: "claude", launched: false, parent: "boss" };
+    const preview = { spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-kid", home: "/w/agents/dev/instances/dev-kid", work: "checkout", harness: "claude", modelSource: "harness default", decision: { revision: "r1" }, parentInstance: "boss" };
+    const remote = (features) => {
+      const sent = [];
+      const exec = (bin, argv) => {
+        const word = String(argv.at(-1));
+        sent.push(word);
+        if (word.includes("version --json")) return JSON.stringify(probe(features));
+        if (word.includes(" status ")) return JSON.stringify(status);
+        if (word.includes(" spawn ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: word.includes(" --preview ") ? preview : made });
+        throw new Error(`unexpected remote call: ${word}`);
+      };
+      return { sent, exec, spawned: () => sent.filter((w) => w.includes(" spawn ")) };
+    };
+    const apply = ["dev", "--purpose", "kid", "--parent", "boss", "--same-work"];
+    for (const args of [apply, [...apply, "--preview"]]) {
+      const old = remote(["spawn-preview-2"]);
+      assert.throws(() => routeCommand("build", "spawn", args, { server, execFileSync: old.exec }),
+        (e) => e.code === "E_REMOTE_INCOMPATIBLE" && e.message === "remote oats 0.68.1 at h does not advertise instance-same-work; upgrade it there; nothing was sent", args.join(" "));
+      assert.deepEqual(old.spawned(), [], `${args.join(" ")}: nothing was sent`);
+    }
+    // Without the flag, nothing about the feature is asked.
+    const without = remote([]);
+    routeCommand("build", "spawn", ["dev", "--purpose", "kid", "--parent", "boss"], { server, execFileSync: without.exec });
+    assert.equal(without.spawned().length, 1);
+    rmSync(REMOTE_SNAPSHOT_DIR(), { recursive: true, force: true });
+    const current = remote(["spawn-preview-2", "instance-same-work"]);
+    routeCommand("build", "spawn", apply, { server, execFileSync: current.exec });
+    assert.equal(current.spawned().length, 1);
+    assert.match(current.spawned()[0], / spawn dev --purpose kid --parent boss --same-work --dir \/w --json$/);
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("routed spawn --preview (#610), text: the host's answer picks the printer: a pre-0.27 host's preview reads its runtime, its default launch configuration is the server's; an answer that spawned prints as the spawn it was, its route saved", () => {
   const base = mkdtempSync("/tmp/oats-pvt-");
   const prevHomeDir = process.env.OATS_HOME_DIR;
