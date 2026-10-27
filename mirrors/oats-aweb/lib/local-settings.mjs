@@ -23,10 +23,10 @@ function ensureYamlBlock(lines, parentStart, parentEnd, indent, header) {
   lines.splice(parentEnd, 0, row);
   return parentEnd;
 }
-export function atomicWrite(file, text) {
+export function atomicWrite(file, text, mode = 0o600) {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = join(dirname(file), `.${basenameForTemp(file)}.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmp, text, { mode: 0o600 });
+  writeFileSync(tmp, text, { mode });
   renameSync(tmp, file);
 }
 function basenameForTemp(file) { return file.split(/[\\/]/).pop() || "oats-local.yaml"; }
