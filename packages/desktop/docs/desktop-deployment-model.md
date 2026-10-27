@@ -195,7 +195,7 @@ Matching deployments into workspace views needs `workspace-identity`; without
 it each deployment keeps a view of its own under its deployment id, the switcher
 lists them as before (not under "Not matched to a workspace"), and the
 deployment list says why.
-`ACCEPT_RANGE` is `>=0.26.0 <0.69.0`: the floor is the first kernel the
+`ACCEPT_RANGE` is `>=0.26.0 <0.70.0`: the floor is the first kernel the
 feature gates above let through (a 0.25 kernel is refused by the locator and
 meets the "Compatible `oats` CLI required" card), the ceiling admits 0.27 (the harness rename, gated on feature
 `harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
