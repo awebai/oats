@@ -6,10 +6,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { killTmuxServer, oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
+import { killTmuxServer, oatsSocket, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { historicalSessionRoots, nativeHistoryPath } from "../packages/record/lib/native-history.mjs";
 import { agentScopeUnit, agentScopeWarning, serverScopeWarning } from "../lib/tmux-server-scope.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 import { retirementBaselinePath } from "../lib/core.mjs";
@@ -36,6 +37,14 @@ function systemDir(fx, name, body) {
 /** The calls a fake systemd-run received, each its arguments. */
 const calls = (dir) => (existsSync(join(dir, "calls")) ? readFileSync(join(dir, "calls"), "utf8").split("\n").filter(Boolean).map((line) => line.split("\t").slice(0, -1)) : []);
 const RUNS_COMMAND = `while [ "$1" != "--" ]; do shift; done; shift\nexec "$@"`;
+/** Every native start receipt of a home, by state, once none is pending: each launch prepares one
+ *  native start, for the command it dispatches, and that command's recorder marks it started. */
+async function nativeStarts(home) {
+  const states = () => readdirSync(nativeHistoryPath(home)).filter((n) => n !== "history.json" && n.endsWith(".json")).map((n) => JSON.parse(readFileSync(join(nativeHistoryPath(home), n), "utf8")).state);
+  await waitUntil(() => !states().includes("pending"), `the native starts of ${home} recorded: ${JSON.stringify(states())}`);
+  assert.doesNotThrow(() => historicalSessionRoots(home), "the home's native history reads");
+  return states();
+}
 /** The command the pane of a spawned home's window was started with, as tmux holds it. */
 function paneStartCommand(home) {
   const { tmux } = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
@@ -86,7 +95,7 @@ test("a fixture's own kernel never starts the server through systemd-run (its pl
 
 // ---- the agent's scope -------------------------------------------------------------------------------
 
-test("the spawn's pane runs the harness under systemd-run --scope, named for its home; nothing recorded carries it", (t) => {
+test("the spawn's pane runs the harness under systemd-run --scope, named for its home; nothing recorded carries it", async (t) => {
   const { fx } = deployment(t);
   const dir = systemDir(fx, "agent-scope", RUNS_COMMAND);
   const env = { OATS_TEST_SYSTEM_TOOL_DIRS: dir };
@@ -105,6 +114,7 @@ test("the spawn's pane runs the harness under systemd-run --scope, named for its
   const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   assert.doesNotMatch(JSON.stringify({ command: meta.command, launch: meta.launch }), /systemd-run|oats-agent-|INVOCATION_ID/, "the persisted command and recipe never carry it");
   assert.doesNotMatch(readFileSync(retirementBaselinePath(spawned.home), "utf8"), /systemd-run|oats-agent-/, "nor the retirement baseline");
+  assert.deepEqual(await nativeStarts(spawned.home), ["started"], "one native start, the dispatched command's");
   // A start of the same home: a scope of its own again, under another name.
   execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);
   const started = answer(fx.cli(["session", "start", "--home", spawned.home, "--json"], { env }));
@@ -113,6 +123,34 @@ test("the spawn's pane runs the harness under systemd-run --scope, named for its
   assert.ok(again && again !== unit && again.slice(0, 23) === unit.slice(0, 23), `${unit} then ${again}`);
   const after = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   assert.doesNotMatch(JSON.stringify({ command: after.command, launch: after.launch, session: after.session }), /systemd-run|oats-agent-|INVOCATION_ID/, "what the start records never carries it");
+  assert.deepEqual(await nativeStarts(spawned.home), ["started", "started"], "and one more for the start");
+});
+
+test("the probe runs with the bus values the launch's command sets, literal or referenced, over the pane's", async (t) => {
+  const fx = v2Deployment({ t, local: { "launch-configs": {
+    unreachable: { harness: "claude", env: { DBUS_SESSION_BUS_ADDRESS: "unix:path=/missing-bus" } },
+    referenced: { harness: "claude", env: { XDG_RUNTIME_DIR: { fromEnv: "SCOPE_TEST_RUNTIME" } } },
+  } } });
+  const socket = oatsSocket(fx.env.TMUX_TMPDIR);
+  fx.beforeCleanup(() => { try { execFileSync("tmux", ["-S", socket, "kill-server"], { stdio: "ignore" }); } catch { /* none */ } });
+  // The probe (its command is the system's true) records what it ran with, and fails on the missing bus.
+  const dir = systemDir(fx, "bus", `last=; for a do last=$a; done\nif [ "$last" = '${join(fx.base, "bus", "true")}' ]; then printf '%s|%s\\n' "$DBUS_SESSION_BUS_ADDRESS" "$XDG_RUNTIME_DIR" >> '${join(fx.base, "bus", "probes")}'; [ "$DBUS_SESSION_BUS_ADDRESS" = unix:path=/missing-bus ] && { echo 'Failed to connect to bus: No such file or directory' >&2; exit 1; }; fi\n${RUNS_COMMAND}`);
+  const probes = () => readFileSync(join(dir, "probes"), "utf8").split("\n").filter(Boolean);
+  const unreachable = answer(fx.cli(["spawn", "dev", "--launch-config", "unreachable", "--json"], { env: { OATS_TEST_SYSTEM_TOOL_DIRS: dir } }));
+  assert.equal(probes().at(-1).split("|")[0], "unix:path=/missing-bus", "the configuration's literal value");
+  assert.deepEqual(agentWarnings(unreachable), [agentScopeWarning("`systemd-run --user --scope` could not start a scope in the pane's environment: Failed to connect to bus: No such file or directory")]);
+  assert.doesNotMatch(paneStartCommand(unreachable.home), /systemd-run/, "so the launch is unwrapped");
+  const referenced = answer(fx.cli(["spawn", "dev", "--launch-config", "referenced", "--json"], { env: { OATS_TEST_SYSTEM_TOOL_DIRS: dir, SCOPE_TEST_RUNTIME: "/run/referenced" } }));
+  assert.equal(probes().at(-1).split("|")[1], "/run/referenced", "a reference's value, which the pane gets with -e");
+  assert.deepEqual(agentWarnings(referenced), []);
+  assert.match(paneStartCommand(referenced.home), /systemd-run' '--user' '--scope'/);
+  // A start of the same home probes with the same values.
+  const meta = JSON.parse(readFileSync(join(unreachable.home, "instance.json"), "utf8"));
+  execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);
+  const started = answer(fx.cli(["session", "start", "--home", unreachable.home, "--json"], { env: { OATS_TEST_SYSTEM_TOOL_DIRS: dir } }));
+  assert.equal(probes().at(-1).split("|")[0], "unix:path=/missing-bus");
+  assert.equal(agentWarnings(started).length, 1);
+  assert.doesNotMatch(paneStartCommand(unreachable.home), /systemd-run/);
 });
 
 test("a failed probe: the spawn and the start launch as before, and say once why the harness has no scope", async (t) => {

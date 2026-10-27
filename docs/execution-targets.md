@@ -234,8 +234,9 @@ user manager's default slice, wherever the server is:
   hierarchy, whatever unit it is in. Before it wraps, the launch checks that a
   scope can be created: it runs `systemd-run --user --scope --collect --quiet
   -- true` with the pane's own `XDG_RUNTIME_DIR` and
-  `DBUS_SESSION_BUS_ADDRESS` (the session's, else the server's, unless the
-  launch configuration sets them), bounded to 5 seconds. One OATS command
+  `DBUS_SESSION_BUS_ADDRESS`: what the launch's command sets (a launch
+  configuration or a capability), else the session's, else the server's. It
+  is bounded to 5 seconds. One OATS command
   checks once for each `systemd-run` and pair of values, so a start of many
   agents checks once.
 - **When it cannot.** When the check fails, `systemd-run`, `env` or `true` is
