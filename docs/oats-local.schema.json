@@ -87,9 +87,10 @@
     "session": {
       "type": "object",
       "additionalProperties": false,
-      "description": "This host's terminal session defaults for NEW launches (0.31). A launched home keeps the session it recorded.",
+      "description": "This host's terminal session defaults for NEW launches (0.31). A launched home keeps the session it recorded. `resume` (0.69): whether a lost session comes back.",
       "properties": {
-        "tmuxSession": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "The tmux session new tmux instances open their windows in. Absent: OATS_TMUX_SESSION, else PI_AGENTS_TMUX_SESSION (pre-0.31), else oats-agents." }
+        "tmuxSession": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "The tmux session new tmux instances open their windows in. Absent: OATS_TMUX_SESSION, else PI_AGENTS_TMUX_SESSION (pre-0.31), else oats-agents." },
+        "resume": { "enum": ["auto", "off"], "default": "auto", "description": "Whether `oats session resume` (the sweep a client runs when it opens) brings back this deployment's instances whose session was lost after a shutdown, a reboot or a crash (0.69, feature session-resume). Absent: auto. off: the sweep skips this deployment and reports it opted-out; `oats session start --resume` still works per home. OATS 0.68 and older refuse the key." }
       }
     },
     "host": {

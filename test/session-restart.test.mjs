@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { restartInstanceSession, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
+import { readStartExited } from "../lib/session-end.mjs";
 import { soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
@@ -1048,7 +1049,7 @@ test("#691 a completed start's receipt is never recorded again: no write, no hoo
   provider({ meta: { grant: { id: "grant-5b" } } });
   { const completedId = readJson(metaPath).startId;
     process.kill(runningPid(home), "SIGTERM");
-    await waitFor(() => existsSync(join(home, ".oats-start-exited")) && readFileSync(join(home, ".oats-start-exited"), "utf8").trim() === completedId && inspectInstanceSession(home).state === "shell", "the harness exited to its fallback shell");
+    await waitFor(() => readStartExited(home)?.startId === completedId && inspectInstanceSession(home).state === "shell", "the harness exited to its fallback shell");
     const r = startInstanceSession(home, { env: env({ RESTART_TEST_SRC: "x" }) });
     assert.equal(r.reused, "pane"); assert.equal(r.launchConfig, "polite");
     assert.ok(await waitFor(() => runningPid(home) !== null));
