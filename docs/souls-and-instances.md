@@ -73,6 +73,7 @@ compatibility:                            # optional floors on PACKAGE versions:
   oats.okf: ">=4.0"
 
 launch: { harness: claude, model: claude-opus-5-5 }   # optional (0.30): what the role should run on
+background: true                          # optional: list new instances under the clients' Background section
 ```
 
 | Key | Meaning |
@@ -82,6 +83,7 @@ launch: { harness: claude, model: claude-opus-5-5 }   # optional (0.30): what th
 | `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider refuses keys its manifest does not declare. For `oats.okf`, what the soul owns and reads lives in `souls/<name>/okf.json`. |
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 | `launch` | Optional (0.30): `{ harness: pi \| claude \| codex, model? }`, the role's launch preference. Only a harness and a model: args, env, yolo and the executable stay host facts. Each machine may override it (`oats-local.yaml` `souls.launch`), and spawn flags win over both ([launch preferences](configuration.md#launch-preferences)). Add it to a committed soul only once every deployment runs 0.30. |
+| `background` | Optional `true \| false` (default `false`, feature `instance-background`): the role's default placement. `true` lists a new instance under the clients' Background section; presentation only, never identity or policy. `spawn --background` / `--no-background` win, the value is recorded in the home at spawn, and `oats instance background <instance> on\|off` changes it later ([Background instances](desktop-cli-api.md#background-instances-oats-instance-background)). Add it to a committed soul only once every deployment reading it runs the release that adds it: an earlier kernel refuses the key. |
 
 Schema: [`soul.schema.json`](soul.schema.json). Which teams a soul joins is the
 deployment's choice (`oats-local.yaml`, [workspaces.md](workspaces.md#teams)),
@@ -341,6 +343,12 @@ so that user's name stays numbered (`harness-failed`). The preview then answers 
 only; any other harness, and any failure of the call, leaves the name numbered
 and says why
 ([The suggested name](desktop-cli-api.md#the-suggested-name-feature-spawn-suggest-name)).
+`--background` or `--no-background` says whether the clients list the instance
+under their Background section, over the soul's `background:`; with neither,
+the soul decides, and a soul that says nothing means no. The home records it
+at spawn (`.oats-background.json`), so a later soul edit moves no existing
+instance; `oats instance background <instance> on|off` does. Both flags
+together are `E_BAD_ARGS`.
 An apply takes `--suggest-name` too (without `--name` or `--purpose`): the
 machine that spawns makes the same call, names the instance
 `<descriptive>-<role>`, de-duplicated the same way, and numbers it on any

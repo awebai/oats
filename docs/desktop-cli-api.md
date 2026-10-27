@@ -153,6 +153,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 | `instance-suggest-name` | `oats instance suggest-name --soul <soul> (--task <t> \| --task-file <f>) [--harness claude\|pi] [--model <m>] [--launch-config <n>] --json`: the name a `--suggest-name` spawn of `<soul>` would get, chosen on this machine for a spawn that may land on another, not made unique ([A name for a spawn elsewhere](#a-name-for-a-spawn-elsewhere-oats-instance-suggest-name)). Local only: `--server` is `E_BAD_ARGS`. Gate on the local probe; without it, the spawn goes unnamed (numbered, or named where it lands) | |
 | `spawn-apply-suggest-name` | `--suggest-name` on a spawn apply, without `--preview`: the apply names the instance as a preview's `--suggest-name` would, on the machine that spawns, and its result carries `naming` ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)). Routed, the host needs the feature (`E_REMOTE_INCOMPATIBLE`, nothing sent): gate on the host's `probe.features` and don't send the flag to a host without it | |
+| `instance-background` | background instances (awebai/oats#1579): `soul.yaml` `background:`; `oats spawn … --background\|--no-background`, whose preview and result carry `background` and `backgroundFrom`; `oats instance background <instance> on\|off`, local and `--server`; `background: true` on `oats status --json` instance rows, `oats server roster --json` rows, `oats inspect --home` `instance` and `oats souls --json` soul rows, absent otherwise ([Background instances](#background-instances-oats-instance-background)). Gate on the probe, locally or in the host's `probe.features`: an older kernel refuses the flags and the verb, and its rows have no `background`. A routed spawn with either flag needs the host's feature (`E_REMOTE_INCOMPATIBLE`, nothing sent) | `instanceBackgroundApi: 1` (payload only) |
 | `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -1260,8 +1261,10 @@ are absent until `sync`.
 **Soul rows:** `name, origin, kind (member | external | package), repoKey,
 commit, teams, defaultTeam, private (always false), path, work, description`,
 plus the Desktop facts `harness, model, harnessFrom, file, spawnable,
-problem`, (feature `souls-capabilities`) `capabilities`, and (feature
-`launch-preference`) `key` and `launch`.
+problem`, (feature `souls-capabilities`) `capabilities`, (feature
+`launch-preference`) `key` and `launch`, and (feature `instance-background`)
+`background: true` on a soul whose `soul.yaml` says `background: true`,
+absent otherwise: the launch dialog's default for Run in background.
 - `key` is the soul key that `souls.launch` uses, and that
   `oats soul teams <key>` takes: `qualifiedName` for a package
   soul, the bare `name` for a member or external soul. Two member souls that
@@ -2476,6 +2479,20 @@ it to a temporary copy (`soulFetched: true`).
   native probes share one 20 s budget.
 - `policy.childSpawns` is what the instance will record.
 
+**Background** (feature `instance-background`).
+- `background` (`true` or `false`) says whether the instance will be listed
+  under the clients' Background section
+  ([Background instances](#background-instances-oats-instance-background)).
+  It is `--background` or `--no-background`, else the soul's
+  `background:`, else `false`.
+- `backgroundFrom` is `"flag"` or `"soul"`, the layer that declared the
+  value; a soul's explicit `background: false` is `"soul"`. It is absent
+  when neither declares it.
+- Both flags together are `E_BAD_ARGS` (`choose --background or
+  --no-background, not both`). The text preview prints `list: background
+  (from the soul)` or `(from the --background flag)` for a background
+  instance.
+
 **Composition.**
 - `modules[]` (feature `instance-modules`): `{name, from, layer, private,
   declares, changedSince, composedFrom}`; `from` is what `instance.json` will
@@ -2671,8 +2688,11 @@ preview's call and rules above, through the soul's harness.
 revision}`. `effective` (feature `spawn-apply-2`) is `{repo, work, harness,
 model, launchConfig, yolo, backend, childSpawns, relation, providers}`;
 `relation` is `null` or `{kind, anchor: {instance, agentsRoot}}`; `providers`
-(feature `served-identity`) equals `settings`. `revision` (24 hex) hashes the
-decision.
+(feature `served-identity`) equals `settings`. `effective.background: true`
+(feature `instance-background`) is there only when the instance will be
+background, so a decision without it keeps the revision it had: an apply
+whose resolved value differs from the preview's is `E_DECISION_STALE`.
+`revision` (24 hex) hashes the decision.
 
 Apply with `oats spawn <soul> … --expect-decision <revision> --json`. Any drift
 refuses `E_DECISION_STALE` with the fresh `details.decision`; nothing is
@@ -2762,6 +2782,10 @@ with `--expect-decision` records the key and decision in `instance.json`.
   --home <home>` for `--no-launch`. A value is single-quoted only when it
   holds a character outside `A-Za-z0-9_./:-`. It is not a field to parse:
   read `tmux` for the target.
+- `background` and `backgroundFrom` (feature `instance-background`) are the
+  preview's. A background spawn writes the home's record with the home's
+  other files, so a spawn that rolls back leaves none. A keyed replay answers
+  `background` as the home's record reads now, without `backgroundFrom`.
 - When they apply: `yolo`, `decision` and
   `replayed` (bound apply), `wake` (keyed apply), `wakeSchedule` and
   `wakeScheduleError` (a requested wake), `worktreeHooks` (feature
@@ -3333,6 +3357,10 @@ its absence.
   a `color` in `instance.json` never stands in for it. Every row has it,
   an unreadable record's row included (`null`). Presentation only: it is not
   identity and never addresses anything.
+- **`background`** (feature `instance-background`): `true` while the home
+  holds a valid background record ([Background instances](#background-instances-oats-instance-background)),
+  absent otherwise; never `false`. A `background` in `instance.json` never
+  stands in for it. The text rows mark it: `• <instance> [background]`.
 - <a id="row-retire"></a>**`retire`** (feature `status-retire-state`, OATS
   0.59.0): `{state, since, self, code?, message?}` while a retire of the home
   is running, scheduled or owed; absent otherwise, and from older kernels.
@@ -3574,6 +3602,10 @@ route target:
   cut to the same bound. `oats status --server
   <id> --json` relays the host's answer verbatim, `retire` included, as it
   does every other field.
+- **`background`** (feature `instance-background`) is on a row only when the
+  host's row has exactly `background: true`; any other value, a host whose
+  kernel predates the feature and a saved route the host did not list carry
+  none.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared
@@ -3803,6 +3835,7 @@ instance's own machine: the local command, with `--server <id>` added.
 | `oats instance stop <name> --server <id> (--plan \| --apply …)` | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
 | `oats retire <name> --server <id> --plan`, and the guarded apply (`--plan-revision`, `--idempotency-key`) | `lifecycle-plans` | `lifecycle-plans`, `lifecycleApi: 1` |
 | `oats instance color <name> (<color> \| --clear) --server <id>` | none | `instance-color` |
+| `oats instance background <name> on\|off --server <id>` | none | `instance-background` |
 
 - The flags are the local command's. The instance is addressed like every
   routed instance command ([servers.md](servers.md#run-there)): `--home` as
@@ -5890,6 +5923,68 @@ palette name is relayed, anything else is `null`), and on `oats inspect
 `instanceColor(row)` in `packages/client/instance-presentation.mjs`: the
 row's palette name, else none. Colour never says a state alone: a client's
 mark keeps the state by its shape.
+
+## Background instances (`oats instance background`)
+
+Feature `instance-background` (awebai/oats#1579).
+
+```text
+oats instance background <instance> on|off [--home <abs>] [--dir <d>] [--json]
+```
+
+A background instance is listed by the clients under a Background section of
+its own. That is all it changes: it spawns, starts, attaches, takes input,
+messages, shows in `oats status` and retires like any other. Like the colour,
+it is presentation, never identity or policy, and anyone may change it at any
+time, a stopped instance's included.
+
+- **At spawn** the value is `--background` or `--no-background`, else the
+  soul's `background:` ([soul.yaml](souls-and-instances.md#soulyaml-v2)),
+  else `false` ([the preview](#the-preview)). Nothing is inherited from a
+  parent, and there is no workspace or host default. A later edit of the soul
+  does not move an existing instance: this command does.
+- **The record** is `<home>/.oats-background.json`, `{"backgroundApi": 1,
+  "at": "<ISO time>"}`, mode 0600, written atomically. Present means
+  background; `off` removes it. It lasts as long as the home, through start,
+  restart, stop, resume and `oats instance upgrade`. It is a kernel-owned
+  home file: a capability cannot declare it as its own, and it is no change
+  to the home at retire.
+- **A reader** takes a regular file only, without following a link, of at
+  most 4 KiB, holding a JSON object with `backgroundApi: 1`. Anything else
+  reads as not background, never as an error, and `off` removes it.
+- **The instance** is addressed and refused exactly as `oats instance color`
+  addresses and refuses it ([An instance's colour](#an-instances-colour-oats-instance-color)),
+  with "the background was not changed" where the colour's refusals say the
+  colour.
+
+The answer:
+
+```json
+{"instanceBackgroundApi":1,"instance":"dev-a","home":"/w/agents/dev/instances/dev-a","background":true,"changed":true}
+```
+
+`on` for a background instance and `off` for one that is not answer
+`changed: false` and write nothing (`off` still removes an invalid file).
+The text answer is `<instance>: background` or `<instance>: not
+background`, with ` (unchanged)` when nothing changed.
+
+| Code | When |
+|---|---|
+| `E_BAD_ARGS` | Not exactly one of `on` or `off`: `give on or off; usage: …` |
+| *(as `oats instance color`)* | Instance resolution, `E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY` |
+
+Routed with `--server <id>`, the command runs on the host
+([Routed reads and plans](#routed-reads-and-plans)); a host whose probe does
+not advertise `instance-background` is refused with `E_REMOTE_INCOMPATIBLE`,
+and nothing is sent. The same holds for a routed `oats spawn` with
+`--background` or `--no-background`; without either flag the route is
+unchanged.
+
+Where it is read: `background: true` on [status rows](#the-roster-oats-status---json),
+on [remote roster rows](#the-remote-roster-oats-server-roster---json), on
+`oats inspect --home` as `instance.background`, and on the soul rows of
+[`oats souls`](#oats-capabilities-and-oats-souls) for a soul that declares
+it. Each is absent when not background.
 
 ## Sessions and launch configurations
 
