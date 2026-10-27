@@ -6,35 +6,25 @@ description: Launch and drive developers to build what you specified, one per su
 # Coordinate developers
 
 ## Launch
-- **One developer per surface.** Two surfaces mean two developers, in parallel if the
-  plan allows. Don't give one developer two unrelated surfaces.
-- Spawn the developer soul that owns the surface, as your child, with the spec as its
-  task:
+- One developer per surface; two surfaces, two developers, in parallel if the plan allows.
+  Never one developer for two unrelated surfaces.
+- Spawn the developer soul that owns the surface as your child, the spec as its task:
   ```bash
   oats spawn <developer-soul> --parent <your instance> --purpose <short-slug> --task-file <spec.md>
   ```
-  The spec is the brief; add only what the spec can't hold: the branch or PR to
-  target, and who else is working next to it.
-- Tell a developer about the developers it shares an interface with, so they can talk
-  directly instead of through you.
-- Record each one in your instance state: its instance name, surface, spec and branch.
+  Add only what the spec can't hold: the branch or PR to target, and who else works next
+  to it.
+- Tell each developer which developers share an interface with it, so they talk directly.
+- Record each in your instance state: instance name, surface, spec, branch.
 
 ## While they work
-- Answer questions quickly: a blocked developer is the most expensive thing in the
-  team. If a question reveals a hole in the spec, fix the spec and tell everyone it affects.
-- Don't micromanage the approach. The spec fixes WHAT and the constraints; the developer
-  chooses HOW (including whether to parallelize).
-- Watch the interfaces. When two developers disagree about a shared shape, you decide.
+- Answer questions quickly. If one reveals a hole in the spec, fix the spec and tell
+  everyone it affects.
+- The spec fixes what and the constraints; the developer chooses how (including whether to
+  parallelize).
+- Watch the interfaces; when two developers disagree about a shared shape, you decide.
 
 ## When work comes back
-- A developer reports when its review loop has converged, not before: the final verdict,
-  its rounds and the head. Don't act on intermediate heads.
-- It must come with: what was done, how it was verified (tests, real runs), the
-  adversarial review's final verdict, and anything deliberately not done.
-- Verify it (`/verify-developer-work`). Return it with specific reasons, or
-  accept it.
-- On a return, the SAME developer fixes it; don't spawn a new one per round.
-
-## Finish
-- Accepted work goes into a PR you own until it merges (`/land-your-prs`). Retire
-  the developers you launched when it's merged, unless the requester wants them kept.
+- A developer reports when its review loop has converged. Don't act on intermediate heads.
+- Verify it (`/verify-developer-work`), then accept it or return it.
+- Accepted work goes into a PR you own until it merges (`/land-your-prs`).

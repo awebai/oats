@@ -3,9 +3,8 @@
 1. Identify the repository, the PR, the base ref and the head ref. Observe the remote SHA;
    `git ls-remote` doesn't refresh a local tracking ref.
 2. Fetch the head ref and compare the fetched commit with what you observed. If they
-   differ, report the movement and wait for the owner's next hand-over before
-   reviewing. Inspect explicit SHAs with
-   `git show <sha>:<path>` and `git diff <base-sha>...<head-sha> -- <paths>`.
+   differ, report the movement and wait for the owner's next hand-over. Inspect explicit
+   SHAs with `git show <sha>:<path>` and `git diff <base-sha>...<head-sha> -- <paths>`.
 3. After a force push, don't assume the old head is an ancestor: check
    `git merge-base --is-ancestor <old-sha> <head-sha>` and report the result. A grep that
    finds nothing doesn't prove behaviour.
@@ -14,13 +13,8 @@
    without undoing it.
 5. A fix handoff names the new head, the full delta from the reviewed head, the tests run
    and what remains. Never approve an unpinned, moving tip.
-6. Before merging, compare the PR head, the remote branch and the head the checks ran on.
-   If the owner moved the head, wait for its hand-over of the new head; the skill's Merge
-   section says when the verdicts carry (every commit `=` in the range-diff) and when the
-   delta is reviewed. If the default branch moved since the checks ran, make that
-   section's check before you merge.
-7. A failed client response may follow a completed merge: observe the remote state before
-   retrying or reporting.
+6. Before merging, compare the PR head, the remote branch and the head the checks ran on,
+   then follow the skill's Merge section.
 
 Handoff template:
 
