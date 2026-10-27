@@ -5,37 +5,34 @@ description: Turn a goal into a plan and one executable spec per surface (code a
 
 # Plan and spec
 
-A developer should be able to implement a spec without coming back to ask what you
-meant. If they would have to guess, the spec is not done.
+A spec is done when a developer can implement it without asking what you meant or guessing.
 
 ## 1. Frame the goal
-- **The problem**, in one or two sentences, and who has it.
-- **Done means:** observable outcomes, not activities ("creating a key with a name that
-  already exists returns 409 with `key_exists`", not "improve key handling").
-- **Constraints:** compatibility promises, contracts other parts rely on, security
-  boundaries, performance limits, deadlines.
+- **The problem**, in a sentence or two, and who has it.
+- **Done means** observable outcomes, not activities.
+- **Constraints:** compatibility promises, contracts others rely on, security boundaries,
+  performance limits, deadlines.
 - **Out of scope:** what this work deliberately does not do.
 
 ## 2. Design at your level
-- **Read your knowledge first:** the accepted decisions, constraints and lessons for this
-  area. A design that contradicts a recorded decision either changes, or says why the
-  decision should, and to whom.
-- Choose the design. Record the alternatives you rejected and why, in one line each.
+- Read your knowledge first. A design that contradicts a recorded decision either changes,
+  or says why the decision should, and to whom.
+- Choose the design; record each rejected alternative and why, one line each.
 - Name every contract the change touches (APIs, file formats, CLI output, env vars,
-  events) and whether it changes. A contract change needs its consumers named and an
-  order ("the consumer accepts the new shape first").
-- Prefer the smallest change that meets "done". If a simpler design meets 90% of the
-  goal, raise it with the requester before choosing the bigger one.
+  events) and whether it changes. A contract change names its consumers and an order (the
+  consumer accepts the new shape first).
+- If a simpler design meets 90% of the goal, raise it with the requester before choosing
+  the bigger one.
 
 ## 3. Split by surface
-- A **surface** is a part of the system one developer can own: a package, a service, a
-  module group. Split so that each developer's work can be built and tested on its own.
-- Where surfaces meet, write the **interface first** (the shape, the error cases). Both
-  specs cite it.
-- Sequence the pieces: what can run in parallel, what must land first.
+- A surface is a part one developer can own and build and test on its own (a package, a
+  service, a module group).
+- Where surfaces meet, the interface (the shape, the error cases) comes first; both specs
+  cite it.
+- Sequence the pieces: what runs in parallel, what must land first.
 
 ## 4. Write each spec
-Use this shape, and keep it as short as the work allows:
+Use this shape, as short as the work allows:
 
 ```
 # Spec: <title>
@@ -54,5 +51,5 @@ Delivery:        <branch, PR target, who reviews>
 - Every "done when" is covered by some spec's tests.
 - No two developers edit the same files without an agreed order.
 - The riskiest assumption is tested first (a spike, a real run), not last.
-- The plan and each spec are in your instance state, and the design decision, with the
+- The plan and each spec are in your instance state; the design decision, with the
   alternatives rejected, is in your knowledge.
