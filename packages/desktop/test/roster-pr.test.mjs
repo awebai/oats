@@ -83,7 +83,7 @@ test('the shipped roster row: no PR chip on the row (its meta line is the soul a
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan,
     iconElement, prChip, prText, rosterPrs: { get: home => rows.get(home) ?? null }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: { openExternal: url => opened.push(url) },
     rosterTip: { bind(el, facts) { tips.set(el.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
-    connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,
+    connectionGeneration: 0, menuState() {}, sayInHint() {}, runAction: assert.fail, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector('#instance-roster'), contextWorkspace: 'A', contextInstances: roster,
     rosterState: { hasData: true, state: 'ready' }, rosterStale: false, contextDeploymentNote: null, ...viewContext(), // the roster's loading state (instance-tree createRosterLoading): a read succeeded
     currentWorkspace: () => 'A', workspaceGeneration: () => 0, collapsedInstances: new Set(), tabs: new Map(), activeTab: null,
@@ -111,6 +111,7 @@ test('the shipped roster row: no PR chip on the row (its meta line is the soul a
   assert.equal(withPr.querySelector('.ctx-inst a, .ctx-inst button'), null, 'the row button holds no nested control');
   const open = withPr.querySelector('.ctx-row-tools button.ctx-pr-open');
   assert.equal(open.getAttribute('aria-label'), "Open with-pr's pull request #231 · open on GitHub");
+  assert.deepEqual([...open.closest('.ctx-row-tools').children], [open], 'the link alone in the row tools: no ⋯ trigger beside it (#1559)');
   open.click(); assert.deepEqual(opened, ['https://github.com/awebai/oats/pull/231']);
   assert.deepEqual(facts('with-pr').at(-1), ['Pull request', '#231 · open', 'mono']);
   const draft = at('draft-no-url');
@@ -118,6 +119,7 @@ test('the shipped roster row: no PR chip on the row (its meta line is the soul a
   assert.deepEqual(facts('draft-no-url').at(-1), ['Pull request', '#7 · draft', 'mono'], 'its state in the hover card');
   assert.equal(draft.querySelector('.ctx-pr-open'), null, 'no web address: no link');
   assert.equal(at('none').querySelector('.ctx-pr, .ctx-pr-open, .ctx-meta-pr'), null, 'no PR: the row is unchanged');
+  assert.equal(at('none').querySelector('.ctx-row-tools'), null, 'a running row without a pull request has no tools (#1559: no ⋯ trigger)');
   assert.equal(facts('none').some(([k]) => k === 'Pull request'), false);
   assert.equal(at('remote').querySelector('.ctx-pr, .ctx-pr-open'), null, 'a remote instance never shows a local read');
   assert.equal(facts('remote').some(([k]) => k === 'Pull request'), false);

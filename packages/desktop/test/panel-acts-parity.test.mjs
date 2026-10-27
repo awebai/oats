@@ -1,4 +1,4 @@
-// #855: the context panel's lifecycle row, the roster row's actions menu and the overview popover offer the same
+// #855: the context panel's lifecycle row, the roster row's context menu and the overview popover offer the same
 // acts, enabled the same way, because all three draw them from packages/client/instance-acts.mjs. The panel and
 // the menu are built here for one row at a time and read as plain data; the popover is read off a mounted canvas.
 import test from 'node:test';
@@ -51,14 +51,17 @@ function panelFixture(t) {
   };
 }
 
-/** What the roster menu offers for `row` (no shell items in front): [verb, enabled], `inspect` left out. */
+/** What the roster row's context menu offers for `row` (no shell items in front): [verb, enabled], `inspect` left out;
+ * and what it says, if anything, when its row asks for it (a key's contextmenu: Shift+F10, the Menu key). */
 function menuOffer(row) {
-  const dom = new JSDOM('<body></body>'), doc = dom.window.document;
-  const wrapper = instanceActions(doc, row, { scope: 'ws', owner: () => true, invoke: async () => ({}), openLifecycle: () => {} });
-  doc.body.append(wrapper);
-  const items = [...wrapper.querySelectorAll('[role="menuitem"]')].filter(item => item.dataset.action !== 'inspect');
-  const trigger = wrapper.querySelector('.ctx-instance-actions');
-  const answer = { offer: items.map(item => [item.dataset.action, !item.disabled]), triggerDisabled: trigger.disabled, triggerTitle: trigger.title };
+  const dom = new JSDOM('<body></body>'), doc = dom.window.document, said = [];
+  const button = doc.createElement('button'); button.className = 'ctx-inst';
+  const menu = instanceActions(doc, row, { row: button, say: line => said.push(line), scope: 'ws', owner: () => true, invoke: async () => ({}), openLifecycle: () => {} });
+  doc.body.append(button, menu);
+  menu.showPopover = menu.hidePopover = () => {}; // jsdom has no top layer; only what the menu says is read here
+  const items = [...menu.querySelectorAll('[role="menuitem"]')].filter(item => item.dataset.action !== 'inspect');
+  button.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  const answer = { offer: items.map(item => [item.dataset.action, !item.disabled]), said };
   dom.window.close();
   return answer;
 }
@@ -108,7 +111,7 @@ test('#855: a herdr row keeps Start visible, disabled, with the kernel reason as
   for (const op of ['stop', 'retire']) assert.equal(u.control(op).title, '', op);
 });
 
-test('#855: a blocked row (not addressable) offers no lifecycle control in the panel, as the menu offers none, whose trigger says why', t => {
+test('#855: a blocked row (not addressable) offers no lifecycle control in the panel, as the menu offers none, and says why when asked', t => {
   const u = panelFixture(t);
   for (const name of ['not addressable', 'not addressable (gone from the server)']) {
     const [row] = ROWS[name], { blocked } = instanceActs(row);
@@ -117,7 +120,7 @@ test('#855: a blocked row (not addressable) offers no lifecycle control in the p
     for (const op of VERBS) assert.equal(u.control(op).hidden, true, `${name}: ${op}`);
     const menu = menuOffer(row);
     assert.deepEqual(menu.offer, [], `${name}: the menu has no item`);
-    assert.equal(menu.triggerDisabled, true); assert.equal(menu.triggerTitle, reasonLine(blocked), `${name}: the roster says why`);
+    assert.deepEqual(menu.said, [reasonLine(blocked)], `${name}: the roster says why`);
   }
 });
 

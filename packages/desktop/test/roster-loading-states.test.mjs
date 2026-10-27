@@ -165,6 +165,14 @@ test('rosterSignature: identical instances and facts agree; any painted fact cha
 function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace = 'A', inFlight = false } = {}) {
   const { dom, doc, rosterEl } = rosterDom(t);
   mountShellIcons(doc);
+  // jsdom has no top-layer API: model only the popover's open/close events (as instance-actions.test.mjs does).
+  for (const [method, newState] of [['showPopover', 'open'], ['hidePopover', 'closed']]) {
+    dom.window.HTMLElement.prototype[method] = function () {
+      const event = new dom.window.Event('beforetoggle');
+      Object.defineProperty(event, 'newState', { value: newState });
+      this.dispatchEvent(event);
+    };
+  }
   const c = clock(), requests = [], listeners = [], adds = [];
   const context = {
     ...tree, document: doc, console,
@@ -177,7 +185,7 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
     desktopBridge: { workspaceAdd: async path => { adds.push(path); return typeof addResult === 'function' ? addResult(path) : addResult; } },
     noteUnlisted: result => result, // #1390: a committed add's listing failure is the notifications' (deployments-list tests)
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, ctx: {},
-    connectionGeneration: 0, menuState() {}, runAction: assert.fail, getBinding: () => null, formatChord: x => x, isMac: true,
+    connectionGeneration: 0, menuState() {}, runAction: assert.fail, said: [], sayInHint: line => context.said.push(line), getBinding: () => null, formatChord: x => x, isMac: true,
     contextRosterEl: null, contextRosterGen: 0, contextWorkspace: workspace, contextInstances: [], tabWorkspace: workspace,
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
     workspace, generation: 0, tabs: new Map(), activeTab: null, split: null, sidebarMode: 'instances', tabLayerVisible: false,
@@ -319,7 +327,7 @@ test('a fast refresh never shows "Refreshing…"; the active terminal changing r
   assert.ok(s.rows()[0].classList.contains('active'));
 });
 
-test('failure with data: rows kept, stale line with the observed age and Retry, Start… and the actions menu disabled, the terminal row enabled', async t => {
+test('failure with data: rows kept, stale line with the observed age and Retry, Start… disabled and the row context menu held, the terminal row enabled', async t => {
   const s = shell(t);
   await s.reply(0, panelOf('A', roster, { observedAt: new Date(s.c.now()).toISOString() }));
   const alpha = s.rows()[0].querySelector('.ctx-inst'); alpha.focus();
@@ -338,7 +346,19 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   const start = s.list().querySelector('.ctx-start'); start.focus();
   assert.equal(start.disabled, false); assert.equal(start.getAttribute('aria-disabled'), 'true'); assert.equal(start.title, tree.ROSTER_STALE_TITLE); assert.equal(start.getAttribute('aria-description'), 'Unavailable: roster is not current', 'an accessible reason, not just a greyed look');
   start.click(); assert.equal(s.doc.activeElement, start, 'a stale Start… starts nothing (openInstanceStart is assert.fail here) and keeps focus');
-  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) { assert.equal(trigger.getAttribute('aria-disabled'), 'true'); assert.equal(trigger.disabled, false); assert.equal(trigger.title, tree.ROSTER_STALE_TITLE); assert.equal(trigger.getAttribute('aria-description'), tree.ROSTER_STALE_TITLE); }
+  // #1559: no ⋯ trigger on any row. A stale roster holds every row's context menu: a right-click (at the pointer) or a
+  // key (Shift+F10, the Menu key: no pointer) opens nothing, says why in the hint's line, and leaves focus on the row.
+  assert.equal(s.list().querySelector('.ctx-instance-actions'), null, 'no ⋯ trigger on a stale roster');
+  for (const r of s.rows()) {
+    const button = r.querySelector('.ctx-inst'), menu = r.querySelector('.ctx-instance-menu');
+    for (const at of [{ clientX: 12, clientY: 8 }, { clientX: 0, clientY: 0 }]) {
+      button.focus(); s.context.said.length = 0;
+      button.dispatchEvent(new s.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, ...at }));
+      assert.deepEqual(s.context.said, [tree.ROSTER_STALE_TITLE], `${button.dataset.treeInstance}: says why (${at.clientX ? 'pointer' : 'key'})`);
+      assert.notEqual(menu.dataset.instanceMenuOpen, 'true', 'opens nothing');
+      assert.equal(s.doc.activeElement, button, 'focus stays on the row');
+    }
+  }
   // The row itself: a running row still opens its terminal; a stopped row's activation (click, Enter) starts nothing and says why — the
   // roster may be wrong about running:false by now (the maintainer's return on #322).
   const alphaRow = s.rows()[0].querySelector('.ctx-inst'), betaRow = s.rows().find(r => r.querySelector('.ctx-name').dataset.name === 'beta').querySelector('.ctx-inst');
@@ -360,11 +380,15 @@ test('failure with data: rows kept, stale line with the observed age and Retry, 
   await s.reply(3, panelOf('A', roster, { observedAt: new Date(s.c.now()).toISOString() }));
   assert.equal(s.status().children.length, 0); assert.equal(s.context.rosterState.state, 'ready');
   assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), null); assert.equal(s.list().querySelector('.ctx-start').title, '');
-  for (const trigger of s.list().querySelectorAll('.ctx-instance-actions')) assert.equal(trigger.getAttribute('aria-disabled'), null);
   assert.equal(s.rows().find(r => r.querySelector('.ctx-name').dataset.name === 'beta').querySelector('.ctx-inst').getAttribute('aria-description'), null, 'the stopped row is a Start again');
   assert.equal(s.count().dataset.stale, undefined);
   assert.equal(s.live().textContent, 'Instances updated');
   assert.equal(s.doc.activeElement, s.list().querySelector('.ctx-inst[tabindex="0"]'), 'the vanished Retry hands focus to the roster\'s current row, not to nothing');
+  // Current again: the row's context menu opens, and says nothing.
+  const current = s.rows()[0].querySelector('.ctx-inst'), menu = s.rows()[0].querySelector('.ctx-instance-menu');
+  current.focus(); s.context.said.length = 0;
+  current.dispatchEvent(new s.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  assert.equal(menu.dataset.instanceMenuOpen, 'true'); assert.deepEqual(s.context.said, []); assert.ok(menu.contains(s.doc.activeElement));
 });
 
 test('a reported panel error beside instances is the last observation: stale line, actions disabled, no ctx-empty error; repeats update in place', async t => {

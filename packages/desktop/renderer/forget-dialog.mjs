@@ -1,6 +1,6 @@
 /** Forget a remote instance its host no longer lists (#1131): the informed press before `oats server forget`.
  * Offered only on a row whose reason is `missing` (remote-address.mjs `rowReason`: the host was reached and
- * did not list it), from the row's actions menu and from the context panel; both open this one dialog.
+ * did not list it), from the row's context menu and from the context panel; both open this one dialog.
  *
  * It is the Stop and Retire confirmation's dialog (lifecycle-dialog.mjs): its classes, its status line, its
  * Escape and Tab handling and its focus return, with no plan to read. Opening, Cancel and Escape send

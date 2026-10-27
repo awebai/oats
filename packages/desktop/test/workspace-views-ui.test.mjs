@@ -72,12 +72,23 @@ test("UI spec: no deployments block in the sidebar; the workspace list sits unde
 
 /* ── the sidebar roster ── */
 const renderSource = shellSource.match(/function renderContextRoster\(instances\) \{[\s\S]*?\n\}/)?.[0];
-function roster(t, instances, deployments) {
+// `said`: what the rows' context menus said in the hint's line (sayInHint) when held.
+function roster(t, instances, deployments, said = []) {
   const dom = new JSDOM(html); t.after(() => dom.window.close());
+  // jsdom has no top-layer API: model only the popover's open/close events (as instance-actions.test.mjs does), and
+  // this window paints nothing: the menu's next-frame placement runs at once.
+  dom.window.requestAnimationFrame ??= cb => { cb(); return 0; };
+  for (const [method, newState] of [["showPopover", "open"], ["hidePopover", "closed"]]) {
+    dom.window.HTMLElement.prototype[method] = function () {
+      const event = new dom.window.Event("beforetoggle");
+      Object.defineProperty(event, "newState", { value: newState });
+      this.dispatchEvent(event);
+    };
+  }
   const doc = dom.window.document;
   const context = {
     ...tree, ...viewContext(), contextDeployments: deployments, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession,
-    canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    canAddressRemote, rowReason, createRuntimeBadge, instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail, sayInHint: (line) => said.push(line),
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: (c) => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "ws:view",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null,
@@ -154,12 +165,21 @@ test("roster headings: one machine holding two deployments adds the path tail; n
 test("roster: a stale deployment (its last re-read failed) is marked in words, and its held rows' Start and actions wait as on a stale roster", (t) => {
   const stale = { ...LOCAL2, stale: true, short: "Last read failed", reason: "This deployment's last read failed: the cache is locked. It shows what was last observed." };
   assert.deepEqual(vd.deploymentState(stale), { key: "stale", text: "stale", detail: stale.reason });
-  const list = roster(t, [row("a", LOCAL, { running: false }), row("b", stale, { running: false })], [LOCAL, stale]);
+  const said = [];
+  const list = roster(t, [row("a", LOCAL, { running: false }), row("b", stale, { running: false })], [LOCAL, stale], said);
   const heads = [...list.querySelectorAll(".ctx-deployment")];
   assert.deepEqual(heads.map((h) => h.querySelector(".deployment-mark")?.getAttribute("aria-label") ?? null), [null, "stale"]);
   const start = (name) => [...list.querySelectorAll(".ctx-tree-row")].find((r) => r.querySelector(".ctx-name")?.dataset.name === name).querySelector(".ctx-start");
   assert.equal(start("b").getAttribute("aria-disabled"), "true", "the held row waits");
   assert.equal(start("a").hasAttribute("aria-disabled"), false, "the live deployment's row acts as before");
+  // Its context menu (#1559: no ⋯ trigger) is held the same: asked, it opens nothing and says why; the live one's opens.
+  assert.equal(list.querySelector(".ctx-instance-actions"), null, "no ⋯ trigger");
+  const wrap = (name) => start(name).closest(".ctx-tree-row");
+  const ask = (name) => wrap(name).querySelector(".ctx-inst").dispatchEvent(new list.ownerDocument.defaultView.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  ask("b");
+  assert.deepEqual(said, [tree.ROSTER_STALE_TITLE]); assert.notEqual(wrap("b").querySelector(".ctx-instance-menu").dataset.instanceMenuOpen, "true");
+  ask("a");
+  assert.deepEqual(said, [tree.ROSTER_STALE_TITLE], "the live row's menu is not held"); assert.equal(wrap("a").querySelector(".ctx-instance-menu").dataset.instanceMenuOpen, "true");
 });
 
 test("roster headings: a deployment with no instances has no heading", (t) => {

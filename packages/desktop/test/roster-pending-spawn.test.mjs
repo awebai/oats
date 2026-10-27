@@ -35,7 +35,7 @@ function fixture(t, rows, extra = {}) {
   const announced = new Set(), checked = [];
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
-    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, sayInHint() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
@@ -69,7 +69,8 @@ test("a pending spawn shows under its parent: “Spawning…” text and a spinn
   assert.equal(button.getAttribute("aria-disabled"), "true"); assert.match(button.getAttribute("aria-description"), /being spawned/);
   assert.equal(button.dataset.treeInstance, "/synthetic/dev-new", "the real row's identity");
   button.click(); // openTerminalTab / openInstanceStart would fail the test
-  assert.equal(button.closest(".ctx-tree-row").querySelector(".ctx-instance-actions"), null, "no live-instance actions");
+  // No live-instance actions: no ⋯ trigger (no row has one, #1559) and no context menu (a pending row is not an instance yet).
+  assert.equal(button.closest(".ctx-tree-row").querySelector(".ctx-instance-actions, .ctx-instance-menu"), null, "no live-instance actions");
   assert.match(u.doc.querySelector(".ctx-count").textContent, /^3 running$/, "the pending row is not counted");
 });
 
