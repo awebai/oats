@@ -151,7 +151,7 @@ const SURFACE = Object.freeze({
   "workspace-cli.mjs": ["cliWorkspace", "workspaceGate", "workspaceFailure", "WORKSPACE_ACTIONS"],
   "capability-show-contract.mjs": ["capabilityShowSupported", "capabilitySelector", "sameSelector", "capabilityShowData", "capabilityFileData", "listedFiles", "skillFilePath", "skillRelativePath"],
   // Provisional: opening an agent.
-  "session-attach.mjs": ["prepareRemoteTerm", "sessionAttachArgv", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
+  "session-attach.mjs": ["prepareRemoteTerm", "sessionAttachArgv", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE", "PREFIX_SCROLL_FEATURE", "localScrollKeys", "hostScrollKeys"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],
   // The keys both clients share (#1395): the leader, its table, the plain keys of the list and the chords. The TUI reads its

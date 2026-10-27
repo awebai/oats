@@ -275,9 +275,12 @@ const CTRL_ALT_READ = chordFamilyFrom('{ "chords": "ctrl+alt" }');
 /** In the Alt family, the default, every chord comes without the protocol, so a terminal's cheat sheet
  *  leads with them (one tab: no tab hint). */
 const FOCUS_CHORDS = Object.freeze([["Alt+K", "palette"], ["Alt+Shift+Up/Down", "agent"], ["Alt+W", "close"], ["Alt+Z", "zoom"]]);
+/** The viewer's scroll key, after the leader's while a terminal has the focus (docs/tui.md, "Tabs"):
+ *  Shift+PageUp alone where the panel's tmux has not said it forwards a key after C-b. */
+const SCROLL_HINT = Object.freeze(["Shift+PageUp", "scroll back"]);
 /** A terminal's cheat sheet with the focus in it, in the default family: its chords, then the
- *  leader, the leader then Esc and the leader twice. */
-const FOCUS_SHEET = Object.freeze([...FOCUS_CHORDS, LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`]]);
+ *  leader, the leader then Esc, the leader twice and the viewer's scroll key. */
+const FOCUS_SHEET = Object.freeze([...FOCUS_CHORDS, LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], SCROLL_HINT]);
 /** The cheat sheet of the list. The selected row of the fixture runs, so Enter opens it and `open`
  *  stands after the leader and the palette; then `n spawn`, and `help` and `quit` last. The sheet
  *  is small: the acts, the list's own keys and the views are the leader's, the palette's and
@@ -3227,7 +3230,7 @@ test("while another machine is asked first the cheat sheet says Esc gives the op
 test("the help lists Enter once per view with what it does there, the keys of the open terminal and the digits of the views, under the agent's line the leader then Esc, the leader twice, what the terminal takes and where the keys are listed, the leader's own section with every key of its table and the leader again, then the palette's keys", () => {
   const lines = helpLines(openable()).map((line) => line.trim());
   const text = lines.join(" ").replace(/ +/g, " ");
-  assert.equal(text.includes("Enter open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances Ctrl+\\ Esc takes the focus from the terminal back to the list; the agent keeps running. Ctrl+\\ Ctrl+\\ types the leader into the terminal. While the terminal has the focus every other key but Shift+PageUp goes to the agent, Ctrl+C and Ctrl+Z too. Up to 4 terminals are open at a time, each a tab, with no mouse. Shift+PageUp scrolls back; PageUp, PageDown move, q leaves. docs/tui.md has the keys that can be the leader."), true, text);
+  assert.equal(text.includes("Enter open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances Ctrl+\\ Esc takes the focus from the terminal back to the list; the agent keeps running. Ctrl+\\ Ctrl+\\ types the leader into the terminal. While the terminal has the focus every key but its scroll keys goes to the agent, Ctrl+C and Ctrl+Z too. Up to 4 terminals, as tabs, no mouse. Shift+PageUp or Ctrl+B [ (tmux 3.3+) scrolls back; PageUp, PageDown move, q leaves. docs/tui.md has the keys that can be the leader."), true, text);
   assert.equal(text.includes("z go to the shown terminal with the whole screen; the leader then Esc brings the list back"), true);
   assert.equal(text.includes("c close the shown terminal and show its neighbour; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
@@ -3341,11 +3344,13 @@ test("in the Ctrl+Alt family, while the terminal has the focus the cheat sheet n
   for (const sz of [S60, S79, S80, S120, size(200, 50)]) for (const detachKey of [undefined, "F12", "M-x", "C-]"]) for (const [how, status] of [["focus", "starting"], ["focus", "open"], ["zoom", "open"]]) {
     const d = drawPanel(panelIn(how, { detachKey, status, keysRead: CTRL_ALT_READ }), sz), key = detachKey === undefined ? LEADER_KEY : backKeyLabel(detachKey), at = `${sz.cols}x${sz.rows} ${how} ${status} ${detachKey}`;
     if (sz.cols < WIDE || how === "zoom") {
-      const keys = `${key} commands   ${key} Esc the list`, row = cellText(d, 0);
+      // The viewer's scroll key after the leader's, where the row holds it; given up first where it does not.
+      const leader = `${key} commands   ${key} Esc the list`, both = `${leader}   ${SCROLL_HINT.join(" ")}`;
+      const keys = "[dev-a 1]".length + 3 + both.length <= sz.cols - 1 ? both : leader, row = cellText(d, 0);
       assert.equal(row.startsWith("[dev-a 1] ") && row.endsWith(keys), true, `${at}: ${row}`);
       assert.equal(d.cells[0].slice(sz.cols - 1 - keys.length, sz.cols - 1).every((cell) => cell.text === " " || cell.style.dim), true, `${at}: dim, a cell before the edge`);
       assert.equal(d.cells[0][sz.cols - 1].text, " ", `${at}: the last cell left empty`);
-    } else assert.deepEqual(hintsOf(d), [[key, "commands"], [`${key} Esc`, "the list"], [`${key} ${key}`, `types ${key}`], ...ARROWS], at);
+    } else assert.deepEqual(hintsOf(d), [[key, "commands"], [`${key} Esc`, "the list"], [`${key} ${key}`, `types ${key}`], SCROLL_HINT, ...ARROWS], at);
   }
   // The default family: the chords lead, in the rows and in a title row.
   assert.deepEqual(hintsOf(drawPanel(panelIn("focus"), S120)), FOCUS_SHEET, "the Alt family, 120x40");
@@ -3540,7 +3545,7 @@ test("while the leader waits the sheet is the one it stands in: the leader's `co
   assert.deepEqual(hintsOf(draw(waiting(golden()), S60)), [LEAD], "at 60x15 the leader alone");
   assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("list")), S80)), TERMINAL_SHEET.slice(0, hintsOf(drawPanel(panelIn("list"), S80)).length), "the list beside a terminal");
   assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus")), S120)), FOCUS_SHEET, "the terminal's focus");
-  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus", { keysRead: CTRL_ALT_READ })), S120)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS], "the terminal's focus, in the Ctrl+Alt family");
+  assert.deepEqual(hintsOf(drawPanel(waiting(panelIn("focus", { keysRead: CTRL_ALT_READ })), S120)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], SCROLL_HINT, ...ARROWS], "the terminal's focus, in the Ctrl+Alt family");
   for (const state of [twoTabs(), leaderThen(twoTabs(), "|").state]) assert.deepEqual(hintsOf(drawPanel(waiting(state), S120)), hintsOf(drawPanel(state, S120)));
   assert.equal(hintsOf(drawPanel(waiting(golden()), size(80, 40))).some(([, word]) => word === "then"), false, "no `then`: the leader's table is the help's");
 });
@@ -3549,7 +3554,7 @@ test("once the leader's next key comes the cheat sheet is as it was: Esc, the le
   for (const key of ["escape", golden().leaderKey, "x", "q"]) assert.deepEqual(hintsOf(draw(leaderThen(golden(), key).state, S80)), SHEET_80, key);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "escape").state, S80)), TERMINAL_SHEET);
   assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus"), "x").state, S80)), FOCUS_SHEET);
-  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus", { keysRead: CTRL_ALT_READ }), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], ...ARROWS], "in the Ctrl+Alt family");
+  assert.deepEqual(hintsOf(drawPanel(leaderThen(panelIn("focus", { keysRead: CTRL_ALT_READ }), "x").state, S80)), [LEAD, [`${LEADER_KEY} Esc`, "the list"], [`${LEADER_KEY} ${LEADER_KEY}`, `types ${LEADER_KEY}`], SCROLL_HINT, ...ARROWS], "in the Ctrl+Alt family");
 });
 
 test("with no tui.json the leader is Ctrl+X on every platform, and the cheat sheet (the same while it waits) and the help name it so, the terminal's sheet with its Esc and its twice (#1433)", () => {

@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import {
-  DETACH_KEY_FEATURE, DETAIL_WITHHELD, TERMS, deployments, displayLine, instanceActs, instanceId, kernelLines, observeIdentities, observedEntry, openAct, originLead,
+  DETACH_KEY_FEATURE, DETAIL_WITHHELD, PREFIX_SCROLL_FEATURE, TERMS, deployments, displayLine, instanceActs, instanceId, kernelLines, observeIdentities, observedEntry, openAct, originLead,
   panelInstances, preflightFailure, prepareRemoteTerm, remoteRosterState, rosterRows, sessionAttachArgv,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
@@ -228,6 +228,30 @@ test("a row of another machine is opened through the preflight whatever its mach
   }
 });
 
+test("another machine's tab names the scroll keys its host's kernel says its viewer takes, from the roster probe, never this machine's: Shift+PageUp where the host lists session-attach-prefix-scroll, Ctrl+B [ too where its probe.sessionViewer.prefixScroll is true, and no hint at all where the host does not list the feature", () => {
+  // This machine's viewer takes C-b [: a remote tab must not borrow it.
+  const local = Object.freeze({ ...KEYED, features: [...KEYED.features, PREFIX_SCROLL_FEATURE, "server-probe-features"], sessionViewer: { prefixScroll: true } });
+  const focusedOn = (probe) => {
+    const state = on(both([group({ probe })], { cli: local }), FAR_A), id = instanceId(rowOf(state));
+    const started = reduce(press(state, ["enter"]).state, { prepared: { id } }).state;
+    return reduce(started, { shown: { id } }).state;
+  };
+  const LISTED = [DETACH_KEY_FEATURE, PREFIX_SCROLL_FEATURE];
+  for (const [why, probe, hint] of [
+    ["the host's viewer takes C-b [", { ok: true, features: LISTED, sessionViewer: { prefixScroll: true } }, "Ctrl+B [ scroll back"],
+    ["the host's tmux is older", { ok: true, features: LISTED, sessionViewer: { prefixScroll: false } }, "Shift+PageUp scroll back"],
+    ["a local CLI that does not relay the fact", { ok: true, features: LISTED, sessionViewer: null }, "Shift+PageUp scroll back"],
+    ["a host before the feature", { ok: true, features: [DETACH_KEY_FEATURE], sessionViewer: { prefixScroll: true } }, null],
+    ["a host whose features are not known", { ok: true, features: null }, null],
+    ["a host before the probe relayed features", { ok: true }, null],
+  ]) {
+    const shown = focusedOn(probe);
+    assert.equal(shown.terminal?.focus, "terminal", why);
+    const sheet = sheetOf(shown).filter((row) => row.endsWith("scroll back"));
+    assert.deepEqual(sheet, hint === null ? [] : [hint], `${why}: ${JSON.stringify(sheetOf(shown))}`);
+  }
+});
+
 test("Enter on a running instance of another machine: the preflight first, the cheat sheet says so, Enter again does nothing, and Esc gives it up", () => {
   const state = on(both(), FAR_A), row = rowOf(state);
   assert.deepEqual(sheetOf(state).slice(0, 3), ["Ctrl+\\ commands", "Ctrl+K palette", "Enter open"]);
@@ -395,6 +419,7 @@ test("opening, terminal, outcome and detachKey are kept by the store and read by
   // detachKey: the cheat sheet names it, it then Esc, and it twice, while the terminal has the
   // focus, and the help names the two, in a main area wide enough for each sentence on one row.
   const f12 = Object.freeze({ ...terminal, detachKey: "F12" });
+  // garnet's kernel lists no session-attach-prefix-scroll: no scroll keys are named for its tab.
   assert.deepEqual(sheetOf(f12), [...CHORDS_FIRST, "F12 commands", "F12 Esc the list", "F12 F12 types F12"]);
   assert.notDeepEqual(draw(f12).lines, draw(terminal).lines);
   const helped = draw(press(on(both([group()], { detachKey: "F12" }), FAR_A), ["?"]).state, size(200, 100)).lines.join("\n");
@@ -433,6 +458,7 @@ test("a preflight that ends while the filter field is open gives the terminal th
   assert.deepEqual([typing.filter.editing, typing.opening?.phase], [true, "preflight"]);
   const started = reduce(typing, { prepared: { id } }).state;
   assert.deepEqual([started.terminal.focus, started.filter, started.focus], ["terminal", { editing: false, query: "dev" }, "list"]);
+  // garnet's kernel lists no session-attach-prefix-scroll: no scroll keys are named for its tab.
   const focused = [...CHORDS_FIRST, "Ctrl+\\ commands", "Ctrl+\\ Esc the list", "Ctrl+\\ Ctrl+\\ types Ctrl+\\"];
   assert.deepEqual(sheetOf(started), focused);
   assert.deepEqual(sheetOf(started, S120), focused);
