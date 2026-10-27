@@ -1,10 +1,9 @@
 /** The boundary every kernel verb that writes one field of an instance's own record goes through: `oats instance
- * color` (instance-color.mjs, #1421 §2) and `oats instance background` (instance-background.mjs, #1579); #1577's
- * sameWork is expected to be the third. The kernel is the only writer of that record; this module validates the
- * request against the row the backend holds, gates it on the feature, runs the verb (argv only; cli-adapter.mjs)
- * and decodes its answer. It is the teams boundary's pattern (teams.mjs), but it also routes: a remote row's record
- * is written on its host, with `--server`, as `oats instance stop` is routed. The answer's statuses are Forget's
- * (server-forget.mjs).
+ * color` (instance-color.mjs, #1421 §2) and `oats instance background` (instance-background.mjs, #1579). The
+ * kernel is the only writer of that record; this module validates the request against the row the backend holds,
+ * gates it on the feature, runs the verb (argv only; cli-adapter.mjs) and decodes its answer. It is the teams
+ * boundary's pattern (teams.mjs), but it also routes: a remote row's record is written on its host, with
+ * `--server`, as `oats instance stop` is routed. The answer's statuses are Forget's (server-forget.mjs).
  *
  * What differs per verb is a small descriptor (`verb`, below): the request's field and its values, the feature,
  * the CLI call, how the kernel's answer is read and the boundary's own sentences. Everything else is shared, so the
