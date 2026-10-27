@@ -1,14 +1,14 @@
 /** The workspace the leader's ↑ and ↓ move to (keymap.mjs `workspace-previous`, `workspace-next`): the
  * next openable row of the sidebar's list of workspaces, as each client draws it, in one direction. Both
- * clients read it; each draws its own list and opens what this answers. The Desktop's moves wrap; the
- * TUI's do not.
+ * clients read it; each draws its own list and opens what this answers. Both clients' moves wrap.
  *
  * Pure: arguments in, a key out, nothing changed. A page loads this module: it imports nothing. */
 
 /**
  * The key of the next row with `openable` true from the row `currentKey`, in the direction `step`
- * (+1, down the list; −1, up it). Rows that are not openable are passed over. Without `wrap` (the TUI)
- * the list does not wrap: null at an end. With `wrap` (the Desktop) it goes on from the other end, and
+ * (+1, down the list; −1, up it). Rows that are not openable are passed over. Without `wrap` (the TUI
+ * list's own cursor) the list does not wrap: null at an end. With `wrap` (both clients' moves) it goes
+ * on from the other end, and
  * when no other row can be opened it answers `currentKey` itself (an openable current row: the only
  * one), so a caller can tell "only this one" from "none". With `currentKey` not among the rows (null
  * included: nothing is open, or what is open is not listed), the first openable row for +1 and the

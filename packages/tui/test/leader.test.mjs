@@ -648,9 +648,9 @@ test("while the palette is open Alt+Shift+Down and Up are its own, with and with
     const moved = key(fromTerminal, "alt+shift+down");
     assert.deepEqual([moved.effect, moved.state.palette.selected, moved.state.terminal.id], [null, list.runs[(at + 1) % list.runs.length][0], idOf(state, "lead")], `${how}: from a terminal`);
     // The leader then Down is the leader's still, the palette open or not: the next workspace, of
-    // which there is none here; the palette closes and the line says so.
+    // which there is no other here; the palette closes and the line says so.
     const led = key(leader(open).state, "down");
-    assert.deepEqual([led.effect, led.state.palette, led.state.outcome?.said], [null, null, WORKSPACE_WORDS.below()], `${how}: the leader then Down`);
+    assert.deepEqual([led.effect, led.state.palette, led.state.outcome?.said], [null, null, WORKSPACE_WORDS.noOther()], `${how}: the leader then Down`);
   }
   // On macOS the TUI has no group key and no chord: the key does nothing in the palette.
   const mac = key(RECENT(["solo-x", "grandchild"], "darwin"), "ctrl+k").state;

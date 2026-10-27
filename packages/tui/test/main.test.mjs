@@ -1391,24 +1391,24 @@ test("Enter on a running agent of this machine: the kernel's viewer starts in th
   assert.deepEqual(order, ["panel", "reader"], "the private server is ended on the way out, before the reads");
 });
 
-test("No workspace above this one. goes at the next key, one typed to the agent included, and at a resize: the loop tells the store what it does not see", async () => {
+test("No other workspace to show. goes at the next key, one typed to the agent included, and at a resize: the loop tells the store what it does not see", async () => {
   const r = await viewing();
   // The screen as the bytes written so far leave it: no redraw of the test's own, which would be a resize.
   const now = () => screenRows(written(r), r.stdout.columns, r.stdout.rows).join("\n");
   r.stdin.type("\x1c");
   r.stdin.type("\x1b[A");
   await settle();
-  assert.match(now(), /No workspace above this one\./);
+  assert.match(now(), /No other workspace to show\./);
   r.stdin.type("a");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "a"]], "the key is the agent's");
-  assert.doesNotMatch(now(), /No workspace above/, "and the line went with it");
+  assert.doesNotMatch(now(), /No other workspace/, "and the line went with it");
   r.stdin.type("\x1c");
   r.stdin.type("\x1b[A");
   await settle();
-  assert.match(now(), /No workspace above this one\./);
+  assert.match(now(), /No other workspace to show\./);
   r.stdout.resize(r.stdout.columns + 10, r.stdout.rows);
-  assert.doesNotMatch(now(), /No workspace above/, "a resize: the line goes");
+  assert.doesNotMatch(now(), /No other workspace/, "a resize: the line goes");
   leaderEscape(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);

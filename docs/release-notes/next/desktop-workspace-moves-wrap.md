@@ -5,5 +5,5 @@
   on the first shows the last, instead of saying "No workspace below this
   one." / "No workspace above this one." With only one workspace to show,
   nothing moves and one line says "No other workspace to show." The TUI's
-  moves are unchanged
+  moves wrap too
   ([desktop.md](../desktop.md#workspaces)).
