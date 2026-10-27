@@ -26,7 +26,7 @@ packages:
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.engineering: v1.14.0
+  oats.engineering: v1.15.0
   oats.cloning: git:github.com/awebai/oats-cloning@v1.0.1   # bare version once every deployment's CLI carries the catalog entry
   oats.apps: git:github.com/awebai/oats-apps@v1.0.0   # bare version once every deployment's CLI carries the catalog entry
 
