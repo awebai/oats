@@ -159,10 +159,12 @@ test("workspace spawn chain over Northwind: sync → spawn materializes whole mo
       assert.ok(isRegular(join(home, ".claude", "skills", skill, "SKILL.md")), `.claude/skills/${skill}/SKILL.md resolves through the alias`);
     }
     for (const cap of ["nw-deploy", "nw-release-tooling", "oats.core", "oats.okf"]) assert.ok(!existsSync(join(home, ".agents", "skills", cap)), `no grouped .agents/skills/${cap}/`);
-    // Composed instructions: soul AGENTS.md + each module's inject, markers in module order (nw-deploy has no inject).
+    // Composed instructions: soul AGENTS.md + each module's inject (nw-deploy has none), the soul's own in its
+    // listing order, then the workspace defaults in the workspace's order; the kernel's blocks close the file.
     const agentsMd = readFileSync(join(home, "AGENTS.md"), "utf8");
     const markers = agentsMd.match(/<!-- oats:capability:[^ ]+/g) || [];
-    assert.deepEqual(markers, ["<!-- oats:capability:nw-house-style", "<!-- oats:capability:nw-release-tooling", "<!-- oats:capability:oats.core", "<!-- oats:capability:oats.okf"]);
+    assert.deepEqual(markers, ["<!-- oats:capability:nw-release-tooling", "<!-- oats:capability:oats.core", "<!-- oats:capability:nw-house-style", "<!-- oats:capability:oats.okf"]);
+    assert.deepEqual((agentsMd.match(/<!-- oats:\S+/g) || []).slice(-2), ["<!-- oats:kernel:instance-boundary", "<!-- oats:work-mode:directory"], "the kernel's blocks are last");
     // Canonical-plus-alias construction (relative symlinks).
     assert.ok(isRelativeLink(join(home, "CLAUDE.md")), "CLAUDE.md is a relative symlink");
     assert.equal(readlinkSync(join(home, "CLAUDE.md")), "AGENTS.md");
