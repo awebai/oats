@@ -6438,7 +6438,7 @@ TUI decide, run and read it the same way.
   `lostLocalHomes` keeps a local row's absolute `home` when its `sessionEnd`
   says the session was lost and it is not running; it is the one place that
   reads `sessionEnd`'s meaning. There is no timer and no queue.
-- After a sweep that a status read started completes (quiet or a notice),
+- After a sweep that a status read started completes (it reads `answered`),
   every instance it was started for waits until it changes: it runs, or it is
   no longer lost. A busy, failed or unsupported sweep, or a plan, settles
   nothing. A home a read releases while the sweep runs is settled by neither
@@ -6453,23 +6453,15 @@ TUI decide, run and read it the same way.
 - `cli()` gives the accepted probe or null, or a promise of either, and is
   asked at each would-be start: the sweep runs only when `resumeSupported`
   holds. When it does not, nothing runs and the floor does not move.
-- Before reading an answer, it drops each `refused` row whose
-  `(home, reason, code)` an earlier sweep of this trigger already reported,
-  so a standing refusal is reported once. A home released (above) forgets its
-  reported refusals: refused again after it recovered, it is news. Every other
-  row is kept. The same goes for the result's own `warnings` (about the host):
-  one a notice of this trigger showed is left out of later answers by its
-  exact string, for the whole run; one only a quiet sweep carried stays news.
-- `onReading(reading)` is called for every finished sweep, whatever the
-  reading. `launch()` and `observed()` never throw or reject; a `run` that
+- `read` is given the run's envelope itself, and `onReading(reading)` is
+  called for every finished sweep, whatever the reading. `launch()` and `observed()` never throw or reject; a `run` that
   rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings
   and cancels nothing: a sweep in flight runs to its end.
 
 The Desktop shows nothing of a reading (the product owner, 2026-10-27): its
 main process writes a `failed` reading's code to its log in one line and drops
-every other reading, a `notice` included. The TUI says nothing of a reading
-either: a `notice` or a `quiet` reading asks it for a live read, and every
-other reading for nothing
+every other reading. The TUI says nothing of a reading either: an `answered`
+reading asks it for a live read, and every other reading for nothing
 ([Resuming lost sessions](tui.md#resuming-lost-sessions)).
 
 **The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):
@@ -6501,36 +6493,19 @@ other reading for nothing
   reaches the answer.
 
 **The reader**, `readResumeSweep` (`packages/client/session-resume.mjs`),
-gives one of five readings: `unsupported` (nothing ran), `busy`
-(`E_RESUME_BUSY`), `failed` with a code, `quiet`, or `notice` with a summary.
-A plan answer (`plan: true`) is quiet.
+gives one of four readings: `unsupported` (`E_CLI_UNAVAILABLE` or
+`E_RESUME_FEATURE`: nothing ran), `busy` (`E_RESUME_BUSY`), `failed` with a
+code, or `answered`. A reading carries nothing of the answer's rows or words.
 
-- The summary is facts: per row its instance, its deployment and its outcome's
-  reason, never a word of the kernel's text. `already-running` and `skipped`
-  rows are counted nowhere. A notice exists only when a row is `resumed`,
-  `fresh`, `blocked` or `refused`. Unchecked deployments are lines inside such
-  a notice, never a notice on their own; a deployment the kernel reports as
-  `opted-out` (an older kernel) reads as unchecked, with no reason.
-- It is tolerant. A row without a string `instance` and `deployment`, with an
-  unknown `outcome`, or whose name the display filter withholds or empties, is
-  dropped. An unknown `reason` under a known outcome is read as no reason and
-  worded generically. A refusal's `code` is kept only when it matches
-  `^E_[A-Z0-9_]{1,64}$`.
-- The result's own `warnings`, about the host and not one home, are the
-  summary's `host` (`{warnings, omitted}`, always present), kept and cut as a
-  row's are (below). They never make a notice alone; a notice shows them after
-  the unchecked deployments, under "OATS says about this computer:".
-- A row's `warnings` are kept whole and in order, each as one display line
-  (`displayLine`), and cut by position only, at the bounds of
-  `launchFlagIgnored` (16 lines, 4096 UTF-16 units; `boundedWarnings`,
-  `packages/client/launch-prompt-outcome.mjs`). No warning is picked, matched
-  or dropped by its words.
-- A refused row's `message` is the kernel's prose. It is shown only after
-  "OATS says:", attributed, through the display filter, and never matched.
-- The summary keeps at most 100 rows, in the answer's order, and counts the
-  rest. The headline counts the real totals. `resumeSummaryFact` is the
-  summary's decoder at a boundary, and `resumeNotice` writes the headline and
-  the Details in the clients' own words (the TUI's line).
+- `answered` is every `ok: true` answer whose result is the sweep's document,
+  a plan (`plan: true`) included. A plan started nothing, so it completes
+  nothing: its snapshot and its rows settle no home (`sweepCompleted`,
+  `sweepSettlement`).
+- `failed` carries the refusal's code when it matches `^E_[A-Z0-9_]{1,64}$`,
+  else `E_CLI_PROTOCOL`. An `ok: true` answer that is not the document (no
+  `schemaVersion` 1, `plan` not a boolean, `deployments` or `rows` not an
+  array, or either longer than 100 000 entries) is a protocol failure,
+  `E_CLI_PROTOCOL`, and is never read in part.
 
 ### Launch configurations
 
