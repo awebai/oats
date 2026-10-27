@@ -9,10 +9,12 @@ description: Lead or join work across domains, where one expert coordinates and 
 1. **Split by domain:** name each domain's expert and write its part of "done".
 2. **Launch one expert per other domain as your child** (they are siblings):
    ```bash
-   oats spawn <domain-expert> --parent <your instance> --purpose <effort> --task-file <brief.md>
+   oats spawn <domain-expert> --parent <your instance> --same-work --purpose <effort> --task-file <brief.md>
    ```
-   Brief: the overall goal, its part of "done", the interfaces it must meet, the order of
-   work, and how to reach you and the other experts.
+   `--same-work`: it works on your effort. On a kernel whose `oats version --json` doesn't
+   list the `instance-same-work` feature, leave it out. Brief: the overall goal, its part
+   of "done", the interfaces it must meet, the order of work, and how to reach you and the
+   other experts.
 3. **Interfaces:** write them yourself, or have the owning experts agree them.
 4. **Own the integration:** decide the merge order (consumers that accept a new shape land
    before producers that emit it), tell experts when to rebase, rework or hold their PRs,
@@ -37,7 +39,7 @@ where new work (a feature, a fix, an investigation) goes before you take it on:
 | The new work | Where it goes |
 |---|---|
 | Continues or depends on a live expert's work, or its context (decisions, open PRs, loaded code) clearly helps | **Send it to that expert.** |
-| Part of your effort, unrelated to any live expert's work | **A new expert as your child** (`--parent`), with its own `--purpose`, even if that domain's expert is running. |
+| Part of your effort, unrelated to any live expert's work | **A new expert as your child** (`--parent`, `--same-work`), with its own `--purpose`, even if that domain's expert is running. |
 | Independent of your effort | **A new expert with no relation to you** (`--relation unrelated`). |
 
 ```bash

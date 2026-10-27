@@ -234,16 +234,16 @@ function over what its caller holds:
   `session-resume-cli.mjs`, `session-resume.mjs`). `createResumeTrigger` holds
   the clients' shared rule for when a sweep runs: once at launch, then on a
   roster read that shows a local lost session not yet settled, single flight,
-  30 s apart, and reporting a standing refusal once.
+  30 s apart.
   `runResumeSweep` runs `oats session resume --json` (feature
   `session-resume`, cwd `/`, instance variables scrubbed, no deadline) through
   `file-output-exec.mjs` `execFileToFiles`: execFile's signature, the child in
   a session of its own, its stdout and stderr unlinked files read back from
   the client's own descriptors, never signalled, so the change outlives the
-  client. `readResumeSweep` reads the answer into a summary of facts,
-  `resumeSummaryFact` decodes it at a boundary and `resumeNotice` puts it in
-  the clients' words; warnings are cut by position (`boundedWarnings`, shared
-  with `launchFlagIgnored`) and kernel text appears only after "OATS says:"
+  client. `readResumeSweep` reads the answer into one of four readings
+  (`unsupported`, `busy`, `failed` with a code, `answered`), and
+  `sweepSettlement` and `sweepCompleted` give the trigger the homes an answer
+  settles and releases
   ([desktop-cli-api.md](../../docs/desktop-cli-api.md#how-the-clients-run-the-sweep)).
 
 It holds the souls a deployment offers and one soul's inspection: the spawn
