@@ -1676,7 +1676,8 @@ branch stays in the repository either way.
 
 A work mode decides what `./work` points at and what discipline the agent must
 follow. Every mode sits inside the same home/work boundary, which the generated
-instructions state first (`injects/instance-boundary.md`):
+instructions state just before the work-mode block, the two closing the file
+after the capability injects (`injects/instance-boundary.md`):
 
 - `<instance-home>` — the gitignored instance directory, `$OATS_INSTANCE_HOME` —
   holds the brain (the composed `AGENTS.md`; there is no soul link), the task, the provenance

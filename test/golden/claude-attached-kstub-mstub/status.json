@@ -106,20 +106,20 @@
           ],
           "instructions": [
             {
-              "source": "kernel:instance-boundary",
-              "file": "<kernel>/injects/instance-boundary.md"
-            },
-            {
-              "source": "work-mode:attached",
-              "file": "<kernel>/injects/work-attached.md"
-            },
-            {
               "source": "capability:golden.knowledge",
               "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.knowledge/inject.md"
             },
             {
               "source": "capability:golden.messaging",
               "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.messaging/inject.md"
+            },
+            {
+              "source": "kernel:instance-boundary",
+              "file": "<kernel>/injects/instance-boundary.md"
+            },
+            {
+              "source": "work-mode:attached",
+              "file": "<kernel>/injects/work-attached.md"
             }
           ],
           "composition": {
@@ -158,18 +158,6 @@
               },
               {
                 "type": "instruction-block",
-                "source": "kernel:instance-boundary",
-                "declared": "<kernel>/injects/instance-boundary.md",
-                "resolved": "<kernel>/injects/instance-boundary.md"
-              },
-              {
-                "type": "instruction-block",
-                "source": "work-mode:attached",
-                "declared": "<kernel>/injects/work-attached.md",
-                "resolved": "<kernel>/injects/work-attached.md"
-              },
-              {
-                "type": "instruction-block",
                 "source": "capability:golden.knowledge",
                 "declared": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.knowledge/inject.md",
                 "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.knowledge/inject.md"
@@ -179,6 +167,18 @@
                 "source": "capability:golden.messaging",
                 "declared": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.messaging/inject.md",
                 "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.messaging/inject.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "kernel:instance-boundary",
+                "declared": "<kernel>/injects/instance-boundary.md",
+                "resolved": "<kernel>/injects/instance-boundary.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "work-mode:attached",
+                "declared": "<kernel>/injects/work-attached.md",
+                "resolved": "<kernel>/injects/work-attached.md"
               }
             ],
             "materialized": {
@@ -196,20 +196,20 @@
               ],
               "instructions": [
                 {
-                  "source": "kernel:instance-boundary",
-                  "file": "<kernel>/injects/instance-boundary.md"
-                },
-                {
-                  "source": "work-mode:attached",
-                  "file": "<kernel>/injects/work-attached.md"
-                },
-                {
                   "source": "capability:golden.knowledge",
                   "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.knowledge/inject.md"
                 },
                 {
                   "source": "capability:golden.messaging",
                   "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-kstub-mstub/.oats/modules/golden.messaging/inject.md"
+                },
+                {
+                  "source": "kernel:instance-boundary",
+                  "file": "<kernel>/injects/instance-boundary.md"
+                },
+                {
+                  "source": "work-mode:attached",
+                  "file": "<kernel>/injects/work-attached.md"
                 }
               ],
               "harnessPackages": [],
@@ -494,20 +494,20 @@
           ],
           "instructions": [
             {
-              "source": "kernel:instance-boundary",
-              "file": "<kernel>/injects/instance-boundary.md"
-            },
-            {
-              "source": "work-mode:worktree",
-              "file": "<kernel>/injects/work-worktree.md"
-            },
-            {
               "source": "capability:golden.knowledge",
               "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md"
             },
             {
               "source": "capability:golden.messaging",
               "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
+            },
+            {
+              "source": "kernel:instance-boundary",
+              "file": "<kernel>/injects/instance-boundary.md"
+            },
+            {
+              "source": "work-mode:worktree",
+              "file": "<kernel>/injects/work-worktree.md"
             }
           ],
           "composition": {
@@ -546,18 +546,6 @@
               },
               {
                 "type": "instruction-block",
-                "source": "kernel:instance-boundary",
-                "declared": "<kernel>/injects/instance-boundary.md",
-                "resolved": "<kernel>/injects/instance-boundary.md"
-              },
-              {
-                "type": "instruction-block",
-                "source": "work-mode:worktree",
-                "declared": "<kernel>/injects/work-worktree.md",
-                "resolved": "<kernel>/injects/work-worktree.md"
-              },
-              {
-                "type": "instruction-block",
                 "source": "capability:golden.knowledge",
                 "declared": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md",
                 "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md"
@@ -567,6 +555,18 @@
                 "source": "capability:golden.messaging",
                 "declared": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md",
                 "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "kernel:instance-boundary",
+                "declared": "<kernel>/injects/instance-boundary.md",
+                "resolved": "<kernel>/injects/instance-boundary.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "work-mode:worktree",
+                "declared": "<kernel>/injects/work-worktree.md",
+                "resolved": "<kernel>/injects/work-worktree.md"
               }
             ],
             "materialized": {
@@ -584,20 +584,20 @@
               ],
               "instructions": [
                 {
-                  "source": "kernel:instance-boundary",
-                  "file": "<kernel>/injects/instance-boundary.md"
-                },
-                {
-                  "source": "work-mode:worktree",
-                  "file": "<kernel>/injects/work-worktree.md"
-                },
-                {
                   "source": "capability:golden.knowledge",
                   "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.knowledge/inject.md"
                 },
                 {
                   "source": "capability:golden.messaging",
                   "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
+                },
+                {
+                  "source": "kernel:instance-boundary",
+                  "file": "<kernel>/injects/instance-boundary.md"
+                },
+                {
+                  "source": "work-mode:worktree",
+                  "file": "<kernel>/injects/work-worktree.md"
                 }
               ],
               "harnessPackages": [],

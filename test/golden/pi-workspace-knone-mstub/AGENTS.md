@@ -6,6 +6,12 @@ You are the golden-fixture developer soul.
 
 - Do repository work in `./work`.
 
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/.oats/modules/golden.messaging/inject.md -->
+## Messaging (stub)
+
+You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.
+<!-- /oats:capability:golden.messaging -->
+
 <!-- oats:kernel:instance-boundary src=<kernel>/injects/instance-boundary.md -->
 ## Your two directories
 
@@ -50,9 +56,3 @@ analyse and coordinate; you do not change code.
 - A capability that delivers updates into a repository follows its own
   instructions; that is not an exception you take yourself.
 <!-- /oats:work-mode:workspace -->
-
-<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-workspace-knone-mstub/.oats/modules/golden.messaging/inject.md -->
-## Messaging (stub)
-
-You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.
-<!-- /oats:capability:golden.messaging -->

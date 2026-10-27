@@ -7,7 +7,7 @@ import { oatsError } from "../lib/errors.mjs";
 import { parseRepoRef } from "../lib/remote.mjs";
 import { standaloneRepo } from "../lib/workspace.mjs";
 import {
-  canonicalJson, composeCapabilities, manifestDefaultsPayload, mergePayload, parseVersion, payloadOrigins, refForKey, resolveSoul, revisionOf,
+  canonicalJson, composeCapabilities, instructionOrder, manifestDefaultsPayload, mergePayload, parseVersion, payloadOrigins, refForKey, resolveSoul, revisionOf,
   satisfiesRange, skillsInListing,
 } from "../lib/resolve.mjs";
 // Secondary exports (fromOfVia, KERNEL_VERSION, kernelCompatibility) are reached through the namespace.
@@ -339,6 +339,44 @@ test("composeCapabilities: order and `off` semantics, soul wins", () => {
   assert.deepEqual(composeCapabilities(ws2, { capabilities: {} }).map((r) => r.name), ["nw-house-style", "oats.core", "oats.okf"]);
   // no workspace (standalone) → only the soul's own
   assert.deepEqual(composeCapabilities(null, { capabilities: { x: { from: "here" } } }).map((r) => r.name), ["x"]);
+});
+
+test("instructionOrder: the soul's listing beats name order, then the workspace defaults in file order; provenance outside every revision", async () => {
+  // release-manager lists nw-release-tooling, then nw-deploy; the defaults list capabilities (oats.core,
+  // nw-house-style), then knowledge (oats.okf). Name order would be nw-deploy, nw-house-style, nw-release-tooling, …
+  const d = discovery();
+  const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
+  assert.deepEqual(r.instructionOrder, ["nw-release-tooling", "nw-deploy", "oats.core", "nw-house-style", "oats.okf"]);
+  assert.deepEqual(r.modules.map((m) => m.name), ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"], "modules keep name order");
+  assert.deepEqual(r.injects.map((i) => i.module), ["nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"], "injects keep name order");
+
+  // The same soul listing its capabilities the other way round: a new order, the same composition.
+  const swapped = discovery({ souls: { "release-manager": soulDef("release-manager", { work: "worktree", capabilities: { "nw-deploy": { from: "package" }, "nw-release-tooling": { from: "here" } }, knowledge: { owns: "release-manager", reads: ["platform-engineer"] }, messaging: { channels: ["northwind-eng"] } }) } });
+  const r2 = await resolveSoul(swapped, findSoul(swapped, "release-manager"), opts());
+  assert.deepEqual(r2.instructionOrder, ["nw-deploy", "nw-release-tooling", "oats.core", "nw-house-style", "oats.okf"]);
+  for (const key of ["declRevision", "payloadRevision", "revision"]) assert.equal(r2[key], r[key], `${key} does not move with the order`);
+  assert.deepEqual(r2.modules, r.modules);
+
+  // Defaults in the file's order: a slot default written before defaults.capabilities comes first.
+  const ws = workspaceFile();
+  const slotFirst = discovery({ workspace: { ...ws, defaults: { knowledge: ws.defaults.knowledge, capabilities: { "nw-house-style": { from: K.agents }, "oats.core": { from: "package" } }, messaging: "none", tasks: "none" } } });
+  const r3 = await resolveSoul(slotFirst, findSoul(slotFirst, "platform-engineer"), opts());
+  assert.deepEqual(r3.instructionOrder, ["oats.okf", "nw-house-style", "oats.core"]);
+
+  // A soul entry that re-lists a workspace default sits at the soul's position, once.
+  const relists = discovery({ souls: { "release-manager": soulDef("release-manager", { capabilities: { "nw-house-style": { from: K.agents }, "nw-release-tooling": { from: "here" } } }) } });
+  const r4 = await resolveSoul(relists, findSoul(relists, "release-manager"), opts());
+  assert.deepEqual(r4.instructionOrder, ["nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"]);
+  assert.equal(r4.capabilitiesFrom["nw-house-style"], "soul");
+
+  // What the soul turns off (`off`, a slot `none`) is not composed, so not ordered.
+  const r5 = await resolveSoul(d, findSoul(d, "support-triager"), opts());
+  assert.deepEqual(r5.instructionOrder, ["oats.core"]);
+  assert.deepEqual(r5.instructionOrder, r5.modules.map((m) => m.name), "every composed module is ordered");
+
+  // No workspace (standalone): the soul's own listing only.
+  const soul = { capabilities: { zeta: { from: "here" }, alpha: { from: "here" }, gone: "off" } };
+  assert.deepEqual(instructionOrder(null, soul, composeCapabilities(null, soul)), ["zeta", "alpha"]);
 });
 
 /* ───────────────────────────── private ────────────────────────────────── */

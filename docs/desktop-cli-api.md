@@ -516,7 +516,7 @@ capabilities}`, each the soul.yaml section as written or `null`.
 with `--instructions`, which takes a soul subject (`--home` is `E_BAD_ARGS`);
 without the flag the key is absent and nothing extra is composed. It is the
 AGENTS.md a spawn of this soul here with no flags would write, produced by
-spawn's own composition — the kernel blocks, then each capability's inject,
+spawn's own composition — each capability's inject, then the kernel blocks,
 materialized into a scratch home outside the deployment and removed. It is
 `{file: null, text, truncated, resolution, body, sources}`. `text` and
 `truncated` follow the 200,000-character cap of `instructions`; `resolution` is

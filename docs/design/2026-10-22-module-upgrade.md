@@ -78,7 +78,7 @@ Apply runs under the claim, with the plan revision re-checked. A stale plan refu
 
 1. **Stage.** Stage the new module copies in `<home>/.oats/.staging-upgrade-<receipt>`, on the same filesystem so the renames are atomic, and recompose the derived files there. Use the **same code as spawn**: refactor `materialize()` so that composing a home from a resolution can target an existing home. Do not write a second composer. The derived files are:
    - `.agents/skills`;
-   - `AGENTS.md`: the soul body at the **recorded soul commit**, the kernel blocks, then each module's inject. If the soul body at that commit can't be read, refuse;
+   - `AGENTS.md`: the soul body at the **recorded soul commit**, each module's inject in the order the home's `instructions` recorded (a module with no recorded block after them, by name), then the kernel blocks. If the soul body at that commit can't be read, refuse;
    - in `instance.json`: `modules`, `capabilities[]`, `capabilityRuntime[]` (the absolute hook commands that retire runs), `skills[]`, `instructions[]`, `composition`, `launch.hooks.contributions`, `resolutionRevision`.
    Read the soul body through discovery's path rule at that recorded commit:
    a member soul uses `souls/<agent>/AGENTS.md`; a package soul uses its

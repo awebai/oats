@@ -77,16 +77,16 @@
           ],
           "instructions": [
             {
+              "source": "capability:golden.messaging",
+              "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
+            },
+            {
               "source": "kernel:instance-boundary",
               "file": "<kernel>/injects/instance-boundary.md"
             },
             {
               "source": "work-mode:attached",
               "file": "<kernel>/injects/work-attached.md"
-            },
-            {
-              "source": "capability:golden.messaging",
-              "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
             }
           ],
           "composition": {
@@ -109,6 +109,12 @@
               },
               {
                 "type": "instruction-block",
+                "source": "capability:golden.messaging",
+                "declared": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md",
+                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
+              },
+              {
+                "type": "instruction-block",
                 "source": "kernel:instance-boundary",
                 "declared": "<kernel>/injects/instance-boundary.md",
                 "resolved": "<kernel>/injects/instance-boundary.md"
@@ -118,12 +124,6 @@
                 "source": "work-mode:attached",
                 "declared": "<kernel>/injects/work-attached.md",
                 "resolved": "<kernel>/injects/work-attached.md"
-              },
-              {
-                "type": "instruction-block",
-                "source": "capability:golden.messaging",
-                "declared": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md",
-                "resolved": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
               }
             ],
             "materialized": {
@@ -136,16 +136,16 @@
               ],
               "instructions": [
                 {
+                  "source": "capability:golden.messaging",
+                  "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
+                },
+                {
                   "source": "kernel:instance-boundary",
                   "file": "<kernel>/injects/instance-boundary.md"
                 },
                 {
                   "source": "work-mode:attached",
                   "file": "<kernel>/injects/work-attached.md"
-                },
-                {
-                  "source": "capability:golden.messaging",
-                  "file": "<base>/deployment/agents/dev/instances/dev-claude-attached-knone-mstub/.oats/modules/golden.messaging/inject.md"
                 }
               ],
               "harnessPackages": [],
@@ -367,16 +367,16 @@
           ],
           "instructions": [
             {
+              "source": "capability:golden.messaging",
+              "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
+            },
+            {
               "source": "kernel:instance-boundary",
               "file": "<kernel>/injects/instance-boundary.md"
             },
             {
               "source": "work-mode:worktree",
               "file": "<kernel>/injects/work-worktree.md"
-            },
-            {
-              "source": "capability:golden.messaging",
-              "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
             }
           ],
           "composition": {
@@ -399,6 +399,12 @@
               },
               {
                 "type": "instruction-block",
+                "source": "capability:golden.messaging",
+                "declared": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md",
+                "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
+              },
+              {
+                "type": "instruction-block",
                 "source": "kernel:instance-boundary",
                 "declared": "<kernel>/injects/instance-boundary.md",
                 "resolved": "<kernel>/injects/instance-boundary.md"
@@ -408,12 +414,6 @@
                 "source": "work-mode:worktree",
                 "declared": "<kernel>/injects/work-worktree.md",
                 "resolved": "<kernel>/injects/work-worktree.md"
-              },
-              {
-                "type": "instruction-block",
-                "source": "capability:golden.messaging",
-                "declared": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md",
-                "resolved": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
               }
             ],
             "materialized": {
@@ -426,16 +426,16 @@
               ],
               "instructions": [
                 {
+                  "source": "capability:golden.messaging",
+                  "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
+                },
+                {
                   "source": "kernel:instance-boundary",
                   "file": "<kernel>/injects/instance-boundary.md"
                 },
                 {
                   "source": "work-mode:worktree",
                   "file": "<kernel>/injects/work-worktree.md"
-                },
-                {
-                  "source": "capability:golden.messaging",
-                  "file": "<base>/deployment/agents/dev/instances/dev-owner/.oats/modules/golden.messaging/inject.md"
                 }
               ],
               "harnessPackages": [],

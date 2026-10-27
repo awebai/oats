@@ -6,6 +6,12 @@ You are the golden-fixture developer soul.
 
 - Do repository work in `./work`.
 
+<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-checkout-knone-mstub/.oats/modules/golden.messaging/inject.md -->
+## Messaging (stub)
+
+You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.
+<!-- /oats:capability:golden.messaging -->
+
 <!-- oats:kernel:instance-boundary src=<kernel>/injects/instance-boundary.md -->
 ## Your two directories
 
@@ -65,9 +71,3 @@ to start from, or the one you rework):
   Retirement may keep a tree with uncommitted work; don't rely on it.
   Details: `oats worktree --help`, and `/oats-operate` if you have it.
 <!-- /oats:work-mode:checkout -->
-
-<!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-pi-checkout-knone-mstub/.oats/modules/golden.messaging/inject.md -->
-## Messaging (stub)
-
-You are reachable over the stub broker named in `$GOLDEN_BROKER_ENDPOINT`.
-<!-- /oats:capability:golden.messaging -->

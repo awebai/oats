@@ -474,8 +474,18 @@ Every spawned instance gets a **full copy** of each capability its soul
 resolved to, under `<home>/.oats/modules/<capability>/` (manifest, `bin/`,
 injects, skills), and those skills flat under `<home>/.agents/skills/<skill>/`
 beside the soul's own, one level deep where harnesses discover them. Its generated `AGENTS.md` is the
-soul's `AGENTS.md`, the kernel and work-mode blocks, then each module's inject
-in name order. Two composed skills with one name fail the spawn
+soul's `AGENTS.md`, then each module's inject, then the kernel's instance-boundary
+and work-mode blocks, last. The injects take the order the soul and the workspace
+give them: first the capabilities the soul lists, in its `capabilities:` order (a
+soul entry that re-lists a workspace default sits at the soul's place), then the
+workspace defaults the soul does not list, in the order the workspace's
+`defaults:` lists them (slot defaults and `defaults.capabilities` entries as they
+appear in the file). A standalone soul has no workspace defaults. A capability
+with no inject adds nothing, and one the soul turns `off` or a slot `none` drops
+is not composed. Only the instructions take this order: modules, skills and hooks
+stay in name order, and reordering a soul's list is not a composition change (no
+drift). `oats instance upgrade` keeps the order a home recorded and puts the
+kernel's blocks last. Two composed skills with one name fail the spawn
 (`E_SKILL_DUPLICATE`). The harness then starts normally, with its own skill
 discovery; the details are in [souls-and-instances.md](souls-and-instances.md).
 Change a capability's inject or skills in its repository, then spawn a new

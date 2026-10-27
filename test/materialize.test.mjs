@@ -180,17 +180,18 @@ test("materialize: whole-copy layout — modules, skills copied (not linked), ex
   assert.equal(out.skills[0].path, cut);
   assert.ok(!listAll(home).some((p) => p.endsWith("@") && !/^(CLAUDE\.md|\.claude\/skills)@$/.test(p)), `no symlinks besides the two aliases: ${listAll(home).filter((p) => p.endsWith("@"))}`);
 
-  // AGENTS.md: soul body first, then the caller's kernel block, then each module's inject in module order, same markers as the kernel.
+  // AGENTS.md: soul body first, then each module's inject (no instructionOrder: module order), then the caller's kernel block, same markers as the kernel.
   const agents = readFileSync(join(home, "AGENTS.md"), "utf8");
   assert.equal(out.agentsMd, join(home, "AGENTS.md"));
   assert.ok(agents.startsWith("# Soul\n\nYou are the release expert.\n"));
   const markers = [...agents.matchAll(/<!-- (\/?)oats:([^ >]+)(?: src=([^ >]+))? -->/g)].map((m) => [m[1] ? "close" : "open", m[2], m[3]]);
   assert.deepEqual(markers, [
-    ["open", "kernel:instance-boundary", "/framework/injects/instance-boundary.md"], ["close", "kernel:instance-boundary", undefined],
     ["open", "capability:nw-release-tooling", join(modulesRoot, "nw-release-tooling", "injects", "release-policy.md")], ["close", "capability:nw-release-tooling", undefined],
     ["open", "capability:nw-house-style", join(modulesRoot, "nw-house-style", "injects", "house-style.md")], ["close", "capability:nw-house-style", undefined],
     ["open", "capability:oats.okf", join(modulesRoot, "oats.okf", "injects", "okf.md")], ["close", "capability:oats.okf", undefined],
+    ["open", "kernel:instance-boundary", "/framework/injects/instance-boundary.md"], ["close", "kernel:instance-boundary", undefined],
   ]);
+  assert.deepEqual(out.blocks.map((b) => b.source), ["capability:nw-release-tooling", "capability:nw-house-style", "capability:oats.okf", "kernel:instance-boundary"], "outcome.blocks in the written order");
   assert.ok(agents.includes("\n<!-- oats:capability:nw-release-tooling src="), "marker format matches lib/instruction-composition.mjs");
   assert.ok(agents.includes("## Release policy\n\nEvery release is cut from main.\n<!-- /oats:capability:nw-release-tooling -->"));
   for (const m of markers) if (m[2]) assert.ok(existsSync(m[2]) || m[1].startsWith("kernel"), `src ${m[2]} points at the materialized module file`);
@@ -414,6 +415,34 @@ test("materialize: skills are flat, so one name from two paths of ONE module is 
   assert.equal(readFileSync(join(home2, ".agents", "skills", "okf", "SKILL.md"), "utf8"), "mine", "the existing skill is untouched");
   assert.deepEqual(readdirSync(join(home2, ".agents", "skills")), ["okf"], "nothing else placed");
   assert.ok(!existsSync(join(home2, "AGENTS.md")) && !existsSync(join(home2, ".oats", "modules", "oats.okf")), "no partial commit");
+});
+
+test("materialize: capability injects follow resolution.instructionOrder (an omitted module after, by module order), the caller's blocks last; a bad order is E_MATERIALIZE_RESOLUTION", async () => {
+  const base = scratch();
+  const kernel = [
+    { source: "kernel:instance-boundary", file: "/framework/injects/instance-boundary.md", content: "Boundary." },
+    { source: "work-mode:worktree", file: "/framework/injects/work-worktree.md", content: "Worktree." },
+  ];
+  const sources = (agents) => [...agents.matchAll(/^<!-- oats:(\S+) src=/gm)].map((m) => m[1]);
+  const home = makeHome(base);
+  const out = await materialize({ ...resolution(), instructionOrder: ["oats.okf", "nw-house-style", "nw-release-tooling"] }, home, { fetch: memoryFetch(), lock: LOCK, blocks: kernel });
+  const order = ["capability:oats.okf", "capability:nw-house-style", "capability:nw-release-tooling", "kernel:instance-boundary", "work-mode:worktree"];
+  assert.deepEqual(sources(readFileSync(join(home, "AGENTS.md"), "utf8")), order, "the order, not module (name) order; kernel blocks close the file in their own order");
+  assert.deepEqual(out.blocks.map((b) => b.source), order);
+  assert.deepEqual(out.modules.map((m) => m.name), ["nw-release-tooling", "nw-house-style", "oats.okf"], "modules keep their order");
+
+  const partial = makeHome(join(base, "partial"));
+  await materialize({ ...resolution(), instructionOrder: ["oats.okf"] }, partial, { fetch: memoryFetch(), lock: LOCK, blocks: kernel });
+  assert.deepEqual(sources(readFileSync(join(partial, "AGENTS.md"), "utf8")),
+    ["capability:oats.okf", "capability:nw-release-tooling", "capability:nw-house-style", "kernel:instance-boundary", "work-mode:worktree"]);
+
+  for (const [instructionOrder, path] of [["oats.okf", "/instructionOrder"], [["nw-house-style", "ghost"], "/instructionOrder/1"], [["oats.okf", "oats.okf"], "/instructionOrder/1"]]) {
+    const refused = makeHome(join(base, `bad-${path.replace(/\W/g, "")}-${String(instructionOrder).length}`));
+    const e = await caughtAsync(materialize({ ...resolution(), instructionOrder }, refused, { fetch: memoryFetch(), lock: LOCK }));
+    assert.equal(e.code, "E_MATERIALIZE_RESOLUTION", JSON.stringify(instructionOrder));
+    assert.equal(e.details.path, path);
+    assert.ok(!existsSync(join(refused, "AGENTS.md")), "refused before anything is written");
+  }
 });
 
 test("materialize: refuses to overwrite a module already in the home; invalid resolution / missing home are named errors", async () => {

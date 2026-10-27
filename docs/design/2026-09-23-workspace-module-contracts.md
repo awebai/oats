@@ -258,13 +258,15 @@ delivers; what a provider consumes is its own contract. Teams reach providers as
               from: { kind: "member", repoKey, commit }
                   | { kind: "package", package, version, commit, integrity, repoKey } }],
   slots, skills, injects, payloads, payloadOrigins,
-  teams, defaultTeam, slotsFrom, capabilitiesFrom, turnedOff, declRevision, payloadRevision, revision }
+  teams, defaultTeam, slotsFrom, capabilitiesFrom, instructionOrder, turnedOff, declRevision, payloadRevision, revision }
 ```
 
 `module.dir` is the listed capability directory (for a package, the `oats-package.json#capabilities[]`
 entry). `declRevision` covers `{ resolutionApi, soul, modules, slots, skills, injects }`,
 `payloadRevision` the payloads, `revision` both (24 hex of SHA-256 over canonical JSON). A spawn decision
-binds `revision`. Provenance fields enter neither revision.
+binds `revision`. Provenance fields enter neither revision. `instructionOrder` is one: the module names
+in the order their injects take in the composed `AGENTS.md` (the soul's `capabilities:` order, then the
+workspace defaults it does not list, in `defaults:` file order).
 
 ---
 
@@ -316,8 +318,8 @@ shims that throw `E_REMOVED { name, contract }`, pointing at this record.
 2. The copy's digest must equal the fetch's and any `module.digest` (`E_MATERIALIZE_INTEGRITY`).
 3. Copy skills whole to `<home>/.agents/skills/<skill>/`, flat (0.30.2; the grouped
    `<name>/<skill>/` layout this section first specified hid every skill from the harnesses).
-4. Compose `<home>/AGENTS.md` = soul body (`options.soulAgentsMd` or `soulDir`) + kernel blocks + module
-   injects; operating guidance comes from a module such as `oats.core`. Keep `CLAUDE.md → AGENTS.md`
+4. Compose `<home>/AGENTS.md` = soul body (`options.soulAgentsMd` or `soulDir`) + module injects in
+   `instructionOrder` + kernel blocks (`options.blocks`); operating guidance comes from a module such as `oats.core`. Keep `CLAUDE.md → AGENTS.md`
    and `.claude/skills → ../.agents/skills`.
 5. Record `modules: { <name>: { from, commit, digest, materializedAt } }`, `providers` (the payloads) and
    `resolutionRevision` in `instance.json`.
