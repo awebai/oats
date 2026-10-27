@@ -13,7 +13,9 @@ body {
   color: var(--fg);
   font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
 }
-#app { display: flex; }
+/* The sidebar's width (sidebar-width.mjs): one custom property, set inline by its handle within 240px and
+   min(480px, 45% of the window); 288px until it is moved. */
+#app { display: flex; --sidebar-w: 288px; }
 #workbench { flex: 1; min-width: 0; min-height: 0; display: flex; container-type: inline-size; }
 /* Narrow workbenches stack details below the main surface, never over a live
    terminal or inside an editor group. The original groups/proportions survive. */
@@ -32,27 +34,32 @@ body {
 
 /* ── nav rail ── */
 #sidebar {
-  position: relative; width: 264px; min-width: 264px; flex: none;
+  position: relative; width: var(--sidebar-w); min-width: var(--sidebar-w); flex: none;
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
+/* The head (2026-10-26): the Workspace heading over its list, with no line between them, the first row close under it:
+   the heading sits where it sat in the 48px bar (its centre 24px down), and the head ends 8px under it. */
 .side-head {
-  height: var(--bar-h); flex: none; display: flex; align-items: center;
-  padding: 0 10px 0 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  height: 40px; flex: none; display: flex; align-items: center; box-sizing: border-box;
+  padding: 8px 10px 0 17px; white-space: nowrap;
 }
 .side-kicker { color: var(--muted); font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
 .shell-icon { display: block; width: 16px; height: 16px; flex: none; }
-/* Brand stays a single 24px mark; the list's heading beside it, and Add local workspace… at the end. */
-.ws-brand-mark { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
-/* The supplied artwork (transparent ground) at 2x; decorative — the heading beside it is the text. */
-.ws-brand-image { width: 24px; height: 24px; display: block; }
-.ws-heading { flex: 1; min-width: 0; margin-left: 9px; color: var(--fg); font-size: 13.5px; line-height: 1.2; font-weight: 700;
+/* The list's heading, then Show only the current workspace and Add local workspace… at the end. */
+.ws-heading { flex: 1; min-width: 0; color: var(--fg); font-size: 13.5px; line-height: 1.2; font-weight: 700;
               overflow: hidden; text-overflow: ellipsis; }
-.ws-add-open { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
-               background: transparent; color: var(--muted); cursor: pointer; }
-.ws-add-open:hover { background: var(--surface-2); color: var(--fg); }
-.ws-add-open:focus-visible { background: var(--sel); color: var(--fg); }
+/* The sidebar's icon buttons, one control style: the head's Show only the current workspace and Add local
+   workspace…, and the bar's sidebar toggle and settings cog. */
+.side-icon-button { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
+                    background: transparent; color: var(--muted); cursor: pointer; }
+.side-icon-button:hover { background: var(--surface-2); color: var(--fg); }
+.side-icon-button:focus-visible { background: var(--sel); color: var(--fg); }
+/* Show only the current workspace (2026-10-23): a toggle before Add. Pressed, its icon is the accent, as the
+   current nav item's, at rest, hovered and focused alike (the --accent pairs on --surface, --surface-2 and --sel:
+   theme-contrast). */
+.ws-current-only[aria-pressed="true"], .ws-current-only[aria-pressed="true"]:hover, .ws-current-only[aria-pressed="true"]:focus-visible { color: var(--accent); }
 .ws-modal[hidden] { display: none; }
 /* Bare search inputs (no wrapper): their own 1px border is the single frame (rule 3). */
 #ws-suggestion-search { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border);
@@ -61,25 +68,41 @@ body {
 #ws-suggestion-search::placeholder { color: var(--faint); }
 /* The workspace list (workspace-switcher.mjs): always shown under the sidebar's head, about six rows tall at
    most, then it scrolls inside itself, the current row kept in view. One workspace is one compact row. */
-.ws-list { flex: none; padding: 4px 8px 6px; border-bottom: 1px solid var(--border); }
-.ws-options { max-height: 276px; overflow-y: auto; }
+/* The line under the list is a little bolder than the one before the instances (the product owner, 2026-10-26):
+   1.5px, 3 device pixels at 2x. */
+.ws-list { flex: none; padding: 0 8px 6px; border-bottom: 1.5px solid var(--border); }
+.ws-options { max-height: 276px; overflow-y: auto; scrollbar-width: none; } /* as the roster's: "N more below" says it */
+.ws-options::-webkit-scrollbar { display: none; }
 .ws-group { margin: 0; padding: 0; list-style: none; }
 .ws-menu-empty { margin: 4px 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ws-menu-empty[hidden] { display: none; }
-/* A row is one line, the workspace's name (and the dot after it): no mark, no machine, no state. */
-.ws-option { width: 100%; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 0;
-             border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.ws-option:hover { background: var(--surface-2); }
-.ws-option:focus-visible { background: var(--sel); }
-/* The current workspace, by style alone (aria-current says it to assistive tech): the selection surface, in bold. */
-.ws-option[aria-current="true"] { background: var(--sel); }
+/* A row is one line: the instance roster's circle, the workspace's name, and at the far right the needs-input dot;
+   no machine, no state. The circle is the roster's own .ctx-dot, its ring in the row's fill (--row-solid), in the
+   column of the roster's top-level dots (the list's 8px and the row's 10px, as .ctx-list and .ctx-inst). */
+.ws-option { --row-solid: var(--surface); width: 100%; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 4px 8px 4px 10px; border: 0;
+             min-height: 24px; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.ws-option:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
+.ws-option:focus-visible { --row-solid: var(--sel); background: var(--sel); }
+/* The current workspace, by style alone (aria-current says it to assistive tech): its circle filled like a running
+   instance's (.ctx-dot.on, --accent), the others a ring like a stopped one's (.ctx-dot.off), and its name in bold; no
+   fill of its own. The selection fill (--sel) is the nav's current view (.nav-item.active), so the sidebar shows
+   one filled "you are here" row; the filled circle holds 3:1 on every fill the row paints (TEXT_PAIRS holds --accent
+   at 4.5:1 on --surface, --surface-2 and --sel). */
 .ws-option[aria-current="true"] .ws-option-name { font-weight: 650; }
-/* A workspace with an instance that needs input: the roster's attention dot, a graphic after the name
-   (its words are in the name, sr-only, and the tooltip). */
-.ws-waiting { flex: none; box-sizing: border-box; width: 8px; height: 8px; border-radius: 50%; background: var(--attn-dot); border-width: 1px; border-style: solid; border-color: var(--warn); } /* a yellow dot; its ring, the needs-input colour of the roster and the tabs, holds 3:1 on every row fill */
+/* A workspace with an instance that needs input: the needs-input mark (.attn-mark, below) at the row's far right,
+   after the name, which is cut off before it (its words are in the name, sr-only, and the tooltip). */
+.ws-waiting { flex: none; margin-left: auto; margin-right: 2px; } /* 14px, centred in the right-hand column */
+/* The needs-input mark (2026-10-23; shell-icons.mjs OWN_ICONS.attention), on the workspace rows, as a waiting instance's
+   dot (.ctx-dot.waiting) and in the roster's roll-up pill: a --warn disc with the "!" cut out in --surface. Both hold
+   3:1 on every fill they sit on (theme-contrast): the disc on the sidebar, a selected or hovered row and the pill's
+   --attn-bg; the "!" on the disc. */
+.attn-mark { display: block; flex: none; stroke: none; }
+.attn-mark .attn-disc { fill: var(--warn); }
+.attn-mark .attn-glyph { fill: var(--surface); }
 .ws-option-row { min-width: 0; }
-/* Rows cut off below the list's bounded height: said under it, in words (no fade over text). */
-.ws-more { margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+/* Rows cut off below the list's bounded height: said under it, in words (no fade over text), and with the rows' mark,
+   in their column at the far right, when one of them waits on you. */
+.ws-more { display: flex; align-items: center; gap: 9px; margin: 2px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .ws-more[hidden] { display: none; }
 /* A long name ends in an ellipsis; the tooltip holds the whole name. */
 .ws-option-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -87,23 +110,37 @@ body {
    its words for assistive tech and as the tooltip, so the state is never colour alone. */
 .deployment-mark { flex: none; display: inline-flex; color: var(--warn); }
 .deployment-mark > .shell-icon { width: 12px; height: 12px; }
-/* Room below the last item before the Instances separator (human, 2026-09-28). */
-#nav { display: flex; flex: none; flex-direction: column; padding: 8px 8px 14px; gap: 1px; }
-#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 10px; gap: 8px;
+/* The same room above Workspace overview and below Automations, between the two lines (the product owner,
+   2026-10-26). */
+#nav { display: flex; flex: none; flex-direction: column; padding: 8px; gap: 1px; }
+/* The foot (2026-10-26): one bar. The OATS mark at the left with the sidebar toggle after it; Spawn instance, a small
+   button, at the right before the settings cog. The toggle and the cog are 24px boxes with 14px icons. The mark (20px) centres on
+   the rows' circles (22px in: the foot's 10px, the bar's 2px and half its 20px), the cog in the right-hand column (25px
+   in from the right: the foot's 10px, the bar's 3px and half its 24px). */
+#nav-foot { margin-top: auto; flex: none; display: flex; flex-direction: column; padding: 4px 10px;
             border-top: 1px solid var(--border); }
-#sidebar-spawn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 32px;
-                 padding: 5px 10px; border: 1px solid var(--primary-bg); border-radius: 7px;
-                 background: var(--primary-bg); color: var(--primary-fg); font-family: inherit; font-size: 12.5px;
-                 line-height: 1.45; font-weight: 650; cursor: pointer; }
+#sidebar-bar { display: flex; align-items: center; gap: 2px; padding: 0 3px 0 2px; }
+#sidebar-bar > .side-icon-button { width: 24px; height: 24px; border-radius: 5px; position: relative; }
+/* The supplied artwork (transparent ground) at 2x; decorative, so it holds no tab stop and no name. */
+.sidebar-brand { width: 20px; height: 20px; flex: none; display: grid; place-items: center; }
+.sidebar-brand-image { width: 20px; height: 20px; display: block; }
+#sidebar-bar .shell-icon { width: 14px; height: 14px; }
+/* The toggle 8px after the mark (the bar's 2px gap and 6px). Spawn instance: Quick Open (app.quickOpenSouls; the chord
+   is in its tooltip), its words alone, pushed to the right, 6px before the cog (the gap and 4px). Like the toggle and
+   the cog, it has no ground at rest: hover and keyboard focus give it theirs (the product owner, 2026-10-26). */
+#sidebar-bar > #sidebar-toggle { margin-left: 6px; }
+#sidebar-spawn { flex: none; display: flex; align-items: center; height: 24px; min-height: 24px; margin: 0 4px 0 auto;
+                 padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--muted);
+                 font-family: inherit; font-size: 12px; line-height: 1; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .shortcut-hint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                  font: 500 10.5px var(--mono); }
 .shortcut-hint[hidden] { display: none; }
-#sidebar-spawn:hover:not(:disabled) { background: var(--primary-bg); color: var(--primary-fg); }
-#sidebar-spawn:disabled { border-color: var(--border); background: var(--surface-2); color: var(--faint); cursor: default; }
-#sidebar-tools { display: flex; gap: 2px; }
-#sidebar-tools .nav-item { flex: 1; min-width: 0; height: 26px; min-height: 26px; justify-content: center; padding: 0; border-radius: 5px; }
+#sidebar-spawn:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+#sidebar-spawn:focus-visible { background: var(--sel); color: var(--fg); }
+#sidebar-spawn:disabled { background: transparent; color: var(--faint); cursor: default; }
 
 /* ── persistent instance tree (the same shell sidebar, never a second) ── */
+/* The line before the instances (the product owner, 2026-10-26): the roster's top border, the sidebar's full width. */
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 /* A window with no workspace has no instances to list (#481, shell.mjs showChooser). */
 #instance-roster[hidden] { display: none; }
@@ -113,26 +150,12 @@ body {
 .ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; font-weight: 500;
              white-space: nowrap; }
 .ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
-/* Search field (rule 3): the wrapper's border is the only frame, accent on focus-within;
-   the input inside is borderless and never draws an outline (board 7 "Before" shows the
-   old inner 2px ring). */
-.ctx-filter-field { display: flex; align-items: center; gap: 7px; margin: 2px 10px 6px; height: 30px; flex: none;
-                    min-width: 0; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
-                    background: var(--bg); color: var(--muted); }
-.ctx-filter-field:focus-within { border-color: var(--accent); }
-.ctx-filter-icon { flex: none; display: grid; place-items: center; color: var(--muted); }
-.ctx-filter-icon > .shell-icon { width: 12px; height: 12px; }
-.ctx-filter-field .shortcut-hint { color: var(--muted); }
-.ctx-filter { margin: 0; min-width: 0; width: 100%; height: 100%; flex: 1; padding: 0;
-              border: 0; border-radius: 4px; background: var(--bg); color: var(--fg); outline: none;
-              font-family: inherit; font-size: 12px; line-height: 1; }
-.ctx-filter::placeholder { color: var(--muted); }
 .ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
 /* The roster scrolls (the wheel, the touchpad, revealInScrollport for keyboard focus) with no scrollbar,
    like the tab strips: on Linux Chromium draws a heavy classic one beside the rows. */
 .ctx-list { scrollbar-width: none; }
 .ctx-list::-webkit-scrollbar { display: none; }
-/* Loading states (renderer/loading.mjs): the stale line sits between the filter and the list;
+/* Loading states (renderer/loading.mjs): the stale line sits between the head and the list;
    "Refreshing…" closes the head after the count; the count's skeleton pill keeps its width. */
 .ctx-status { flex: none; margin: 0 10px 6px; }
 .ctx-status:empty { display: none; }
@@ -143,7 +166,7 @@ body {
 .ctx-count[data-stale] { color: var(--muted); }
 .ctx-count[data-stale] .ctx-count-dot { background: var(--muted); }
 /* Agent groups (Workspace v4): a 14px gap, no title; the separator names the group for AT.
-   The first one sits just under the filter, so it is shorter (human, 2026-09-29). */
+   The first one sits just under the head, so it is shorter (human, 2026-09-29). */
 .ctx-group { height: 14px; }
 .ctx-group:first-child { height: 7px; }
 /* Deployment headings (#482), only in a view of two or more deployments: the machine label in the
@@ -272,10 +295,15 @@ body {
 .ctx-dot { position: relative; z-index: 1; box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
            border: 1.5px solid var(--faint); background: var(--surface); box-shadow: 0 0 0 2px var(--row-solid, var(--surface)); }
 .ctx-dot.on { border-color: var(--accent); background: var(--accent); }
-.ctx-dot.unknown { border-color: var(--warn); background: var(--warn); }
+/* Unknown liveness (the product owner, 2026-10-26: yellow means needs input, and only that): a --muted bullseye at
+   the same 8px, its ring and a 2px centre with the row's fill between them (an inset ring of --row-solid), so it is
+   neither filled, nor a plain or dashed ring, nor yellow. Its words ("state unknown", or the row's reason) are in the
+   row's description and the hover card. The palette's and Quick Open's rows draw the same dot (overlay-picker.mjs). */
+.ctx-dot.unknown { border-color: var(--muted); background: var(--muted);
+                   box-shadow: inset 0 0 0 1.5px var(--row-solid, var(--surface)), 0 0 0 2px var(--row-solid, var(--surface)); }
 /* An instance's colour (feature instance-color, #1421 §2; instance-dot.mjs): its dot, wherever it is drawn
    (the roster, a terminal tab, a palette row, the overview card), filled in the colour while running and a
-   ring in it while stopped; the shape still says the state, an unknown state keeps the warning dot (the
+   ring in it while stopped; the shape still says the state, an unknown state keeps its muted bullseye (the
    attribute is set only on a running or stopped dot), and the token is --instance-<colour> (theme.css: the soul palette's -fg, held at 3:1 by "This computer"). */
 [data-instance-color="sand"] { --instance-color: var(--instance-sand); }
 [data-instance-color="sage"] { --instance-color: var(--instance-sage); }
@@ -285,6 +313,11 @@ body {
 [data-instance-color="olive"] { --instance-color: var(--instance-olive); }
 .ctx-dot.on[data-instance-color] { border-color: var(--instance-color); background: var(--instance-color); }
 .ctx-dot.off[data-instance-color] { border-color: var(--instance-color); }
+/* A waiting row's dot (the product owner, 2026-10-26): the needs-input mark (.attn-mark) at 10px, centred on the 8px
+   dot's slot (-1px each side, as the spawn spinner), so the name and the guides keep their place. It keeps the dot's
+   2px ring in the row's fill, and paints that fill under the disc so no guide shows through its edge. */
+.ctx-dot.waiting { width: 10px; height: 10px; margin: 0 -1px; border: 0; background-color: var(--row-solid, var(--surface)); }
+.ctx-dot.waiting > .attn-mark { width: 10px; height: 10px; }
 /* A pending spawn (Spec C): a dot-sized spinner beside "Spawning…" (the text carries the state; the
    spinner only says it moves, and stands still under reduced motion). Its Check result stays visible. */
 .ctx-spawn-spinner { position: relative; z-index: 1; box-sizing: border-box; width: 10px; height: 10px; flex: none; margin: 0 -1px;
@@ -309,14 +342,26 @@ body {
 .ctx-name-line > .ctx-name { min-width: 0; }
 .ctx-new { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10.5px; font-weight: 600; line-height: 15px; }
 .ctx-new-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
-/* Spec D: Needs input. The pill paints its own opaque surface (--warn on --attn-bg passes AA), so it reads the same
+/* Spec D: Needs input, rolled up on a collapsed parent ("! N below"). The pill paints its own opaque surface (--warn on --attn-bg passes AA), so it reads the same
    over every row fill; background-color, never the shorthand (#549). No animation: the dot stays liveness. */
 .ctx-attn { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border: 1px solid var(--attn-border);
   border-radius: 999px; background-color: var(--attn-bg); color: var(--warn); font-size: 10.5px; font-weight: 600; line-height: 15px; white-space: nowrap; }
 .ctx-attn > .shell-icon { flex: none; }
+/* The needs-input mark leads the pill at two thirds of its inner 15px (10px), concentric with its rounded end:
+   1px border + 2.5px + the disc's 5px radius is the 17px pill's 8.5px radius (2026-10-23). */
+.ctx-attn:has(> .attn-mark:first-child) { padding-left: 2.5px; }
+/* Its size is set here: .shell-icon's 16px would win over the SVG's own width and height. */
+.ctx-attn > .attn-mark { width: 10px; height: 10px; }
 /* The mark in place of the meta line's text: the line keeps its place, so the row never reorders or grows (48px). */
 .ctx-meta.ctx-attn-line { display: flex; min-width: 0; }
 .ctx-repo-label { display: block; color: var(--muted); font-family: var(--mono); font-size: 11.5px; font-weight: 400; line-height: normal; }
+/* The meta line (2026-10-26): the soul at the left in the UI face, the repository at the right in the repo's
+   style; the soul is cut first (its far larger shrink), the repository keeps about 10ch before it is cut too. */
+.ctx-meta.ctx-soul-repo { display: flex; align-items: baseline; gap: 8px; width: 100%; color: var(--muted); font-size: 11.5px;
+                          font-weight: 400; line-height: normal; }
+.ctx-meta-soul { flex: 1 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-meta-repo { flex: 0 1 auto; min-width: min(10ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                 font-family: var(--mono); text-align: right; }
 .ctx-runtime { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px;
                font-size: 9.5px; font-weight: 700; }
 /* A stopped instance's provider mark dims (design): the chip pair, --chip-fg on
@@ -359,6 +404,8 @@ body {
 .ws-suggestion:focus-visible { background: var(--sel); }
 .ws-suggestion:disabled { cursor: default; }
 .ws-suggestion:disabled:hover { background: transparent; }
+/* The rows that can't be opened, after those to add, under their own small heading (--muted on the dialog's --surface). */
+.ws-suggestions-heading { margin: 10px 10px 4px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.5; }
 /* A row of this computer's list that can't be opened (#1390): its state in a word, and its Remove beside it. */
 .ws-suggestion-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .ws-suggestion-row > .ws-suggestion { flex: 1 1 auto; min-width: 0; }
@@ -431,9 +478,8 @@ body {
 .main-edge-dot { position: absolute; right: 2px; top: 2px; width: 7px; height: 7px; box-sizing: border-box;
                  border-radius: 50%; background: var(--accent); border: 1px solid var(--surface); }
 .main-edge-dot[hidden] { display: none; }
-/* One bar height everywhere, border included (like .side-head): the strip's
-   bottom border lines up with the sidebar header's and runs unbroken under
-   every tab, the active one included (human preference). */
+/* One bar height everywhere, border included: the strip's bottom border runs
+   unbroken under every tab, the active one included (human preference). */
 #tabstrip { display: flex; flex-direction: column; flex: none; box-sizing: border-box; height: var(--bar-h);
             background: var(--bg); border-bottom: 1px solid var(--border); }
 #tabstrip:has(> #tabbar-row > #tabbar:empty) { display: none; }
@@ -554,9 +600,8 @@ body {
 .split-resizer:hover, .split-resizer:focus-visible { background: var(--accent); outline: none; }
 #tabhost.split-row > .group-cell + .group-cell { border-left: 1px solid var(--border); }
 #tabhost.split-col > .group-cell + .group-cell { border-top: 1px solid var(--border); }
-/* 48px including the bottom rule, like .side-head: tabs fill the 47px
-   above it, so the rule aligns with the sidebar header's and stays visible
-   under the active tab. */
+/* 48px including the bottom rule, like the tab strip: tabs fill the 47px
+   above it, so the rule stays visible under the active tab. */
 .group-tabbar { display: flex; flex: none; box-sizing: border-box; min-width: 0; overflow-x: auto; overflow-y: hidden;
                 height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border);
                 margin-left: var(--main-lead-inset); margin-right: var(--main-trail-inset); }
@@ -660,8 +705,8 @@ body {
 /* The palette's footer names its group keys (overlay-picker `footer`): one quiet line of plain text
    under the list, in the muted ink on the palette's surface, set off by the input's rule. */
 .palette-footer { padding: 6px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
-/* Instances as the sidebar draws them (spec F, #1383): relation groups read from the
-   sidebar's 14px gap alone (each is a named role=group for AT), and a match's ancestor
+/* Instances as the sidebar draws them (spec F, #1383): relation groups set apart by the
+   palette's own 14px gap (the sidebar's is 6px; each is a named role=group for AT), and a match's ancestor
    shown only for its place in the tree is dimmed by colour (the muted token, never
    opacity; its lines are not dimmed) and is not a target. A tree row (.tree: one with
    connectors) takes the sidebar's indent and dot column, a 10px inset plus --depth ×
@@ -727,10 +772,17 @@ body {
 .kb-marks { flex: none; width: 112px; display: flex; justify-content: flex-end; gap: 8px; }
 .kb-mark { color: var(--muted); font-size: 11px; }
 .kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
-/* The footer shortcuts button, while a stored rebind clashes (keymapConflicts): a warn dot. */
-#sidebar-shortcuts { position: relative; }
-#sidebar-shortcuts.has-clash::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--warn); }
+/* The settings cog and its Keyboard shortcuts… item, while a stored rebind clashes (keymapConflicts): a --danger dot,
+   since a key no longer does what it says (yellow means needs input only; the words are their aria-description). */
+#sidebar-settings.has-clash::after { content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--danger); }
+.sidebar-settings-menu button.has-clash > .sidebar-settings-label::after { content: ""; display: inline-block; width: 7px; height: 7px;
+  margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
+/* The settings menu's items: the icon, the words, the chord. */
+.sidebar-settings-menu { width: 220px; }
+.ctx-instance-menu.sidebar-settings-menu button { grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; }
+.sidebar-settings-menu .ctx-menu-icon { display: grid; }
+.sidebar-settings-menu .ctx-menu-icon > .shell-icon { width: 15px; height: 15px; }
 /* The chord: a button holding one keycap per key, right-aligned in a fixed column (four keys fit)
    so keycaps and the markers before them line up from row to row. The button fits its keycaps,
    and its own focus ring replaces the global --sel tint, so its text stays on the row's surface. */

@@ -22,7 +22,7 @@ export const LINUX_SIZES = [16, 32, 48, 64, 128, 256, 512];
 // ICNS PNG-payload types (macOS 10.7+). Retina types reuse the doubled size.
 export const ICNS_TYPES = [['icp4', 16], ['icp5', 32], ['icp6', 64], ['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic10', 1024],
   ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512]];
-export const SIDEBAR_SIZE = 48; // the 24px sidebar slot at 2x
+export const SIDEBAR_SIZE = 48; // the sidebar mark (drawn at 20px in the bottom bar) at 2x and more
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

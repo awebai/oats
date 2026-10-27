@@ -16,7 +16,7 @@
    and what remains. Never approve an unpinned, moving tip.
 6. Before merging, compare the PR head, the remote branch and the head the checks ran on.
    If the owner moved the head, wait for its hand-over of the new head; the skill's Merge
-   section says when both verdicts carry (every commit `=` in the range-diff) and when the
+   section says when the verdicts carry (every commit `=` in the range-diff) and when the
    delta is reviewed. If the default branch moved since the checks ran, make that
    section's check before you merge.
 7. A failed client response may follow a completed merge: observe the remote state before
@@ -33,4 +33,5 @@ Tests run:
 Findings:
 HOLD/GO scope / next action:
 Verdict at SHA:
+Second reader's verdict at SHA (a hand-over to the release lane):
 ```

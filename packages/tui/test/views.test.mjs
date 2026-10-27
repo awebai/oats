@@ -29,7 +29,7 @@ import { EMPTY_TEXT, MARKS, NEEDS_INPUT, belowText, cutNote, instances, marksOf 
 import { SOUL_MARK } from "../lib/views/souls.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
 import { WAITING_DOT } from "../lib/views/workspaces.mjs";
-import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, leaderEscape, leaderThen, observed, press, readTerminalOutput, rosterOf, stateOf } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, draw, drawnName, failed, instanceRow, leaderEscape, leaderThen, observed, press, readTerminalOutput, rosterOf, stateOf } from "./helpers.mjs";
 
 const size = (cols, rows) => ({ cols, rows });
 const S80 = size(80, 24), S120 = size(120, 40), S79 = size(79, 24), S60 = size(60, 15);
@@ -60,6 +60,12 @@ function tagAt(d, r, pane) {
   let col = pane;
   while (col > 0 && cells[col - 1].style === look) col--;
   return { col, words: cells.slice(col).map((cell) => cell.text).join("").trim(), style: look };
+}
+/** The needs-input mark of row `r`, as drawn: `{ col, style }` of the cell that holds `!` in the
+ *  needs-input look before the row's name, or null. */
+function waitMarkAt(d, r) {
+  const col = d.cells[r].findIndex((cell) => cell.text === "!" && (cell.style === TAG || cell.style === TAG_SELECTED));
+  return col < 0 || col > 2 + 2 * 5 ? null : { col, style: d.cells[r][col].style };
 }
 /** The text of a row of cells from column `from` up to `to`, trailing blanks cut. */
 const textAt = (line, from = 0, to = line.length) => line.slice(from, to).map((cell) => cell.text).join("").trimEnd();
@@ -98,9 +104,9 @@ function listRows(d) {
  *  sidebar's rule from 80 columns, the whole width under), every row of the screen. */
 const listLines = (d) => listRows(d).map((r) => cellText(d, r, 0, d.cols));
 const detailLines = (d, sz) => d.cells.map((_, r) => cellText(d, r, sz.cols >= WIDE ? d.cols + 1 : 0));
-/** The screen row that draws the instance whose name begins with `name`, in the list. */
+/** The screen row that draws the instance whose name begins with `name`, in the list (as words). */
 function rowOf(d, sz, name) {
-  const found = listRows(d).filter((r) => cellText(d, r, 0, d.cols).includes(name));
+  const found = listRows(d).filter((r) => cellText(d, r, 0, d.cols).includes(drawnName(name)));
   assert.equal(found.length, 1, `one list row draws ${name}`);
   return found[0];
 }
@@ -109,7 +115,7 @@ function rowOf(d, sz, name) {
  *  height. */
 function rowAt(state, sz, name) {
   const reference = draw(state, size(79, sz.rows));
-  const found = listRows(reference).filter((r) => `${cellText(reference, r)} `.includes(` ${name} `));
+  const found = listRows(reference).filter((r) => `${cellText(reference, r)} `.includes(` ${drawnName(name)} `));
   assert.equal(found.length, 1, `one list row draws ${name}`);
   return found[0];
 }
@@ -118,7 +124,7 @@ function rowAt(state, sz, name) {
  *  the selection moved to it. */
 function onScreen(state, sz, name) {
   const reference = draw(state, size(79, sz.rows));
-  return listRows(reference).some((r) => cellText(reference, r).includes(` ${name} `)) ? state : selecting(state, name, sz);
+  return listRows(reference).some((r) => cellText(reference, r).includes(` ${drawnName(name)} `)) ? state : selecting(state, name, sz);
 }
 /** The cheat sheet's rows: the sidebar's cells under its last rule, down to the last row that holds
  *  something. */
@@ -289,31 +295,31 @@ const paletteActs = (state) => paletteItems(leaderThen(state, "k").state, AT).it
 const HELP_SHEET = Object.freeze([LEAD, ["Ctrl+K", "palette"], ["Esc", "close"], ["?", "help"], ["q", "quit"]]);
 /** The fixture's list at 80 columns, the selected developer's row in it. */
 const LIST_80 = Object.freeze([
-  "  ● acme-console-expert-tui-read",
-  "    ● acme-console-developer-pan…   !",
-  "    ● acme-console-developer-ter…   !",
+  "  ● Acme console expert tui read",
+  "    ! Acme console developer pan…",
+  "    ! Acme console developer ter…",
   "",
-  "  ? acme-expert-tui  state unkno…",
+  "  ? Acme expert tui  state unkno…",
   "",
-  "  ● acme-ledger-expert-retire",
-  ">   ● acme-ledger-developer-note…   !",
-  "      ○ peer-reviewer-note",
+  "  ● Acme ledger expert retire",
+  ">   ! Acme ledger developer note…",
+  "      ○ Peer reviewer note",
   "",
-  "  ● acme-maintainer-ops",
+  "  ● Acme maintainer ops",
 ]);
 /** The same in ASCII: its marks and its cut mark, which takes three cells. */
 const LIST_80_ASCII = Object.freeze([
-  "  * acme-console-expert-tui-read",
-  "    * acme-console-developer-p...   !",
-  "    * acme-console-developer-t...   !",
+  "  * Acme console expert tui read",
+  "    ! Acme console developer p...",
+  "    ! Acme console developer t...",
   "",
-  "  ? acme-expert-tui  state unk...",
+  "  ? Acme expert tui  state unk...",
   "",
-  "  * acme-ledger-expert-retire",
-  ">   * acme-ledger-developer-no...   !",
-  "      - peer-reviewer-note",
+  "  * Acme ledger expert retire",
+  ">   ! Acme ledger developer no...",
+  "      - Peer reviewer note",
   "",
-  "  * acme-maintainer-ops",
+  "  * Acme maintainer ops",
 ]);
 
 // ── Golden frames ────────────────────────────────────────────────────────────────────────────────
@@ -391,10 +397,10 @@ test("from 80 columns up the list takes clamp(floor(cols x 0.48), 36, 60) cells,
     const sz = size(cols, 24), d = draw(golden(), sz);
     assert.equal(d.cols, list, `${cols}`);
     for (const r of bodyRows(sz)) assert.equal(d.cells[r][list].text, "│", `${cols}: row ${r}: the rule column runs over every row, with no joint`);
-    const selected = rowAt(golden(), sz, KERNEL_DEV), tag = tagAt(d, selected, list);
-    // The selected row's bar is the list: every cell of it but its needs-input tag, and none past it.
-    assert.equal(tag?.style, TAG_SELECTED, `${cols}: the selected developer waits`);
-    assert.deepEqual(d.cells[selected].map((cell) => cell.style.reverse), Array.from({ length: cols }, (_, x) => x < tag.col), `${cols}`);
+    const selected = rowAt(golden(), sz, KERNEL_DEV), mark = waitMarkAt(d, selected);
+    // The selected row's bar is the list: every cell of it but its needs-input mark, and none past it.
+    assert.deepEqual(mark, { col: 4, style: TAG_SELECTED }, `${cols}: the selected developer waits`);
+    assert.deepEqual(d.cells[selected].map((cell) => cell.style.reverse), Array.from({ length: cols }, (_, x) => x < list && x !== mark.col), `${cols}`);
     // The detail starts after the rule, on the top row, and ends inside the screen.
     const title = d.cells[0].slice(list + 1).map((cell) => cell.text).join("");
     assert.equal(title.trim(), KERNEL_DEV, `${cols}`);
@@ -404,17 +410,17 @@ test("from 80 columns up the list takes clamp(floor(cols x 0.48), 36, 60) cells,
 
 test("at 120x40 the names have room: the same roster with the names whole, the detail's lines uncut, and the whole cheat sheet under the views", () => {
   assert.deepEqual(draw(golden(), S120).lines, beside(instancesSide(workspaceLine("acme-platform", 57, { waiting: true }), [
-    "  ● acme-console-expert-tui-read",
-    tagged("    ● acme-console-developer-panel", 57),
-    tagged("    ● acme-console-developer-terms", 57),
+    "  ● Acme console expert tui read",
+    "    ! Acme console developer panel",
+    "    ! Acme console developer terms",
     "",
-    "  ? acme-expert-tui                    state unknown",
+    "  ? Acme expert tui                    state unknown",
     "",
-    "  ● acme-ledger-expert-retire",
-    tagged(">   ● acme-ledger-developer-note-target", 57),
-    "      ○ peer-reviewer-note",
+    "  ● Acme ledger expert retire",
+    ">   ! Acme ledger developer note target",
+    "      ○ Peer reviewer note",
     "",
-    "  ● acme-maintainer-ops",
+    "  ● Acme maintainer ops",
   ], LIST_SHEET, { cols: 57 }), [
     "   acme-ledger-developer-note-target",
     "   soul     acme-ledger-developer",
@@ -433,20 +439,21 @@ test("at 120x40 the names have room: the same roster with the names whole, the d
 test("at 79x24 the sidebar takes the whole width: no rule column, no detail beside it, and the waiting marks and the views' keys at the right edge", () => {
   const d = draw(golden(), S79);
   assert.deepEqual(d.lines, instancesSide(workspaceLine("acme-platform", 79, { waiting: true }), [
-    "  ● acme-console-expert-tui-read",
-    tagged("    ● acme-console-developer-panel", 79),
-    tagged("    ● acme-console-developer-terms", 79),
+    "  ● Acme console expert tui read",
+    "    ! Acme console developer panel",
+    "    ! Acme console developer terms",
     "",
-    "  ? acme-expert-tui                                          state unknown",
+    "  ? Acme expert tui                                          state unknown",
     "",
-    "  ● acme-ledger-expert-retire",
-    tagged(">   ● acme-ledger-developer-note-target", 79),
-    "      ○ peer-reviewer-note",
+    "  ● Acme ledger expert retire",
+    ">   ! Acme ledger developer note target",
+    "      ○ Peer reviewer note",
     "",
-    "  ● acme-maintainer-ops",
+    "  ● Acme maintainer ops",
   ], SHEET_80, { cols: 79 }));
-  assert.deepEqual(d.cells[10].map((cell) => cell.style.reverse), Array.from({ length: 79 }, (_, x) => x < 79 - NEEDS_INPUT.length - 2), "the selected row's bar is the whole width but for its tag");
-  assert.deepEqual([4, 10].map((r) => cellText(d, r, 79 - NEEDS_INPUT.length - 2)), [` ${NEEDS_INPUT}`, ` ${NEEDS_INPUT}`], "a waiting row's tag ends in the last column");
+  assert.deepEqual(d.cells[10].map((cell) => cell.style.reverse), Array.from({ length: 79 }, (_, x) => x !== 4), "the selected row's bar is the whole width but for its needs-input mark");
+  assert.deepEqual([4, 10].map((r) => [d.cells[r][4].text, d.cells[r][4].style]), [["!", TAG], ["!", TAG_SELECTED]], "a waiting row's state mark is the needs-input mark");
+  assert.deepEqual([4, 10].map((r) => cellText(d, r, 79 - 5)), ["", ""], "and no tag at its edge");
   for (const line of d.lines) assert.equal(line.includes("soul "), false, "no detail is drawn beside the list");
 });
 
@@ -455,13 +462,13 @@ test("at 60x15, the smallest size drawn, the frame keeps its shape and the roste
   assert.deepEqual(d.lines, [
     workspaceLine("acme-platform", 60, { waiting: true }),
     viewLine("Instances", "1", 60),
-    tagged("    ● acme-console-developer-panel", 60),
-    tagged("    ● acme-console-developer-terms", 60),
+    "    ! Acme console developer panel",
+    "    ! Acme console developer terms",
     "",
-    "  ? acme-expert-tui                       state unknown",
+    "  ? Acme expert tui                       state unknown",
     "",
-    "  ● acme-ledger-expert-retire",
-    tagged(">   ● acme-ledger-developer-note-target", 60),
+    "  ● Acme ledger expert retire",
+    ">   ! Acme ledger developer note target",
     `   ${cutNote(1, 3)}`,
     ruleLine(60), viewLine("Souls", "2", 60), viewLine("Capabilities", "3", 60), ruleLine(60),
     ...sheet([LEAD]),
@@ -476,7 +483,7 @@ test("at 60x15 the short height is shared in the spec's order: the cheat sheet g
     const empty = n <= 7;
     assert.equal(cellText(d, 1), empty ? "" : viewLine("Instances", "1", 60), `${at}: ${empty ? "the empty row stays" : "the empty row is given up"}`);
     assert.equal(listRows(d).length, Math.min(n, 8), at);
-    const drawn = listLines(d).filter((line) => /dev-\d/.test(line)).length;
+    const drawn = listLines(d).filter((line) => /Dev \d/.test(line)).length;
     assert.equal(drawn, n <= 8 ? n : 7, `${at}: every instance, until the list scrolls`);
     if (n > 8) assert.equal(listLines(d).at(-1).trim(), cutNote(0, n - 7), `${at}: and its last row says what is cut off`);
     assert.deepEqual(sheetOf(d), sheet(LIST_SHEET.slice(0, empty ? 8 - n : 1)), `${at}: the cheat sheet in what is left, from its first row, the leader always`);
@@ -655,18 +662,19 @@ test("no count is drawn for a roster of any kind: running, stopped, or none", ()
   }
 });
 
-test("waiting instances are not counted on the screen: each waiting row carries its own tag", () => {
+test("waiting instances are not counted on the screen: each waiting row carries its own mark, and no words", () => {
   const waiting = (n) => Array.from({ length: 3 }, (_, i) => instanceRow("soul", `dev-${i}`, i < n ? { waitingOnYou: { ...QUESTION } } : {}));
   for (const n of [0, 1, 2]) {
     const d = draw(stateOf(observed(waiting(n))), S80);
     for (const line of d.lines) assert.doesNotMatch(line, /needs? input/, `${n}: ${line}`);
-    assert.equal(listLines(d).filter((line) => line.endsWith(NEEDS_INPUT)).length, n, `${n} waiting`);
+    assert.equal(listLines(d).filter((line) => /^[> ] ! /.test(line)).length, n, `${n} waiting`);
+    assert.equal(listLines(d).some((line) => line.includes(NEEDS_INPUT)), false, `${n}: no row says it in words`);
   }
 });
 
 test("a withheld row is never drawn as a row nor counted beside the list, and the help's top row counts it", () => {
   const d = draw(fresh(), S120);
-  for (const line of d.lines) assert.equal(line.includes("acme-ledger-developer-twin") || line.includes("withheld"), false, line);
+  for (const line of d.lines) assert.equal(line.includes("acme-ledger-developer-twin") || line.includes("Acme ledger developer twin") || line.includes("withheld"), false, line);
   const help = draw(press(fresh(), ["?"], S120).state, S120);
   assert.equal(cellText(help, 0, help.cols + 1), "   read 10:00:00  1 withheld");
   const none = draw(press(stateOf(observed(ROSTER())), ["?"], S120).state, S120);
@@ -743,7 +751,7 @@ test("the not-observed reason of a stale deployment is the shared state's detail
     for (const text of d.lines) assert.equal(text.includes("the kernel:"), false, at);
     // Below it, the rows of the last observation.
     const below = d.lines.slice(reason.rows.at(-1) + 1);
-    assert.equal(below.some((text) => text.includes("acme-ledger-expert") || text.includes("acme-console-expert")), true, `${at}: the last observation is still drawn`);
+    assert.equal(below.some((text) => text.includes("Acme ledger expert") || text.includes("Acme console expert")), true, `${at}: the last observation is still drawn`);
   }
 });
 
@@ -759,7 +767,7 @@ test("the not-observed reason of an unavailable deployment is the shared state's
     assert.equal(d.cells[2].find((cell) => cell.text !== " ").text, line[0], at);
     for (const text of d.lines) assert.equal(text.includes("the kernel:"), false, at);
     assert.deepEqual(listLines(d), [], `${at}: the reason stands above the views, and the list holds no row`);
-    for (const text of d.lines) assert.equal(/acme-(ledger|console|maintainer|expert)-/.test(text), false, `${at}: no instance`);
+    for (const text of d.lines) assert.equal(/acme-(ledger|console|maintainer|expert)-|Acme (ledger|console|maintainer|expert) /.test(text), false, `${at}: no instance`);
   }
 });
 
@@ -921,7 +929,7 @@ test("a list row is indented two cells per level, and a row deeper than the sixt
   for (const sz of [S80, S120, S79, size(60, 20)]) {
     const d = draw(stateOf(observed(chain)), sz);
     const marks = chain.map((_, i) => d.cells[rowOf(d, sz, `level-${i}`)].findIndex((cell) => cell.text === "●"));
-    const names = chain.map((_, i) => d.cells[rowOf(d, sz, `level-${i}`)].map((cell) => cell.text).join("").indexOf(`level-${i}`));
+    const names = chain.map((_, i) => d.cells[rowOf(d, sz, `level-${i}`)].map((cell) => cell.text).join("").indexOf(drawnName(`level-${i}`)));
     for (let i = 1; i < 8; i++) {
       assert.equal(marks[i] - marks[i - 1], i <= 5 ? 2 : 0, `${sz.cols}: level ${i} against level ${i - 1}`);
       assert.equal(names[i] - names[i - 1], i <= 5 ? 2 : 0, `${sz.cols}: the name moves with its mark`);
@@ -934,7 +942,7 @@ test("a list row is indented two cells per level, and a row deeper than the sixt
 test("no row carries a disclosure mark: a child stands under its parent by indentation alone, two cells a level, and only a folded row says so, with `+n` after its name for the n instances it folds away", () => {
   for (const ascii of [false, true]) for (const sz of SIZES) {
     const marks = marksOf(ascii), state = fresh({ ascii });
-    for (const [name, mark, depth] of [[KERNEL_EXPERT, marks.running, 0], [KERNEL_DEV, marks.running, 1], [REVIEWER, marks.stopped, 2], [DESKTOP_EXPERT, marks.running, 0], [DESKTOP_A, marks.running, 1], [DESKTOP_B, marks.running, 1], [MAINTAINER, marks.running, 0], [EXPERT_TUI, marks.unknown, 0]]) {
+    for (const [name, mark, depth] of [[KERNEL_EXPERT, marks.running, 0], [KERNEL_DEV, marks.waiting, 1], [REVIEWER, marks.stopped, 2], [DESKTOP_EXPERT, marks.running, 0], [DESKTOP_A, marks.waiting, 1], [DESKTOP_B, marks.waiting, 1], [MAINTAINER, marks.running, 0], [EXPERT_TUI, marks.unknown, 0]]) {
       // Where the list is cut off (60x15), the selection moved to the row brings it on the screen.
       const there = onScreen(state, sz, name), drawn = draw(there, sz), r = rowAt(there, sz, name);
       const cells = drawn.cells[r], at = `${name} at ${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
@@ -947,7 +955,7 @@ test("no row carries a disclosure mark: a child stands under its parent by inden
     // Folded: the root of the one cluster folds its two children away.
     const shut = draw(folded({ ascii }), sz), row = cellText(shut, listRows(shut)[0], 0, shut.cols);
     assert.equal(row.slice(0, 4), `> ${marks.running} `, "the folded row's own cells are its marks, as any row's");
-    assert.match(row, /^> . \S+ \+2 /, `${sz.cols}: \`+2\` after the name`);
+    assert.match(row, /^> . \S.* \+2 /, `${sz.cols}: \`+2\` after the name`);
   }
   for (const line of listLines(draw(fresh(), S120), S120)) assert.equal(/[▾▸]/.test(line), false, line);
 });
@@ -966,7 +974,7 @@ const STATES = () => [
   ["held", instanceRow("soul", "i-retiring", { retirePending: true })],
 ];
 /** The mark a row carries: the last thing drawn before its name. */
-const markOf = (d, sz, name) => { const line = cellText(d, rowOf(d, sz, name)); return line.slice(0, line.indexOf(name)).trim().split(/\s+/).at(-1); };
+const markOf = (d, sz, name) => { const line = cellText(d, rowOf(d, sz, name)); return line.slice(0, line.indexOf(drawnName(name))).trim().split(/\s+/).at(-1); };
 
 test("each state has a mark of its own shape, in UTF-8 and in ASCII: running, stopped, a shell left behind, unknown, and a home the kernel holds", () => {
   assert.deepEqual({ ...MARKS.utf8 }, { running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", selected: ">", waiting: "!" });
@@ -984,7 +992,7 @@ test("a row has a word only where its mark can't say it: none for running, stopp
   const expected = { "d-unreachable": reason("d-unreachable"), "e-unsupported": `${reason("e-unsupported").slice(0, 19)}…`, "f-spawning": held("f-spawning"), "g-half-spawned": held("g-half-spawned"), "h-half-retired": held("h-half-retired"), "i-retiring": held("i-retiring") };
   assert.equal(textWidth(reason("e-unsupported")) > 20, true, "the shared label of a removed session backend is wider than the column");
   const list = listWidth(sz.cols);
-  for (const name of ["a-running", "b-stopped", "c-shell"]) assert.equal(cellText(d, rowOf(d, sz, name), 0, list).endsWith(name), true, `${name}: its name and nothing after it`);
+  for (const name of ["a-running", "b-stopped", "c-shell"]) assert.equal(cellText(d, rowOf(d, sz, name), 0, list).endsWith(drawnName(name)), true, `${name}: its name and nothing after it`);
   const starts = Object.entries(expected).map(([name, word]) => { const line = cellText(d, rowOf(d, sz, name), 0, list); assert.equal(line.endsWith(word), true, `${name} shows ${word}`); return line.length - word.length; });
   assert.equal(new Set(starts).size, 1, "every word starts at the same column");
   assert.equal(starts[0] + 20 <= list, true, "and the widest ends inside the pane");
@@ -1003,7 +1011,7 @@ test("the word column is as wide as the widest word among all the rows, and neve
     const list = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols;
     // No word anywhere: a long name runs to the cells kept for the waiting mark and a gap, and is
     // cut there; from its mark on, the row is the same in a list that has a word column.
-    const cut = `● ${"n".repeat(list - 10)}…`;
+    const cut = `● N${"n".repeat(list - 11)}…`;
     const quiet = draw(stateOf(observed([instanceRow("soul", LONG)])), sz);
     assert.equal(cellText(quiet, 3, 2, list), cut, `${sz.cols}: the name has every cell but the waiting mark's and a gap`);
     for (const extra of [HELD, HERDR]) {
@@ -1021,57 +1029,55 @@ test("the word column is as wide as the widest word among all the rows, and neve
   }
 });
 
-test("the selected row is drawn in reverse video over the whole width of its pane, but for a needs-input tag at its edge, and carries `>` in its first cell: the selection never rests on an attribute alone", () => {
+test("the selected row is drawn in reverse video over the whole width of its pane, but for its needs-input mark, and carries `>` in its first cell: the selection never rests on an attribute alone", () => {
   for (const ascii of [false, true]) for (const name of [KERNEL_EXPERT, KERNEL_DEV, REVIEWER, DESKTOP_EXPERT, DESKTOP_A, DESKTOP_B, MAINTAINER, EXPERT_TUI]) {
     const state = selecting(fresh({ ascii }), name);
     for (const sz of [...SIZES, size(200, 30)]) {
       const d = draw(state, sz), at = `${name} at ${sz.cols}x${sz.rows}`;
       const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols, selected = rowAt(state, sz, name);
       assert.equal(d.cells[selected][0].text, ">", at);
-      const tag = tagAt(d, selected, pane);
-      assert.equal(tag !== null, [KERNEL_DEV, DESKTOP_A, DESKTOP_B].includes(name), `${at}: a tag only on a waiting row`);
-      if (tag) assert.equal(tag.style, TAG_SELECTED, `${at}: the tag stands apart from the bar, not reversed`);
-      assert.deepEqual(d.cells[selected].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x < (tag ? tag.col : pane)), `${at}: every cell of the pane but the tag, and none past it`);
-      // The accordion's open view is bold, never in reverse: the selection, the tags and the open
-      // workspace's row of the list of workspaces (the top row, the sidebar's width, while the list
-      // does not have the focus) are the only cells in reverse.
+      const mark = waitMarkAt(d, selected);
+      assert.equal(tagAt(d, selected, pane), null, `${at}: no tag at the edge`);
+      assert.equal(mark !== null, [KERNEL_DEV, DESKTOP_A, DESKTOP_B].includes(name), `${at}: the needs-input mark only on a waiting row`);
+      if (mark) assert.equal(mark.style, TAG_SELECTED, `${at}: the mark stands apart from the bar, not reversed`);
+      assert.deepEqual(d.cells[selected].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x < pane && x !== mark?.col), `${at}: every cell of the pane but the mark, and none past it`);
+      // The accordion's open view is bold, never in reverse: the selection, the needs-input marks and
+      // the open workspace's row of the list of workspaces (the top row, the sidebar's width, while
+      // the list does not have the focus) are the only cells in reverse.
       assert.equal(openBarred(d, pane), true, `${at}: the open workspace's row of the list of workspaces is in bold reverse video over the sidebar's width, but for its dot`);
-      const otherReverse = (line, r) => (r === 0 ? false : line.slice(0, (tagAt(d, r, pane) ?? { col: pane }).col).some((cell) => cell.style.reverse)) || line.slice(pane).some((cell) => cell.style.reverse);
-      assert.deepEqual(d.cells.flatMap((line, r) => (r !== selected && otherReverse(line, r) ? [r] : [])), [], `${at}: no other row is in reverse video, but for its tag and the open workspace's row of the list of workspaces in the sidebar`);
+      const otherReverse = (line, r) => (r === 0 ? false : line.slice(0, pane).some((cell, x) => cell.style.reverse && x !== waitMarkAt(d, r)?.col)) || line.slice(pane).some((cell) => cell.style.reverse);
+      assert.deepEqual(d.cells.flatMap((line, r) => (r !== selected && otherReverse(line, r) ? [r] : [])), [], `${at}: no other row is in reverse video, but for its needs-input mark and the open workspace's row of the list of workspaces in the sidebar`);
       assert.deepEqual(bodyRows(sz).filter((r) => r !== selected && d.cells[r][0].text === ">"), [], `${at}: no other row carries the selection mark`);
     }
   }
 });
 
-test("a waiting row carries its tag at the right edge of its pane, `Needs input` where its whole name fits beside it and `!` where it does not, and an expanded row carries nothing for the rows that wait below it", () => {
+test("a waiting row's state mark is the needs-input mark, `!` at its level, and its edge carries nothing; an expanded row carries nothing for the rows that wait below it", () => {
   for (const ascii of [false, true]) for (const sz of SIZES) {
     const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols, state = fresh({ ascii }), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
-    /** The row's tag, and the cell before it; where the list is cut off (60x15), with the selection moved to it. */
+    /** The row's needs-input mark, its tag and its last cells; where the list is cut off (60x15), with the selection moved to it. */
     const edge = (name) => {
-      const there = onScreen(state, sz, name), d = draw(there, sz), r = rowAt(there, sz, name), tag = tagAt(d, r, pane);
-      return { tag, before: tag && d.cells[r][tag.col - 1].text, selected: d.cells[r][0].text === ">", last: cellText(d, r, pane - 2, pane) };
+      const there = onScreen(state, sz, name), d = draw(there, sz), r = rowAt(there, sz, name);
+      return { mark: waitMarkAt(d, r), tag: tagAt(d, r, pane), selected: d.cells[r][0].text === ">", last: cellText(d, r, pane - 2, pane) };
     };
-    // At 80 columns the sidebar is 38 cells, too few for the developers' whole names beside the words.
-    const words = pane === 38 ? MARKS.utf8.waiting : NEEDS_INPUT;
     for (const name of [KERNEL_DEV, DESKTOP_A, DESKTOP_B]) {
-      const { tag, before, selected } = edge(name);
-      assert.deepEqual([tag?.words, tag?.col, before], [words, pane - words.length - 2, " "], `${name} at ${at}: the tag is inside the pane, at its edge, after a gap`);
-      assert.equal(tag.style, selected ? TAG_SELECTED : TAG, `${name} at ${at}`);
+      const { mark, tag, selected, last } = edge(name);
+      assert.deepEqual([mark, tag, last], [{ col: 4, style: selected ? TAG_SELECTED : TAG }, null, ""], `${name} at ${at}: the mark at the state mark's column, one level in, and nothing at the edge`);
     }
-    for (const name of [KERNEL_EXPERT, DESKTOP_EXPERT, MAINTAINER, REVIEWER, EXPERT_TUI]) assert.deepEqual([edge(name).tag, edge(name).last], [null, ""], `${name} at ${at}`);
+    for (const name of [KERNEL_EXPERT, DESKTOP_EXPERT, MAINTAINER, REVIEWER, EXPERT_TUI]) assert.deepEqual([edge(name).mark, edge(name).tag, edge(name).last], [null, null, ""], `${name} at ${at}`);
   }
 });
 
 test("a collapsed row carries `+n` after its name for the n instances it folds away and a tag for the N rows waiting below it, `N below` or `N` where the whole name does not fit beside the words, and the rows below it are not drawn: one cluster and no single instance, cell for cell", () => {
   const shut = model(folded(), { page: 19, now: NOW, at: AT }).list.find((row) => row?.selected);
-  assert.deepEqual([shut.name, shut.folded, shut.below], [DESKTOP_EXPERT, 2, 2], "two folded away, both waiting");
+  assert.deepEqual([shut.name, shut.folded, shut.below], ["Acme console expert tui read", 2, 2], "its name as words, two folded away, both waiting");
   const d80 = draw(folded(), S80), a80 = draw(folded({ ascii: true }), S80), d60 = draw(folded(), S60), d120 = draw(folded(), S120);
   assert.equal(cellText(d80, 0, 0, 38), workspaceLine("acme-platform", 38, { waiting: true }), "the open workspace's row of the list of workspaces: its name and the dot, and nothing counts the rows that wait");
   // The name is cut before the count is: `+2` stays whole after what is left of it.
-  assert.equal(cellText(d80, 3, 0, 39), "> ● acme-console-expert-tui-r… +2   2 │");
-  assert.equal(cellText(a80, 3, 0, 39), "> * acme-console-expert-tui... +2   2 |");
-  assert.equal(cellText(d60, 3), tagged(`> ● ${DESKTOP_EXPERT} +2`, 60, belowText(2)));
-  assert.equal(cellText(d120, 3, 0, 58), `${tagged(`> ● ${DESKTOP_EXPERT} +2`, 57, belowText(2))} │`);
+  assert.equal(cellText(d80, 3, 0, 39), "> ● Acme console expert tui r… +2   2 │");
+  assert.equal(cellText(a80, 3, 0, 39), "> * Acme console expert tui... +2   2 |");
+  assert.equal(cellText(d60, 3), tagged(`> ● ${drawnName(DESKTOP_EXPERT)} +2`, 60, belowText(2)));
+  assert.equal(cellText(d120, 3, 0, 58), `${tagged(`> ● ${drawnName(DESKTOP_EXPERT)} +2`, 57, belowText(2))} │`);
   assert.deepEqual(d80.cells[3].slice(31, 33).map((cell) => [cell.text, cell.style.reverse]), [["+", true], ["2", true]], "the count stands in the selection's bar");
   for (const [d, sz] of [[d80, S80], [a80, S80], [d60, S60], [d120, S120]]) {
     assert.deepEqual(listLines(d, sz).slice(1).filter((line) => line.trim()), [], "the rows below a collapsed row are not drawn, and no other row is");
@@ -1083,9 +1089,9 @@ test("a collapsed row carries `+n` after its name for the n instances it folds a
   // Expanded again, the three rows are back and the roll-up is gone.
   const open = press(folded(), ["l"]).state, lines = listLines(draw(open, S79), S79).filter((line) => line.trim());
   assert.deepEqual(lines, [
-    `> ● ${DESKTOP_EXPERT}`,
-    tagged(`    ● ${DESKTOP_A}`, 79),
-    tagged(`    ● ${DESKTOP_B}`, 79),
+    `> ● ${drawnName(DESKTOP_EXPERT)}`,
+    `    ! ${drawnName(DESKTOP_A)}`,
+    `    ! ${drawnName(DESKTOP_B)}`,
   ]);
 });
 
@@ -1099,23 +1105,61 @@ function listCells(items, cols, { ascii = false, wordWidth = 0 } = {}) {
   return { cells: createScreen({ ascii }).cells(instances({ list: items, ascii, wordWidth, above: 0, below: 0 }, sz), sz) };
 }
 const listBytes = (items, cols, { color = true } = {}) => createScreen({ color }).render(instances({ list: items, ascii: false, wordWidth: 0, above: 0, below: 0 }, size(cols, items.length)), size(cols, items.length));
-/** The kinds of row that carry a tag, each with its words and its short form. */
+/** The kinds of row that carry a tag, each with its words and its short form: a row that folds
+ *  waiting rows away, whether or not it waits itself. */
 const TAGGED = Object.freeze([
-  ["a waiting row", { waiting: true }, NEEDS_INPUT, "!"],
   ["a folded row with 1 waiting row under it", { folded: 1, below: 1 }, "1 below", "1"],
   ["a folded row with 12", { folded: 30, below: 12 }, "12 below", "12"],
   ["a folded row with 120", { folded: 130, below: 120 }, "99+ below", "99+"],
-  ["a waiting row that folds 2 waiting rows: its own claim wins", { waiting: true, folded: 3, below: 2 }, NEEDS_INPUT, "!"],
+  ["a waiting row that folds 2 waiting rows: its mark says its own claim, the tag the rest", { waiting: true, folded: 3, below: 2 }, "2 below", "2"],
 ]);
+/** The state mark a list row of `more` draws: the needs-input mark on a waiting row, else running's. */
+const markFor = (more, ascii) => (more.waiting ? "!" : ascii ? "*" : "●");
 
-test("the needs-input tag's words are the Desktop's, from one place: `Needs input`, `N below`, `99+ below` past 99", () => {
+test("the roll-up tag's words are the Desktop's, from one place: `N below`, `99+ below` past 99; and `Needs input` is the shared home's word for a claim with no reason of its own", () => {
   assert.equal(NEEDS_INPUT, "Needs input");
+  assert.equal(waitingLabel({ since: AT }), NEEDS_INPUT, "the detail says the shared home's word for a claim that names no reason");
   assert.deepEqual([1, 12, 99, 100, 120].map(belowText), ["1 below", "12 below", "99 below", "99+ below", "99+ below"]);
   // The Desktop's mark (packages/desktop/renderer/shell.mjs needsInputMark) writes its words in place: read them there.
   const shell = readFileSync(new URL("../../desktop/renderer/shell.mjs", import.meta.url), "utf8");
   const mark = shell.slice(shell.indexOf("function needsInputMark("), shell.indexOf("\n}\n", shell.indexOf("function needsInputMark(")));
-  assert.match(mark, /below \? `\$\{below\} below` : "Needs input"/, "the Desktop's words for a folded row and a waiting row");
-  assert.equal(mark.includes(`"${NEEDS_INPUT}"`), true);
+  assert.match(mark, /`\$\{below\} below`/, "the Desktop's words for a folded row");
+  assert.equal(mark.includes(NEEDS_INPUT), false, "the Desktop's mark is the roll-up only: a waiting row says it by its mark there too");
+});
+
+test("a waiting row's state mark is the needs-input mark whatever its state and colour: `!`, bold, in reverse video in the waiting colour, and on the selected row not reversed, a gap in the selection's bar; the same `!` in ASCII", () => {
+  for (const ascii of [false, true]) {
+    const marks = marksOf(ascii);
+    // Its shape is none of the state marks'.
+    assert.equal(["running", "stopped", "shell", "unknown", "held", "selected"].some((mark) => marks[mark] === marks.waiting), false, `${ascii ? "ASCII" : "UTF-8"}: a shape of its own`);
+    for (const mark of ["running", "stopped", "shell", "unknown", "held"]) for (const color of [null, "yellow", "cyan"]) for (const selected of [false, true]) for (const depth of [0, 1, 5]) {
+      const at = `${mark}${color ? `, ${color}` : ""}${selected ? ", selected" : ""}, depth ${depth}${ascii ? ", ascii" : ""}`;
+      const d = listCells([listItem("dev", { waiting: true, mark, color, selected, depth })], 60, { ascii }), col = 2 + 2 * depth;
+      assert.deepEqual([d.cells[0][col].text, d.cells[0][col].style], ["!", selected ? TAG_SELECTED : TAG], `${at}: in the state mark's cell`);
+      assert.equal(textAt(d.cells[0]), `${selected ? ">" : " "} ${" ".repeat(2 * depth)}! dev`, `${at}: the name where it stands on any row, and nothing at the edge`);
+      assert.deepEqual(d.cells[0].map((cell, x) => cell.style.reverse), Array.from({ length: 60 }, (_, x) => (x === col ? !selected : selected)), `${at}: the mark alone is reversed, or alone not in the selection's bar`);
+    }
+  }
+});
+
+test("a sand instance's mark is in the terminal's own foreground, not yellow, which says needs input and only that; waiting, it is the yellow `!` like any other", () => {
+  // The first row is the selected one, drawn in reverse video whatever its colour.
+  const rows = [instanceRow("soul", "aaa-selected"), instanceRow("soul", "dev-sand", { color: "sand" }), instanceRow("soul", "dev-waits", { color: "sand", waitingOnYou: { ...QUESTION } })];
+  const d = draw(stateOf(observed(rows)), S120), mark = (name) => d.cells[rowOf(d, S120, name)][2];
+  assert.deepEqual([mark("dev-sand").text, mark("dev-sand").style], ["●", style()]);
+  assert.deepEqual([mark("dev-waits").text, mark("dev-waits").style.fg, mark("dev-waits").style.reverse], ["!", "yellow", true]);
+});
+
+test("under NO_COLOR the reverse video and the `!` carry a waiting row's mark: the waiting colour is dropped, reversed on a row and not reversed in the selection's bar, bold either way", () => {
+  const CSI = "\x1b[";
+  for (const color of [null, "cyan"]) {
+    const plain = listBytes([listItem("dev", { waiting: true, color })], 40, { color: false }), picked = listBytes([listItem("dev", { waiting: true, color, selected: true })], 40, { color: false });
+    assert.equal(plain.includes(`  ${CSI}0;1;7m!${CSI}0m dev`), true, `${color}: reversed and bold`);
+    assert.equal(picked.includes(`${CSI}0;7m> ${CSI}0;1m!${CSI}0;7m dev`), true, `${color}, selected: bold, not reversed, in the bar`);
+    for (const bytes of [plain, picked]) assert.doesNotMatch(bytes, /\x1b\[[\d;]*;3\dm/, `${color}: no colour`);
+    assert.equal(listBytes([listItem("dev", { waiting: true, color })], 40).includes(`${CSI}0;1;7;33m!`), true, `${color}: with colour, in the waiting colour, not the instance's`);
+    assert.equal(listBytes([listItem("dev", { waiting: true, color, selected: true })], 40).includes(`${CSI}0;1;33m!`), true, `${color}, selected: in the waiting colour`);
+  }
 });
 
 test("the needs-input tag: its words padded by a cell each side at the pane's right edge, in reverse video in the waiting colour, and on the selected row not reversed, a gap in the selection's bar; the same words in ASCII", () => {
@@ -1124,7 +1168,7 @@ test("the needs-input tag: its words padded by a cell each side at the pane's ri
     assert.deepEqual([tag?.words, tag?.col, tag?.style], [words, 60 - words.length - 2, selected ? TAG_SELECTED : TAG], at);
     assert.deepEqual([d.cells[0][tag.col].text, d.cells[0][59].text], [" ", " "], `${at}: a cell of padding either side`);
     assert.equal(d.cells[0][tag.col - 1].style.reverse, selected, `${at}: the cell before the tag is the row's own`);
-    if (more.folded) assert.equal(textAt(d.cells[0]).startsWith(`${selected ? ">" : " "} ${ascii ? "*" : "●"} dev +${more.folded} `), true, `${at}: the fold's count stays after the name`);
+    if (more.folded) assert.equal(textAt(d.cells[0]).startsWith(`${selected ? ">" : " "} ${markFor(more, ascii)} dev +${more.folded} `), true, `${at}: the fold's count stays after the name`);
   }
 });
 
@@ -1134,7 +1178,7 @@ test("under NO_COLOR the reverse video alone carries the tag: the waiting colour
     const plain = listBytes([listItem("dev", more)], 40, { color: false }), picked = listBytes([listItem("dev", { selected: true, ...more })], 40, { color: false });
     assert.equal(plain.includes(`${CSI}0;1;7m ${words} `), true, `${what}: reversed and bold`);
     // Its last cell, a blank that paints nothing without reverse video, is the row's erase.
-    assert.equal(picked.includes(`${CSI}0;7m> ● dev`) && picked.includes(`${CSI}0;1m ${words}`), true, `${what}, selected: bold, not reversed, after the bar`);
+    assert.equal(picked.includes(`${CSI}0;7m> `) && picked.includes(`${CSI}0;1m ${words}`), true, `${what}, selected: bold, not reversed, after the bar`);
     for (const bytes of [plain, picked]) assert.doesNotMatch(bytes, /\x1b\[[\d;]*;3\dm/, `${what}: no colour`);
     assert.equal(listBytes([listItem("dev", more)], 40).includes(`${CSI}0;1;7;33m ${words} `), true, `${what}: with colour, in the waiting colour`);
   }
@@ -1149,7 +1193,7 @@ test("a narrow row: the tag gives way first, to its short form, still reversed, 
     for (let cols = widest; cols >= narrowest; cols--) {
       const at = `${what}, ${name} at depth ${depth}${word ? " with a word" : ""}${ascii ? ", ascii" : ""}, ${cols} cells`;
       const options = { ascii, wordWidth: word ? WORD.length : 0 };
-      const d = listCells([listItem(name, { depth, word, ...more })], cols, options), plain = listCells([listItem(name, { depth, word, folded: more.folded ?? 0 })], cols, options);
+      const d = listCells([listItem(name, { depth, word, ...more })], cols, options), plain = listCells([listItem(name, { depth, word, folded: more.folded ?? 0, waiting: more.waiting ?? false })], cols, options);
       const tag = tagAt(d, 0, cols), edge = cols - 5;
       assert.equal(tag?.style, TAG, `${at}: the tag stands`);
       const nameCol = 4 + depth * 2, fold = more.folded ? ` +${more.folded}` : "";
@@ -1158,7 +1202,7 @@ test("a narrow row: the tag gives way first, to its short form, still reversed, 
       if (whole) {
         assert.equal(shrunk, false, `${at}: once short, a narrower row never has the words back`);
         const left = textAt(d.cells[0], 0, tag.col);
-        assert.equal(left.startsWith(`${" ".repeat(nameCol - 2)}${ascii ? "*" : "●"} ${name}${fold}`), true, `${at}: the name whole`);
+        assert.equal(left.startsWith(`${" ".repeat(nameCol - 2)}${markFor(more, ascii)} ${name}${fold}`), true, `${at}: the name whole`);
         if (word) assert.equal(left.endsWith(`  ${WORD}`), true, `${at}: the word whole, in its column before the tag: ${left}`);
       } else {
         shrunk = true;
@@ -1174,22 +1218,22 @@ test("collapsing a root in a roster of several clusters hides the rows below it,
   assert.equal(state.selected, before.selected, "the selection is the same instance");
   // At 60 columns, tall enough for the nine rows of the list without its scrolling.
   for (const sz of [S79, size(60, 18)]) {
-    const lines = listLines(draw(state, sz), sz), drawn = (name) => lines.filter((line) => line.includes(` ${name} `) || line.trimEnd().endsWith(` ${name}`));
+    const lines = listLines(draw(state, sz), sz), drawn = (name) => lines.filter((line) => line.includes(` ${drawnName(name)} `) || line.trimEnd().endsWith(` ${drawnName(name)}`));
     assert.deepEqual([drawn(DESKTOP_A).length, drawn(DESKTOP_B).length], [0, 0], "the rows below it are not drawn");
     for (const name of [KERNEL_EXPERT, KERNEL_DEV, REVIEWER, MAINTAINER, EXPERT_TUI]) assert.equal(drawn(name).length, 1, `${name} is still drawn`);
     const root = drawn(DESKTOP_EXPERT);
     assert.equal(root.length, 1);
-    assert.equal(root[0].startsWith(`> ● ${DESKTOP_EXPERT} +2 `), true, "selected, two instances folded away");
+    assert.equal(root[0].startsWith(`> ● ${drawnName(DESKTOP_EXPERT)} +2 `), true, "selected, two instances folded away");
     assert.equal(root[0].endsWith(`  ${belowText(2)}`), true, "two rows wait below it");
     assert.equal(lines.filter((line) => line.startsWith(">")).length, 1);
   }
   // A filter draws every match whatever is collapsed, and leaves the collapse as it is.
   const filtered = press(state, ["/", "p", "a", "n", "e", "l", "enter"]).state, matched = listLines(draw(filtered, S79), S79).filter((line) => line.trim());
-  assert.equal(matched.some((line) => line.includes(DESKTOP_A)), true, "a match under a collapsed row is drawn");
-  assert.equal(matched.some((line) => line.includes(KERNEL_EXPERT) || line.includes(MAINTAINER) || line.includes(DESKTOP_B)), false, "and what does not match is not");
+  assert.equal(matched.some((line) => line.includes(drawnName(DESKTOP_A))), true, "a match under a collapsed row is drawn");
+  assert.equal(matched.some((line) => line.includes(drawnName(KERNEL_EXPERT)) || line.includes(drawnName(MAINTAINER)) || line.includes(drawnName(DESKTOP_B))), false, "and what does not match is not");
   const cleared = listLines(draw(press(filtered, ["escape"]).state, S79), S79);
-  assert.equal(cleared.some((line) => line.includes(DESKTOP_A)), false, "with the filter cleared the row is collapsed as before");
-  assert.equal(cleared.some((line) => line.includes(`● ${DESKTOP_EXPERT} +2`)), true);
+  assert.equal(cleared.some((line) => line.includes(drawnName(DESKTOP_A))), false, "with the filter cleared the row is collapsed as before");
+  assert.equal(cleared.some((line) => line.includes(`● ${drawnName(DESKTOP_EXPERT)} +2`)), true);
   assert.equal(matched.some((line) => line.includes("+2")), false, "a filter folds nothing away");
 });
 
@@ -1197,8 +1241,8 @@ test("a waiting claim on a stale deployment is not drawn: no mark on the row, no
   for (const sz of [S120, S79]) {
     const stale = selecting(stateOf(failed(entry(), STALE("the mirror did not answer"))), KERNEL_DEV), d = draw(stale, sz);
     assert.equal(d.lines.some((line) => line.includes("input")), false);
-    assert.equal(d.lines.some((line) => line.includes("acme-ledger-developer-note")), true, "the row is drawn");
-    for (const line of listLines(d)) assert.equal(/!\d*$/.test(line), false, `no waiting mark: ${line}`);
+    assert.equal(d.lines.some((line) => line.includes("Acme ledger developer note")), true, "the row is drawn");
+    for (const r of listRows(d)) assert.equal(waitMarkAt(d, r), null, `no needs-input mark: ${cellText(d, r, 0, d.cols)}`);
     for (const line of d.lines) assert.equal(/\bneeds\b/.test(line), false, "no needs line");
     const page = draw(press(stale, ["tab"], S79).state, S79);
     assert.equal(page.lines.some((line) => line.trim().startsWith("soul ")), true, "the detail is drawn");
@@ -1250,7 +1294,7 @@ test("a row whose name is wide graphemes, emoji sequences, combining marks or 10
         assert.notEqual(r, undefined, `${at}: the row is drawn`);
         const cells = subject.cells[r], word = cellIndexOf(cells.slice(0, list), WORD);
         assert.equal(word > 0, true, `${at}: the word is still drawn in its column`);
-        const c = bodyRows(sz).find((row) => control.lines[row].includes("zzz"));
+        const c = bodyRows(sz).find((row) => control.lines[row].includes("Zzz"));
         assert.equal(word, cellIndexOf(control.cells[c].slice(0, list), WORD), `${at}: and the column did not move`);
         assert.equal(cells[word - 1].text, " ", `${at}: the name stops before the word`);
         const drawn = cells.slice(0, word).filter((cell) => cell.text !== " " && cell.text !== "");
@@ -1301,7 +1345,7 @@ test("a roster of 200 scrolled with the keys: the selected row is always on the 
     const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols;
     const check = (keys) => {
       const d = draw(state, sz), at = `${sz.cols}x${sz.rows} after ${keys}`;
-      const rows = listRows(d), drawn = rows.map((r) => /inst-(\d{3})/.exec(cellText(d, r, 0, pane))).map((match) => (match ? Number(match[1]) : null));
+      const rows = listRows(d), drawn = rows.map((r) => /Inst (\d{3})/.exec(cellText(d, r, 0, pane))).map((match) => (match ? Number(match[1]) : null));
       const onScreen = drawn.filter((n) => n !== null);
       assert.equal(onScreen.length <= d.page, true, `${at}: at most a page of instances`);
       assert.equal(onScreen.length >= d.page - 1, true, `${at}: and the list is full`);
@@ -1545,9 +1589,9 @@ test("a resize from 100 to 79 columns with the detail focused shows the detail a
   const focused = press(golden(), ["tab"], size(100, 24)).state;
   const wide = draw(focused, size(100, 24)), narrow = draw(focused, S79);
   assert.equal(wide.cells[3][48].text, "│");
-  assert.equal(wide.lines.some((line) => line.includes("acme-maintainer-ops")), true, "at 100 columns the list is beside the detail");
+  assert.equal(wide.lines.some((line) => line.includes("Acme maintainer ops")), true, "at 100 columns the list is beside the detail");
   assert.equal(narrow.lines[0], pageTop(` > ${KERNEL_DEV}`, "Tab back   Enter open   n spawn", 79));
-  assert.equal(narrow.lines.some((line) => line.includes("acme-maintainer-ops")), false, "at 79 the detail is the page: no list row");
+  assert.equal(narrow.lines.some((line) => line.includes("Acme maintainer ops")), false, "at 79 the detail is the page: no list row");
   assert.deepEqual(labels(factsOf(detailLines(narrow, S79))), ["soul", "state", "needs", "harness", "work", "team", "parent", "started", "home"]);
   assert.deepEqual(draw(focused, size(100, 24)).lines, wide.lines);
 });
@@ -1641,7 +1685,7 @@ test("a kept filter is named on the open view's heading, `Instances  /query` in 
     assert.equal(cellText(d, r, 0, d.cols), viewLine("Instances  /maint", "1", d.cols), at);
     for (const cell of d.cells[r].slice(12, 18)) assert.equal(cell.style.bold, true, `${at}: the filter is bold, as the name is`);
     const drawn = listLines(d, sz).filter((line) => line.trim());
-    assert.equal(drawn.length === 1 && drawn[0].includes(MAINTAINER), true, `${at}: the one instance that matches, and no other`);
+    assert.equal(drawn.length === 1 && drawn[0].includes("Acme maintainer ops"), true, `${at}: the one instance that matches, and no other`);
     assert.equal(hintsOf(d).some(([key]) => key.startsWith("/m")), false, `${at}: the query is not in the cheat sheet`);
   }
   // The sheet is small: Esc, which clears the filter, is the help's and the palette's, not the sheet's.
@@ -1791,7 +1835,7 @@ test("the help lists the marks with their words, in UTF-8 and in ASCII: each mar
     assert.equal(said(marks.shell, "shell"), true);
     assert.equal(said(marks.unknown, "state unknown"), true);
     assert.equal(said(marks.held, "held"), true);
-    assert.equal(said(marks.waiting, `needs input, in reverse video: ${NEEDS_INPUT} where the whole name fits`), true);
+    assert.equal(said(marks.waiting, `${NEEDS_INPUT}: in place of the state mark, in yellow and reverse video`), true, "the needs-input mark");
     assert.equal(said(marks.selected, "selected"), true);
     assert.equal(said("N", `N instances folded away below it need input: ${belowText("N")} where the whole name fits`), true, "and the roll-up of a collapsed row");
     assert.equal(said("+N", "folded away"), true, "a folded row's count: no fold mark");
@@ -2054,13 +2098,13 @@ test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for
   const d = draw(reached(), S80);
   assert.deepEqual(d.lines, beside(instancesSide(workspaceLine("acme-platform"), [
     " This machine",
-    "> ● acme-ledger-expert-retire",
-    "    ● acme-ledger-developer-note…",
+    "> ● Acme ledger expert retire",
+    "    ● Acme ledger developer note…",
     "",
-    "  ○ acme-maintainer-ops",
+    "  ○ Acme maintainer ops",
     " garnet                 read 10:00:10",
-    "  ● acme-ledger-far-a",
-    `  ○ acme-ledger-far…  ${cutTo(AWAY(), 11)}`,
+    "  ● Acme ledger far a",
+    `  ○ Acme ledger far…  ${cutTo(AWAY(), 11)}`,
   ], LIST_SHEET), [
     "   acme-ledger-expert-retire",
     "   soul     acme-ledger-expert",
@@ -2086,13 +2130,13 @@ test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for
 test("this machine and a reached machine at 80x24 in ASCII, cell for cell: the same screen with the rules, the marks and the cut mark in ASCII", () => {
   assert.deepEqual(draw(reached({ ascii: true }), S80).lines, beside(instancesSide(workspaceLine("acme-platform"), [
     " This machine",
-    "> * acme-ledger-expert-retire",
-    "    * acme-ledger-developer-no...",
+    "> * Acme ledger expert retire",
+    "    * Acme ledger developer no...",
     "",
-    "  - acme-maintainer-ops",
+    "  - Acme maintainer ops",
     " garnet                 read 10:00:10",
-    "  * acme-ledger-far-a",
-    `  - acme-ledger-f...  ${cutTo(AWAY(), 11, true)}`,
+    "  * Acme ledger far a",
+    `  - Acme ledger f...  ${cutTo(AWAY(), 11, true)}`,
   ], LIST_SHEET, { ascii: true }), [
     "   acme-ledger-expert-retire",
     "   soul     acme-ledger-expert",
@@ -2115,13 +2159,13 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
     // Enter, and no act in the palette. A name keeps 16 cells, and the word is cut to what is left.
     assert.deepEqual(draw(state, S80).lines, beside(instancesSide(workspaceLine("acme-platform"), [
       " This machine",
-      `  ${marks.running} ${KERNEL_EXPERT}`,
-      `    ${marks.running} ${cut(KERNEL_DEV, 27)}`,
+      `  ${marks.running} ${drawnName(KERNEL_EXPERT)}`,
+      `    ${marks.running} ${cut(drawnName(KERNEL_DEV), 27)}`,
       "",
-      `  ${marks.stopped} acme-maintainer-ops`,
+      `  ${marks.stopped} Acme maintainer ops`,
       ` garnet  ${said.text}  ${garnet.short}`,
-      `  ${marks.unknown} ${cut(FAR_A, 16)}  ${cut(NOT_REACHED(), 11)}`,
-      `> ${marks.unknown} ${cut(FAR_B, 16)}  ${cut(NOT_REACHED(), 11)}`,
+      `  ${marks.unknown} ${cut(drawnName(FAR_A), 16)}  ${cut(NOT_REACHED(), 11)}`,
+      `> ${marks.unknown} ${cut(drawnName(FAR_B), 16)}  ${cut(NOT_REACHED(), 11)}`,
     ], [LEAD, ["Ctrl+K", "palette"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]], { ascii }), [
       "   acme-ledger-far-b",
       "   soul     acme-ledger-developer",
@@ -2162,13 +2206,13 @@ test("the view of two deployments at 120x40, 79x24 and 60x15: the same headings 
     const word = pane - 5 - Math.min(20, AWAY().length), time = pane - 1 - "read 10:00:10".length;
     assert.deepEqual(listLines(d, sz), [
       " This machine",
-      placed([0, `> ${marks.running} ${KERNEL_EXPERT}`]),
-      placed([4, `${marks.running} ${KERNEL_DEV}`]),
+      placed([0, `> ${marks.running} ${drawnName(KERNEL_EXPERT)}`]),
+      placed([4, `${marks.running} ${drawnName(KERNEL_DEV)}`]),
       "",
-      placed([2, `${marks.stopped} ${MAINTAINER}`]),
+      placed([2, `${marks.stopped} ${drawnName(MAINTAINER)}`]),
       placed([1, "garnet"], [time, "read 10:00:10"]),
-      placed([2, `${marks.running} ${FAR_A}`]),
-      placed([2, `${marks.stopped} ${FAR_B}`], [word, cutTo(AWAY(), 20, ascii)]),
+      placed([2, `${marks.running} ${drawnName(FAR_A)}`]),
+      placed([2, `${marks.stopped} ${drawnName(FAR_B)}`], [word, cutTo(AWAY(), 20, ascii)]),
     ], at);
     assert.equal(cellText(d, 0, 0, pane), workspaceLine("acme-platform"), `${at}: the open workspace's row of the list of workspaces, and no count`);
     assert.equal(d.lines.some((line) => line.includes("read 10:00:00")), false, `${at}: this machine's own read time is not beside the list: the help's top row has it`);
@@ -2253,10 +2297,10 @@ test("a deployment's note stands under its heading in a view of several deployme
     assert.deepEqual(listLines(d, sz).slice(0, rows.length + 5), [
       " garnet",
       ...rows.map((row) => `   ${row}`),
-      placed([0, `> ● ${FAR_A}`]),
-      placed([2, `○ ${cutTo(FAR_B, nameCells)}`], [wordAt, cutTo(away, wordCells)]),
+      placed([0, `> ● ${drawnName(FAR_A)}`]),
+      placed([2, `○ ${cutTo(drawnName(FAR_B), nameCells)}`], [wordAt, cutTo(away, wordCells)]),
       " quartz",
-      placed([2, `● ${FAR_Q}`]),
+      placed([2, `● ${drawnName(FAR_Q)}`]),
     ], at);
     if (sz === S80) assert.equal(rows.length, 2, "at 80 columns the note wraps");
     // The list of workspaces: acme-platform, then billing, the open one, by its name alone.
@@ -2283,7 +2327,7 @@ test("a deployment's note stands under the list of workspaces in a view of one d
     assert.equal(rows.length <= 2, true, `${at}: the note fits its two rows`);
     assert.deepEqual(rows.map((_, i) => cellText(d, top + i, 0, pane)), rows.map((row) => ` ${row}`), `${at}: the note under the list of workspaces, on rows of its own, from the margin`);
     assert.deepEqual([cellText(d, top + rows.length, 0, pane), openRow(d)], ["", top + 1 + rows.length], `${at}: an empty row, then the heading`);
-    assert.equal(cellText(d, listRows(d)[0], 0, pane).startsWith(`> ${marksOf(ascii).running} ${FAR_A}`), true, `${at}: then the list, with no heading: ${d.lines[listRows(d)[0]]}`);
+    assert.equal(cellText(d, listRows(d)[0], 0, pane).startsWith(`> ${marksOf(ascii).running} ${drawnName(FAR_A)}`), true, `${at}: then the list, with no heading: ${d.lines[listRows(d)[0]]}`);
     assert.equal(listRows(d).some((r) => d.cells[r].slice(0, pane).some((cell) => cell.style.bold)), false, `${at}: and no heading anywhere in it`);
     assert.equal(d.page, sz.rows - 6 - top - rows.length, `${at}: the list of workspaces' two rows and the note take their rows from the list's`);
     fits(d, sz, at);
@@ -2301,7 +2345,7 @@ test("a deployment's note stands under the list of workspaces in a view of one d
     assert.match(kept, /^[> ] \? /, `${at}: the kept rows follow, unknown`);
     // At 80 columns the name keeps its 16 cells and the label is cut to the 11 they leave.
     const label = rowReason(panelRow(failing, FAR_A)).label, word = sz === S80 ? cutTo(label, 11) : label;
-    assert.equal(kept.slice(4).startsWith(FAR_A.slice(0, 6)) && kept.endsWith(word), true, `${at}: with the shared label of a machine not reached: ${kept}`);
+    assert.equal(kept.slice(4).startsWith(drawnName(FAR_A).slice(0, 6)) && kept.endsWith(word), true, `${at}: with the shared label of a machine not reached: ${kept}`);
   }
   // This machine's own deployment has one too: a standalone deployment's teams are its own.
   const standalone = stateOf(reporting(NEAR(), { identity: STANDALONE }), { cli: REMOTE_CLI }), own = textOf(shown(primaryDeployment(panelOf(standalone, AT).deployments).note));
@@ -2309,7 +2353,7 @@ test("a deployment's note stands under the list of workspaces in a view of one d
   for (const sz of SIZES) {
     const d = draw(standalone, sz), pane = paneOf(sz);
     assert.equal(cellText(d, 1, 0, pane), ` ${wrap(own, pane - 2)[0]}`, `${sz.cols}x${sz.rows}`);
-    assert.equal(cellText(d, listRows(d)[0], 0, pane).includes(KERNEL_EXPERT.slice(0, 12)), true, `${sz.cols}x${sz.rows}: the list follows`);
+    assert.equal(cellText(d, listRows(d)[0], 0, pane).includes(drawnName(KERNEL_EXPERT).slice(0, 12)), true, `${sz.cols}x${sz.rows}: the list follows`);
   }
   // A note longer than two rows is cut at the second, with the mark.
   const wordy = "garnet in the far rack of the ledger team behind the second door on the third floor of the old building by the river";
@@ -2328,7 +2372,7 @@ test("a deployment that is not live and has no row is listed after the sections:
   for (const ascii of [false, true]) for (const [sz, room] of [[S80, 34], [S60, 56], [S79, 75], [S120, 53]]) {
     const state = rowless({ ascii }), d = draw(state, sz), pane = paneOf(sz), marks = marksOf(ascii), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const lines = listLines(d, sz), heading = lines.findIndex((line) => line.startsWith(" garnet"));
-    const last = lines.findLastIndex((line) => line.includes(MAINTAINER));
+    const last = lines.findLastIndex((line) => line.includes(drawnName(MAINTAINER)));
     assert.equal(heading, last + 1, `${at}: after every row of the sections`);
     assert.equal(lines[heading].includes(`  ${said.text}`), true, `${at}: the heading holds the state: ${lines[heading]}`);
     const rows = wrap(textOf(shown(said.detail)), room);
@@ -2339,7 +2383,7 @@ test("a deployment that is not live and has no row is listed after the sections:
     const end = press(press(state, ["G"], sz).state, ["j", "pagedown"], sz).state;
     assert.equal(String(end.selected).endsWith(`/${MAINTAINER}`), true, `${at}: the last row is this machine's`);
     const after = draw(end, sz);
-    assert.deepEqual(bodyRows(sz).filter((r) => after.cells[r][0].text === ">").map((r) => cellText(after, r, 0, pane).includes(MAINTAINER)), [true], at);
+    assert.deepEqual(bodyRows(sz).filter((r) => after.cells[r][0].text === ">").map((r) => cellText(after, r, 0, pane).includes(drawnName(MAINTAINER))), [true], at);
     assert.equal(cellText(after, listRows(after)[heading], 0, pane).includes(marks.unknown), false, at);
     fits(d, sz, at);
   }
@@ -2363,7 +2407,7 @@ test("the roster read's own failure, while no answer has arrived, stands after t
     const state = heard(local({ ascii }), outcome, T1), failure = state.remote.rosterFailure, d = draw(state, sz), pane = paneOf(sz), at = `${kind}, ${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     assert.equal(typeof failure === "string" && failure.length > 0, true, `${at}: the shared rule keeps the failure's sentence`);
     const lines = listLines(d, sz), own = lines.indexOf(`   ${ROSTER_FAILED}`), rows = wrap(textOf(shown(failure)), room);
-    assert.equal(own > 0 && lines[own - 1] === "" && lines[own - 2].includes(MAINTAINER), true, `${at}: after the list, an empty row apart`);
+    assert.equal(own > 0 && lines[own - 1] === "" && lines[own - 2].includes(drawnName(MAINTAINER)), true, `${at}: after the list, an empty row apart`);
     assert.deepEqual(lines.slice(own + 1, own + 1 + rows.length), rows.map((row) => `   ${row}`), `${at}: the failure through shown(), on rows of its own`);
     assert.deepEqual(lines.slice(own + 1 + rows.length).filter((line) => line.trim()), [], at);
     for (const cell of d.cells[listRows(d)[own]].slice(3, 3 + ROSTER_FAILED.length)) assert.equal(cell.style, DIM, `${at}: the TUI's own line is dim`);
@@ -2545,17 +2589,17 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
   const hints = [LEAD, ["Ctrl+K", "palette"], ["n", "spawn"], ["w", "workspaces"], ["?", "help"], ["q", "quit"]];
   assert.deepEqual(paletteActs(told()), ["stop", "retire"]);
   assert.deepEqual(draw(told(), S80).lines, beside(instancesSide(workspaceLine("acme-platform", 38, { waiting: true }), [
-    "  ● acme-console-expert-tui-read",
-    "    ● acme-console-developer-pan…   !",
-    "    ● acme-console-developer-ter…   !",
+    "  ● Acme console expert tui read",
+    "    ! Acme console developer pan…",
+    "    ! Acme console developer ter…",
     "",
-    "> ? acme-expert-tui  state unkno…",
+    "> ? Acme expert tui  state unkno…",
     "",
-    "  ● acme-ledger-expert-retire",
-    "    ● acme-ledger-developer-note…   !",
-    "      ○ peer-reviewer-note",
+    "  ● Acme ledger expert retire",
+    "    ! Acme ledger developer note…",
+    "      ○ Peer reviewer note",
     "",
-    "  ● acme-maintainer-ops",
+    "  ● Acme maintainer ops",
   ], hints), [
     "   acme-expert-tui",
     "   soul     acme-expert",
@@ -2568,17 +2612,17 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
     "   home     …t/instances/acme-expert-tui",
   ]));
   assert.deepEqual(draw(told({ ascii: true }), S80).lines, beside(instancesSide(workspaceLine("acme-platform", 38, { waiting: true, ascii: true }), [
-    "  * acme-console-expert-tui-read",
-    "    * acme-console-developer-p...   !",
-    "    * acme-console-developer-t...   !",
+    "  * Acme console expert tui read",
+    "    ! Acme console developer p...",
+    "    ! Acme console developer t...",
     "",
-    "> ? acme-expert-tui  state unk...",
+    "> ? Acme expert tui  state unk...",
     "",
-    "  * acme-ledger-expert-retire",
-    "    * acme-ledger-developer-no...   !",
-    "      - peer-reviewer-note",
+    "  * Acme ledger expert retire",
+    "    ! Acme ledger developer no...",
+    "      - Peer reviewer note",
     "",
-    "  * acme-maintainer-ops",
+    "  * Acme maintainer ops",
   ], hints, { ascii: true }), [
     "   acme-expert-tui",
     "   soul     acme-expert",
@@ -3281,7 +3325,7 @@ test("Enter: the terminal stands beside the sidebar, where the detail was, edge 
     assert.deepEqual([t.title, t.top, t.whole], [0, 1, false], at);
     assert.equal(t.rows, sz.rows - 1, `${at}: every row of the screen but the title`);
     // The list stays on screen, both rows of it.
-    for (const name of ["dev-a", "dev-b"]) assert.equal(listLines(d).some((line) => line.includes(name)), true, `${at}: ${name} in the list`);
+    for (const name of ["dev-a", "dev-b"]) assert.equal(listLines(d).some((line) => line.includes(drawnName(name))), true, `${at}: ${name} in the list`);
     assert.equal(d.lines[0].slice(t.col).trim(), "[dev-a 1]", `${at}: the tab bar names the agent, its one tab the shown one, numbered 1`);
     assert.equal(d.cells[0][t.col + 1].style.bold && d.cells[0][t.col + 1].style.reverse, true, `${at}: the title of a focused terminal is drawn focused`);
     assert.equal(d.lines[1].slice(t.col), "$ hello", at);
@@ -3326,7 +3370,7 @@ test("zoom gives the terminal the whole screen: its title row on the first, the 
   for (const sz of PANEL_WIDE) {
     const d = drawPanel(panelIn("zoom"), sz), t = d.terminal, at = `${sz.cols}x${sz.rows}`;
     assert.deepEqual([t.col, t.cols, t.title, t.top, t.rows, t.whole], [0, sz.cols, 0, 1, sz.rows - 1, true], at);
-    assert.equal(d.lines.some((line) => line.includes("dev-b") || line.includes("acme-platform")), false, `${at}: no sidebar`);
+    assert.equal(d.lines.some((line) => line.includes("Dev b") || line.includes("acme-platform")), false, `${at}: no sidebar`);
     assert.equal(d.cells.some((line) => line.some((cell) => cell.text === "│")), false, `${at}: no rule column`);
     assert.equal(d.lines[0].startsWith("[dev-a 1] "), true, at);
     assert.equal(d.lines[1], "$ hello", `${at}: the agent's screen from column 0`);
@@ -3364,7 +3408,7 @@ test("beside the list the panel is never narrower than PANEL_MIN (40): at 80 col
   assert.equal(drawPanel(panelIn("focus"), size(WIDE - 1, 24)).terminal.whole, true);
 });
 
-test("with a terminal open, in the sidebar's 30 columns, a waiting row whose whole name fits beside the words says `Needs input` and one whose name does not says `!`, reversed, its name cut as on a row that does not wait; the open, selected row's tag is not reversed", () => {
+test("with a terminal open, in the sidebar's 30 columns, a waiting row's state mark is the needs-input mark, reversed, and its name is cut as on a row that does not wait, with nothing at its edge; the open, selected row's mark is not reversed", () => {
   const LONG = "dev-z-with-a-name-far-longer-than-the-list";
   for (const ascii of [false, true]) {
     const rows = [instanceRow("dev", "dev-a", { waitingOnYou: { ...QUESTION } }), instanceRow("dev", "dev-b", { waitingOnYou: { ...QUESTION } }), instanceRow("dev", LONG, { waitingOnYou: { ...QUESTION } }), instanceRow("dev", "dev-c")];
@@ -3372,15 +3416,16 @@ test("with a terminal open, in the sidebar's 30 columns, a waiting row whose who
     let s = keyed(Object.freeze({ ...all, selected: roster(all).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
     s = leaderEscape(reduce(s, { shown: { id: s.terminal.id } }).state).state;
     for (const sz of PANEL_WIDE) {
-      const d = drawPanel(s, sz), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`, row = (name) => listRows(d).find((r) => cellText(d, r, 0, LIST_BESIDE).includes(name.slice(0, 12)));
+      const d = drawPanel(s, sz), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`, row = (name) => listRows(d).find((r) => cellText(d, r, 0, LIST_BESIDE).includes(drawnName(name).slice(0, 12)));
       assert.equal(d.cols, LIST_BESIDE, at);
-      const mark = marksOf(ascii).running, cut = glyphsOf(ascii).cut;
-      assert.deepEqual([tagAt(d, row("dev-a"), LIST_BESIDE)?.style, tagAt(d, row("dev-a"), LIST_BESIDE)?.words], [TAG_SELECTED, NEEDS_INPUT], `${at}: the open row, selected`);
-      assert.equal(cellText(d, row("dev-b"), 0, LIST_BESIDE), tagged(`  ${mark} dev-b`, LIST_BESIDE), at);
-      assert.equal(tagAt(d, row("dev-b"), LIST_BESIDE)?.style, TAG, at);
-      assert.equal(cellText(d, row(LONG), 0, LIST_BESIDE), tagged(`  ${mark} ${LONG.slice(0, LIST_BESIDE - 4 - 5 - cut.length)}${cut}`, LIST_BESIDE, "!"), `${at}: the name cut inside the cells a row keeps, the short tag in them`);
-      assert.equal(tagAt(d, row(LONG), LIST_BESIDE)?.style, TAG, at);
-      assert.equal(tagAt(d, row("dev-c"), LIST_BESIDE), null, `${at}: a row that does not wait has no tag`);
+      const cut = glyphsOf(ascii).cut;
+      assert.deepEqual([waitMarkAt(d, row("dev-a")), tagAt(d, row("dev-a"), LIST_BESIDE)], [{ col: 2, style: TAG_SELECTED }, null], `${at}: the open row, selected`);
+      assert.equal(cellText(d, row("dev-b"), 0, LIST_BESIDE), "  ! Dev b", at);
+      assert.deepEqual([waitMarkAt(d, row("dev-b")), tagAt(d, row("dev-b"), LIST_BESIDE)], [{ col: 2, style: TAG }, null], at);
+      assert.equal(cellText(d, row(LONG), 0, LIST_BESIDE), `  ! ${drawnName(LONG).slice(0, LIST_BESIDE - 4 - 5 - cut.length)}${cut}`, `${at}: the name cut inside the cells a row keeps, as on a row that does not wait`);
+      assert.deepEqual([waitMarkAt(d, row(LONG)), tagAt(d, row(LONG), LIST_BESIDE)], [{ col: 2, style: TAG }, null], at);
+      assert.equal(cellText(d, row("dev-c"), 0, LIST_BESIDE), `  ${marksOf(ascii).running} Dev c`, `${at}: a row that does not wait has its state mark`);
+      assert.deepEqual([waitMarkAt(d, row("dev-c")), tagAt(d, row("dev-c"), LIST_BESIDE)], [null, null], `${at}: and no needs-input mark`);
     }
   }
 });
@@ -3400,9 +3445,9 @@ test("with a terminal open the sidebar keeps 30 columns at most, beside the term
     let s = keyed(Object.freeze({ ...two, selected: roster(two).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
     s = leaderEscape(reduce(s, { shown: { id: s.terminal.id } }).state).state;
     for (const sz of PANEL_WIDE) {
-      const d = drawPanel(s, sz), r = listRows(d).find((row) => cellText(d, row, 0, LIST_BESIDE).includes(LONG.slice(0, 12)));
+      const d = drawPanel(s, sz), r = listRows(d).find((row) => cellText(d, row, 0, LIST_BESIDE).includes(drawnName(LONG).slice(0, 12)));
       const cut = glyphsOf(ascii).cut, room = LIST_BESIDE - 4 - 5;
-      assert.equal(cellText(d, r, 0, LIST_BESIDE), `  ${marksOf(ascii).running} ${LONG.slice(0, room - cut.length)}${cut}`, `${sz.cols}${ascii ? " ascii" : ""}: cut inside the 30 columns`);
+      assert.equal(cellText(d, r, 0, LIST_BESIDE), `  ${marksOf(ascii).running} ${drawnName(LONG).slice(0, room - cut.length)}${cut}`, `${sz.cols}${ascii ? " ascii" : ""}: cut inside the 30 columns`);
       // Closed, the sidebar has its own width again, and the name more of its cells.
       const closed = draw(keyed(s, "c"), sz);
       assert.deepEqual([closed.terminal ?? null, closed.cols], [null, listWidth(sz.cols)], `${sz.cols}: closed`);
@@ -3983,16 +4028,50 @@ test("an instance row's name wins over its word: beside an open terminal (30 cel
   for (const sz of [S80, S120]) {
     const d = drawPanel(open, sz);
     assert.equal(d.cols, LIST_BESIDE, `${sz.cols}`);
-    assert.deepEqual(listLines(d), [`  ? dev-2  ${unknown}`, "> ● dev-a", `  ◆ ${HELD}`], `${sz.cols}: the short name keeps its word two cells after it; the long one is whole, with no word`);
+    assert.deepEqual(listLines(d), [`  ? Dev 2  ${unknown}`, "> ● Dev a", `  ◆ Developer twelve`], `${sz.cols}: the short name keeps its word two cells after it; the long one is whole, with no word`);
   }
   // The mark and the detail still say it.
   assert.equal(fact(detailOf(selecting(base, HELD)), "state").rows[0], spawn);
   // No frame gives the sidebar 36 or 48 cells (from 80 columns it takes 38 at least, beside a
   // terminal 30): the view draws its rows at those widths.
   const rowsAt = (cols) => createScreen({ utf8: true }).cells(instances(model(base, { page: 8, now: NOW, at: AT, cols }), size(cols, 8)), size(cols, 8)).map((line) => line.map((cell) => cell.text).join("").trimEnd()).filter(Boolean);
-  assert.deepEqual(rowsAt(30), [`> ? dev-2  ${unknown}`, "  ● dev-a", `  ◆ ${HELD}`], "the view at 30 cells draws what the frame does");
-  assert.deepEqual(rowsAt(36), [`> ? dev-2   ${unknown}`, "  ● dev-a", `  ◆ ${HELD}  ${cutTo(spawn, 9)}`], "at 36 the word column fits after dev-2, not after the long name: its word is cut to 9 cells");
-  assert.deepEqual(rowsAt(48), [`> ? dev-2               ${unknown}`, "  ● dev-a", `  ◆ ${HELD}    ${spawn}`], "at 48 the column fits for both, as before");
+  assert.deepEqual(rowsAt(30), [`> ? Dev 2  ${unknown}`, "  ● Dev a", `  ◆ Developer twelve`], "the view at 30 cells draws what the frame does");
+  assert.deepEqual(rowsAt(36), [`> ? Dev 2   ${unknown}`, "  ● Dev a", `  ◆ Developer twelve  ${cutTo(spawn, 9)}`], "at 36 the word column fits after dev-2, not after the long name: its word is cut to 9 cells");
+  assert.deepEqual(rowsAt(48), [`> ? Dev 2               ${unknown}`, "  ● Dev a", `  ◆ Developer twelve    ${spawn}`], "at 48 the column fits for both, as before");
+});
+
+test("an instance row shows its name as words, the Desktop's sidebar label, a nested row too; the detail, the filter, the palette and a tab keep the instance's name", () => {
+  const LANES = "oats-expert-maintainer-lanes", HINT = "tui-leader-hint-developer-2";
+  const two = stateOf(observed([instanceRow("oats-expert", LANES), instanceRow("oats-kernel-developer", HINT, { parentInstance: LANES })]));
+  const state = Object.freeze({ ...two, selected: roster(two).rows.find(({ row }) => row.instance === LANES).id });
+  const d = draw(state, S120);
+  assert.deepEqual(listLines(d).filter((line) => line.trim()), ["> ● Oats expert maintainer lanes", "    ● Tui leader hint developer 2"], "each `-` a space, the first letter upper-case");
+  assert.equal(cellText(d, 0, d.cols + 1).trim(), LANES, "the detail's title is the instance's name");
+  // The filter matches the instance's name: `oats-expert` still finds the row, drawn as words.
+  const filtered = draw(press(state, ["/", ..."oats-expert", "enter"]).state, S120), matched = listLines(filtered).filter((line) => line.trim());
+  assert.equal(matched.length === 1 && matched[0].endsWith("Oats expert maintainer lanes"), true, `the one row the name matches: ${matched}`);
+  assert.deepEqual(paletteItems(paletteOpen(state), AT).items.filter((item) => item.kind === "instance").map((item) => item.label).sort(), [LANES, HINT], "the palette names the instances");
+  const open = drawPanel(keyed(state, "enter"), S120);
+  assert.equal(open.lines[0].slice(open.terminal.col).trim(), `[${LANES} 1]`, "a tab is named by the instance's name");
+  assert.equal(listLines(open).some((line) => line.startsWith("> ● Oats expert maint")), true, "while its row beside it shows the words, cut to the sidebar's 30 cells");
+});
+
+test("a name the display filter withholds is withheld on its row as it came: it is never made words first, which would hide what made it unsafe; the names around it are words", () => {
+  // Synthetic names a machine's roster can report (its rows are not held to the kernel's grammar): a
+  // credential's URL whose `-` the words would make a space, and a control character the words would trim.
+  const UNSAFE = ["https://u:p-ass@h", "\rordinary-name"];
+  for (const name of UNSAFE) {
+    assert.equal(displayLine(name), DETAIL_WITHHELD, `${JSON.stringify(name)}: the filter withholds the name as it came`);
+    assert.notEqual(displayLine(drawnName(name)), DETAIL_WITHHELD, `${JSON.stringify(name)}: and would let its words through`);
+  }
+  const state = heard(local(), answered(group({ instances: [farRow(FAR_A), ...UNSAFE.map((name) => farRow(name))] })), T1);
+  assert.deepEqual(UNSAFE.map((name) => panelRow(state, name)?.instance), UNSAFE, "the rows keep the names they came with");
+  for (const sz of [S120, S80]) {
+    const lines = listLines(draw(state, sz), sz), at = `${sz.cols}x${sz.rows}`;
+    assert.equal(lines.some((line) => line.includes(drawnName(FAR_A))), true, `${at}: a name the filter lets through is words`);
+    assert.equal(lines.filter((line) => /^[> ] +[●○◌?◆] \[withheld\]$/.test(line)).length, 2, `${at}: each unsafe name is drawn withheld: ${JSON.stringify(lines)}`);
+    for (const line of lines) assert.doesNotMatch(line, /Https|p ass|ordinary/i, `${at}: nothing of an unsafe name is drawn`);
+  }
 });
 
 test("under 80 columns the Instances detail page's first row carries its keys at the right, dim, ending a cell before the edge: `Tab back`, what Enter does, `n spawn` and `w workspaces`, given up from the end as the name grows; `Tab back` always stands, the name cut to leave it room (round 3 of the review)", () => {

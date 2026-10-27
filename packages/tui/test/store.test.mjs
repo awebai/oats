@@ -15,7 +15,7 @@ import { QUERY_LIMIT, initialState, reduce } from "../lib/store.mjs";
 import { marksOf } from "../lib/views/instances.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
 import { SWITCHER_TEXT } from "../lib/views/switcher.mjs";
-import { CLI, DEPLOYMENT, NOW, catalogEntry, catalogSoul, draw, failed, instanceRow, observed, pending, press, rosterOf, stateOf } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, catalogEntry, catalogSoul, draw, drawnName, failed, instanceRow, observed, pending, press, rosterOf, stateOf } from "./helpers.mjs";
 
 const SIZE = { cols: 80, rows: 24 }, SHORT = { cols: 80, rows: 15 };
 const STOPPED = { running: false, runtimeState: "stopped" };
@@ -378,7 +378,7 @@ test("after a resize the selected row is still inside: the model corrects the to
   // The terminal is now 15 rows tall. No event told the store: its top is the old one.
   assert.equal(shows(state, SHORT), false, "the old top does not show the row in the shorter pane");
   assert.equal(inWindow(state, SHORT), true, "what is drawn does");
-  assert.equal(draw(state, SHORT).lines.some((line) => line.startsWith(">") && line.includes("inst-30")), true);
+  assert.equal(draw(state, SHORT).lines.some((line) => line.startsWith(">") && line.includes("Inst 30")), true);
   for (const key of ["k", "j", "j", "pagedown", "pageup", "G", "g"]) {
     state = press(state, [key], SHORT).state;
     assert.equal(shows(state, SHORT), true, `${key} at 80x15: row ${selectedAt(state)}, top ${state.top}`);
@@ -1428,7 +1428,7 @@ test("selection, the list's scroll, the detail's and the filter are kept per wor
   assert.equal(selectedName(back), "inst-30");
   assert.deepEqual([...back.collapsed], [keyOf("child-a")], "what was collapsed in this view is still collapsed");
   assert.equal(drawn(back).includes("grandchild"), false);
-  assert.equal(model(back, { page: draw(back).page, now: NOW, at: AT, cols: draw(back).cols }).list.some((row) => row?.selected && row.name === "inst-30"), true);
+  assert.equal(model(back, { page: draw(back).page, now: NOW, at: AT, cols: draw(back).cols }).list.some((row) => row?.selected && row.name === "Inst 30"), true);
   const again = press(back, ["w", "w", "j", "enter"]).state;
   assert.deepEqual([again.open, selectedName(again)], [QUARTZ, "quartz-2"]);
   // A collapse there carries its own view in its key: this view's set is not touched by it.
@@ -1724,7 +1724,7 @@ test("selecting the last instance brings what stands under it into the pane: aft
   for (const [what, state] of [["G", press(read, ["G"]).state], ["End", press(read, ["end"]).state], ["Down from the row above", press(near, ["j"]).state], ["PageDown", press(near, ["pagedown"]).state]]) {
     const { lines, m } = framed(state), at = markedAt(lines);
     assert.equal(selectedName(state), "inst-24", what);
-    assert.equal(at >= 0 && lines[at].includes("inst-24"), true, `${what}: the last instance is drawn selected`);
+    assert.equal(at >= 0 && lines[at].includes("Inst 24"), true, `${what}: the last instance is drawn selected`);
     assert.equal(lines.findIndex((line) => line.includes(ROSTER_FAILED)) > at, true, `${what}: the TUI's line under it`);
     assert.equal(lines.findIndex((line) => line.includes(failure)), lines.findIndex((line) => line.includes(ROSTER_FAILED)) + 1, `${what}: and the failure's own text on the next row`);
     assert.deepEqual([m.below, state.loose], [0, false], what);
@@ -1739,7 +1739,7 @@ test("on the last instance the down keys scroll the rows after it, as many as th
   let state = press(read, ["G"]).state;
   const first = framed(state);
   assert.equal(state.selected, last);
-  assert.equal(marked(first.lines).includes("inst-24"), true, "the last instance is drawn, with what fits under it");
+  assert.equal(marked(first.lines).includes("Inst 24"), true, "the last instance is drawn, with what fits under it");
   assert.equal(first.lines[markedAt(first.lines) + 1].includes("acme-ledger-builder-0"), true);
   const items = roster(state, AT, first.cols).items, after = items.length - 1 - items.findIndex((item) => item?.id === last);
   assert.equal(after > first.page, true, `the ${after} rows after the last instance are more than the pane's ${first.page}`);
@@ -1767,11 +1767,11 @@ test("on the last instance the down keys scroll the rows after it, as many as th
   // Up: there is an instance to go to, so the selection moves and the window holds it.
   const up = press(state, ["k"]).state, back = framed(up);
   assert.deepEqual([selectedName(up), up.loose], ["inst-23", false]);
-  assert.equal(marked(back.lines).includes("inst-23"), true);
-  assert.equal(back.m.list.some((row) => row?.selected && row.name === "inst-23"), true);
+  assert.equal(marked(back.lines).includes("Inst 23"), true);
+  assert.equal(back.m.list.some((row) => row?.selected && row.name === "Inst 23"), true);
   // The last-row key from there shows the last instance again, with what fits under it.
   const again = press(up, ["G"]).state;
-  assert.deepEqual([again.selected, again.loose, marked(framed(again).lines).includes("inst-24")], [last, false, true]);
+  assert.deepEqual([again.selected, again.loose, marked(framed(again).lines).includes("Inst 24")], [last, false, true]);
   // A page up from the scrolled list moves the selection too.
   assert.deepEqual([press(state, ["pageup"]).state.loose, press(state, ["pageup"]).state.selected === last], [false, false]);
 });
@@ -1823,12 +1823,12 @@ test("selecting the first instance brings what stands above it into the pane: th
   // One row above the second instance of the list the window starts at that instance: the heading is cut off.
   let second = down;
   while (selectedName(second) !== "inst-01") second = press(second, ["k"]).state;
-  assert.deepEqual([framed(second).m.list[0].name, framed(second).m.above], ["inst-01", 2]);
+  assert.deepEqual([framed(second).m.list[0].name, framed(second).m.above], ["Inst 01", 2]);
   for (const [what, state] of [["g", press(down, ["g"]).state], ["Home", press(down, ["home"]).state], ["Up from the second instance", press(second, ["k"]).state], ["PageUp", press(second, ["pageup"]).state]]) {
     const { lines, m } = framed(state), at = markedAt(lines);
     assert.deepEqual([selectedName(state), state.top, state.loose, m.above], ["inst-00", 0, false, 0], what);
     assert.equal(m.list[0].heading?.label, TERMS.thisMachine, `${what}: the first row of the pane is the heading`);
-    assert.equal(lines[at].includes("inst-00"), true, what);
+    assert.equal(lines[at].includes("Inst 00"), true, what);
     assert.equal(lines[at - 1].startsWith(` ${TERMS.thisMachine}`), true, `${what}: drawn right above the first instance`);
     for (const key of ["k", "pageup", "g"]) assert.equal(press(state, [key]).state, state, `${key} after ${what}: nothing is left above`);
   }
@@ -1963,9 +1963,9 @@ test("while this machine's deployment is not read, an answer of the roster forge
       assert.deepEqual(place(back), kept, `${what}, ${which}: after the next good read`);
       assert.deepEqual(drawn(back).slice(0, 3), ["alpha", null, "z-last"], `${what}, ${which}: alpha is still collapsed`);
       const { lines } = framed(back);
-      assert.equal(marked(lines).includes("z-last"), true, `${what}, ${which}: z-last is drawn selected`);
-      assert.equal(lines.some((line) => line.includes(`${marksOf(false).running} alpha +1 `)), true, `${what}, ${which}: alpha is drawn collapsed, its one child folded away`);
-      assert.equal(lines.some((line) => line.includes("alpha-child")), false);
+      assert.equal(marked(lines).includes("Z last"), true, `${what}, ${which}: z-last is drawn selected`);
+      assert.equal(lines.some((line) => line.includes(`${marksOf(false).running} Alpha +1 `)), true, `${what}, ${which}: alpha is drawn collapsed, its one child folded away`);
+      assert.equal(lines.some((line) => line.includes("Alpha child")), false);
     }
     // The answer that listed a machine: while the local read is unavailable the deployment reports
     // no workspace, so the machine is in a view of its own; with the good read it is in this one.
@@ -1996,7 +1996,7 @@ test("with every deployment of this machine read, a machine that is no longer li
   assert.deepEqual([...gone.state.collapsed], [keyOf("alpha")], "the key of the machine's row is forgotten, and this machine's is kept");
   assert.deepEqual(drawn(gone.state), ["alpha", null, "z-last"]);
   assert.equal(selectedName(gone.state), "z-last", "the selection moved off the row that is gone, to the last row");
-  assert.equal(marked(framed(gone.state).lines).includes("z-last"), true);
+  assert.equal(marked(framed(gone.state).lines).includes("Z last"), true);
   // The same after it was not reached first.
   assert.deepEqual([...heard(lost, answer(), tick(2)).collapsed], [keyOf("alpha")]);
   // And an instance of this machine that is retired is forgotten as before, with a machine in the view.
@@ -2037,7 +2037,7 @@ function oneUnavailable(open) {
   assert.deepEqual(place(back), kept);
   assert.deepEqual(drawn(back), ["a-lead", "a-kid", "b-lead", null, "b-tail"], "the cluster is still collapsed");
   assert.equal(selectedName(back), "b-tail");
-  assert.equal(marked(framed(back).lines).includes("b-tail"), true);
+  assert.equal(marked(framed(back).lines).includes("B tail"), true);
 }
 
 test("two deployments of this machine in one view, the open one unavailable: an observed entry of the other does not forget a collapse key of a row of the unavailable one", () => {
@@ -2061,7 +2061,7 @@ test("a list scrolled away from its selection holds it again after the fold of t
   const held = (state, name, what) => {
     assert.equal(state.loose, false, what);
     assert.equal(selectedName(state), name, what);
-    assert.equal(marked(framed(state).lines)?.includes(name), true, `${what}: the selected row is drawn`);
+    assert.equal(marked(framed(state).lines)?.includes(drawnName(name)), true, `${what}: the selected row is drawn`);
   };
   // Expand.
   const expanded = press(loose, ["l"]).state;

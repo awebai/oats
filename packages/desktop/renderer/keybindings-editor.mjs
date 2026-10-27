@@ -7,11 +7,18 @@
 // cancels, Backspace unbinds), conflicts warned inline via findConflict,
 // per-row reset, reset-all. docs/desktop-keyboard.md has its keys.
 //
-// It leads with the leader (the TUI's): a Leader group, the rebindable app.leader
-// row and then one read-only row per key of the shared table the Desktop runs
-// ("Ctrl+X then K or Space — Open the command palette"), with one quiet line saying
+// Its first section is Most useful (usefulRows): a read-only table of the keys most worth knowing,
+// from the live keymap, hidden while a search shows the list. The list leads with the leader (the
+// TUI's): a Leader group, the rebindable app.leader row and then one read-only row per key of the
+// shared table the Desktop runs ("Ctrl+X then K or Space — Open the command palette"), with one quiet line saying
 // the leader matches the TUI and the direct chords are Desktop extras; then the
 // Sidebar keys; then the groups by context.
+//
+// What has no button teaches its keys here, on its own rows (no line of its own above them): the
+// command palette, the Leader group's first row (the leader then K or Space) and a Global row (its
+// chord in the family in use), and Connections (not in the settings cog's menu), the Global row
+// "Settings: Connections…", named as the palette names it, unbound by default and rebindable there. The stage rows say where they land
+// ("View: Workspace › Machines": NAV_TABS).
 //
 // On Linux/Windows its top holds the chord family (docs/desktop-keyboard.md, "The chord
 // families"): a three-way choice, "Shortcut family, shared with oats tui", Alt (the default), Ctrl+Alt or Ctrl+Shift, which
@@ -23,7 +30,7 @@
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
   onKeymapChange, findConflict, keymapConflicts, formatChord, chordFromEvent, chordToString,
-  isPlainChord, defaultBinding, chordKeys, terminalAllows,
+  isPlainChord, defaultBinding, chordKeys, terminalAllows, CHORDS_READ,
 } from "./keybindings.mjs";
 import { supportedLeaderRows, leaderLabel, keyIdCaps, rowKeysText } from "./leader-keys.mjs";
 import { CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
@@ -37,11 +44,11 @@ const CONTEXT_LABELS = {
   global: "Global",
   tabs: "Tabs",
   roster: "Instance roster",
-  "stage:hierarchy": "Deployments",
+  "stage:hierarchy": "Machines",
   "stage:spawn": "Soul roster",
   // view-local contexts: never activated for window dispatch — the actions
   // dispatch inside their view surface but stay editor-visible here.
-  "view:hierarchy": "Deployments",
+  "view:hierarchy": "Machines",
   "view:spawn": "Soul roster",
   // a modal dialog's own keys: dispatched only by the open dialog (spawn-dialog-keys.mjs)
   "spawn-dialog-local": "Spawn dialog",
@@ -122,6 +129,80 @@ export const CHORD_FAMILY_WORDS = Object.freeze({
   unwritten: (family) => `Could not write keys.json: the shortcuts stay ${CHORD_FAMILY_LABELS[family] ?? CHORD_FAMILY_LABELS[DEFAULT_CHORD_FAMILY]}. Fix or remove the file, then choose again.`,
 });
 
+// ── Most useful: the editor's first section, a read-only table of the keys most worth knowing ────
+// One row per entry, named here, its keys read from the live keymap at every render: the platform,
+// the chord family and the user's rebinds as they are. Each `does` is a row of the shared keymap
+// (packages/client/keymap.mjs): its action is the CHORDS_READ one, and where that action has no chord
+// (none in the active family, or unbound in the list below) the leader's key for the same `does`
+// stands in ("Ctrl+X then ↑ / ↓": the workspace moves in the Ctrl+Alt and Ctrl+Shift families). A pair
+// is one row, "A / B"; the tab keys one row, "first to last", while the nine follow one pattern. The
+// help row is the leader's `?`. The roster's filter is gone, so no row teaches `sidebar.focusFilter`.
+const USEFUL = Object.freeze([
+  { name: "Command palette", does: ["palette"] },
+  { name: "Quick open a soul to spawn", does: ["spawn"] },
+  { name: "Previous / next tab", does: ["tab-previous", "tab-next"] },
+  { name: "Go to tab 1–9", does: Array.from({ length: 9 }, (_, i) => `tab-${i + 1}`), range: true },
+  { name: "Previous / next workspace", does: ["workspace-previous", "workspace-next"] },
+  { name: "Split right / split down", does: ["split-right", "split-down"] },
+  { name: "Previous / next split pane", does: ["group-previous", "group-next"] },
+  { name: "Close tab", does: ["close-terminal"] },
+  { name: "Focus mode", does: ["zoom"] },
+  { name: "The leader, then ? for everything", does: ["help"], leaderOnly: true },
+].map((row) => Object.freeze({ ...row, does: Object.freeze(row.does) })));
+
+/** The Most useful rows as the keymap binds them now: each `{ name, keys }`, `keys` a list of pieces,
+ * `{ cap }` a keycap (a chord as one, "⌘K", "Ctrl+Alt+K") or `{ word }` ("then", "/", "to", "unbound"). */
+export function usefulRows(isMac) {
+  const leaderChord = getBinding("app.leader", isMac);
+  const leaderRows = supportedLeaderRows();
+  const chordOf = (does) => { const id = CHORDS_READ.find((each) => each.does === does)?.id; return id ? getBinding(id, isMac) : null; };
+  const leaderKeys = (does) => leaderRows.find((row) => row.does === does)?.keys ?? null;
+  const caps = (keyId) => keyIdCaps(keyId, isMac).join(isMac ? "" : "+");
+  // One `does`: its chord, else the leader's key for it, else unbound.
+  const part = (does, leaderOnly) => {
+    const chord = leaderOnly ? null : chordOf(does);
+    if (chord) return { chord };
+    const keys = leaderKeys(does);
+    return keys && leaderChord ? { leader: caps(keys[0]) } : { unbound: true };
+  };
+  return USEFUL.map(({ name, does, range, leaderOnly }) => {
+    const parts = does.map((each) => part(each, leaderOnly));
+    const keys = [];
+    const piece = (p) => {
+      if (p.chord) keys.push({ cap: formatChord(p.chord, isMac) });
+      else if (p.leader) keys.push({ cap: formatChord(leaderChord, isMac) }, { word: "then" }, { cap: p.leader });
+      else keys.push({ word: "unbound" });
+    };
+    // The nine tab keys: "first to last" while each is the first's with its own digit.
+    const first = parts[0].chord ? chordKeys(parts[0].chord, isMac) : null;
+    const pattern = range && first && parts.every((p, i) => p.chord
+      && chordKeys(p.chord, isMac).join(" ") === [...first.slice(0, -1), String(i + 1)].join(" "));
+    if (pattern) { piece(parts[0]); keys.push({ word: "to" }); piece(parts.at(-1)); }
+    else if (parts.length > 1 && parts.every((p) => p.leader)) {
+      // A pair the leader reaches: the leader once, then its keys ("Ctrl+X then ↑ / ↓").
+      keys.push({ cap: formatChord(leaderChord, isMac) }, { word: "then" });
+      parts.forEach((p, i) => { if (i) keys.push({ word: "/" }); keys.push({ cap: p.leader }); });
+    } else parts.forEach((p, i) => { if (i) keys.push({ word: "/" }); piece(p); });
+    return { name, keys };
+  });
+}
+
+/** The Most useful section's own rules (injected once per document with the editor): a two-column
+ * reference table under a heading like the groups', its keycaps the rows' `.kb-keys kbd`, its words
+ * the leader rows' `.kb-then`. Theme tokens only, every pair from the contrast inventory. */
+export const usefulCSS = `
+.kb-useful { margin-bottom: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.kb-useful-table { width: 100%; border-collapse: collapse; }
+.kb-useful-name { padding: 5px 6px; text-align: left; vertical-align: middle; color: var(--fg); font-size: 13px; font-weight: 400; }
+.kb-useful-keys { padding: 4px 6px; vertical-align: middle; }
+.kb-useful-keys .kb-keys { justify-content: flex-end; flex-wrap: wrap; row-gap: 3px; }
+`;
+
+function ensureUsefulCSS(doc) {
+  if (!doc.head || doc.head.querySelector("style[data-kb-useful]")) return;
+  const style = doc.createElement("style"); style.dataset.kbUseful = ""; style.textContent = usefulCSS; doc.head.append(style);
+}
+
 /** Where a stage's direct chord and the leader's key mean different things (the leader's are the TUI's). */
 const STAGE_DIFFERENCES = Object.freeze({ "stage.hierarchy": "1", "stage.automations": "3" });
 
@@ -157,6 +238,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
     const opener = takePickerFocusReturn(doc);
     if (overlay) { overlay.querySelector(".kb-search").focus(); return; }
     restoreFocus = opener;
+    ensureUsefulCSS(doc);
     overlay = doc.createElement("div");
     overlay.className = "palette-overlay kb-overlay";
     overlay.innerHTML = `
@@ -274,6 +356,9 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
         group.hidden = inGroup === 0;
         shown += inGroup;
       }
+      // Most useful is the editor's first section, not a search result: a search shows the list alone.
+      const useful = body.querySelector(".kb-useful");
+      if (useful) useful.hidden = !!query.trim();
       const none = body.querySelector(".kb-nomatch");
       if (none) {
         none.hidden = shown > 0;
@@ -310,6 +395,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
         d.textContent = "No actions registered.";
         body.append(d);
       } else {
+        body.append(usefulSection());
         for (const group of groups) {
           // One group: its heading sticks to the top of the scroll area while its rows scroll.
           const section = doc.createElement("section");
@@ -326,7 +412,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
             const extras = doc.createElement("p");
             extras.className = "kb-extras";
             const stage = (id) => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : "unbound"; };
-            extras.textContent = `The leader and the keys after it are the TUI's; the direct shortcuts are Desktop extras. ${leaderText()} then 1 is Instances and ${leaderText()} then 3 is Capabilities, while ${stage("stage.hierarchy")} stays Deployments and ${stage("stage.automations")} stays Automations.`;
+            extras.textContent = `The leader and the keys after it are the TUI's; the direct shortcuts are Desktop extras. ${leaderText()} then 1 is Instances and ${leaderText()} then 3 is Capabilities, while ${stage("stage.hierarchy")} stays Machines and ${stage("stage.automations")} stays Automations.`;
             h.after(extras);
             for (const leaderRow of supportedLeaderRows()) section.append(fixedRow(leaderRow));
           }
@@ -347,6 +433,44 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
       }
       // focus left the rebuilt rows, or its row is filtered out: keep it inside the dialog
       if (hadDialogFocus && !overlay.contains(doc.activeElement)) search.focus();
+    };
+
+    // Most useful (usefulRows): a table, so a screen reader reads each row's action and then its keys.
+    // Read-only, rebuilt with the list at every keymap change, so a rebind below shows here at once.
+    const usefulSection = () => {
+      const section = doc.createElement("section");
+      section.className = "kb-useful";
+      section.setAttribute("aria-labelledby", "kb-useful-title");
+      section.innerHTML = `
+        <h3 class="kb-context" id="kb-useful-title">Most useful</h3>
+        <table class="kb-useful-table" aria-labelledby="kb-useful-title">
+          <thead><tr><th scope="col" class="sr-only">Action</th><th scope="col" class="sr-only">Keys</th></tr></thead>
+          <tbody></tbody>
+        </table>`;
+      const tbody = section.querySelector("tbody");
+      for (const { name, keys } of usefulRows(isMac)) {
+        const tr = doc.createElement("tr");
+        tr.className = "kb-useful-row";
+        const th = doc.createElement("th");
+        th.scope = "row";
+        th.className = "kb-useful-name";
+        th.textContent = name;
+        const td = doc.createElement("td");
+        td.className = "kb-useful-keys";
+        const shown = doc.createElement("span");
+        shown.className = "kb-keys";
+        keys.forEach((k, i) => {
+          if (i) shown.append(" "); // read as words, not run together
+          const el = doc.createElement(k.cap ? "kbd" : "span");
+          if (!k.cap) el.className = "kb-then";
+          el.textContent = k.cap ?? k.word;
+          shown.append(el);
+        });
+        td.append(shown);
+        tr.append(th, td);
+        tbody.append(tr);
+      }
+      return section;
     };
 
     const row = (action, group) => {

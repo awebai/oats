@@ -85,6 +85,11 @@ ${groupHeadingCSS}.source-chip { display:inline-flex; align-items:center; gap:7p
 .catalog-note.warn { color:var(--warn); }
 .capability-section { display:flex; flex-direction:column; gap:10px; }
 .capability-section + .capability-section { margin-top:22px; }
+/* The page's two parts: Workspace defaults, then All capabilities over its sections, both titled larger. */
+.capability-part > .capability-nav { align-self:flex-start; }
+.capability-part { display:flex; flex-direction:column; gap:14px; margin-top:32px; }
+.capability-part:first-child { margin-top:0; } /* no defaults reported: All capabilities opens the tab */
+.capability-part-title, .capability-section-title.capability-part-title { margin:0; padding:0 2px; color:var(--fg); font-size:18px; font-weight:700; }
 .capability-section-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; min-width:0; }
 .capability-section-head .catalog-filters { flex:0 1 auto; margin-left:auto; }
 .capability-section-title { display:flex; align-items:baseline; gap:10px; margin:0; padding:0 2px; color:var(--fg); font-size:15px; font-weight:650; }
@@ -325,39 +330,41 @@ export function lockNotes(status) {
   return lines;
 }
 
-/** The Capabilities tab: the section jump, then Workspace defaults when the kernel reports them
- * (workspace-defaults.mjs: `status.defaults`, never filtered), Workspace owned (grouped by repository, with its
- * repository pills), Repo owned grouped the same way when the kernel lists it (feature
+/** The Capabilities tab, in two parts (2026-10-23): Workspace defaults when the kernel reports them
+ * (workspace-defaults.mjs: `status.defaults`, never filtered; a section of its own, h2), then All capabilities
+ * (`.capability-part`, h2): the section jump under its title, then its subsections (h3) Workspace owned (grouped
+ * by repository, with its repository pills), Repo owned grouped the same way when the kernel lists it (feature
  * capabilities-private), then Packages grouped by package. `shown`: the Workspace owned rows the pills leave;
  * `filterHost` is the discovery's persistent pill row; `query` narrows every catalog section by name.
- * `navHost`, when given, takes the section jump (the view's toolbar row). `souls` and `composition`:
- * renderCapabilities' "Used by" inputs. */
-export function renderCapabilitySections(host, { sections, shown, filterHost, navHost = null, privateListed, status, instances, souls = [], composition = false, root, onOpen = null, query = '', rosterState = 'ready' }) {
+ * `souls` and `composition`: renderCapabilities' "Used by" inputs. */
+export function renderCapabilitySections(host, { sections, shown, filterHost, privateListed, status, instances, souls = [], composition = false, root, onOpen = null, query = '', rosterState = 'ready' }) {
   const doc = host.ownerDocument, names = memberNames(status), hostKey = hostKeyOf(status);
   host.replaceChildren();
   const match = rows => matchCapabilities(rows, query);
   const table = (parent, rows, opts) => { const box = node(doc, 'div'); parent.append(box); renderCapabilities(box, { rows, status, instances, souls, composition, root, onOpen, rosterState, ...opts }); };
   // The workspace's defaults (null when the kernel reports none): matched against every catalog row, whatever the filters leave.
   const defaults = workspaceDefaults(status), allRows = [...sections.workspace, ...sections.repo, ...sections.packages];
-  const section = def => {
+  // The page's two parts (2026-10-23): Workspace defaults, then All capabilities, whose sections (Workspace owned,
+  // Repo owned, Packages) are its subsections (h3).
+  const section = (def, parent = host, level = 'h2') => {
     const el = node(doc, 'section', null, 'capability-section'); el.dataset.section = def.id;
-    const head = node(doc, 'h2', null, 'capability-section-title'); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
+    const head = node(doc, level, null, `capability-section-title${level === 'h2' ? ' capability-part-title' : ''}`); head.id = `capability-section-${def.id}`; head.tabIndex = -1;
     head.append(node(doc, 'span', def.title));
     if (def.lead) head.append(node(doc, 'span', def.lead, 'capability-section-lead'));
     // The title row (board 4): the title and its lead, then (Workspace owned) the repository pills at its right.
     const row = node(doc, 'div', null, 'capability-section-head'); row.append(head);
-    el.setAttribute('aria-labelledby', head.id); el.append(row); host.append(el); return el;
+    el.setAttribute('aria-labelledby', head.id); el.append(row); parent.append(el); return el;
   };
-  const defaultsDef = { id: 'defaults', title: DEFAULTS_COPY.title, nav: DEFAULTS_COPY.nav, count: defaults?.count ?? 0 };
+  const defaultsDef = { id: 'defaults', title: DEFAULTS_COPY.title };
   const renderDefaults = el => renderWorkspaceDefaults(el, { status, rows: allRows, onOpen });
   // Nothing at all: one factual line, not three empty sections (the defaults, when reported, still say what every soul gets).
   if (!sections.workspace.length && !sections.packages.length && !sections.repo.length) {
     if (defaults) renderDefaults(section(defaultsDef));
     table(host, [], {}); return;
   }
-  // Defaults (when reported) → Workspace owned → Repo owned (when listed) → Packages: the nav segments and the sections, in one order.
+  // Workspace owned → Repo owned (when listed) → Packages: the nav segments and the sections, in one order. The
+  // defaults are a part of their own, never one of the sections' segments (the product owner, 2026-10-23).
   const defs = [
-    ...(defaults ? [defaultsDef] : []),
     { id: 'workspace', title: 'Workspace owned', lead: 'latest from member repos', count: sections.workspace.length },
     ...(privateListed ? [{ id: 'repo', title: 'Repo owned', lead: 'only for souls of the same repo', count: sections.repo.length }] : []),
     { id: 'packages', title: 'Packages', lead: 'pinned versions, same everywhere', count: sections.packages.length },
@@ -367,7 +374,7 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
   const nav = node(doc, 'nav', null, 'capability-nav ws-segmented'); nav.setAttribute('aria-label', 'Capability sections');
   for (const def of defs) {
     const jump = node(doc, 'button', null); jump.type = 'button'; jump.dataset.jump = def.id;
-    jump.append(node(doc, 'span', def.nav || def.title), node(doc, 'span', String(def.count), 'capability-nav-count'));
+    jump.append(node(doc, 'span', def.title), node(doc, 'span', String(def.count), 'capability-nav-count'));
     markCurrent(jump, def.id === defs[0].id);
     jump.addEventListener('click', () => {
       const head = host.querySelector(`#capability-section-${def.id}`);
@@ -376,7 +383,7 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
     });
     nav.append(jump);
   }
-  (navHost || host).append(nav);
+  // The segments are All capabilities' own: under its title.
   const render = {
     defaults: renderDefaults,
     workspace: owned => {
@@ -395,18 +402,25 @@ export function renderCapabilitySections(host, { sections, shown, filterHost, na
       table(packages, groups.flatMap(g => g.rows), { groups, total: sections.packages.length, label: 'Package capabilities', empty: 'No package capability is locked yet. Sync to lock the declared packages.' });
     },
   };
-  for (const def of defs) render[def.id](section(def));
+  if (defaults) render.defaults(section(defaultsDef));
+  const all = node(doc, 'section', null, 'capability-part');
+  const allHead = node(doc, 'h2', 'All capabilities', 'capability-part-title'); allHead.id = 'capability-part-all';
+  // Its segments under its title, on a row of their own.
+  all.setAttribute('aria-labelledby', allHead.id); all.append(allHead, nav); host.append(all);
+  for (const def of defs) render[def.id](section(def, all, 'h3'));
 }
 
-/** The jump segment for the section at the top of the scroller (called on scroll). The top is the
- * pinned toolbar's bottom edge when the nav sits in one (spec G), so a section under it is not "in view". */
-export function syncCapabilityNav(host, scroller, navHost = host) {
-  const nav = navHost.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
-  const pinned = navHost.closest?.('.ws-sticky');
+/** The jump segment for the section at the top of the scroller (called on scroll): All capabilities' sections
+ * only, so the defaults above them never make one current. The jump sits in `host`, under All capabilities'
+ * title. The top is the pinned toolbar's bottom edge when `toolbar` sits in one (spec G), so a section under it
+ * is not "in view"; else the scroller's own top. */
+export function syncCapabilityNav(host, scroller, toolbar = null) {
+  const nav = host.querySelector('.capability-nav'); if (!nav || !scroller?.getBoundingClientRect) return;
+  const pinned = toolbar?.closest?.('.ws-sticky');
   const top = (pinned ? pinned.getBoundingClientRect().bottom : scroller.getBoundingClientRect().top) + 24;
   let current = null;
-  for (const el of host.querySelectorAll('.capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;
-  current ||= host.querySelector('.capability-section')?.dataset.section;
+  for (const el of host.querySelectorAll('.capability-part .capability-section')) if (el.getBoundingClientRect().top <= top) current = el.dataset.section;
+  current ||= host.querySelector('.capability-part .capability-section')?.dataset.section;
   for (const jump of nav.querySelectorAll('button')) markCurrent(jump, jump.dataset.jump === current);
 }
 

@@ -89,6 +89,8 @@ const TAKEN = Object.freeze({
   "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome", "instanceSiblings"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead", "siblingText", "instanceColor"],
+  // 0.68.1: an instance row's name as words (lib/model.mjs listRow), the Desktop's sidebar label; the real name everywhere else.
+  "instance-display-name.mjs": ["instanceDisplayName"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
   "remote-address.mjs": ["rowReason"],

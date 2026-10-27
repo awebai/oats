@@ -28,6 +28,7 @@ import { leaderPairs } from "./helpers/leader-pairs.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
+import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
 import { STATUS_WAIT_MS, createPanel } from "../packages/tui/lib/panel.mjs";
 import { captureRows } from "../packages/tui/lib/term/capture.mjs";
 
@@ -245,8 +246,9 @@ const LIST_HINTS = `${LEAD}Enter focus terminal   n spawn   w workspaces   ? hel
 const FAILED = `${NAME} could not be opened.`;
 /** The agent's row in the list, selected and running: the green mark and its name, and nothing
  *  after it (the harness is the detail's). */
-const RUNNING_ROW = new RegExp(`^> +● ${NAME}$`);
-const ROW = new RegExp(`^[> ] +[●○◌?◆] ${NAME}\\b`);
+/** The list draws a row's name as words (packages/client/instance-display-name.mjs): "Alpha". */
+const RUNNING_ROW = new RegExp(`^> +● ${instanceDisplayName(NAME)}$`);
+const ROW = new RegExp(`^[> ] +[●○◌?◆] ${instanceDisplayName(NAME)}\\b`);
 /** The columns the sidebar keeps beside an open terminal (docs/tui.md); the panel starts after the
  *  sidebar and its rule, from the first row. The agent's row is read from as many columns of the
  *  list: its name is short, and the row has no word, so it is whole there with the detail beside
@@ -1263,7 +1265,7 @@ const stripNames = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab
 /** The tabs' numbers in the tab bar, in its order, or null for a tab with none. */
 const stripNumbers = (run) => (run.panel()[0] ?? "").split("│").map((tab) => tab.trim().replace(/^\[(.*)\]$/, "$1")).filter(Boolean).map((tab) => / (\d)$/.exec(tab)?.[1] ?? null);
 /** The row of agent `name` is selected and running, read from the list's columns. */
-const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${name}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
+const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(`^> +● ${instanceDisplayName(name)}$`).test([...text].slice(0, LIST_BESIDE).join("").trimEnd()));
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one
  *  Alt+Shift+Down (`next`, the instance move: the leader's Down moves between workspaces) from the
  *  terminal shown. It is one key, so no read can split it from a leader; it does not repeat safely

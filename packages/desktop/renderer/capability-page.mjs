@@ -10,12 +10,8 @@ import { capabilityRow, sourceChip } from './workspace-catalog.mjs';
 import { memberNames, layerLabel, capabilityUsers } from '../../client/capability-rows.mjs';
 import { capabilityFacts, CAPABILITY_COPY } from '../../client/capability-facts.mjs';
 import { skeleton, noticeElement, updateNotice, failedElement, updateFailed, isOldObservation, ROSTER_STALE_TITLE, SOULS_STALE_TITLE } from './loading.mjs';
-import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { sourceQuote, LEAD_INS } from './source-quote.mjs';
-
-/** Each host's "On <deployment>" line (#482): a re-render replaces it. */
-const scopeLines = new WeakMap();
 
 /** The shared page chrome: bar, columns, section titles and side cards. */
 export const pageCardCSS = `
@@ -254,10 +250,7 @@ export function renderCapabilityPage(host, { row, status, instances, souls = [],
   const title = node('h2', undefined, 'page-title mono'); title.append(node('span', row.name));
   if (text(row.layer)) title.append(node('span', `Core · ${layerLabel(row.layer)}`, 'page-tag'));
   copy.append(title);
-  // #482: in a view of two or more deployments, the deployment this page reads (the primary).
-  scopeLines.get(host)?.dispose();
-  const scope = createDeploymentScopeLine(doc, { inline: true }); scopeLines.set(host, scope);
-  copy.append(scope.element);
+  // #482: the page reads the view's primary deployment, without naming it (the product owner, 2026-10-23).
   // Kernel #217: the manifest's description (a line-sized skeleton while the catalog is still being read).
   if (text(row.description)) copy.append(node('p', row.description, 'page-lede'));
   else if (catalogPending) { const lede = skeleton(doc, 'line', { width: '55%' }); lede.classList.add('page-lede'); copy.append(lede); }

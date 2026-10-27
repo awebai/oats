@@ -8,7 +8,17 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 ## Views (`views/`)
 
-- **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
+- **spawn.mjs** — **Workspace**, with Souls / Capabilities / Teams / Machines / Setup subtabs
+  (`workspace-discovery.mjs` `workspaceTabs`); the page opens on Souls. Souls and Machines are
+  panels the view owns: Machines (`.workspace-machines-panel`, id `workspace-machines`) mounts
+  `hierarchy.mjs`, the Deployments page of before, only while its tab is shown (chosen, or
+  preselected by `stage.hierarchy`) and unmounts it on
+  leaving (`syncMachines`), and that view's "Workspace" (`s`, Go to soul's page) is the Souls tab
+  here. Since 2026-10-26 `shell-nav.mjs` NAV is Workspace overview (`spawn`) and Automations
+  (`automations`, a page of its own again, as before 2026-10-23), and its NAV_TABS route
+  `stage.hierarchy` (⌘1 / Ctrl+1), the palette's **View: Workspace › Machines** (the entry's label
+  names its page, as the shortcuts editor's row does) and every
+  `showStage("hierarchy")` / `ctx.openView("hierarchy")` to this page on the Machines tab.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog),
   grouped by **Repo** (the default: the member repository, the host first,
   then packages with their pinned version, then external souls) or **Team**
@@ -25,7 +35,8 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
   for instructions; attached-mode souls cannot launch standalone. The shell's
-  **Spawn instance** footer navigates to soul selection; it does not launch.
+  `app.chooseSoul` (⌘N / Ctrl+Shift+N, **Spawn instance: choose a soul in Workspace**) navigates to soul
+  selection, and the sidebar foot's **Spawn instance** opens Quick Open (`app.quickOpenSouls`); neither launches.
   Capability facts and source provenance use negotiated read-only inspection,
   never inferred membership, installation or remote discovery. Shared CLI recovery
   stays visible across subtabs; incompatible installations are observation-only.
@@ -48,7 +59,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   (`window:claim-workspace`): a workspace another window has brings that
   window to the front and leaves this one unchanged, unless the switch is a
   take-over (`{ takeOver: true }`: a pick from the list of workspaces, the
-  Deployments and Workspace selects, spawn.mjs `handOff`). Then main asks the
+  Workspace page's and its Machines tab's selects, spawn.mjs `handOff`). Then main asks the
   holder to release it (`window:release-workspace { request, workspace,
   workspaces }`), waits for its `window:release-answer` or 2 s, and moves the
   binding here. The holder (shell.mjs `releaseTakenWorkspace`) answers, then
@@ -85,7 +96,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 `theme.css` carries semantic WCAG AA tokens for **White**, **Solarized**, and
 **Dark**. A fourth choice, **This computer** (`host`), has no palette of its
-own: it shows the theme of the computer that runs Desktop. The theme button,
+own: it shows the theme of the computer that runs Desktop. The settings cog's **Theme…**,
 the palette's **Theme: choose…** and Ctrl+Shift+Space (⇧⌘Space on macOS;
 `app.themePicker`) open the theme picker (`theme-picker.mjs`), a modal in the
 middle of the window that applies a choice through `setTheme`. The other
@@ -156,7 +167,10 @@ is dark, White when it is light, each exactly as it is, with nothing imported.
   from the host's selection colour and is moved until it holds 3:1 on the
   terminal's background, a UI state like the graph edges (`GRAPHIC_PAIRS`;
   Omarchy's selections are about 1.3:1); its text is then held to 4.5:1 on it
-  (#672).
+  (#672). Each token is moved until it holds every pair the inventory gives it
+  at once: 4.5:1 where it is text (`TEXT_PAIRS`), 3:1 where it is a graphic
+  (`GRAPHIC_PAIRS`). A colour that is both, like `--danger` (its words, and the
+  problem dots on `--sel`), never trades one for the other.
 - **First paint.** The last state shown is kept in `localStorage`
   (`oats.desktop.hostTheme`) and applied synchronously by `initTheme()`, then
   reconciled with main's answer, so a dark host does not flash White at launch.
@@ -386,7 +400,7 @@ global part, views follow them in their own CSS). `test/control-rules.test.mjs` 
    canvases, `pre` blocks) get the edge only. Padding-free text tabs and links
    (`.workspace-tabs`, `.auto-tabs`, Setup links) give the tint a layout-neutral inset
    on focus (`padding: 0 6px; margin: 0 -6px`) so it does not hug the label.
-3. **Search/filter fields have one border.** A wrapped field (`.ctx-filter-field`) turns
+3. **Search/filter fields have one border.** A wrapped field (`.kb-search-field`) turns
    its wrapper border accent on `:focus-within`; the `<input>` inside has `border: 0;
    outline: none` in every state. A bare field (`.field`, `#ws-suggestion-search`, the palette
    input's bottom rule) turns its own border accent on `:focus-visible` and never outlines.
@@ -424,27 +438,77 @@ A window shows a workspace **view**: one matched workspace identity across machi
 not read the panel. What they say (a deployment's state in words, the primary, the roster
 split into sections) is `packages/client/roster-sections.mjs`.
 
-- **No deployments above the navigation.** The sidebar lists no deployments; the Deployments
-  page and the roster headings say where things run (UI spec, after the operator rejected a
-  deployments block under the workspace switcher). The list of workspaces above the
-  navigation lists views.
+- **The sidebar, top to bottom** (the product owner, 2026-10-26: its shape before 2026-10-23, the list of
+  workspaces on top, then that day's changes): the head (`.side-head`, 40px, its 8px top padding keeping
+  the heading's centre 24px down, as in the 48px bar, so the first row sits close under it; no line under it):
+  the heading `#ws-heading` "Workspace" (13.5px 700 `--fg`; it labels the list), then **Show only the current
+  workspace** (`#ws-current-only`) and **Add local workspace…** (`#ws-add-open`), 28px `.side-icon-button`
+  boxes; the list (`#ws-list`, a 1.5px `--border` line under it, a little bolder than the 1px one before the instances; rows `.ws-option`, 4px 8px 4px 10px, at least
+  24px tall); the main views (`#nav`, NAV: Workspace overview, Automations; 8px all round, so the same room
+  above the first and below the last; a column of 30px `.nav-item`s at 500 in `--nav-fg`, the current one 650
+  `--fg` on `--sel`); the roster (`#instance-roster`, its top border the line before the instances) under its
+  heading, a `.ctx-head` (13px 500 `--nav-fg`, read like the nav items) holding "Instances" and the count,
+  with "Refreshing…" after the count when loading.mjs adds it; then the foot (`#nav-foot`, pushed to the
+  bottom, under a `--border` line, 4px 10px), one bar (`#sidebar-bar`, `role="group"` "Sidebar tools"),
+  `[mark][toggle] … [spawn][cog]`: the OATS mark (`.sidebar-brand`, the generated `sidebar-48.png` drawn at
+  20px, decorative: `aria-hidden`, an empty alt, no tab stop); 8px after it the sidebar toggle
+  (`#sidebar-toggle`, `sidebar.toggle`, its `aria-expanded` kept by `updateSidebarControls`); then at the right
+  end **Spawn instance** (`#sidebar-spawn`, `app.quickOpenSouls`: Quick Open), its words alone (24px tall,
+  12px `--muted`, no icon and no fill at rest; the icon buttons' `--surface-2` on hover and `--sel` on keyboard
+  focus, in rules of its own) with no hint element, its chord in its title (`applyChordTitles`), and 6px after
+  it the settings cog (`#sidebar-settings`, `sidebar-settings.mjs`: Theme…, Keyboard shortcuts…). The toggle
+  and the cog are 24px `.side-icon-button` boxes with 14px icons. `.side-icon-button` is the sidebar's one icon-button style (box, colours, hover,
+  focus), on the head's two buttons and the bar's two. Every `#nav-foot [data-action]` runs its action through
+  the same registry as the keys. The mark centres on the workspace rows' circles, 22px in (the foot's 10px,
+  the bar's 2px, half its 20px), and the cog 25px in from the right edge (the foot's 10px, the bar's 3px, half
+  its 24px). The workspace rows' names are the sidebar's 13px (the current one at 650), the roster's machine
+  labels (`.ctx-deployment`) 11px 650 muted capitals, its agent groups 14px apart. The palette has no
+  button: it has its own chord, and **Settings: Connections…** in it is Connections' only entry. The
+  workspace list hides its scrollbar as the roster does.
+  The roster has no
+  filter field (the TUI keeps its own): the palette finds an instance by name. `sidebar.focusFilter`
+  keeps its id, chord and leader key (**Focus the instance roster**): `focusRoster` lands on
+  `rosterEntry()`, the roster's current row, else its first row, else a control it shows under its heading
+  (Retry), else, on an empty roster, its one action, the foot's **Spawn instance** (Quick Open; F6's stop in an
+  empty roster too: one way in, the product owner's rule), else, while the roster is hidden (a window with no
+  workspace), the list of workspaces' stop, else **Add local workspace…**, so focus never falls to `<body>`.
+  The same entry takes focus when the last terminal tab closes, and a focused Retry that goes on an empty
+  answer hands focus to the same Spawn instance (instance-tree-view.mjs `focusFallback`).
+- **The sidebar's width** (`sidebar-width.mjs`): one custom property, `--sidebar-w` on `#app` (288px in
+  shell.css), which `#sidebar` takes as `width` and `min-width`. Its handle (`#sidebar-resizer`, the sidebar's last
+  child and last Tab stop, after the foot; focus-regions counts it as the foot) is the split panes' resizer:
+  `split-resize.mjs` builds both with `createResizeHandle` and drives both with `wireResizer` (pointer capture, the
+  keys, double-click), the split's in ratios, the sidebar's in px (8px steps, Shift 32px, Home/End to the bounds,
+  Enter and double-click to 288px; `sidebar.resetWidth`, no default chord, is the palette's **Sidebar: reset
+  width**). Bounds: 240px to `sidebarMax` = min(480px, 45% of `innerWidth`), the minimum winning. The chosen width
+  is stored as `oats.desktop.sidebarWidth` (a missing, invalid or out-of-bounds value, or storage that throws, reads
+  as 288) and applied clamped on every window resize, so a window that shrinks and grows gives it back. A drag
+  writes at most once per animation frame; terminals refit through their own ResizeObservers as on a hide, and
+  `holdTerminalResizes` (terminal-tab.mjs) keeps their PTY resizes from the program until the drag lets go (key
+  steps: until the keys rest 150ms), when each terminal that resized refits once more and sends its size.
+- **No deployments above the navigation.** The sidebar lists no deployments; the Workspace
+  page's Machines tab and the roster headings say where things run (UI spec, after the operator rejected a
+  deployments block under the workspace switcher). The list of workspaces lists views.
 - **The list of workspaces** (`workspace-switcher.mjs`, `#ws-list` under the sidebar's head,
   always shown; docs/desktop.md, "Workspaces"): one row per served view, whatever machine it is
   on, the matched views first, then the unattached ones, in ONE `<ul>` with no heading. A list
   of buttons, not a listbox, so the sidebar's plain keys stay live on it (shell.mjs
-  `updateActiveContexts`). A row is one line, the name alone (`rowNames`: twins of one name
-  show their team and key, never a folder or a machine, which the shared `workspaceChoiceLabels`
-  falls back to for the TUI): no mark, no
+  `updateActiveContexts`). A row is one line: the instance roster's circle (its own `.ctx-dot`
+  rule, `on` for the current workspace, `off` for the others, aria-hidden; its ring in the row's
+  fill through `--row-solid`, and in the column of the roster's top-level dots) and the name
+  (`rowNames`: twins of one name show their team and key, never a folder or a machine, which the
+  shared `workspaceChoiceLabels` falls back to for the TUI): no other mark, no
   muted line, no not-live mark, no per-row button. Its tooltip is the whole name (a long one is
   cut by an ellipsis), never a path or a machine. Rows cut off below the bounded height are
-  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden). `reset(current)` (a switch
+  counted under the list (`.ws-more`, `moreBelowText`, aria-hidden), with the rows' needs-input
+  mark (`.ws-waiting.attn-mark`, the "!" disc) after the count when one of them waits (the TUI's `+N ●`). `reset(current)` (a switch
   landed) keeps the rows and marks `current`; a pick on its way (`pickedId`) is where `step`
   goes on from, and a pick of the current row supersedes it. Choosing an unattached row also
-  calls `requestDeploymentTab`, so the Deployments page opens on its tab.
-  - The current row is `aria-current="true"`, marked by style alone (`--sel`, the name in
-    bold); the section's `aria-description` names the current workspace by its row's name, never a path.
-  - The dot: `choice.waiting`, only `true` draws it (`.ws-waiting` after the name, a yellow
-    `--attn-dot` fill in a 1px `--warn` ring, the needs-input colour of the roster and the tabs, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
+  calls `requestDeploymentTab`, so the Workspace page opens on Machines, on that deployment's tab.
+  - The current row is `aria-current="true"`, marked by style alone (its circle filled in
+    `--accent`, the name in bold; no fill or edge of its own, `--sel` is the nav's); the section's `aria-description` names the current workspace by its row's name, never a path.
+  - The needs-input mark: `choice.waiting`, only `true` draws it (`.ws-waiting` at the row's far right, `margin-left: auto`, the name cut off before it;
+    the `.attn-mark` icon, shell-icons.mjs `attention`: a `--warn` disc with the "!" cut out in `--surface`, the mark of a waiting instance's roster dot and of the roster's roll-up pill too, which holds 3:1 on every row fill), with `WAITING_NAME` (", needs input", sr-only in the name) and
     `WAITING_TITLE` in the tooltip. It reads only what the client observes (panel-views.mjs
     `workspaceChoices`); it never reorders.
   - Keys (`onListKey`): one roving stop (`stopKey`, the row last focused, else the current
@@ -462,6 +526,16 @@ split into sections) is `packages/client/roster-sections.mjs`.
     it opens the row as a click does.
   - A pick (click, Enter, `step`) calls `selectWorkspace`, which the shell runs as
     `switchWorkspace(id, { takeOver: true })` (see common.mjs above).
+  - **Show only the current workspace** (2026-10-23): `#ws-current-only`, a `.side-icon-button` toggle before
+    Add in the head (`aria-pressed`; the `collapse` icon, Lucide chevrons-down-up; `--accent` when pressed,
+    at rest, hovered and focused alike), `toggleCurrentOnly()` and the `currentOnly` getter, run by the
+    global `workspaces.currentOnly` action (⌥⇧⌘O / Ctrl+Alt+Shift+O, the same in every family, terminal
+    allowlisted; the palette lists it). On, every row but the current one is `hidden` with its `<li>`, so
+    the keys and `menuItems` skip them, and `.ws-more` is hidden and empty: nothing stands for them, no count
+    and no needs-input dot. With no current row (a choosing window) every row shows. A focused row that goes
+    hands focus to the current row. `step` still walks every workspace (`drawn` keeps the hidden ones). The
+    choice is `CURRENT_ONLY_KEY` ("1", else removed) in the `storage` the shell passes (the window's
+    localStorage), read once at creation; a storage that throws leaves it unremembered.
   - **Add local workspace…** (`openModal(opener)`, focus back on `opener` when it closes): this
     computer's deployments not served (`discoverSuggestions`, asked only as it opens), each a
     button that adds it and opens it here (`runAdd`, the main-validated add); then the stale rows
@@ -473,27 +547,46 @@ split into sections) is `packages/client/roster-sections.mjs`.
 - **Grouping by deployment** only when a view has two or more deployments: the sidebar
   roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
   cluster-label type, a status mark when not live, none for a deployment without rows) and
-  the Deployments page (below). With one deployment both render exactly as before.
+  the Machines tab (below). With one deployment the roster renders exactly as before; the Machines tab heads
+  its one deployment too (`tabContent`), so every machine's tree is under its name.
 - **Agent groups and their order** (`rosterGroups`, `packages/client/instance-tree.mjs`, shared with the
   palette and the TUI): one sequence by each cluster's first root, in name order (`rosterOrder`: by name,
-  ties by `instanceId`; Pepe's decision on #1262, which replaces #1083's running-first order here). A
+  ties by `instanceId`; the product owner's decision on #1262, which replaces #1083's running-first order here). A
   multi-member cluster is a group under its name; each run of consecutive single instances is one
   "independent" group, in place. So a bundle keeps its place when its instance gains or loses children, and
   a start or a stop moves no row. Keys: `cluster:<n>:<name>`, `independent:<first member's instanceId>`,
   decided on the full roster (a filter or a collapse moves no row, #971). The palette alone passes its
   last-focus record (`{ lastFocus }`): the clusters are ordered by `recencyOrder` first (#1383), and the
   sidebar and the TUI never pass it.
-- **The Deployments page** (the former Active overview, stage `hierarchy`): tabs from
+- **A row's name is its words** (0.68.1, the product owner): `rosterName(doc, name)` (instance-tree-view.mjs)
+  builds `.ctx-name` for both row builders (shell.mjs `renderContextRoster` and `pendingSpawnRow`). Its first
+  child is `instanceDisplayName(name)` (`packages/client/instance-display-name.mjs`, the TUI's too:
+  "oats-expert-maintainer-lanes" shows "Oats expert maintainer lanes"), `aria-hidden`. Its second is the real
+  name in `.sr-only`, so the row's accessible name stays the real name, and `data-name` holds it as well. Find a row by
+  `.ctx-name`'s `dataset.name`, never its `textContent` (which holds both). Everything else that names an
+  instance keeps the real name: the hover card (`rosterTipFacts`), the row's tooltips and descriptions, the
+  palette's label and match, tabs, dialogs and copies. The `.ctx-name` rule (ellipsis, one line) is unchanged.
+- **The Machines tab** (the Workspace page's, before Setup; the Deployments page until 2026-10-26, and the Active
+  overview before that; stage `hierarchy` opens it): tabs from
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
   the choice remembered per view); All stacks one section per deployment, a deployment's tab
   shows its tree alone. A non-live deployment's heading has a state chip, its `short` reason
   and **How to fix** (the `fix` steps, else the sentence, and any note); a live deployment's
-  note shows under **Details** with no chip (`deploymentHasWords`).
+  note shows under **Details** with no chip (`deploymentHasWords`). Under each machine's heading,
+  `.hier-dsub` says what its tree is ("Instances on this machine", or "Instances on <machine>";
+  `deployments-page.mjs` `deploymentHead`), and under the bar `.hier-intro` says once what a
+  machine is ("Each machine runs this workspace in a folder of its own. The instances under a
+  machine run on that machine."): plain words, no About dialog.
 - **"On <deployment>"** (`deployment-scope-line.mjs`): deployment-level surfaces read the
-  view's primary deployment and say which in a line under their heading, only with two or
-  more deployments (Workspace header, Automations/Schedules, the soul inspector for a soul,
-  a capability page, Brain, the Sync sheet). Teams configuration, launch configurations and
-  spawn are not wired here.
+  view's primary deployment, and some say which in a line under their heading, only with two
+  or more deployments: the side panel's soul inspector for a soul, Brain and the Sync sheet.
+  No Workspace page does (the product owner, 2026-10-23), and none makes the line: not the
+  Workspace header (`workspace-discovery.mjs`) or any tab, nor Automations/Schedules
+  (`views/automations.mjs`), nor a capability's page (`capability-page.mjs`), a
+  team's page (`computer-teams.mjs`) or a soul's page (`soul-inspector.mjs` in
+  `layout: 'page'`). They read the primary all the same (#482: their reads carry the view id, which the
+  server answers from the primary), with no choice of deployment. The Machines tab names
+  each deployment on its own tab. Launch configurations and spawn are not wired here.
 - **Re-homing** (`workspace-rehome.mjs`, shell `rehomeWorkspaceState`, on every roster
   read): state under a deployment id (a selection, tab layout and active-terminal memory,
   open tabs with their `term:`/view keys, collapsed rows, stored spawn jobs) moves to the view
@@ -503,7 +596,7 @@ split into sections) is `packages/client/roster-sections.mjs`.
   Spawn jobs keep `deployment` (where the transaction is addressed) apart from `workspace`
   (the owner that moves).
 
-## Deployments page (formerly the Active overview) — slice 7a, reported roster only
+## Machines tab (formerly the Deployments page and the Active overview) — slice 7a, reported roster only
 
 The existing `hierarchy` stage consumes **GET `/api/panel` only**. Relation groups
 are connected components of the shared parent/sibling resolver across roots and
@@ -788,7 +881,7 @@ Every data region runs on one state model, owned by the controller
 |---|---|---|
 | pending | no data for this subject yet | after 150ms a skeleton shaped like the final content; `aria-busy` on the region; the status line says "Loading <noun>…" once — never an empty-state message |
 | ready / empty | the last read succeeded | the content, or the surface's own empty copy after a successful zero read |
-| refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header; no `aria-busy`, no announcement |
+| refreshing | data present, a read in flight | the content stays interactive; "Refreshing…" with a static dot after 400ms in the surface header (the Instances heading: after the count); no `aria-busy`, no announcement |
 | stale | data present, the read failed | content kept; "Couldn't refresh <noun> · observed <age>" with **Retry** in the attention style and the cause behind a **Details** disclosure (and in the line's title, which never holds a refusal's detail: that stays in Details, alone in its `<bdi>`; the controller repaints both from the cause it was given, never from the title); announced once through the status line, which is then clipped (`.loading-quiet`, its box kept) so the amber line is the one visible message — never the error red; actions that need current state are held by the surface with `aria-disabled` (never `disabled`: Chromium blurs a focused control that becomes disabled) and an accessible reason (`aria-description` + title: "Unavailable: roster is not current", "Unavailable: inspection is not current"), and every handler on a held control checks the mark first |
 | failed | no data, the read failed | the cause, a **Details** disclosure with the code (and a refusal's detail after it, alone in its `<bdi>`) and **Retry**, where the skeleton stood |
 
@@ -822,7 +915,9 @@ no pixel value is copied into loading.css. The Capabilities table's skeleton
 (`catalogSkeleton` in `workspace-discovery.mjs`) is a disabled, `aria-hidden`
 `button.catalog-row` for the same reason. `defer({ keepSkeleton: true })` is
 for a server that answers "still reading" (`refreshing: true` with nothing
-held): the subject is loading, so the skeleton stays.
+held): the subject is loading, so the skeleton stays, or arrives when an
+earlier `defer()` (an unobserved deployment's copy, no skeleton) left the
+state pending.
 `loading.css` (linked from `index.html` and the harness) derives their fill
 from the theme tokens (`color-mix` of `--fg` over the host), shimmers at 1.6s
 and stops every animation — including the older `.spinner` — under
@@ -858,10 +953,16 @@ real card size), the failed block in the grid and the stale line in
 `.souls-notice` above it; `settleGridState()` reads the reply — the kernel's
 `catalog.reason` is a failed read (stale beside a partial list, failed with
 none), an unobserved deployment defers with the deployment's own copy, and
-`refreshing: true` with no souls keeps the skeleton. `renderGrid()` leaves the
-grid to the controller while there is no data (the one exception is the
-unobserved deployment's copy) and skips an unchanged paint behind
-`s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
+`refreshing: true` with no souls keeps the skeleton. So does an empty list
+with no `catalog` beside a panel that says the deployment is observed: the two
+reads run side by side, and at launch (the Workspace page is the home surface)
+`/api/agents` can be answered before the server's first observation and
+`/api/panel` just after it; that answer is no read of the souls, so the grid
+keeps loading until the next poll, never "No souls are materialized". A remote
+view's panel names no deployment, so its zero read stays empty.
+`renderGrid()` leaves the grid to the controller while there is no data (the
+one exception is the unobserved deployment's copy, removed once the deployment
+is observed) and skips an unchanged paint behind `s.gridSignature`. The Capabilities tab (`workspace-discovery.mjs`): the held
 table is never set to null within one workspace generation — a CLI emit or a
 sync re-reads it in place (live after a sync, `refresh: true`), a failed
 re-read marks it stale with Retry, and spec 02's held-table shapes (`status:
@@ -1290,10 +1391,16 @@ workspace is observed through its server and never synced from here.
   (`docs/desktop-load-path.md`); the tab reads
   the held table via `POST /api/workspace-sync?ws=<id>` `{action:"read"}`
   when it opens (`refresh: true` forces a live read; after a sync the table
-  is re-read). A
-  segmented jump (Workspace owned / Repo owned, when the CLI lists it / Packages,
-  the sections in the same order; navigation, so the
-  section in view carries `aria-current`), then one 58px row
+  is re-read). The tab is in two parts (2026-10-23), each titled by an h2
+  (`.capability-part-title`, 18px at 700): **Workspace defaults** (below), when
+  reported, then **All capabilities** (`section.capability-part`, its title
+  `#capability-part-all`). Under that title, on a row of its own, a segmented
+  jump (Workspace owned / Repo owned, when the CLI lists it / Packages, with no
+  Defaults segment; the sections in the same order; navigation, so the section
+  in view carries `aria-current`), then those sections as its h3 subsections.
+  `syncCapabilityNav` measures from the pinned toolbar's bottom edge and tracks
+  only All capabilities' sections (`.capability-part .capability-section`), so
+  the defaults above them never make a segment current. Each section is one 58px row
   card per capability (design board 4): a tile tinted by kind (Knowledge,
   Messaging, Tasks, other, package), the name with its kind chip over a
   one-line description, *Used by* and a chevron; the columns are
@@ -1332,10 +1439,11 @@ workspace is observed through its server and never synced from here.
   member's `publishes` never absorbs its package's capabilities). A remembered
   repository the catalog stops offering falls back to All. "N of M shown" counts
   what the pill and the search leave.
-  **Workspace defaults** (`workspace-defaults.mjs`) is the first section and the
-  jump's first segment (**Defaults**, counting the filled slots plus the default
-  capabilities not turned off) whenever `oats workspace status` reports
-  `defaults`; without it there is no section and nothing is inferred. It is one
+  **Workspace defaults** (`workspace-defaults.mjs`) is the first part, a section of
+  its own outside All capabilities and no segment of its jump, whenever `oats
+  workspace status` reports `defaults`; without it there is no such part and
+  nothing is inferred (`workspaceDefaults().count`, the filled slots plus the
+  default capabilities not turned off, is no longer shown). It is one
   panel: a scope line, then two groups drawn with one cell (tile | slot label, id,
   source chip). Core capabilities holds the three slots in a fixed order (Knowledge,
   Messaging, Tasks), including a named default (`defaults.capabilities`) whose listed
@@ -1354,9 +1462,9 @@ workspace is observed through its server and never synced from here.
   `data-focus-key`s (`defaults:<slot>`, `defaults:cap:<name>`), which
   the tab host restores after a repaint (`captureFocusState` on the sections).
   The toolbar's round "i" (`about-dialog.mjs` `createAboutDialog`) is built
-  once by `workspace-discovery.mjs` and kept after the jump across repaints, as
-  the search field is. Workspace › Souls has its own "i", built once by
-  `views/spawn.mjs`. Both dialogs are the lifecycle dialog's frame, with focus
+  once by `workspace-discovery.mjs` and kept in the toolbar's lead across
+  repaints, as the search field is. Workspace › Souls has its own "i", built once by
+  `views/spawn.mjs` (the Machines tab has none: one sentence under its bar says what a machine is). The dialogs are the lifecycle dialog's frame, with focus
   handling from `forget-dialog.mjs`: they join the overlay handoff, and leaving the
   tab or the workspace closes them with `close({ focus: 'none' })`. All their
   words live in `ABOUT_COPY`.
@@ -1385,7 +1493,7 @@ workspace is observed through its server and never synced from here.
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
   (lock, capabilities) and external souls. No extra read. With
-  `servers-per-workspace` and `server-connect` it also holds the **Machines**
+  `servers-per-workspace` and `server-connect` it also holds the **Registered machines**
   box (`workspace-machines.mjs`, `../docs/desktop-machines.md`): this
   workspace's machines with Check, Remove and Add a machine, mounted once per
   workspace and passed to `renderSetup` as `machines`.
@@ -1414,8 +1522,9 @@ which also carries Setup's List/Graph switch) and the Souls bar sit outside the
 content scrollers (`.souls-grid`, `.workspace-discovery`). Each scroller is
 positioned, `min-height:0` and `overscroll-behavior: contain`; the view root
 (`.souls`) is `position:relative; overflow:clip`. Inside the Capabilities
-scroller the section pills + search (`.ws-toolbar.ws-sticky`) and the Teams page
-head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`.
+scroller the search and its "i" (`.ws-toolbar.ws-sticky`) and the Teams page
+head (`.ct-page-head.ws-sticky`) are `position:sticky` on the opaque `--bg`; the
+section pills are All capabilities' own and scroll with it.
 Chromium insets a sticky box by its scroller's padding, so they pin at
 `top: -var(--ws-pad-top)` (flush with the scrollport; nothing shows above
 them) and keep an 8px inner top. Their 1px bottom edge is always there,
@@ -1449,7 +1558,8 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **⌘F / Alt+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Alt+F** reveals the sidebar and focuses the instance roster (its current row; on an empty roster, the
+  foot's Spawn instance); **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1496,8 +1606,9 @@ section is the module map.
   AltGr is never Alt (`chordFromEvent`), and
   `focus.leaveTerminal` (Mod+Shift+F6) is the way out. Outside a terminal on
   Linux/Windows the leader's Ctrl+X is a text field's Cut (`leaderLeftToField`). `keymapConflicts`
-  lists clashes that involve a stored rebind; the shell marks the footer
-  shortcuts button and the editor names them. The chords shared with the
+  lists clashes that involve a stored rebind; the shell marks the settings
+  cog and its **Keyboard shortcuts…** item (`markShortcutClashes`: a `--danger` dot and an `aria-description`)
+  and the editor names them. The chords shared with the
   TUI (`CHORDS_READ`, read from `packages/client/keymap.mjs` CHORDS) all
   fire from a focused terminal: `app.palette` (⌘K / Alt+K) and
   `app.quickOpenSouls` (⌘P / Alt+P) among them, while plain Ctrl+K
@@ -1525,10 +1636,26 @@ section is the module map.
   `KeyboardEvent.code`, as the layout labels it (`readKeyboardLayout`, called
   by the shell at startup and on window focus; `setKeyboardLayoutMap` for
   tests), since ⌥ changes `key`; a character AltGr typed is never aliased.
+- **sidebar-settings.mjs** — the settings cog's menu (`createSettingsMenu`, `SETTINGS_ITEMS`,
+  `SETTINGS_LABEL`), the cog at the right end of the bar in the sidebar's foot: Theme… (`app.themePicker`) and
+  Keyboard shortcuts… (`app.shortcuts`), each a `role="menuitem"` with its icon and its chord in a `<kbd>` (hidden without
+  one; `refresh()` reads them again, and the shell calls it from `applyChordTitles`). The instance actions'
+  pattern: a native `popover="auto"` with `role="menu"`, the cog its invoker (`aria-haspopup="menu"`,
+  `aria-expanded` kept by `beforetoggle`, `aria-controls`), placed as the instance actions' menu (its right
+  edge on the cog's, clamped to the window's 8px margin, above the cog when there is no room below); ↓ / ↑ on the cog open it on the first / last
+  item, ↑/↓ (wrapping) and Home/End move, Esc closes back on the cog, Tab closes. Choosing an item closes
+  the menu and focuses the cog before it runs the action, so a dialog it opens returns to the cog. The
+  shell marks the cog and Keyboard shortcuts… on a clash (`markShortcutClashes`). Tests:
+  `test/sidebar-settings.test.mjs`.
 - **focus-regions.mjs** — F6 / Shift+F6 (`focus.nextRegion`/`prevRegion`,
-  outside a terminal; `focus.leaveTerminal` from inside one): sidebar nav →
-  roster → main → instance panel, hidden regions skipped, each region's
-  current item focused, never `<body>`. F6 and the tab switches are no-ops
+  outside a terminal; `focus.leaveTerminal` from inside one): workspaces →
+  views (`#nav`, under the list) → roster → main → instance panel, hidden regions skipped, each region's
+  current item focused, never `<body>`. The head's controls (Show only the current workspace, Add local
+  workspace…) count as workspaces. The foot (its bar: the toggle, Spawn instance, the cog and its menu)
+  is no region: Tab reaches it,
+  F6 from it goes on to main, Shift+F6 back to the roster. An empty roster's stop is the foot's Spawn
+  instance (after a failed read's Retry), and Shift+F6 from that stop goes back as from the roster. F6 and
+  the tab switches are no-ops
   under an open modal.
 - **surface-return.mjs** — "back to where you were" after a flow that moved
   the main surface (Quick Open's spawn dialog): the same tab or stage and
@@ -1575,7 +1702,12 @@ section is the module map.
   and CLI pending/unavailable souls open their soul page instead, which says
   why. Dismissing the dialog returns to where the operator was
   (`surface-return.mjs`). No second spawn form exists.
-- **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
+- **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`). Its first section is
+  **Most useful** (`usefulRows`): a read-only table (a row header per action, then its keys) of
+  the shared keymap's most used rows, read from the live keymap at every render (platform,
+  chord family, rebinds), the leader's key standing in for an action with no chord, hidden
+  while a search shows the list; its rules are the module's own `usefulCSS`, injected with
+  the editor, its keycaps and words the list's. Then
   a search (focused on open; `shortcutMatches` filters by label, group name
   or the chord as shown, case- and separator-insensitive), actions grouped
   by context under sticky headings, the chord as keycaps (`chordKeys`; the
@@ -1587,6 +1719,11 @@ section is the module map.
   given the page's chord family, its top holds the family choice ("Shortcuts
   anywhere": Alt, Ctrl+Alt or Ctrl+Shift), which writes keys.json through main and
   switches the keymap at once, with main's note when the file was not taken.
+  What has no sidebar button is taught by its rows: the palette is the Leader group's first
+  key (the leader then K or Space) and a Global row with its chord; Connections (not in the
+  settings cog's menu) is the Global row **Settings: Connections…** (`app.connections`, the palette's name), unbound by default
+  and bound there; the stage rows say where they land (**View: Workspace › Machines**, **View: Workspace
+  overview**, **View: Automations**).
 - **chord-family.mjs** — the chord family in the page: asks main
   (`../chord-family.mjs`) as the window starts, follows its pushes, writes the
   Shortcuts page's choice through it, checks what main sends again, and applies
@@ -1878,7 +2015,7 @@ active tab selects its adjacent group-mate, or leaves that panel empty.
 explicitly joins back to the flat strip. **Split: return to terminal
 groups** in the palette restores a covered layout, including an all-empty one.
 There is no new default shortcut. Clickable controls mirror the chords with no duplicated
-logic: the split-right/down buttons and the sidebar toggles (the footer button + Show
+logic: the split-right/down buttons and the sidebar toggles (the foot's toggle + Show
 sidebar, shown while hidden) all dispatch the
 registered actions through `runAction(id)` — context-gated exactly like
 chord dispatch — and their enablement dry-runs the same model transition

@@ -27,6 +27,7 @@ import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, syste
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
+import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
 
 /** The leader: the default (C-x, Ctrl+X, on every platform), as tmux's
  *  send-keys names it too, and as the cheat sheet spells it. */
@@ -242,9 +243,9 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
      *  and no confirmation's buttons. A confirmation draws no such sheet, so a row's absence means
      *  nothing then. */
     listed() { return run.drawn() && term.screen().some((row) => SPAWN_ROW.test(row)) && run.buttons() === ""; },
-    /** The list's row of `name`: `{ selected, mark }`, or null when it is not listed. */
+    /** The list's row of `name`, drawn as words: `{ selected, mark }`, or null when it is not listed. */
     row(name) {
-      const text = term.screen().map((row) => [...row].slice(0, 48).join("")).find((row) => new RegExp(`^[> ] +[●○◌?◆] ${name}\\b`).test(row));
+      const text = term.screen().map((row) => [...row].slice(0, 48).join("")).find((row) => new RegExp(`^[> ] +[●○◌?◆] ${instanceDisplayName(name)}\\b`).test(row));
       return text ? { selected: text.startsWith(">"), mark: /^[> ] +(\S)/.exec(text)[1], text } : null;
     },
     /** The confirmation's buttons row, as drawn in the main area: `> Label <` has the focus. */

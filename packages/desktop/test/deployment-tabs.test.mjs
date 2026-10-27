@@ -1,4 +1,4 @@
-// The Deployments page's tabs and labels (UI spec, #482): All first with two or more deployments, the
+// The Deployments view's tabs and labels (UI spec, #482; the Workspace page's Machines tab since 2026-10-26): All first with two or more deployments, the
 // machine as the label (with the path tail when one machine holds two), and the tab remembered per view.
 import test from 'node:test';
 import assert from 'node:assert/strict';
