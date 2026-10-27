@@ -5997,9 +5997,48 @@ sha256 mismatch; the remote file is left), `E_SESSION_UNKNOWN`,
 ### How the clients run the sweep
 
 The kernel's machine sweep, `oats session resume --json`, is run by a client
-once per launch ([When Desktop opens](desktop-instance-start.md#when-desktop-opens)).
-The clients share one runner and one reader, so the Desktop and the TUI run it
-and read it the same way.
+when it opens and again when its rosters show a lost session
+([When Desktop opens](desktop-instance-start.md#when-desktop-opens)). The
+clients share one trigger, one runner and one reader, so the Desktop and the
+TUI decide, run and read it the same way.
+
+**The trigger**, `createResumeTrigger({ cli, run, read, now, onReading })`
+(`packages/client/session-resume-trigger.mjs`), holds the rule:
+
+- `launch()` arms it and runs the launch sweep, with no floor. A client calls
+  it once, after anything the sweep reads is in place (the Desktop: after the
+  startup deployments-list step). `observed(rows)` does nothing before it.
+- `observed(rows)` is given each roster's instance rows as the client reads
+  them (the Desktop: `instances` of each accepted `/api/panel` reply). It
+  starts a sweep only when none is in flight, at least
+  `RESUME_MIN_INTERVAL_MS` (30 s) has passed since the last sweep that ran
+  started, and `lostLocalHomes(rows)` names a home that is not settled.
+  `lostLocalHomes` keeps a row's absolute `home` when the row is local (no
+  `server`, `remote` not true), its `sessionEnd` says the session was lost and
+  it is not running; it is the one place that reads `sessionEnd`'s meaning.
+  There is no timer and no queue.
+- A home is settled when a sweep could not resume it, found it was not lost,
+  or skipped it because the kernel had not seen it running recently. A sweep that resumed it, started it fresh, left it waiting for you or
+  found it running unsettles it, and so does a later roster row that is
+  running or not lost. A home the sweep could not start because it was busy,
+  or did not recognise, settles nothing. Which rows mean which is read in
+  `session-resume.mjs` alone (`sweepSettlement`).
+- `cli()` gives the accepted probe or null, or a promise of either, and is
+  asked at each would-be start: the sweep runs only when `resumeSupported`
+  holds. When it does not, nothing runs and the floor does not move.
+- Before reading an answer, it drops each `refused` row whose
+  `(home, reason, code)` an earlier sweep of this trigger already reported,
+  so a standing refusal is reported once. Every other row is kept.
+- `onReading(reading)` is called for every finished sweep, whatever the
+  reading. `launch()` and `observed()` never throw or reject; a `run` that
+  rejects reads as `failed`, `E_CLI_FAILED`. `dispose()` drops later readings
+  and cancels nothing: a sweep in flight runs to its end.
+
+The Desktop's main process queues each `notice` reading's summary (at most
+10, the oldest dropped first) and tells every live window
+(`session-resume:ready`). A window takes the whole queue
+(`session-resume:take`, behind the trusted-frame guard) and posts each summary
+as its own notice.
 
 **The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):
 
@@ -6037,8 +6076,9 @@ A plan answer (`plan: true`) is quiet.
 - The summary is facts: per row its instance, its deployment and its outcome's
   reason, never a word of the kernel's text. `already-running` and `skipped`
   rows are counted nowhere. A notice exists only when a row is `resumed`,
-  `fresh`, `blocked` or `refused`. Opted-out and unchecked deployments are
-  lines inside such a notice, never a notice on their own.
+  `fresh`, `blocked` or `refused`. Unchecked deployments are lines inside such
+  a notice, never a notice on their own; a deployment the kernel reports as
+  `opted-out` (an older kernel) reads as unchecked, with no reason.
 - It is tolerant. A row without a string `instance` and `deployment`, with an
   unknown `outcome`, or whose name the display filter withholds or empties, is
   dropped. An unknown `reason` under a known outcome is read as no reason and

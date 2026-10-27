@@ -22,7 +22,6 @@ import { createFocusRegions } from "../renderer/focus-regions.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree-view.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
-import { resumePaletteCommand } from "../renderer/resume-notice.mjs";
 import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, handleKeydown, setBinding, resetBinding, onKeymapChange, paletteGroupDirection, paletteGroupHint } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
@@ -72,9 +71,6 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     THEMES, setTheme: id => events.push(["theme", id]),
     toggleTheme: () => events.push(["theme"]), themePicker: { toggle: () => events.push(["themePicker"]) },
     fontPicker: { toggle: () => events.push(["fontPicker"]) },
-    // The resume-at-launch preference (resume-notice.mjs): its toggle, as the shell's registry entry runs it.
-    resumePreference: { toggle: () => events.push(["resumeAtLaunch"]), read: async () => null, refresh: async () => {}, alongside: (load) => load(), detail: () => "" },
-    resumePaletteCommand, // its palette entry, as shipped
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     sidebarWidth: { reset: () => events.push(["sidebarWidth", "reset"]) },
     fileOpener: { choose() {}, dispose() {} },
@@ -258,7 +254,7 @@ test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup
   }
 });
 
-test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sidebar toggle and the settings cog (theme, font, shortcuts, resume at launch); all dispatch the real registry", async t => {
+test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sidebar toggle and the settings cog (theme, font, shortcuts); all dispatch the real registry", async t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   // The tools row is gone again (the product owner, 2026-10-26): no theme, shortcuts, leader or palette button
   // anywhere. The shortcuts editor (the cog's Keyboard shortcuts…, Mod+, and the palette) lists the leader's commands;
@@ -306,16 +302,13 @@ test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sideb
   assert.equal(cog.dataset.action, undefined, "the cog runs no action of its own: it opens its menu");
   assert.equal(cog.getAttribute("aria-haspopup"), "menu"); assert.equal(cog.getAttribute("aria-controls"), "sidebar-settings-menu");
   assert.deepEqual(s.settingsMenu.items.map(b => [b.dataset.menuAction, b.querySelector(".sidebar-settings-label").textContent]),
-    [["app.themePicker", "Theme…"], ["app.fontPicker", "Font…"], ["app.shortcuts", "Keyboard shortcuts…"],
-      ["app.resumeAtLaunch", "Resume lost sessions when Desktop opens"]], "no Connections, no Hide sidebar");
+    [["app.themePicker", "Theme…"], ["app.fontPicker", "Font…"], ["app.shortcuts", "Keyboard shortcuts…"]], "no Connections, no Hide sidebar");
   // Each item shows its effective chord.
-  assert.deepEqual(s.settingsMenu.items.map(b => { const k = b.querySelector("kbd"); return k.hidden ? null : k.textContent; }), ["Ctrl+Shift+Space", null, "Ctrl+,", null],
-    "Font… and the resume preference have no default chord");
-  assert.equal(getBinding("app.resumeAtLaunch"), null, "the resume preference invents no chord");
+  assert.deepEqual(s.settingsMenu.items.map(b => { const k = b.querySelector("kbd"); return k.hidden ? null : k.textContent; }), ["Ctrl+Shift+Space", null, "Ctrl+,"],
+    "Font… has no default chord");
   for (const item of s.settingsMenu.items) item.click();
-  const menuRuns = [["themePicker"], ["fontPicker"], ["shortcuts"], ["resumeAtLaunch"]];
-  assert.deepEqual(s.events, menuRuns, "each item runs its action, once");
-  cog.click(); assert.deepEqual(s.events, menuRuns, "the cog itself runs nothing");
+  assert.deepEqual(s.events, [["themePicker"], ["fontPicker"], ["shortcuts"]], "each item runs its action, once");
+  cog.click(); assert.deepEqual(s.events, [["themePicker"], ["fontPicker"], ["shortcuts"]], "the cog itself runs nothing");
   // Spawn instance (the product owner, 2026-10-26): the bar's words alone, no visible
   // hint; it runs Quick Open (app.quickOpenSouls: pick a soul by name), the chord appended to its title.
   const spawn = q("sidebar-spawn");
@@ -344,13 +337,13 @@ test("the foot is one bar: the OATS mark, Spawn instance (Quick Open), the sideb
   // A click opens Quick Open, once, and supersedes a pending open; it opens no chooser.
   const pending = s.c.tabOpenIntents.begin(); spawn.click();
   assert.equal(pending(), false, "a click supersedes a pending open");
-  assert.deepEqual(s.events.slice(4), [["quickOpen"]], "one click, one Quick Open (after the menu's four)");
+  assert.deepEqual(s.events.slice(3), [["quickOpen"]], "one click, one Quick Open (after the menu's three)");
   assert.equal(s.loads.length, 0, "no chooser");
   // The chooser stays the registry's: app.chooseSoul, the palette's "Souls: choose a soul to spawn (Workspace › Souls)".
   const before = s.c.tabOpenIntents.begin(); runAction("app.chooseSoul");
   assert.equal(before(), false); assert.equal(s.loads.length, 1, "one run, one chooser");
   await s.settle(s.loads[0], "resolve");
-  assert.deepEqual(s.events.slice(5), [["tab", "souls"], ["stage", "spawn"]]);
+  assert.deepEqual(s.events.slice(4), [["tab", "souls"], ["stage", "spawn"]]);
   assert.match(source, /label: "Souls: choose a soul to spawn \(Workspace › Souls\)", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
 });
 

@@ -13,6 +13,10 @@ import { instanceColor } from './instance-presentation.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
+/** How an instance's last session ended (`oats status --json` `sessionEnd`), by name: the only values a row keeps.
+ * The one list; clients read a row's `sessionEnd` against it (session-resume-trigger.mjs lostLocalHomes). */
+export const SESSION_ENDS = Object.freeze({ lost: 'lost', stopped: 'stopped', exited: 'exited' });
+const SESSION_END_VALUES = Object.values(SESSION_ENDS);
 const bad = (code = 'E_CLI_PROTOCOL') => { throw Object.assign(new Error(code), { code }); };
 const check = (condition, code) => { if (!condition) bad(code); };
 const array = (value, limit = 2000) => { check(Array.isArray(value) && value.length <= limit); return value; };
@@ -222,6 +226,9 @@ export function deploymentStatusData(document, deployment) {
       // #802 (feature worktree-event): a spawn running its worktree hooks, verifiably alive. Boolean true only;
       // any other value is dropped, never checked: the row stays an ordinary one.
       if (own(instance, 'spawnInProgress') && instance.spawnInProgress === true) row.spawnInProgress = true;
+      // Session resume: how the instance's last session ended, one of SESSION_ENDS exactly. Any other value is
+      // dropped, never checked: the row reads as one that did not say.
+      if (own(instance, 'sessionEnd') && SESSION_END_VALUES.includes(instance.sessionEnd)) row.sessionEnd = instance.sessionEnd;
       if (own(instance, 'modules')) row.modules = modules(instance.modules);
       if (own(instance, 'soul')) row.soul = soulSource(instance.soul);
       if (own(instance, 'workspace')) row.workspace = recordedWorkspace(instance.workspace);

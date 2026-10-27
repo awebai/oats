@@ -1,8 +1,7 @@
 // The sidebar's settings menu (sidebar-settings.mjs): the cog at the right end of the sidebar's foot, after the
-// sidebar toggle, and its menu (Theme…, Font…, Keyboard shortcuts…, Resume lost sessions when Desktop opens;
-// Connections stays in the palette). Its items, their order, words, actions and chords; the menu button's ARIA; the
-// keys (↓/↑ on the cog, ↑/↓/Home/End in the menu, Esc and Tab); choosing an item; the on/off item (menuitemcheckbox,
-// its state read at each opening under a latest-intent token); its placement. The shell wires it in shell.mjs (shell-nav.test.mjs runs that wiring).
+// sidebar toggle, and its menu (Theme…, Font…, Keyboard shortcuts…; Connections stays in the palette). Its items, their
+// order, words, actions and chords; the menu button's ARIA; the keys (↓/↑ on the cog, ↑/↓/Home/End in the menu,
+// Esc and Tab); choosing an item; its placement. The shell wires it in shell.mjs (shell-nav.test.mjs runs that wiring).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
@@ -14,7 +13,7 @@ import { takePickerFocusReturn } from "../renderer/overlay-picker.mjs";
 // queues it, and coalesced: a toggle still pending when the state changes again is replaced by one from its old
 // state to the new one (an open closed before its toggle ran fires closed → closed). Native light-dismiss and
 // placement in the top layer are Chromium's, not this test's claim.
-function rig(t, { shortcut, readChecked } = {}) {
+function rig(t, { shortcut } = {}) {
   const dom = new JSDOM(`<!doctype html><body><aside id="sidebar"><div id="nav-foot" role="group" aria-label="Sidebar tools">
     <button id="sidebar-toggle" class="side-icon-button icon-button" type="button" data-action="sidebar.toggle">S</button>
     <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
@@ -48,8 +47,7 @@ function rig(t, { shortcut, readChecked } = {}) {
   };
   const trigger = doc.getElementById("sidebar-settings"), ran = [];
   let onRun = () => {};
-  const settings = createSettingsMenu(doc, trigger, { run: (action) => { ran.push(action); onRun(action); }, ...(shortcut ? { shortcut } : {}),
-    ...(readChecked ? { readChecked } : {}) });
+  const settings = createSettingsMenu(doc, trigger, { run: (action) => { ran.push(action); onRun(action); }, ...(shortcut ? { shortcut } : {}) });
   const key = (el, init) => {
     const e = new win.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
     el.dispatchEvent(e); return e;
@@ -59,13 +57,11 @@ function rig(t, { shortcut, readChecked } = {}) {
     onRun: (fn) => { onRun = fn; }, label: (item) => item.querySelector(".sidebar-settings-label").textContent };
 }
 
-test("the items, in order: Theme…, Font…, Keyboard shortcuts…, Resume lost sessions when Desktop opens, each its keymap action and its icon or check mark; no Connections, no Hide sidebar", (t) => {
+test("the items, in order: Theme…, Font…, Keyboard shortcuts…, each its keymap action and its icon; no Connections, no Hide sidebar", (t) => {
   assert.equal(SETTINGS_LABEL, "Settings");
   assert.ok(Object.isFrozen(SETTINGS_ITEMS), "a fixed list");
-  assert.deepEqual(SETTINGS_ITEMS.map(({ action, label, icon, checked }) => [action, label, icon, checked]), [
-    ["app.themePicker", "Theme…", "theme", undefined], ["app.fontPicker", "Font…", "font", undefined], ["app.shortcuts", "Keyboard shortcuts…", "shortcuts", undefined],
-    // After Keyboard shortcuts…: an on/off item, not a dialog, so no ellipsis; its column holds the check mark.
-    ["app.resumeAtLaunch", "Resume lost sessions when Desktop opens", undefined, true],
+  assert.deepEqual(SETTINGS_ITEMS.map(({ action, label, icon }) => [action, label, icon]), [
+    ["app.themePicker", "Theme…", "theme"], ["app.fontPicker", "Font…", "font"], ["app.shortcuts", "Keyboard shortcuts…", "shortcuts"],
   ]);
   // Connections stays in the palette (Settings: Connections…), and the sidebar toggle is the foot's own button.
   assert.ok(!SETTINGS_ITEMS.some(({ action }) => action === "app.connections" || action === "sidebar.toggle"));
@@ -103,10 +99,9 @@ test("ARIA: a menu button over a native popover menu, aria-expanded following it
   assert.equal(r.menu.tabIndex, -1);
   assert.ok(r.menu.classList.contains("ctx-instance-menu") && r.menu.classList.contains("sidebar-settings-menu"), "the instance actions' menu style");
   for (const item of r.items) {
-    assert.equal(item.getAttribute("role"), item.dataset.menuAction === "app.resumeAtLaunch" ? "menuitemcheckbox" : "menuitem");
+    assert.equal(item.getAttribute("role"), "menuitem");
     assert.equal(item.tabIndex, -1, "the arrows move between items, not Tab");
   }
-  assert.deepEqual(r.items.map((item) => item.getAttribute("aria-checked")), [null, null, null, "false"], "only the on/off item has a state");
   r.trigger.click();
   assert.equal(r.isShown(), true); assert.equal(r.settings.isOpen(), true);
   assert.equal(r.trigger.getAttribute("aria-expanded"), "true");
@@ -142,15 +137,15 @@ test("↓/↑ move through the items and wrap; Home and End go to the first and 
   r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
   const at = () => r.items.indexOf(r.doc.activeElement);
   const press = (key, init = {}) => r.key(r.doc.activeElement, { key, ...init });
-  assert.equal(r.items.length, 4);
+  assert.equal(r.items.length, 3);
   const visited = [];
-  for (let i = 0; i < 5; i++) { assert.equal(press("ArrowDown").defaultPrevented, true); visited.push(at()); }
-  assert.deepEqual(visited, [1, 2, 3, 0, 1], "↓ to the end (the on/off item), then back to the first");
+  for (let i = 0; i < 4; i++) { assert.equal(press("ArrowDown").defaultPrevented, true); visited.push(at()); }
+  assert.deepEqual(visited, [1, 2, 0, 1], "↓ to the end, then back to the first");
   const back = [];
-  for (let i = 0; i < 5; i++) { press("ArrowUp"); back.push(at()); }
-  assert.deepEqual(back, [0, 3, 2, 1, 0], "↑ wraps from the first to the last");
-  press("End"); assert.equal(at(), 3); assert.equal(r.doc.activeElement.getAttribute("role"), "menuitemcheckbox", "End reaches the on/off item");
-  press("End"); assert.equal(at(), 3, "End stays on the last");
+  for (let i = 0; i < 4; i++) { press("ArrowUp"); back.push(at()); }
+  assert.deepEqual(back, [0, 2, 1, 0], "↑ wraps from the first to the last");
+  press("End"); assert.equal(at(), 2);
+  press("End"); assert.equal(at(), 2, "End stays on the last");
   press("Home"); assert.equal(at(), 0);
   press("Home"); assert.equal(at(), 0, "Home stays on the first");
   press("ArrowDown");
@@ -215,7 +210,7 @@ test("choosing an item runs its action once, after the menu has closed and the c
   // A pointer choice, with the menu opened by a click, is the same.
   r.ran.length = 0; r.trigger.click(); await r.tick();
   r.items.at(-1).click(); await r.tick();
-  assert.deepEqual(r.ran, ["app.resumeAtLaunch"]); assert.equal(r.doc.activeElement, r.trigger);
+  assert.deepEqual(r.ran, ["app.shortcuts"]); assert.equal(r.doc.activeElement, r.trigger);
 });
 
 test("refresh() shows each item's chord and hides an empty one; opening refreshes", (t) => {
@@ -223,23 +218,23 @@ test("refresh() shows each item's chord and hides an empty one; opening refreshe
   const r = rig(t, { shortcut: (action) => chords[action] ?? "" });
   const shown = () => r.items.map((item) => { const keys = item.querySelector("kbd"); return keys.hidden ? null : keys.textContent; });
   const raw = () => r.items.map((item) => item.querySelector("kbd").textContent);
-  assert.deepEqual(raw(), ["", "", "", ""], "nothing read before the first refresh or opening");
+  assert.deepEqual(raw(), ["", "", ""], "nothing read before the first refresh or opening");
   r.settings.refresh();
-  assert.deepEqual(shown(), ["Ctrl+Shift+Space", null, "Ctrl+,", null], "Font… and the on/off item have no default chord");
+  assert.deepEqual(shown(), ["Ctrl+Shift+Space", null, "Ctrl+,"], "Font… has no default chord");
   chords = { ...chords, "app.themePicker": "Ctrl+Alt+T", "app.fontPicker": "Ctrl+Alt+F12", "app.shortcuts": null };
   r.settings.refresh();
-  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+F12", null, null], "a rebind or a chord given follows; an unbound one hides");
+  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+F12", null], "a rebind or a chord given follows; an unbound one hides");
   assert.equal(r.items[2].querySelector("kbd").textContent, "", "an unbound chord leaves no text behind");
-  chords = { ...chords, "app.shortcuts": "Ctrl+Alt+K", "app.resumeAtLaunch": "Ctrl+Alt+R" };
+  chords = { ...chords, "app.shortcuts": "Ctrl+Alt+K" };
   r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
-  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+F12", "Ctrl+Alt+K", "Ctrl+Alt+R"], "opening reads them again; a chord given to the on/off item shows too");
+  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+F12", "Ctrl+Alt+K"], "opening reads them again");
   assert.deepEqual(r.items.map(r.label), SETTINGS_ITEMS.map(({ label }) => label), "the words never carry the chord");
 });
 
 test("with no shortcut reader, every chord is hidden", (t) => {
   const r = rig(t);
   r.settings.refresh();
-  assert.deepEqual(r.items.map((item) => item.querySelector("kbd").hidden), [true, true, true, true]);
+  assert.deepEqual(r.items.map((item) => item.querySelector("kbd").hidden), [true, true, true]);
 });
 
 // Placed as the instance actions' menu is (instance-actions.mjs): its right edge on the cog's, inside the window's
@@ -303,87 +298,4 @@ test("focus moving anywhere else (a dialog that skips the handoff) closes the me
   r.trigger.click(); await r.tick();
   r.key(r.items[0], { key: "ArrowDown" }); assert.equal(r.isShown(), true); assert.equal(r.doc.activeElement, r.items[1]);
   r.trigger.focus(); assert.equal(r.isShown(), true);
-});
-
-// The on/off item (spec Surface 3): Resume lost sessions when Desktop opens, a menuitemcheckbox. Its state is aria-checked
-// (what assistive technology reads); the check mark beside its label, aria-hidden, only shows it.
-function deferred() { let resolve, reject; const promise = new Promise((y, n) => { resolve = y; reject = n; }); return { promise, resolve, reject }; }
-const checkbox = (r) => r.items.find((item) => item.dataset.menuAction === "app.resumeAtLaunch");
-const markShown = (item) => { const svg = item.querySelector(".ctx-menu-icon > svg"); return !!svg && !svg.hasAttribute("hidden"); };
-
-test("the on/off item: menuitemcheckbox, aria-checked and its check mark follow the preference read as the menu opens", async (t) => {
-  let stored = true;
-  const reads = [];
-  const r = rig(t, { readChecked: (action) => { reads.push(action); return Promise.resolve(stored); } });
-  const item = checkbox(r);
-  assert.equal(item.getAttribute("role"), "menuitemcheckbox");
-  assert.equal(r.label(item), "Resume lost sessions when Desktop opens", "no ellipsis: it opens nothing");
-  const glyph = item.querySelector(".ctx-menu-icon");
-  assert.equal(glyph.getAttribute("aria-hidden"), "true", "the check mark is decoration: the state is aria-checked");
-  const svg = glyph.querySelector("svg.shell-icon");
-  assert.ok(svg); assert.equal(svg.getAttribute("width"), "15"); assert.equal(svg.getAttribute("stroke"), "currentColor", "the item's own ink, no new colour");
-  assert.equal(item.getAttribute("aria-checked"), "false", "before any read: false");
-  assert.equal(markShown(item), false, "and no check mark");
-  assert.deepEqual(reads, [], "nothing read before the menu opens");
-  r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
-  assert.deepEqual(reads, ["app.resumeAtLaunch"], "read as it opens, for the on/off item only");
-  await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "true"); assert.equal(markShown(item), true, "on: the check mark shows");
-  r.key(r.doc.activeElement, { key: "Escape" });
-  stored = false;
-  r.key(r.trigger, { key: "ArrowDown" });
-  assert.equal(reads.length, 2, "every opening reads again: no copy is kept");
-  await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "false"); assert.equal(markShown(item), false, "off: no check mark");
-  // A read that cannot answer (null, a rejection, a throw) paints nothing: the last painted state stays.
-  r.key(r.doc.activeElement, { key: "Escape" });
-  stored = true; r.key(r.trigger, { key: "ArrowDown" }); await r.tick(); r.key(r.doc.activeElement, { key: "Escape" });
-  for (const fail of [() => Promise.resolve(null), () => Promise.reject(new Error("no")), () => { throw new Error("no"); }, () => Promise.resolve("true")]) {
-    const s = rig(t, { readChecked: fail }), it = checkbox(s);
-    s.trigger.focus(); s.key(s.trigger, { key: "ArrowDown" }); await s.tick();
-    assert.equal(it.getAttribute("aria-checked"), "false", "unknown: stays at its last painted value"); assert.equal(s.isShown(), true, "and the menu still opens");
-  }
-  assert.equal(item.getAttribute("aria-checked"), "true");
-});
-
-test("a stale read never paints: an answer for an earlier opening is dropped, on success and on rejection", async (t) => {
-  const pending = [];
-  const r = rig(t, { readChecked: () => { const d = deferred(); pending.push(d); return d.promise; } });
-  const item = checkbox(r);
-  r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
-  r.key(r.doc.activeElement, { key: "Escape" }); // closed before its read answered
-  pending[0].resolve(true); await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "false", "a read answered after its menu closed paints nothing");
-  r.key(r.trigger, { key: "ArrowDown" }); r.key(r.doc.activeElement, { key: "Escape" });
-  r.key(r.trigger, { key: "ArrowDown" }); // reopened: the second opening's read is stale
-  pending[1].resolve(true); await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "false", "an earlier opening's answer never paints the current opening");
-  pending[2].resolve(false); await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "false");
-  r.key(r.doc.activeElement, { key: "Escape" });
-  r.key(r.trigger, { key: "ArrowDown" });
-  pending[3].reject(new Error("late")); await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "false", "a rejection paints nothing");
-  r.key(r.doc.activeElement, { key: "Escape" }); r.key(r.trigger, { key: "ArrowDown" });
-  pending.at(-1).resolve(true); await r.tick();
-  assert.equal(item.getAttribute("aria-checked"), "true", "the current opening's answer paints");
-});
-
-test("Enter and Space toggle the on/off item through its action, then close the menu with focus on the cog", async (t) => {
-  const r = rig(t, { readChecked: async () => false }), seen = [], states = [];
-  r.doc.addEventListener("keydown", (e) => seen.push([e.key, e.defaultPrevented]));
-  r.onRun((action) => states.push([action, r.isShown(), r.doc.activeElement === r.trigger]));
-  for (const key of ["Enter", " "]) {
-    r.trigger.focus(); r.key(r.trigger, { key: "ArrowUp" }); await r.tick();
-    const item = checkbox(r);
-    assert.equal(r.doc.activeElement, item, "↑ on the cog: the last item, the on/off one");
-    // A button's Enter (keydown) and Space (keyup) are its click: the menu leaves both keys to the button.
-    const down = r.key(item, { key }); assert.equal(down.defaultPrevented, false, `${JSON.stringify(key)}: not the menu's`);
-    item.click(); await r.tick();
-    assert.equal(r.isShown(), false, "closed"); assert.equal(r.trigger.getAttribute("aria-expanded"), "false");
-    assert.equal(r.doc.activeElement, r.trigger, "focus back on the cog");
-  }
-  assert.deepEqual(r.ran, ["app.resumeAtLaunch", "app.resumeAtLaunch"], "each activation runs the toggle once");
-  assert.deepEqual(states, [["app.resumeAtLaunch", false, true], ["app.resumeAtLaunch", false, true]], "closed and on the cog when it runs");
-  assert.deepEqual(seen, [["Enter", false], [" ", false]], "the keys reach the document unconsumed, as the button's own");
 });

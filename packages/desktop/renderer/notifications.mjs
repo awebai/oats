@@ -10,7 +10,8 @@
  *   app      (with sticky, never with descriptor, activate or buttons: anything else is refused) the app's own
  *            notice, bound to no workspace or connection: a workspace switch and a connection change keep it, and
  *            its Details keeps working there. It goes only on its × and on dispose(): clear() keeps it and
- *            its handle's dismiss() does nothing;
+ *            its handle's dismiss() does nothing. It may carry a group: grouped, it keeps all of this, and its
+ *            group (label, toggle, expanded state, members) survives every clear that keeps it;
  *   onDismiss  called once when the operator dismisses it with its × (never on clear, eviction or dispose);
  *   group + groupLabel(n)  more than 3 sticky entries of one group collapse into one grouped entry
  *            that expands to its members, so the center stays bounded. */

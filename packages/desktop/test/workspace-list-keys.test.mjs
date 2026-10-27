@@ -28,7 +28,6 @@ import { instanceId } from "../../client/instance-tree.mjs";
 import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { terminalKey } from "../renderer/instance-tree-view.mjs";
 import { paletteRows } from "../renderer/palette.mjs";
-import { createResumePreference } from "../renderer/resume-notice.mjs";
 import { panelDeployments } from "../renderer/view-deployments.mjs";
 import { NAV, navTab, stageSidebarMode } from "../renderer/shell-nav.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
@@ -268,14 +267,14 @@ function tabsRig(t) {
     reserveKey, whenKeyFree, prepareOwnedOpen, projectSplitDom, ...layout, ...workspaceTabs,
     loadStageView: () => new Promise(() => {}), syncContextPanel() {}, contextPanel: {}, createPanelOwner: () => ({ dispose() {} }), ctx: {},
     // The palette's read: this window's state, and the roster of the workspace it asks for.
-    windowState: () => "bound", panelDeployments, resumePreference: createResumePreference({ desk: {}, notify() {} }), api: async path => ({ instances: ROSTERS[new URLSearchParams(path.split("?")[1]).get("ws")] }),
+    windowState: () => "bound", panelDeployments, api: async path => ({ instances: ROSTERS[new URLSearchParams(path.split("?")[1]).get("ws")] }),
   };
   const names = ["closeStage", "showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
     "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "onTabKeydown",
     "walkedTabs", "visibleTabEntries", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => shipped(name)).join("\n").replace('import(`./views/${name}.mjs`)', "loadStageView(name)");
-  // The palette's loadInstances, as shipped (createPalette's first option): its read joined with the resume preference's.
-  const load = shipped(/ {2}loadInstances: \(\) => resumePreference\.alongside\(async \(\) => \{[^]*?\n {2}\}\),/);
+  // The palette's loadInstances, as shipped (createPalette's first option).
+  const load = shipped(/ {2}loadInstances: async \(\) => \{[^]*?\n {2}\},/);
   const s = runInNewContext(`${shipped(/const tabOpenIntents = [^\n]+/)}\n${functions}\n({ ${names.join(", ")}, loadInstances: ({ ${load} }).loadInstances });`, withShellWindowGlobals(c));
   const ids = new Map();
   return {

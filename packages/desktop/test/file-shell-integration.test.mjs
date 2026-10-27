@@ -13,7 +13,6 @@ import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from "jsdom";
 import { createFileOpener } from "../renderer/open-file.mjs";
 import { createPalette } from "../renderer/palette.mjs";
-import { createResumePreference, resumePaletteCommand } from "../renderer/resume-notice.mjs";
 import { createQuickOpen } from "../renderer/quick-open.mjs";
 import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
@@ -124,8 +123,6 @@ function shell(t, shellSource = source, platform = "MacIntel") {
       finally { globalThis.document = previous; }
     },
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
-    // The palette's resume entry and its preference read, as shipped (no bridge: the read answers nothing).
-    resumePaletteCommand, resumePreference: createResumePreference({ desk: {}, notify() {} }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
     ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,

@@ -10,8 +10,13 @@ import { runInNewContext } from 'node:vm';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
 import { soulRows } from '../../client/soul-rows.mjs';
-import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
+import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData, SESSION_ENDS } from '../../client/deployment-data.mjs';
 import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
+import { panelData } from '../../client/panel-views.mjs';
+import { createRemoteIdentityStore } from '../server/remote-identity.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
+import { lostLocalHomes } from '../../client/session-resume-trigger.mjs';
+import { kernelRemoteGroup, kernelRemoteRow } from './helpers/kernel-remote-row.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
 const old = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
@@ -143,4 +148,65 @@ test('observeDeployment keeps waitingOnYou only when the CLI advertises waiting-
   assert.equal(Object.hasOwn(await observeWith(undefined, instance), 'waitingOnYou'), false, 'no feature list: dropped');
   const { waitingOnYou: _w, ...bare } = instance;
   assert.equal(Object.hasOwn(await observeWith(['waiting-on-you'], bare), 'waitingOnYou'), false, 'absent is never synthesized');
+});
+
+/* Session resume: `sessionEnd` on a status row is one of SESSION_ENDS exactly, dropped otherwise without failing
+   the roster, and reaches /api/panel's instance rows, where the shared resume trigger reads it. */
+const ENDS = Object.values(SESSION_ENDS);
+const withEnd = value => { const doc = structuredClone(fx('status')); doc.agents.find(a => a.instances.length).instances[0].sessionEnd = value; return doc; };
+
+test('status: sessionEnd is kept when one of SESSION_ENDS; any other value is dropped, never fatal; absence stays absent', () => {
+  assert.deepEqual(SESSION_ENDS, { lost: 'lost', stopped: 'stopped', exited: 'exited' });
+  assert.ok(Object.isFrozen(SESSION_ENDS));
+  for (const end of ENDS) assert.equal(firstRow(withEnd(end)).sessionEnd, end, end);
+  for (const bad of ['LOST', 'lost ', 'crashed', '', null, true, 1, ['lost'], { lost: true }]) {
+    const row = firstRow(withEnd(bad));
+    assert.equal(Object.hasOwn(row, 'sessionEnd'), false, JSON.stringify(bad));
+    assert.equal(row.instance, firstRow(fx('status')).instance, 'the row is kept');
+  }
+  assert.equal(Object.hasOwn(firstRow(fx('status')), 'sessionEnd'), false, 'a status without the field adds nothing');
+});
+
+test('status → /api/panel: sessionEnd travels with the instance; absent stays absent', async () => {
+  const roster = deploymentStatusData(withEnd(SESSION_ENDS.lost), DEPLOYMENT);
+  const row = roster.agents.flatMap(a => a.instances)[0];
+  assert.equal(panelInstance({ ...row, agentsRoot: roster.root }).sessionEnd, SESSION_ENDS.lost);
+  // Through the server's own observeDeployment, as /api/panel serves its entry.
+  const instance = { instance: 'dev-a', agent: 'dev', home: '/d/agents/dev/instances/dev-a' };
+  for (const end of ENDS) assert.equal((await observeWith(['desktop-facts'], { ...instance, sessionEnd: end })).sessionEnd, end, end);
+  const bare = await observeWith(['desktop-facts'], instance);
+  assert.equal(Object.hasOwn(bare, 'sessionEnd'), false, 'absent is never synthesized');
+  // And /api/panel's answer (panel-views.mjs panelData, the route's call) over that entry keeps it on the row.
+  const lost = await observeWith(['desktop-facts'], { ...instance, sessionEnd: SESSION_ENDS.lost });
+  const store = createRemoteIdentityStore({ file: null });
+  const held = { ctxs: ['/d'], snapshot: { byWs: new Map([['/d', { deployment: { status: 'observed', root: '/d/agents', withheld: [] }, instances: [lost, { ...bare, instance: 'dev-b' }],
+    generatedAt: '2026-10-03T10:00:00.000Z', observedAt: '2026-10-03T10:00:00.000Z' }]]) }, remoteGroups: [],
+    remembered: { get: id => store.get(id), note: id => store.note(id), all: () => store.all(), observe() {} },
+    rosterAnswered: true, rosterFailure: null, cli: { ok: true, bin: '/oats', features: [] }, observing: new Set(), remoteCollecting: false, home: '/h', at: '2026-10-03T10:00:00.000Z' };
+  assert.match(source, /path === "\/api\/panel"\) return send\(res, 200, panelData\(held\(\), asked, DESKTOP_TERMS\)\)/, 'the route serves panelData');
+  const rows = panelData(held, '/d', DESKTOP_TERMS).instances;
+  assert.deepEqual(rows.map(r => [r.instance, r.sessionEnd]), [['dev-a', SESSION_ENDS.lost], ['dev-b', undefined]]);
+  assert.equal(Object.hasOwn(rows[1], 'sessionEnd'), false);
+});
+
+test('end to end: a lost local row, through the real readers (deploymentStatusData → panelInstance), is named by lostLocalHomes; a running, remote or not-lost row is not', () => {
+  /** The status fixture with its instance's sessionEnd and running set, read and projected as /api/panel serves it. */
+  const panelRowsOf = (sessionEnd, running) => {
+    const doc = structuredClone(fx('status')), instance = doc.agents.find(a => a.instances.length).instances[0];
+    Object.assign(instance, { sessionEnd, running });
+    return rosterRows(deploymentStatusData(doc, DEPLOYMENT), { features: [] }).map(panelInstance);
+  };
+  const lost = panelRowsOf(SESSION_ENDS.lost, false);
+  assert.equal(lost.length, 1);
+  assert.ok(lost[0].home.startsWith('/'));
+  assert.deepEqual(lostLocalHomes(lost), [lost[0].home]);
+  assert.deepEqual(lostLocalHomes(panelRowsOf(SESSION_ENDS.lost, true)), [], 'lost but running');
+  for (const end of [SESSION_ENDS.stopped, SESSION_ENDS.exited, undefined]) assert.deepEqual(lostLocalHomes(panelRowsOf(end, false)), [], String(end));
+  assert.deepEqual(lostLocalHomes(panelRowsOf('crashed', false)), [], 'out of contract: dropped by the reader');
+  // A remote row as the remote roster projects it (server, and the group's remote panel): never this machine's.
+  const far = remote.remotePanel(kernelRemoteGroup([kernelRemoteRow('far', { running: false, sessionEnd: SESSION_ENDS.lost })]), '2026-10-03T10:00:00.000Z').instances;
+  assert.equal(far[0].sessionEnd, SESSION_ENDS.lost);
+  assert.ok(Object.hasOwn(far[0], 'server'));
+  assert.deepEqual(lostLocalHomes(far), []);
+  assert.deepEqual(lostLocalHomes([...far, ...lost]), [lost[0].home]);
 });

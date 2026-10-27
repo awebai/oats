@@ -235,17 +235,19 @@ test("inventory: every path a shipped file reaches is in the package, at the sam
   assert.ok(reached.length > 30, `shipped files reach the shared home (${reached.length} of its modules)`);
 });
 
-test("inventory: the launch's session resume sweep ships whole: main's module, the runner, its exec and the reader", () => {
-  // main.mjs runs the sweep (session-resume-launch.mjs, ../client/session-resume-cli.mjs) and reads it
-  // (../client/session-resume.mjs); the runner's default exec is ../client/file-output-exec.mjs. A packaged
-  // app missing one would fail at main's start, which no window would show.
+test("inventory: the session resume sweep ships whole: main's wiring, the trigger, the runner, its exec and the reader", () => {
+  // main.mjs wires the trigger (session-resume-launch.mjs, ../client/session-resume-trigger.mjs), whose default run
+  // is the runner (./session-resume-cli.mjs) and default read the reader (./session-resume.mjs); the runner's
+  // default exec is ./file-output-exec.mjs. A packaged app missing one would fail at main's start, which no
+  // window would show.
   const { problems, seen } = shippedGraph();
   assert.deepEqual(problems, []);
-  for (const path of ["session-resume-launch.mjs", `${HOME}/session-resume-cli.mjs`, `${HOME}/session-resume.mjs`, `${HOME}/file-output-exec.mjs`])
+  for (const path of ["session-resume-launch.mjs", `${HOME}/session-resume-trigger.mjs`, `${HOME}/session-resume-cli.mjs`, `${HOME}/session-resume.mjs`, `${HOME}/file-output-exec.mjs`])
     assert.ok(seen.has(path), `${path} is reached from the shipped files`);
-  assert.ok(requestsOf("main.mjs", read("main.mjs")).includes("./session-resume-launch.mjs"), "main imports the launch's module");
+  assert.ok(requestsOf("main.mjs", read("main.mjs")).includes("./session-resume-launch.mjs"), "main imports its wiring");
+  assert.ok(requestsOf("main.mjs", read("main.mjs")).includes("../client/session-resume-trigger.mjs"), "main imports the trigger from the shared home");
   for (const name of ["session-resume-cli.mjs", "session-resume.mjs"])
-    assert.ok(requestsOf("main.mjs", read("main.mjs")).includes(`../client/${name}`), `main imports ${name} from the shared home`);
+    assert.ok(requestsOf(`${HOME}/session-resume-trigger.mjs`, read(`${HOME}/session-resume-trigger.mjs`)).includes(`./${name}`), `the trigger imports ${name}`);
   assert.ok(requestsOf(`${HOME}/session-resume-cli.mjs`, read(`${HOME}/session-resume-cli.mjs`)).includes("./file-output-exec.mjs"), "the runner's default exec");
 });
 

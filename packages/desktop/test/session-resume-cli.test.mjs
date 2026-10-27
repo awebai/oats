@@ -31,7 +31,7 @@ test('resumeSupported: a compatible CLI (ok, absolute bin) that declares the fea
   assert.equal(SESSION_RESUME_MAX_BUFFER, 4 * 1024 * 1024);
   assert.equal(resumeSupported(cli), true);
   for (const probe of [null, undefined, {}, { ...cli, ok: false }, { ...cli, ok: 'true' }, { ...cli, bin: 'oats' }, { ...cli, bin: undefined },
-    { ...cli, features: [] }, { ...cli, features: undefined }, { ...cli, features: 'session-resume' }, { ...cli, features: ['session-resume-plan'] }]) {
+    { ...cli, features: [] }, { ...cli, features: undefined }, { ...cli, features: SESSION_RESUME_FEATURE }, { ...cli, features: [`${SESSION_RESUME_FEATURE}-plan`] }]) {
     assert.equal(resumeSupported(probe), false, JSON.stringify(probe));
   }
 });
@@ -42,7 +42,7 @@ test('without a compatible CLI, or without the feature, nothing runs and nothing
     assert.deepEqual(await runResumeSweep(probe, { exec }), own('E_CLI_UNAVAILABLE'));
     assert.equal(calls.length, 0);
   }
-  for (const features of [undefined, [], ['deployments-list'], 'session-resume']) {
+  for (const features of [undefined, [], ['deployments-list'], SESSION_RESUME_FEATURE]) {
     const { exec, calls } = answering(null, JSON.stringify(SWEPT));
     assert.deepEqual(await runResumeSweep({ ...cli, features }, { exec }), own('E_RESUME_FEATURE'));
     assert.equal(calls.length, 0);

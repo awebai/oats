@@ -50,7 +50,7 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile, listed
   if (openSet !== undefined) writeFileSync(join(m.userData, 'workspace-open.json'), JSON.stringify(openSet));
   if (windowsFile !== undefined) writeFileSync(join(m.userData, 'windows.json'), JSON.stringify(windowsFile));
   FakeWindow.reset();
-  const spawned = [], handlers = new Map(), appEvents = new Map(), logs = [], listedAtStartup = [], kernel = [], resumeStarts = [];
+  const spawned = [], handlers = new Map(), appEvents = new Map(), logs = [], listedAtStartup = [], kernel = [], resumeLaunches = [];
   const context = {
     // Electron, at its boundary.
     app: { getPath: () => m.userData, on: (event, fn) => appEvents.set(event, fn) },
@@ -76,8 +76,9 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile, listed
     // This computer's deployments list (#1390), at the kernel's boundary: what is asked is recorded, the answer given.
     deploymentList: async (options) => { kernel.push(options); return listed; },
     startupDeploymentList: async (path) => { listedAtStartup.push(path); },
-    // The launch's session resume sweep (session-resume-launch.mjs): recorded with how many list steps had run.
-    resumeAtLaunch: { start: () => { resumeStarts.push(listedAtStartup.length); } },
+    // The session resume trigger (session-resume-launch.mjs), armed with the launch's sweep: recorded with how many
+    // list steps had run.
+    resumeTrigger: { launch: () => { resumeLaunches.push(listedAtStartup.length); } },
     noteWindowActivity: () => {}, terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
     serverHost: { owned: () => true },
     // main's post of the window set to the backend (#1124), recorded: the views the windows show at each call.
@@ -107,7 +108,7 @@ async function panelWorkspaces() {
   const read = (name) => { try { return JSON.parse(readFileSync(join(m.userData, name), 'utf8')); } catch { return undefined; } };
   const claim = async (win, id) => JSON.parse(JSON.stringify(await handlers.get('window:claim-workspace')(
     { sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame }, id, { focus: false, initial: true })));
-  return { spawned, windows: FakeWindow.all, main, claim, logs, noted, listedAtStartup, kernel, resumeStarts, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
+  return { spawned, windows: FakeWindow.all, main, claim, logs, noted, listedAtStartup, kernel, resumeLaunches, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
 }
 
 test('every served-list update tells main to post the window set (#1124): a new server, or a post that failed, gets it again', async () => {
@@ -231,11 +232,11 @@ test('a launch on a deployment lists that one deployment after startup; a Finder
   try {
     const onIt = await launch(m, { launch: m.deployment });
     assert.deepEqual([...onIt.listedAtStartup], [m.deployment]);
-    assert.deepEqual([...onIt.resumeStarts], [1], 'the session resume sweep starts once, after the list step');
+    assert.deepEqual([...onIt.resumeLaunches], [1], 'the session resume trigger is launched once, after the list step');
     FakeWindow.reset();
     const restored = await launch(m, { openSet: [m.deployment] });
     assert.deepEqual([...restored.listedAtStartup], [null], 'the restored set is never listed: a CLI remove would come back at every launch');
-    assert.deepEqual([...restored.resumeStarts], [1], 'and on every launch, whatever it opened');
+    assert.deepEqual([...restored.resumeLaunches], [1], 'and on every launch, whatever it opened');
     assert.deepEqual([...restored.kernel], [], 'startup itself asks the kernel nothing here: startupDeploymentList does, in the background');
   } finally { rmSync(m.root, { recursive: true, force: true }); }
 });

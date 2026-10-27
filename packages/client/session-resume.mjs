@@ -9,13 +9,14 @@
  *     fresh:   [{instance, deployment, reason, warnings, omitted}],   reason: FRESH_REASONS or null
  *     waiting: [{instance, deployment, reason}],                      a `blocked` row; reason: WAITING_REASONS or null
  *     refused: [{instance, deployment, reason, code, message}],       reason: REFUSED_REASONS or null
- *     optedOut: [deployment],                                         deployments[].reason `opted-out`
- *     unswept:  [{deployment, reason}],                               not swept otherwise; reason: UNSWEPT_REASONS or null
+ *     unswept: [{deployment, reason}],                                not swept; reason: UNSWEPT_REASONS or null
  *     omitted, totals: {resumed, fresh, waiting, refused} }
  * `refused` carries `reason` beside the four fields the spec lists: the words say when a refusal was this
- * boot's. Nothing is read from the kernel's words: no sentence, warning or message is matched. Names, paths,
- * warnings and messages are display lines (display-text.mjs): labels and quotes, never used to address
- * anything. A refused `message` is kernel prose, shown only after `OATS says:`, never alone with its `code`.
+ * boot's, and when the home keeps losing its session. There is no opt-out: an older kernel's `opted-out`
+ * deployment is unswept with reason null. Nothing is read from the kernel's words: no sentence, warning or
+ * message is matched. Names, paths, warnings and messages are display lines (display-text.mjs): labels and
+ * quotes, never used to address anything. A refused `message` is kernel prose, shown only after `OATS says:`,
+ * never alone with its `code`.
  *
  * Tolerant per entry: a row or deployment that does not decode (not a record, a name or path that is not a
  * string, empty or withheld, an unknown outcome) is dropped alone; an unknown reason under a known outcome is
@@ -27,21 +28,30 @@ import { displayLine, cleanLine, DETAIL_WITHHELD } from './display-text.mjs';
 import { boundedWarnings, boundedWarningsValid } from './launch-prompt-outcome.mjs';
 
 /** At most this many rows (over resumed, fresh, waiting and refused, in the answer's order) and, apart, this
- * many deployment lines (over opted out and unswept, in the answer's order) are kept. What is left out is
- * counted in `omitted`; `totals` keeps the real counts of the rows, which the headline uses. */
+ * many unswept deployment lines (in the answer's order) are kept. What is left out is counted in `omitted`;
+ * `totals` keeps the real counts of the rows, which the headline uses. */
 export const RESUME_SUMMARY_ROWS = 100;
 export const RESUME_SUMMARY_DEPLOYMENTS = 100;
 /** The longest `rows` or `deployments` this reader reads: more is a protocol failure, not a summary. */
 export const RESUME_ANSWER_ENTRIES = 100_000;
+/** A row's `outcome`, by name: the one place a client spells them. */
+export const RESUME_OUTCOMES = Object.freeze({ resumed: 'resumed', fresh: 'fresh', blocked: 'blocked', refused: 'refused',
+  alreadyRunning: 'already-running', skipped: 'skipped' });
+/** A `skipped` row's reasons, by name. A skipped row is counted and shown nowhere, whatever its reason. */
+export const SKIPPED_REASONS = Object.freeze({ notLost: 'not-lost', notSeenRecently: 'not-seen-recently', startBusy: 'start-busy',
+  unknown: 'unknown' });
+/** The skipped reasons that settle a home (sweepSettlement): it is not lost, or the kernel did not recently see it
+ * running (its status still reads lost, and every sweep would skip it again). */
+export const SETTLING_SKIPPED_REASONS = Object.freeze([SKIPPED_REASONS.notLost, SKIPPED_REASONS.notSeenRecently]);
 export const FRESH_REASONS = Object.freeze(['no-conversation', 'no-receipts', 'resume-unproven']);
 export const WAITING_REASONS = Object.freeze(['resume-confirmation', 'launch-prompt']);
-export const REFUSED_REASONS = Object.freeze(['start-refused', 'refused-this-boot']);
+export const REFUSED_REASONS = Object.freeze(['start-refused', 'refused-this-boot', 'keeps-getting-lost']);
 export const UNSWEPT_REASONS = Object.freeze(['not-ok', 'unreadable']);
 /** The ok:false codes that mean nothing ran: no compatible CLI, or one without the feature. */
 const UNSUPPORTED = new Set(['E_CLI_UNAVAILABLE', 'E_RESUME_FEATURE']);
 const CODE = /^E_[A-Z0-9_]{1,64}$/;
 const KINDS = ['resumed', 'fresh', 'waiting', 'refused'];
-const SUMMARY_KEYS = [...KINDS, 'optedOut', 'unswept', 'omitted', 'totals'];
+const SUMMARY_KEYS = [...KINDS, 'unswept', 'omitted', 'totals'];
 
 const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const exactKeys = (v, keys) => record(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -59,25 +69,23 @@ function decodeRow(row) {
   const instance = label(row.instance), deployment = label(row.deployment);
   if (instance === null || deployment === null) return null;
   switch (row.outcome) {
-    case 'resumed': return ['resumed', { instance, deployment, ...boundedWarnings(row.warnings) }];
-    case 'fresh': return ['fresh', { instance, deployment, reason: known(FRESH_REASONS, row.reason), ...boundedWarnings(row.warnings) }];
-    case 'blocked': return ['waiting', { instance, deployment, reason: known(WAITING_REASONS, row.reason) }];
-    case 'refused': return ['refused', { instance, deployment, reason: known(REFUSED_REASONS, row.reason), code: code(row.code), message: displayLine(row.message) }];
+    case RESUME_OUTCOMES.resumed: return ['resumed', { instance, deployment, ...boundedWarnings(row.warnings) }];
+    case RESUME_OUTCOMES.fresh: return ['fresh', { instance, deployment, reason: known(FRESH_REASONS, row.reason), ...boundedWarnings(row.warnings) }];
+    case RESUME_OUTCOMES.blocked: return ['waiting', { instance, deployment, reason: known(WAITING_REASONS, row.reason) }];
+    case RESUME_OUTCOMES.refused: return ['refused', { instance, deployment, reason: known(REFUSED_REASONS, row.reason), code: code(row.code), message: displayLine(row.message) }];
     default: return null;
   }
 }
 
-/** One deployment line as `['optedOut', path]` or `['unswept', {deployment, reason}]`, or null (swept, or dropped).
- * `opted-out` is the operator's choice whatever `swept` says; any other deployment not swept is unswept. */
+/** One unswept deployment line, `{deployment, reason}`, or null (swept, or dropped). */
 function decodeDeployment(d) {
   if (!record(d)) return null;
   const deployment = label(d.deployment);
   if (deployment === null) return null;
-  if (d.reason === 'opted-out') return ['optedOut', deployment];
-  return d.swept === true ? null : ['unswept', { deployment, reason: known(UNSWEPT_REASONS, d.reason) }];
+  return d.swept === true ? null : { deployment, reason: known(UNSWEPT_REASONS, d.reason) };
 }
 
-const empty = () => ({ resumed: [], fresh: [], waiting: [], refused: [], optedOut: [], unswept: [], omitted: 0,
+const empty = () => ({ resumed: [], fresh: [], waiting: [], refused: [], unswept: [], omitted: 0,
   totals: { resumed: 0, fresh: 0, waiting: 0, refused: 0 } });
 
 /** The sweep's `result` as a summary, or null when it is not the document. A plan (`plan: true`) started
@@ -99,7 +107,7 @@ function summarize(result) {
   for (const d of result.deployments) {
     const decoded = decodeDeployment(d);
     if (!decoded) continue;
-    if (lines < RESUME_SUMMARY_DEPLOYMENTS) { s[decoded[0]].push(decoded[1]); lines += 1; } else s.omitted += 1;
+    if (lines < RESUME_SUMMARY_DEPLOYMENTS) { s.unswept.push(decoded); lines += 1; } else s.omitted += 1;
   }
   return s;
 }
@@ -111,7 +119,7 @@ function summarize(result) {
  *   `unsupported`: nothing ran (no compatible CLI, or no feature). `busy`: another sweep holds the machine's
  *   lock and nothing started. `failed`: any other refusal, with its code when it has the kernel's form, else
  *   E_CLI_PROTOCOL, as is an answer that does not decode. `notice` when a row was resumed, fresh, blocked
- *   or refused; `quiet` otherwise, also when only opted-out or unswept deployments are left to say.
+ *   or refused; `quiet` otherwise, also when only unswept deployments are left to say.
  */
 export function readResumeSweep(envelope) {
   if (record(envelope) && envelope.ok === false) {
@@ -123,6 +131,65 @@ export function readResumeSweep(envelope) {
   const summary = record(envelope) && envelope.ok === true ? summarize(envelope.result) : null;
   if (!summary) return { kind: 'failed', code: 'E_CLI_PROTOCOL' };
   return { kind: sum(summary.totals) > 0 ? 'notice' : 'quiet', summary };
+}
+
+/** The rows of an answer the trigger reads (session-resume-trigger.mjs): an `ok: true` envelope's `result.rows`
+ * when an array within RESUME_ANSWER_ENTRIES, else null (nothing to settle or leave out). */
+function answerRows(envelope) {
+  const rows = record(envelope) && envelope.ok === true && record(envelope.result) ? envelope.result.rows : undefined;
+  return Array.isArray(rows) && rows.length <= RESUME_ANSWER_ENTRIES ? rows : null;
+}
+/** A row's home as the trigger keys it: a non-empty string, else null. */
+const homeOf = row => record(row) && typeof row.home === 'string' && row.home !== '' ? row.home : null;
+const settles = row => row.outcome === RESUME_OUTCOMES.refused
+  || row.outcome === RESUME_OUTCOMES.skipped && SETTLING_SKIPPED_REASONS.includes(row.reason);
+const RELEASES = new Set([RESUME_OUTCOMES.resumed, RESUME_OUTCOMES.fresh, RESUME_OUTCOMES.blocked, RESUME_OUTCOMES.alreadyRunning]);
+/** A refused row's (home, reason, code), as one string; the format is this module's alone. */
+const reportedKey = (home, row) => JSON.stringify([home, row.reason ?? null, row.code ?? null]);
+
+/**
+ * The homes a sweep's answer settles and releases, for the trigger's settled homes. A row `refused` (any
+ * reason) or `skipped` with a reason of SETTLING_SKIPPED_REASONS settles its home; `resumed`, `fresh`, `blocked` and
+ * `already-running` release it; any other row (`start-busy`, `unknown`, an outcome not known) does neither.
+ * When a home has several rows, its last decides. Rows that are not records, or have no string home, are
+ * ignored. Both lists are empty for an envelope that is not `ok: true` with a rows array.
+ * @param {unknown} envelope  what runResumeSweep resolved
+ * @returns {{settle: string[], release: string[]}}
+ */
+export function sweepSettlement(envelope) {
+  const last = new Map();
+  for (const row of answerRows(envelope) ?? []) {
+    const home = homeOf(row);
+    if (home === null) continue;
+    if (settles(row)) { last.delete(home); last.set(home, true); } else if (RELEASES.has(row.outcome)) { last.delete(home); last.set(home, false); }
+  }
+  const settle = [], release = [];
+  for (const [home, settles] of last) (settles ? settle : release).push(home);
+  return { settle, release };
+}
+
+/**
+ * News, not repeats: the answer without the refused rows already reported, and this answer's refused keys.
+ * `envelope` is a copy (the given one is never changed) that leaves out each `refused` row with a string home
+ * whose (home, reason, code) key is in `reported`; every other row is kept, in order. `keys` are the keys of
+ * every such refused row of this answer, those left out too, for the caller to add to `reported` after.
+ * An envelope that is not `ok: true` with a rows array is given back as it came, with no keys.
+ * @param {unknown} envelope
+ * @param {Set<string>} reported  keys an earlier answer gave
+ * @returns {{envelope: unknown, keys: string[]}}
+ */
+export function withoutReported(envelope, reported) {
+  const rows = answerRows(envelope);
+  if (!rows) return { envelope, keys: [] };
+  const keys = [];
+  const kept = rows.filter(row => {
+    const home = homeOf(row);
+    if (home === null || row.outcome !== RESUME_OUTCOMES.refused) return true;
+    const key = reportedKey(home, row);
+    keys.push(key);
+    return !reported.has(key);
+  });
+  return { envelope: { ...envelope, result: { ...envelope.result, rows: kept } }, keys };
 }
 
 /** Whether each kept fact has its kind's exact shape. */
@@ -146,7 +213,7 @@ const copyRow = r => Object.hasOwn(r, 'warnings') ? { ...r, warnings: [...r.warn
  * Idempotent: readResumeSweep's summary decodes to itself, and so does this function's answer. */
 export function resumeSummaryFact(v) {
   if (!exactKeys(v, SUMMARY_KEYS) || !exactKeys(v.totals, KINDS) || !KINDS.every(k => count(v.totals[k]))
-    || !count(v.omitted) || !Array.isArray(v.optedOut) || !Array.isArray(v.unswept)) return undefined;
+    || !count(v.omitted) || !Array.isArray(v.unswept)) return undefined;
   let kept = 0;
   for (const k of KINDS) {
     const rows = v[k];
@@ -154,15 +221,14 @@ export function resumeSummaryFact(v) {
       || !rows.every(r => rowShape[k](r) && named(r.instance) && named(r.deployment))) return undefined;
     kept += rows.length;
   }
-  const lines = v.optedOut.length + v.unswept.length, total = sum(v.totals);
+  const lines = v.unswept.length, total = sum(v.totals);
   if (kept > RESUME_SUMMARY_ROWS || lines > RESUME_SUMMARY_DEPLOYMENTS || !Number.isSafeInteger(total)
-    || !v.optedOut.every(named)
     || !v.unswept.every(u => exactKeys(u, ['deployment', 'reason']) && named(u.deployment) && (u.reason === null || UNSWEPT_REASONS.includes(u.reason)))) return undefined;
   const overRows = total - kept, overLines = v.omitted - overRows;
   if (overRows > 0 && kept < RESUME_SUMMARY_ROWS || overLines < 0 || overLines > 0 && lines < RESUME_SUMMARY_DEPLOYMENTS) return undefined;
   const out = {};
   for (const k of KINDS) out[k] = v[k].map(copyRow);
-  return { ...out, optedOut: [...v.optedOut], unswept: v.unswept.map(u => ({ ...u })), omitted: v.omitted, totals: { ...v.totals } };
+  return { ...out, unswept: v.unswept.map(u => ({ ...u })), omitted: v.omitted, totals: { ...v.totals } };
 }
 
 const FRESH_WHY = {
@@ -172,6 +238,10 @@ const FRESH_WHY = {
 };
 const UNSWEPT_WHY = { 'not-ok': "its deployment isn't ready.", unreadable: 'it could not be read.' };
 const THIS_BOOT = ' It was refused earlier since this computer started, so OATS did not try again.';
+const KEEPS_LOST = "keeps losing its session; it won't be resumed again until this computer restarts.";
+/** A refused row's line: `keeps-getting-lost` says why in place of "could not be resumed.". */
+const refusedLine = r => r.reason === 'keeps-getting-lost' ? KEEPS_LOST
+  : `could not be resumed.${r.reason === 'refused-this-boot' ? THIS_BOOT : ''}`;
 
 /** The headline's sentences, each only when its count is above 0. A blocked row's session runs, so it counts
  * among the resumed: N = resumed + fresh + waiting. "1 of them" takes "its"; "It" when the one is all of N. */
@@ -195,10 +265,10 @@ const said = r => r.warnings.length ? ['OATS says:', ...r.warnings, ...(r.omitte
  * @param {unknown} summary
  * @param {{label: (deployment: string) => string}} options  `label` is the caller's display label for a
  *   deployment path (required: a TypeError without it); a non-string or empty label shows the path itself.
- * Detail: a line per kept row, waiting, refused, fresh, resumed; then the opted-out deployments, then the
- * unswept ones; then `M more not shown.` when anything was left out. A row line names its deployment
- * (` in {d}`) only when the kept rows name more than one; a deployment line always does. `detail` is the
- * lines joined with '\n', absent when there are none.
+ * Detail: a line per kept row, waiting, refused, fresh, resumed; then the unswept deployments; then
+ * `M more not shown.` when anything was left out. A row line names its deployment (` in {d}`) only when the
+ * kept rows name more than one; a deployment line always does. A refused row's kernel message follows it on
+ * its own line, as `OATS says: …`. `detail` is the lines joined with '\n', absent when there are none.
  */
 export function resumeNotice(summary, options) {
   const labelOf = options?.label;
@@ -212,11 +282,10 @@ export function resumeNotice(summary, options) {
     ...s.waiting.map(r => r.reason === 'resume-confirmation'
       ? `${who(r)}: waiting for you to choose how to resume it. Open its terminal.`
       : `${who(r)}: waiting at a launch prompt. Open its terminal.`),
-    ...s.refused.flatMap(r => [`${who(r)}: could not be resumed.${r.reason === 'refused-this-boot' ? THIS_BOOT : ''}`,
+    ...s.refused.flatMap(r => [`${who(r)}: ${refusedLine(r)}`,
       ...(r.message !== null ? [`OATS says: ${r.message}`] : [])]),
     ...s.fresh.flatMap(r => [`${who(r)}: started fresh from its briefing, ${FRESH_WHY[r.reason] ?? 'its conversation could not be resumed.'}`, ...said(r)]),
     ...s.resumed.flatMap(r => [`${who(r)}: resumed in its own conversation.`, ...said(r)]),
-    ...s.optedOut.map(d => `Not checked in ${shown(d)}: resuming is turned off for this deployment (session.resume: off).`),
     ...s.unswept.map(u => `Not checked in ${shown(u.deployment)}: ${UNSWEPT_WHY[u.reason] ?? 'it could not be checked.'}`),
     ...(s.omitted > 0 ? [`${s.omitted} more not shown.`] : []),
   ];

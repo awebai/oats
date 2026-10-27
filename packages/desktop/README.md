@@ -95,17 +95,20 @@ The shell has three navigation contexts:
   the same directory, then a rename), and sends plain state to every window
   (`chord-family:get`, `chord-family:set`, `chord-family:changed`). The kernel
   never reads the file. `renderer/chord-family.mjs` is its page side.
-- `session-resume-launch.mjs` — lost sessions resumed when Desktop opens: once
-  per app launch, after the startup's deployments-list step settles, main runs
-  the kernel's machine sweep (`packages/client/session-resume-cli.mjs`, its
-  child detached and file-backed, so quitting never cancels it; nothing in
-  `shutdown()` touches it) and keeps a `notice` reading as the launch's pending
-  summary, taken once (`session-resume:take`, `session-resume:ready`). The
-  preference is `userData/session-resume.json` (`session-resume:preference`,
-  `session-resume:set-preference`, written atomically); a missing file is on,
-  an unreadable one off for that launch. `renderer/resume-notice.mjs` is its
-  page side: the notice (a sticky `app` entry of the notification center,
-  which a workspace switch keeps) and the settings menu's check item
+- `session-resume-launch.mjs` — lost sessions resumed: main holds one shared
+  trigger per app launch (`packages/client/session-resume-trigger.mjs`, its
+  probe the served CLI's through `settledCli`). It is launched after the
+  startup's deployments-list step settles, and shown each accepted
+  `/api/panel` reply's `instances` in the `api` handler, under the same epoch
+  and transition check as the workspaces update. The sweep's child is
+  detached and file-backed (`packages/client/session-resume-cli.mjs`), so
+  quitting never cancels it; nothing in `shutdown()` touches it. Each
+  `notice` reading's summary is queued (at most 10, the oldest dropped) and
+  every live window told (`session-resume:ready`); a window takes the whole
+  queue (`session-resume:take`). A `failed` reading is one log line with its
+  code. `renderer/resume-notice.mjs` is its page side: each summary a sticky
+  `app` entry of the notification center, grouped past three, which a
+  workspace switch keeps
   ([When Desktop opens](../../docs/desktop-instance-start.md#when-desktop-opens)).
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.
@@ -230,7 +233,11 @@ function over what its caller holds:
   feature. Each client puts the four states into its own words; the Desktop's
   are in `renderer/workspace-switcher.mjs`
   ([desktop-deployment-model.md](docs/desktop-deployment-model.md#this-computers-deployments-list)).
-- **The session resume sweep** (`session-resume-cli.mjs`, `session-resume.mjs`).
+- **The session resume sweep** (`session-resume-trigger.mjs`,
+  `session-resume-cli.mjs`, `session-resume.mjs`). `createResumeTrigger` holds
+  the clients' shared rule for when a sweep runs: once at launch, then on a
+  roster read that shows a local lost session not yet settled, single flight,
+  30 s apart, and reporting a standing refusal once.
   `runResumeSweep` runs `oats session resume --json` (feature
   `session-resume`, cwd `/`, instance variables scrubbed, no deadline) through
   `file-output-exec.mjs` `execFileToFiles`: execFile's signature, the child in

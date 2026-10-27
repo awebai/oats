@@ -57,9 +57,8 @@ import { validWorkspaceId } from "./renderer/workspace-id.mjs";
 import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
-import { createResumeAtLaunch, installResumeHandlers, readResumePreference, sendToLiveWindows } from "./session-resume-launch.mjs";
-import { runResumeSweep, resumeSupported } from "../client/session-resume-cli.mjs";
-import { readResumeSweep } from "../client/session-resume.mjs";
+import { createResumeNotices, createResumeWiring, installResumeHandlers, sendToLiveWindows } from "./session-resume-launch.mjs";
+import { createResumeTrigger } from "../client/session-resume-trigger.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -378,19 +377,17 @@ async function listOnComputer(path) {
   if (failure) console.error(`oats-desktop: could not list ${path} on this computer: ${failure.code}: ${failure.message}`);
   return failure;
 }
-// Lost sessions resumed when Desktop opens (session-resume-launch.mjs): the kernel's machine sweep, once per
-// app launch, started by the primary instance's startup only, after its deployments-list step settles. Its
-// child is detached and file-backed: shutdown() never touches it. The preference is this file, read when the
-// sweep starts; a missing file is on.
-const RESUME_PREFERENCE_FILE = () => join(app.getPath("userData"), "session-resume.json");
-const resumeAtLaunch = createResumeAtLaunch({
-  readCli: () => settledCli(readServedCli, { attempts: 60 }),
-  supported: resumeSupported, run: (cli) => runResumeSweep(cli), read: readResumeSweep,
-  preference: () => readResumePreference(RESUME_PREFERENCE_FILE()),
+// Lost sessions resumed (session-resume-launch.mjs, ../client/session-resume-trigger.mjs): one trigger per app
+// launch, armed by the primary instance's startup only, after its deployments-list step settles, then asked
+// again by each accepted /api/panel reply (the api handler). Its sweeps' children are detached and file-backed:
+// shutdown() never touches them, and the trigger is never disposed at quit.
+const resumeNotices = createResumeNotices();
+const resumeTrigger = createResumeWiring({
+  createTrigger: createResumeTrigger, cli: () => settledCli(readServedCli, { attempts: 60 }), notices: resumeNotices,
   broadcast: () => sendToLiveWindows(BrowserWindow.getAllWindows(), "session-resume:ready"),
-  log: (line) => console.log(line), error: (line) => console.error(line),
+  error: (line) => console.error(line),
 });
-installResumeHandlers({ ipc: ipcMain, guard, launch: resumeAtLaunch, file: RESUME_PREFERENCE_FILE });
+installResumeHandlers({ ipc: ipcMain, guard, notices: resumeNotices });
 // Where Add workspace → Browse… opens next (picker-default-path.mjs): the
 // parent of the workspace most recently added or opened, across launches.
 const LAST_WORKSPACE_PARENT_FILE = () => join(app.getPath("userData"), "last-workspace-parent.json");
@@ -685,9 +682,13 @@ ipcMain.handle("api", async (e, pathname, opts) => {
       ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_PLAN_CHANGED', { status: mutation ? 'unknown' : 'unavailable' }) : forgeFailure('E_CONNECTION_CHANGED');
   // Remote discovery can finish after startup. Accept the same server-owned
   // choices the menu receives, without adding requests to workspace polling.
-  if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && route === 'panel' && Array.isArray(json?.workspaces)) {
-    allowedWs = servedSelectors(json.workspaces);
-    noteServed(json.workspaces);
+  if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && route === 'panel') {
+    if (Array.isArray(json?.workspaces)) {
+      allowedWs = servedSelectors(json.workspaces);
+      noteServed(json.workspaces);
+    }
+    // The session resume trigger reads the same accepted reply's instance rows (it keeps only local lost ones).
+    if (Array.isArray(json?.instances)) void resumeTrigger.observed(json.instances);
   }
   return { ok: r.ok, status: r.status, body: json };
   } catch (error) {
@@ -1095,9 +1096,10 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
   // This computer's deployments list (#1390): the one-time import, then the launch's own deployment. Then,
-  // whether it succeeded or failed, the launch's session resume sweep (it reads the registry the import fills).
+  // whether it succeeded or failed, the session resume trigger is armed with the launch's sweep (it reads the
+  // registry the import fills).
   void startupDeploymentList(launchedPath).catch((e) => console.error(`oats-desktop: ${e?.message || e}`))
-    .finally(() => resumeAtLaunch.start());
+    .finally(() => resumeTrigger.launch());
   // Window activity: visibility flips that are not focus flips, hooked on
   // every window BEFORE the first one exists (focus/blur are app-level below).
   app.on("browser-window-created", (_event, win) => {

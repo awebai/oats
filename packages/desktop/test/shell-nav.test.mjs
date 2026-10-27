@@ -153,7 +153,7 @@ test("a nav button runs its stage action once; the sidebar toggle, Spawn instanc
     }
   }
   const items = wired.settingsMenu.items;
-  assert.deepEqual(items.map((b) => b.dataset.menuAction), ["app.themePicker", "app.fontPicker", "app.shortcuts", "app.resumeAtLaunch"]);
+  assert.deepEqual(items.map((b) => b.dataset.menuAction), ["app.themePicker", "app.fontPicker", "app.shortcuts"]);
   for (const b of items) {
     ran.length = 0; b.click();
     assert.deepEqual(ran, [b.dataset.menuAction], `${b.dataset.menuAction}: one run per click`);

@@ -1,41 +1,40 @@
-// Lost sessions resumed when Desktop opens: the renderer's side (main's is session-resume-launch.mjs). The shell
-// wires both pieces; neither owns a session or runs a command.
+// Lost sessions resumed: the renderer's side (main's is session-resume-launch.mjs, which wires the shared trigger,
+// packages/client/session-resume-trigger.mjs). The shell wires it; it owns no session and runs no command.
 //
-// The notice: main holds the launch's summary until one window takes it (take-once). A window asks at shell start
-// and on each ready event, so one that opens after the sweep still gets it; every answer is posted (a take is a
-// handoff that never comes twice, so there is no token to drop it by). The answer is decoded again at this
-// boundary (resumeSummaryFact): anything that does not decode, null included, shows nothing, and a rejected take
-// is swallowed. resumeNotice words it (packages/client/session-resume.mjs); a deployment is labelled by
-// shortPath, its /Users|home/<name> guess, as the renderer has no home directory. It is posted sticky (a
-// once-per-launch summary that routine toasts must not evict) and `app` (no workspace's: a switch keeps it), the
-// detail behind Details, as text (the center paints textContent only).
-//
-// The preference (`app.resumeAtLaunch`): main's file is the only copy. read() asks main each time (the settings
-// menu at each opening); toggle() reads the current value from main and writes its opposite, one toggle at a
-// time; a failed read or write keeps the stored state and says FAILED (non-sticky). The palette's On/Off detail is
-// a value read as the palette opens (refresh(), in parallel with its instance load): "" until it lands or when it
-// fails; a later refresh or a completed toggle supersedes a read still in flight, and a completed toggle holds the
-// value it wrote.
+// Main queues each sweep's summary (at most RESUME_NOTICE_TAKE, the oldest first) until a window takes them all
+// (take-and-clear). A window takes at shell start and on each ready event, so one that opens after a sweep still
+// gets them; every answer is posted (a take is a handoff that never comes twice, so there is no token to drop it
+// by). The answer must be an array: anything else, null included, shows nothing, and a rejected take is swallowed.
+// At most RESUME_NOTICE_TAKE elements are read (main's cap: more is not main's answer), each decoded again at this
+// boundary (resumeSummaryFact); one that does not decode is skipped and the others still post. resumeNotice words
+// each (packages/client/session-resume.mjs); a deployment is labelled by shortPath, its /Users|home/<name> guess, as
+// the renderer has no home directory. Each summary is its own notice, posted in the queue's order: sticky (routine
+// toasts must not evict it), `app` (no workspace's: a switch keeps it) and in the `session-resume` group (more than
+// 3 collapse into one "N notices about resumed sessions" entry), the detail behind Details, as text (the center
+// paints textContent only).
 import { resumeSummaryFact, resumeNotice } from "../../client/session-resume.mjs";
 import { shortPath } from "../../client/deployment-label.mjs";
-import { takePickerFocusReturn } from "./overlay-picker.mjs";
 
-export const RESUME_PREFERENCE_ACTION = "app.resumeAtLaunch";
-export const RESUME_PREFERENCE_LABEL = "Resume lost sessions when Desktop opens";
-export const RESUME_PREFERENCE_FAILED = "The preference could not be saved.";
+export const RESUME_NOTICE_TAKE = 10;
+export const RESUME_NOTICE_GROUP = "session-resume";
+const groupLabel = (n) => `${n} notices about resumed sessions`;
 
 /** `desk` is window.oatsDesktop (absent: nothing happens); `notify` the notification center's notify. start() takes
  * now and on each ready event; dispose() stops listening (an answer still in flight is then not posted). */
 export function createResumeNotice({ desk, notify, label = (path) => shortPath(path) }) {
   let alive = true, off = null;
-  const post = (answer) => {
-    if (!alive) return;
-    const summary = resumeSummaryFact(answer);
+  const postOne = (element) => {
+    const summary = resumeSummaryFact(element);
     if (!summary) return;
     let notice = null;
     try { notice = resumeNotice(summary, { label }); } catch { return; }
     if (!notice?.headline) return;
-    notify(notice.headline, { sticky: true, app: true, ...(notice.detail ? { detail: notice.detail } : {}) });
+    notify(notice.headline, { sticky: true, app: true, group: RESUME_NOTICE_GROUP, groupLabel,
+      ...(notice.detail ? { detail: notice.detail } : {}) });
+  };
+  const post = (answer) => {
+    if (!alive || !Array.isArray(answer)) return;
+    for (let i = 0; i < Math.min(answer.length, RESUME_NOTICE_TAKE) && alive; i++) postOne(answer[i]);
   };
   const take = () => {
     if (!alive || typeof desk?.takeResumeNotice !== "function") return;
@@ -51,55 +50,4 @@ export function createResumeNotice({ desk, notify, label = (path) => shortPath(p
     },
     dispose() { alive = false; try { off?.(); } catch { /* the bridge is going too */ } off = null; },
   };
-}
-
-/** The preference through main. read() → Promise<boolean|null> (null: not readable), never rejecting; toggle()
- * → Promise<void>; refresh() starts the palette's read and → a Promise<void> that never rejects, settled once the
- * read has landed; alongside(load) is the palette's load with that read joined; detail() → "On" | "Off" | "". */
-export function createResumePreference({ desk, notify }) {
-  let value = null, serial = 0, chain = Promise.resolve();
-  async function read() {
-    if (typeof desk?.resumeAtLaunch !== "function") return null;
-    try {
-      const answer = await desk.resumeAtLaunch();
-      return typeof answer?.resumeAtLaunch === "boolean" ? answer.resumeAtLaunch : null;
-    } catch { return null; }
-  }
-  async function write(next) {
-    if (typeof desk?.setResumeAtLaunch !== "function") return null;
-    try {
-      const answer = await desk.setResumeAtLaunch(next);
-      if (answer?.ok !== true) return null;
-      return typeof answer.resumeAtLaunch === "boolean" ? answer.resumeAtLaunch : next;
-    } catch { return null; }
-  }
-  async function flip() {
-    const current = await read();
-    const saved = current === null ? null : await write(!current);
-    if (saved === null) { notify(RESUME_PREFERENCE_FAILED); return; }
-    serial++; value = saved; // supersedes a palette read sent before the write landed
-  }
-  return {
-    read,
-    toggle() { chain = chain.then(flip, flip); return chain; },
-    refresh() {
-      const token = ++serial; value = null;
-      return read().then((on) => { if (token === serial) value = on; });
-    },
-    /** The palette's load: `load()` and this preference's read, started together; it settles once both have, as
-     * `load` settled. The palette paints when its load completes, so a detail that landed later would not show. */
-    async alongside(load) {
-      const read = this.refresh();
-      try { return await load(); } finally { await read; }
-    },
-    detail: () => (value === true ? "On" : value === false ? "Off" : ""),
-  };
-}
-
-/** The palette's entry: its label, the On/Off `detail` read as it opened, and `run`, which first gives focus back
- * where the palette was opened (a toggle opens nothing to take it), then runs the action. `preference` is a getter
- * (the shell declares the preference after the palette). */
-export function resumePaletteCommand({ doc, preference, run }) {
-  return { label: `Settings: ${RESUME_PREFERENCE_LABEL}`, detail: () => preference().detail(),
-    run: () => { takePickerFocusReturn(doc)?.restore(); return run(); } };
 }
