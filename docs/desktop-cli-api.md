@@ -5996,8 +5996,9 @@ sha256 mismatch; the remote file is left), `E_SESSION_UNKNOWN`,
 
 ### How the clients run the sweep
 
-The kernel's machine sweep, `oats session resume --json`, is run by a client
-when it opens and again when its rosters show a lost session
+The kernel's machine sweep, `oats session resume --json`
+([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown)), is
+run by a client when it opens and again when its rosters show a lost session
 ([When Desktop opens](desktop-instance-start.md#when-desktop-opens)). The
 clients share one trigger, one runner and one reader, so the Desktop and the
 TUI decide, run and read it the same way.

@@ -243,7 +243,9 @@ target (Herdr was removed in 0.31.0) is never observed: it shows the kernel's
 
 After a shutdown, a reboot or a crash, the instances that were running have
 lost their sessions. OATS Desktop asks the kernel to resume them: it runs
-`oats session resume --json`, and the kernel does the rest. The kernel looks
+`oats session resume --json`
+([Resume after a shutdown](execution-targets.md#resume-after-a-shutdown)), and
+the kernel does the rest. The kernel looks
 at every deployment on this computer's list (local deployments only, never a
 server's) and resumes each lost session as it decides. What the kernel does to
 a session, when it starts one fresh from its briefing instead, and when it
