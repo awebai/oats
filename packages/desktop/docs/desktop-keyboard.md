@@ -925,7 +925,9 @@ on its rows.
 - **Where the focus goes after a switch.** Back where it was in that
   workspace when this window last showed it, whatever made the switch (a
   pick, a move, the Workspace page's select, or the window falling back after
-  another one took its workspace over): the terminal's input, ready to type;
+  another one took its workspace over): the terminal's input, ready to type
+  (a terminal still attaching takes it once attached; one whose session ended
+  has its tab focused, and nothing typed reaches it);
   a tab's content, or the tab, a split control or the empty group it was on;
   the instance's row in the list of instances, once that list has been read
   (its selected row, or Retry, when that instance is gone; nothing moves if

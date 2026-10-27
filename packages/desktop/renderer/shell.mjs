@@ -32,7 +32,7 @@ import { createQuickOpen } from "./quick-open.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { createSurfaceReturn } from "./surface-return.mjs";
 import { createFocusRegions, firstTabbable, isShown } from "./focus-regions.mjs";
-import { createFocusPlaces } from "./focus-place.mjs";
+import { createFocusPlaces, isTransit } from "./focus-place.mjs";
 import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction, keymapConflicts, pickerCycleDirection,
@@ -546,6 +546,8 @@ const workspaceLabel = createWorkspaceSwitcher({
   openInNewWindow: typeof desktopBridge.windowOpenWorkspace === "function" ? (id) => { void desktopBridge.windowOpenWorkspace(id); } : null,
   mac: navigator.platform.includes("Mac"),
   storage: (() => { try { return window.localStorage; } catch { return null; } })(),
+  // Its repaint keeps the focus on the row that had it: no new intent (a switch's waiting roster place stays owned).
+  applyFocus: fn => tabOpenIntents.applyFocus(fn),
   // Feature-detected while tui-dev lands the approved privileged contract.
   // The final adapter names are intentionally isolated to these three lines.
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
@@ -2844,35 +2846,68 @@ function focusOn(el) {
  * owns the focus). The DOM focus only: the window itself is never focused or raised for it. */
 function focusArrival(place) {
   rosterPlace = null;
+  pageWatch?.disconnect(); pageWatch = null;
   const ws = currentWorkspace();
   if (!ws || !landsFocusPlace(ws) || modalOpen()) return;
   const owns = tabOpenIntents.begin();
   const main = () => focusRegions.focusRegion("main");
-  if (!place) {
-    const at = document.activeElement;
-    if (!at || at === document.body || !isShown(at)) tabOpenIntents.applyFocus(main);
-    return;
-  }
-  if (place.kind === "roster") {
+  if (place?.kind === "roster") {
     // Focus mode, or the sidebar hidden: the roster can't be shown for it, and neither is left for it.
-    if (!focusRegions.visible("roster")) { tabOpenIntents.applyFocus(main); return; }
+    if (!focusRegions.visible("roster")) { watchPage(owns, main); return; }
     // Its rows arrive with the roster's read: the first paint of them applies it (applyRosterPlace).
     rosterPlace = { owns, handle: place.handle, input: operator.input(), pointer: operator.pointer(), focus: document.activeElement };
     return;
   }
-  if (place.kind === "tab" && place.content && selectTab(place.tab, { focusContent: true, intent: owns })) {
-    // A terminal focuses its input itself (while attaching too); a tab with no input of its own, the control
-    // that had the focus in it, else its first one.
-    if (!tabs.get(place.tab)?.focusContent) tabOpenIntents.applyFocus(() => place.handle.restoreExact() || main());
+  if (place?.kind === "tab" && place.content && selectTab(place.tab, { focusContent: true, intent: owns })) {
+    const t = tabs.get(place.tab);
+    if (t.paneEl.contains(document.activeElement)) return;
+    // A terminal's input takes the focus only while it can be typed in: one attaching or reconnecting takes it once
+    // ready (its readiness focus, still this ticket's), and one whose session ended never does. Its tab has the focus
+    // meanwhile, and nothing typed there reaches a terminal. A tab with no input of its own: the control that had the
+    // focus in it, else its first one.
+    tabOpenIntents.applyFocus(() => (t.focusContent ? focusOn(t.triggerEl) : place.handle.restoreExact()) || main());
     return;
   }
-  tabOpenIntents.applyFocus(() => {
-    if (place.kind === "tab" && !place.content) {
-      const t = tabLayerVisible && activeTab != null ? tabs.get(activeTab) : null;
-      return place.handle.restoreExact() || (tabLayerVisible && focusOn(t?.triggerEl ?? tabhost.querySelector(".focused-group > .split-empty"))) || main();
-    }
-    if (place.kind === "other") return place.handle.restore() || (!!place.region && focusRegions.focusRegion(place.region)) || main();
-    return main(); // the tab it was in closed meanwhile: the active tab's content, else the stage
+  if (place?.kind === "tab" && tabLayerVisible) {
+    const t = activeTab != null ? tabs.get(activeTab) : null;
+    // A control of the tab layer (the strip, the split controls, an empty group), else the active tab's (its trigger,
+    // or the focused empty group); a content place whose tab closed meanwhile: what the tab rules left active.
+    tabOpenIntents.applyFocus(() => (!place.content && (place.handle.restoreExact() || focusOn(t?.triggerEl ?? tabhost.querySelector(".focused-group > .split-empty")))) || main());
+    return;
+  }
+  if (!place) {
+    const at = document.activeElement;
+    if (at && at !== document.body && isShown(at)) return; // where the switch found it, still shown
+  }
+  // The rest lands on the page, the views, the instance panel or the foot: by identity, or a control near it in its
+  // own region (never a transit surface, never another region), else that region's landing.
+  watchPage(owns, () => {
+    if (place?.kind !== "other") return main();
+    const target = place.handle.resolve();
+    if (target && !isTransit(target) && focusOn(target) && focusRegions.regionOfFocus() === place.region) return true;
+    return (!!place.region && focusRegions.focusRegion(place.region)) || main();
+  });
+}
+
+/** A landing on the page (focusArrival): the mounted views repaint for the workspace in their own listeners, which run
+ * after the shell's, and some again when their reads answer. So `land` runs once every workspace listener has run,
+ * then again at each repaint of the page while it has not landed yet (the page still loading) or the repaint left
+ * the focus on <body> (or on a control no longer shown), until the operator presses a key or clicks, the ticket is
+ * gone (a selection, an open, another switch) or a modal opens. `land` answers whether the focus landed. */
+let pageWatch = null;
+function watchPage(owns, land) {
+  const input = operator.input(), pointer = operator.pointer();
+  const quiet = () => owns() && !modalOpen() && operator.input() === input && operator.pointer() === pointer;
+  const lost = () => !document.activeElement || document.activeElement === document.body || !isShown(document.activeElement);
+  queueMicrotask(() => {
+    if (!quiet()) return;
+    let landed = tabOpenIntents.applyFocus(land);
+    if (typeof MutationObserver !== "function") return;
+    const watch = pageWatch = new MutationObserver(() => {
+      if (!quiet()) { watch.disconnect(); if (pageWatch === watch) pageWatch = null; return; }
+      if (!landed || lost()) landed = tabOpenIntents.applyFocus(land);
+    });
+    watch.observe(stageHost, { childList: true, subtree: true });
   });
 }
 

@@ -200,7 +200,9 @@ workspace on a server: `name — server`).
   tab closed while the workspace was hidden, the focus goes to the tab active
   in its place, or to the page when no tab is left. An instance retired
   elsewhere keeps its tab until the workspace's list of instances is read
-  again: the focus goes into that tab, and when it closes, to the next tab.
+  again: the focus goes into that tab, and when it closes, to the next tab. A
+  stopped instance's tab ("session ended") gets the focus, and nothing typed
+  there reaches a terminal.
 - A tab's terminal ends ("session ended") when its instance's tmux window
   goes, whatever your tmux `detach-on-destroy` setting: a tab never shows
   another instance's terminal. Stopping an instance leaves its tab open.

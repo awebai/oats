@@ -92,7 +92,7 @@ function rig(t, { platform = "Linux x86_64" } = {}) {
       setFocusMode: on => document.getElementById("app").classList.toggle("focus-mode", on),
       isFocusMode: () => document.getElementById("app").classList.contains("focus-mode"),
     },
-    tabOpenIntents: { invalidations: 0, invalidate() { this.invalidations++; } },
+    tabOpenIntents: { invalidations: 0, invalidate() { this.invalidations++; }, applyFocus: fn => fn() },
     // The leader's workspaceStep asks the F6 regions whether the focus is in the list of workspaces.
     focusRegions: createFocusRegions({ doc: document }),
     registerAction: action => { const off = keymap.registerAction(action); offs.push(off); return off; },

@@ -90,6 +90,9 @@ export function createWorkspaceSwitcher({
   openInNewWindow = null, mac = false,
   // Where "Show only the current workspace" is remembered (a Storage: localStorage), else not at all.
   storage = null,
+  // The shell's guard for a focus it restores (selection-ownership.mjs applyFocus): a repaint keeping the focus on
+  // the row that had it is no new intent of the operator's.
+  applyFocus = (fn) => fn(),
 }) {
   const q = (id) => document.getElementById(id);
   const section = q("ws-list"), options = q("ws-options"), addOpen = q("ws-add-open");
@@ -245,8 +248,7 @@ export function createWorkspaceSwitcher({
     if (!rowOf(stopKey)) stopKey = "";
     const stop = focusTarget();
     if (stop?.classList?.contains("ws-option")) stop.tabIndex = 0;
-    if (focusedKey) (rowOf(focusedKey) || focusTarget()).focus();
-    else if (focused) focusTarget().focus();
+    if (focused) applyFocus(() => (focusedKey ? rowOf(focusedKey) || focusTarget() : focusTarget()).focus());
     // A context menu whose row is gone closes; focus that was in it goes to the list's stop (the current row), never
     // <body> (review: Show only the current workspace's chord from another row's menu).
     if (menuFor && !rowOf(menuFor)) { closeRowMenu(false); if (menuFocusKey) focusTarget().focus(); }

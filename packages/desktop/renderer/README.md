@@ -2171,8 +2171,17 @@ The memory also holds the workspace's focus place (`focus-place.mjs`), taken by
 `restoreWorkspaceTabs` as the workspace is left, before its panes hide, so `rehome`
 and `forget` cover it. `focusArrival` applies the arriving one's place at the end of
 `restoreWorkspaceTabs` under one `tabOpenIntents` ticket: a tab's content through
-`selectTab(…, { focusContent: true })` (never `term.focus()`), a tab control or page
+`selectTab(…, { focusContent: true })` (never `term.focus()`; a terminal that can't take
+its input focus now, attaching or ended, has its tab trigger focused meanwhile), a tab
 control through its handle, else the region's landing (`focusRegion`), never `<body>`.
+A landing on the page (or the views, the panel, the foot) waits for `watchPage`: the
+mounted views repaint in their own workspace listeners, which run after the shell's, so
+it lands in a microtask, and again at each repaint of `#stagehost` while it has not
+landed or the focus fell to `<body>`, until the operator acts or the ticket goes. A page
+handle is accepted only in its own region and off the transit surfaces (its ancestor
+fallback can reach any control of the window). The list of workspaces repaints through
+the shell's `applyFocus` (workspace-switcher.mjs `applyFocus`), so keeping its focused
+row is no new intent for the sidebar's focusin.
 A roster place waits for the roster: `applyRosterPlace` runs at the end of every roster
 paint of rows, of the empty copy or of a failed read (not a pending one), and applies it
 once, unless the ticket is gone or the operator pressed a key, or clicked and moved the

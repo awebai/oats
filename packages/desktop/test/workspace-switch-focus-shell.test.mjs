@@ -38,6 +38,9 @@ import { takenWorkspaceIds } from "../renderer/views/common.mjs";
 import { navTab } from "../renderer/shell-nav.mjs";
 import { createFocusRegions, firstTabbable, isShown } from "../renderer/focus-regions.mjs";
 import { createFocusPlaces, isTransit } from "../renderer/focus-place.mjs";
+import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
+import { mountAutomationsPage } from "../renderer/views/automations.mjs";
+import { setWorkspace, onWorkspaceChange } from "../renderer/views/common.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
@@ -109,7 +112,7 @@ function shell(t) {
     },
     registerAction() {},
     modalOpen: () => [...document.querySelectorAll('[aria-modal="true"]')].some(dialog => isShown(dialog)),
-    isShown, firstTabbable,
+    isShown, firstTabbable, isTransit,
     // views/common.mjs landsFocusPlace: a landing on `unplaced` places nothing (a caller's own target, a step from the
     // list of workspaces, a view followed, a take-over's layout).
     unplaced: null, landsFocusPlace: ws => c.unplaced !== ws,
@@ -133,12 +136,15 @@ function shell(t) {
   c.focusPlaces = createFocusPlaces({ doc: document, regionOfFocus: () => c.focusRegions.regionOfFocus(),
     activeTab: () => (c.tabLayerVisible && c.activeTab != null && c.tabs.has(c.activeTab) ? { id: c.activeTab, paneEl: c.tabs.get(c.activeTab).paneEl } : null) });
   document.addEventListener("focusin", () => c.focusPlaces.note(c.tabWorkspace));
-  c.rosterPlace = null;
+  c.rosterPlace = null; c.pageWatch = null;
+  c.queueMicrotask = queueMicrotask; c.MutationObserver = dom.window.MutationObserver;
+  // initContextRoster's: a native focus entry into the sidebar is a newer intent, unless the shell restores it.
+  document.getElementById("sidebar").addEventListener("focusin", () => { if (!c.tabOpenIntents.isApplyingFocus()) c.tabOpenIntents.invalidate(); });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal", "syncTabNeedsInput", "focusGroup",
     "releaseTakenWorkspace", "closeWorkspaceTabs", "restoreHandedLayout", "rosterEntry", "setRovingRow",
-    "focusMainContent", "focusOn", "focusArrival", "applyRosterPlace"];
+    "focusMainContent", "focusOn", "focusArrival", "applyRosterPlace", "watchPage"];
   const functions = names.map(name => {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -162,10 +168,11 @@ function shell(t) {
       return { id: made.id, link };
     },
     row,
-    /** Main bound the switch, and it lands: the shell's workspace listener runs. */
-    land(workspace) { c.workspace = workspace; c.generation++; s.restoreWorkspaceTabs(); },
+    /** Main bound the switch, and it lands: the shell's workspace listener runs, then every other one (a page landing
+     * waits for them: focusArrival's watchPage). */
+    async land(workspace) { c.workspace = workspace; c.generation++; s.restoreWorkspaceTabs(); await settle(); },
     /** A pick from the list of workspaces: the focus goes to its row first (a click or Enter there), then the switch. */
-    pick(workspace) { row(workspace).focus(); this.land(workspace); },
+    async pick(workspace) { row(workspace).focus(); await this.land(workspace); },
     /** The roster's rows, painted as renderContextRoster paints them (nodes replaced), then its paint hook. */
     paintRoster(ids, { stop = ids[0] } = {}) {
       document.querySelector("#instance-roster .ctx-list").innerHTML = ids.map(id =>
@@ -207,9 +214,9 @@ test("a terminal place: focus in X's terminal, a pick of B from the list, a pick
   const y = await s.open("y");
   s.c.tabOpenIntents.begin(); assert.ok(s.selectTab(x.id, { focusContent: true }));
   assert.equal(s.active(), x.term.input, "typing in X");
-  s.pick("B");
+  await s.pick("B");
   assert.equal(s.active(), s.row("B"), "a first visit to B: the pick keeps the list row");
-  s.pick("A");
+  await s.pick("A");
   assert.equal(s.c.activeTab, x.id);
   assert.equal(s.active(), x.term.input, "X's terminal is ready to type");
   assert.notEqual(s.active(), y.term.input);
@@ -219,15 +226,15 @@ test("a terminal place through the moves: workspace.next from the terminal, then
   const s = shell(t);
   const x = await s.open("x");
   s.c.tabOpenIntents.begin(); s.selectTab(x.id, { focusContent: true });
-  s.land("B"); // Alt+↓ from X's terminal: the focus is still there as the switch lands
+  await s.land("B"); // Alt+↓ from X's terminal: the focus is still there as the switch lands
   assert.notEqual(s.active(), body(s), "never <body>");
   assert.equal(s.active(), s.document.getElementById("page-control"), "a first visit, its terminal hidden: main's landing (the stage's first control)");
   s.document.getElementById("page-other").focus(); // the operator moves on in B
-  s.land("A"); // Alt+↑
+  await s.land("A"); // Alt+↑
   assert.equal(s.active(), x.term.input);
-  s.land("B"); // Alt+↓ again
+  await s.land("B"); // Alt+↓ again
   assert.equal(s.active(), s.document.getElementById("page-other"), "B's place: where the operator left it");
-  s.land("A");
+  await s.land("A");
   assert.equal(s.active(), x.term.input);
 });
 
@@ -237,9 +244,9 @@ test("a step made from the list of workspaces (it places nothing) leaves the foc
   s.c.tabOpenIntents.begin(); s.selectTab(x.id, { focusContent: true });
   const focuses = x.term.focuses;
   s.row("A").focus();
-  s.c.unplaced = "B"; s.land("B"); s.c.unplaced = null;
+  s.c.unplaced = "B"; await s.land("B"); s.c.unplaced = null;
   assert.equal(s.active(), s.row("A"), "the operator is browsing workspaces");
-  s.c.unplaced = "A"; s.land("A"); s.c.unplaced = null;
+  s.c.unplaced = "A"; await s.land("A"); s.c.unplaced = null;
   assert.equal(s.active(), s.row("A"));
   assert.equal(x.term.focuses, focuses, "X's terminal was not focused again");
   // The shell asks for it only from the list (shell.mjs leaderDispatch's workspaceStep), and the switcher hands it on.
@@ -252,35 +259,35 @@ test("a file tab place, a tab strip place and an empty split group place", async
   const x = await s.open("x");
   const notes = s.file("notes.md");
   s.c.tabOpenIntents.begin(); s.selectTab(notes.id); notes.link.focus();
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   assert.equal(s.c.activeTab, notes.id);
   assert.equal(s.active(), notes.link, "the control it had in the file's content");
   s.c.tabs.get(notes.id).triggerEl.focus();
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   assert.equal(s.active(), s.c.tabs.get(notes.id).triggerEl, "the tab in the strip");
   // An empty split group, focused as today's restore makes it.
   s.c.tabOpenIntents.begin(); s.selectTab(x.id);
   s.splitPane("row");
   const empty = s.c.tabhost.querySelector(".focused-group > .split-empty");
   assert.ok(empty); empty.focus();
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   assert.equal(s.active(), s.c.tabhost.querySelector(".focused-group > .split-empty"), "the empty group");
 });
 
 test("a page control by identity (the page repainted it), else its region's landing; the views nav", async t => {
   const s = shell(t), { document } = s;
   document.getElementById("page-other").focus();
-  s.pick("B");
+  await s.pick("B");
   // B's page repaints (a view's workspace listener): the control comes back as a new node with its id.
   document.getElementById("stagehost").innerHTML = `<div><button id="page-control">Page control</button><button id="page-other">Other</button></div>`;
-  s.pick("A");
+  await s.pick("A");
   assert.equal(s.active(), document.getElementById("page-other"), "the control, by id");
   document.getElementById("stagehost").innerHTML = `<div><button id="new-page">Another page</button></div>`;
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   assert.equal(s.active(), document.getElementById("new-page"), "W shows another page now: main's landing");
   const nav = document.querySelector('#nav [data-view="spawn"]');
   nav.focus();
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   assert.equal(s.active(), nav, "the views nav item");
 });
 
@@ -289,28 +296,28 @@ test("the remembered tab closed while A was hidden: the focus goes into the reca
   const x = await s.open("x");
   const y = await s.open("y");
   s.c.tabOpenIntents.begin(); s.selectTab(y.id, { focusContent: true });
-  s.pick("B");
+  await s.pick("B");
   s.closeTab(y.id, false, { explicit: false, background: true }); // A's roster read showed it retired
   await settle();
   assert.equal(s.c.tabs.has(y.id), false);
-  s.pick("A");
+  await s.pick("A");
   assert.equal(s.c.activeTab, x.id, "the tab rules' successor");
   assert.equal(s.active(), x.term.input, "its content has the focus");
-  s.pick("B");
+  await s.pick("B");
   s.closeTab(x.id, false, { explicit: false, background: true });
   await settle();
-  s.pick("A");
+  await s.pick("A");
   assert.equal(s.c.tabLayerVisible, false, "no tab left: the stage");
   assert.equal(s.active(), s.document.getElementById("page-control"), "main's landing, never <body>");
 });
 
 test("no place: a first visit from a pick keeps the list row; one from a terminal lands on main", async t => {
   const s = shell(t);
-  s.pick("B");
+  await s.pick("B");
   assert.equal(s.active(), s.row("B"));
   const b = await s.open("b");
   s.c.tabOpenIntents.begin(); s.selectTab(b.id, { focusContent: true });
-  s.land("C");
+  await s.land("C");
   assert.equal(s.active(), s.document.getElementById("page-control"));
 });
 
@@ -318,10 +325,10 @@ test("a switch that places nothing for a caller's own target (handOff, followVie
   const s = shell(t);
   const x = await s.open("x");
   s.c.tabOpenIntents.begin(); s.selectTab(x.id, { focusContent: true });
-  s.pick("B");
+  await s.pick("B");
   const focuses = x.term.focuses;
   const target = s.document.getElementById("page-other"); target.focus(); // the caller's own target (the Teams board's show)
-  s.c.unplaced = "A"; s.land("A"); s.c.unplaced = null;
+  s.c.unplaced = "A"; await s.land("A"); s.c.unplaced = null;
   assert.equal(s.active(), target, "the caller's target wins");
   assert.equal(x.term.focuses, focuses, "X's terminal is not focused");
   const spawn = readFileSync(new URL("../renderer/views/spawn.mjs", import.meta.url), "utf8");
@@ -333,10 +340,10 @@ test("under a modal dialog or the palette, an arrival moves nothing: their own r
   const s = shell(t);
   const x = await s.open("x");
   s.c.tabOpenIntents.begin(); s.selectTab(x.id, { focusContent: true });
-  s.pick("B");
+  await s.pick("B");
   const dialog = s.document.createElement("div"); dialog.setAttribute("aria-modal", "true"); dialog.innerHTML = "<button>Close</button>";
   s.document.body.append(dialog); dialog.firstChild.focus();
-  s.land("A");
+  await s.land("A");
   assert.equal(s.active(), dialog.firstChild);
 });
 
@@ -344,10 +351,10 @@ test("a roster place: applied by the first paint of A's rows, by the instance's 
   const s = shell(t);
   s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
   s.document.querySelector('[data-tree-instance="/synthetic/r2"]').focus();
-  s.pick("B");
+  await s.pick("B");
   s.paintRoster(["/synthetic/b1"]);
   assert.equal(s.active(), s.row("B"), "B's paint: B has no place");
-  s.pick("A");
+  await s.pick("A");
   assert.equal(s.active(), s.row("A"), "not before A's roster is painted");
   s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
   const r2 = s.document.querySelector('[data-tree-instance="/synthetic/r2"]');
@@ -363,12 +370,12 @@ test("a roster place is not applied once the operator acted, a selection was mad
     s => { s.c.inputs++; }, // a key
     s => { s.c.pointers++; s.document.getElementById("page-control").focus(); }, // a click that moved the focus
     s => { s.c.tabOpenIntents.begin(); }, // a selection, an open
-    s => { s.land("C"); }, // another switch
+    s => { void s.land("C"); }, // another switch
   ]) {
     const s = shell(t);
     s.paintRoster(["/synthetic/r1"]);
     s.document.querySelector(".ctx-inst").focus();
-    s.pick("B"); s.pick("A");
+    await s.pick("B"); await s.pick("A");
     meanwhile(s);
     const before = s.active();
     s.paintRoster(["/synthetic/r1"]);
@@ -377,7 +384,7 @@ test("a roster place is not applied once the operator acted, a selection was mad
   const clicked = shell(t);
   clicked.paintRoster(["/synthetic/r1"]);
   clicked.document.querySelector(".ctx-inst").focus();
-  clicked.pick("B"); clicked.pick("A");
+  await clicked.pick("B"); await clicked.pick("A");
   clicked.c.pointers++; // a click that moved nothing
   clicked.paintRoster(["/synthetic/r1"]);
   assert.equal(clicked.active(), clicked.document.querySelector(".ctx-inst"), "a click that left the focus where it was cancels nothing");
@@ -387,11 +394,11 @@ test("a roster place whose instance is gone: the roster's landing; hidden sideba
   const s = shell(t);
   s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
   s.document.querySelector('[data-tree-instance="/synthetic/r2"]').focus();
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   s.paintRoster(["/synthetic/r1", "/synthetic/r3"], { stop: "/synthetic/r3" });
   assert.equal(s.active(), s.document.querySelector('[data-tree-instance="/synthetic/r3"]'), "its selected row (the tab stop)");
   // A failed read: the failed block's Retry is the roster's landing.
-  s.pick("B"); s.pick("A");
+  await s.pick("B"); await s.pick("A");
   s.document.querySelector("#instance-roster .ctx-list").innerHTML = "";
   const retry = s.document.createElement("button"); retry.textContent = "Retry"; s.document.querySelector("#instance-roster .ctx-list").append(retry);
   s.applyRosterPlace();
@@ -400,9 +407,9 @@ test("a roster place whose instance is gone: the roster's landing; hidden sideba
     const h = shell(t);
     h.paintRoster(["/synthetic/r1"]);
     h.document.querySelector(".ctx-inst").focus();
-    h.pick("B");
+    await h.pick("B");
     h.document.getElementById("app").classList.add(hide);
-    h.land("A");
+    await h.land("A");
     assert.equal(h.active(), h.document.getElementById("page-control"), `${hide}: main, and it is not left for it`);
     assert.equal(h.document.getElementById("app").classList.contains(hide), true);
     assert.equal(h.c.rosterPlace, null);
@@ -412,9 +419,9 @@ test("a roster place whose instance is gone: the roster's landing; hidden sideba
 test("a take-over arrival: the handed layout's active terminal has the focus, and no remembered place is applied", async t => {
   const s = shell(t);
   s.document.getElementById("page-other").focus(); // A's stale place in this window
-  s.pick("B");
+  await s.pick("B");
   s.row("A").focus();
-  s.c.unplaced = "A"; s.land("A"); s.c.unplaced = null; // views/common.mjs: a take-over that brought a layout places nothing
+  s.c.unplaced = "A"; await s.land("A"); s.c.unplaced = null; // views/common.mjs: a take-over that brought a layout places nothing
   assert.equal(s.active(), s.row("A"), "the place is not applied");
   const done = s.restoreHandedLayout("A", { terminals: [ref("a1"), ref("a2")], split: null, active: 1 });
   await tick();
@@ -426,10 +433,10 @@ test("a take-over arrival: the handed layout's active terminal has the focus, an
 
 test("the window that fell back after a take-over focuses its own place for the workspace it shows now", async t => {
   const s = shell(t);
-  s.pick("B");
+  await s.pick("B");
   const b = await s.open("b1");
   s.c.tabOpenIntents.begin(); s.selectTab(b.id, { focusContent: true });
-  s.pick("A");
+  await s.pick("A");
   await s.open("a1"); // typing in A when another window takes it over
   await s.releaseTakenWorkspace({ request: 1, workspace: "A", workspaces: SERVED });
   await settle();
@@ -442,12 +449,88 @@ test("rapid steps: each landing applies its own place, the last one wins", async
   const s = shell(t);
   const a = await s.open("a");
   s.c.tabOpenIntents.begin(); s.selectTab(a.id, { focusContent: true });
-  s.land("B");
+  await s.land("B");
   const b = await s.open("b");
   s.c.tabOpenIntents.begin(); s.selectTab(b.id, { focusContent: true });
-  s.land("C");
-  s.land("B"); s.land("A");
+  await s.land("C");
+  await s.land("B"); await s.land("A");
   assert.equal(s.active(), a.term.input);
-  s.land("B");
+  await s.land("B");
   assert.equal(s.active(), b.term.input);
+});
+
+test("a roster place survives the list of workspaces' own repaint as the roster's answer lands (no new intent)", async t => {
+  const s = shell(t);
+  // The real list, wired as the shell wires it: its repaint keeps the focus on the row that had it, as a restoration.
+  const list = createWorkspaceSwitcher({ document: s.document, selectWorkspace() {}, applyFocus: fn => s.c.tabOpenIntents.applyFocus(fn) });
+  t.after(() => list.dispose());
+  list.begin()(SERVED[0], SERVED);
+  s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
+  s.document.querySelector('[data-tree-instance="/synthetic/r2"]').focus();
+  s.document.querySelector('#ws-options [data-workspace-id="B"]').focus(); s.c.workspace = "B"; s.c.generation++; s.restoreWorkspaceTabs();
+  s.paintRoster(["/synthetic/b1"]);
+  s.document.querySelector('#ws-options [data-workspace-id="A"]').focus(); s.c.workspace = "A"; s.c.generation++; s.restoreWorkspaceTabs();
+  assert.ok(s.c.rosterPlace?.owns(), "waiting for A's roster");
+  list.begin()(SERVED[0], SERVED); // refreshContextRoster commits the list before it paints the rows
+  assert.ok(s.c.rosterPlace.owns(), "the list's repaint is no new intent");
+  s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
+  assert.equal(s.active(), s.document.querySelector('[data-tree-instance="/synthetic/r2"]'));
+  // An operator's own move in the list is one: it still cancels.
+  s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
+  s.document.querySelector('#ws-options [data-workspace-id="B"]').focus(); s.c.workspace = "B"; s.c.generation++; s.restoreWorkspaceTabs();
+  s.document.querySelector('#ws-options [data-workspace-id="A"]').focus(); s.c.workspace = "A"; s.c.generation++; s.restoreWorkspaceTabs();
+  s.document.querySelector('#ws-options [data-workspace-id="B"]').focus(); // the operator moves in the list
+  s.paintRoster(["/synthetic/r1", "/synthetic/r2"]);
+  assert.equal(s.active(), s.document.querySelector('#ws-options [data-workspace-id="B"]'));
+});
+
+test("a page place on a mounted page that rebuilds for the workspace in its own listener (after the shell's): applied after it", async t => {
+  const s = shell(t);
+  setWorkspace("A");
+  const off = onWorkspaceChange(ws => { s.c.workspace = ws; s.c.generation++; s.restoreWorkspaceTabs(); }); // the shell's listener, first
+  t.after(off);
+  s.document.getElementById("stagehost").replaceChildren();
+  const page = mountAutomationsPage(s.document.getElementById("stagehost"), { api: async () => ({ status: "ok", result: { triggers: [], schedules: [] } }) },
+    "trigger", undefined, { cli: () => ({ ok: true, features: ["automations"], automationsApi: 1 }), subscribeCli: () => () => {} });
+  t.after(() => page.dispose());
+  await settle();
+  const refresh = () => s.document.querySelector(".auto-header button");
+  assert.ok(refresh(), "the real Automations page's Refresh");
+  const before = refresh();
+  before.focus();
+  s.row("B").focus(); setWorkspace("B"); await settle();
+  s.row("A").focus(); setWorkspace("A"); await settle();
+  assert.notEqual(refresh(), before, "the page rebuilt itself for A");
+  assert.notEqual(s.active(), s.document.body, "never <body>");
+  assert.ok(s.document.getElementById("stagehost").contains(s.active()), "the page's control (else its first one)");
+  assert.equal(s.active().textContent, refresh().textContent, "its Refresh, drawn again for A");
+});
+
+test("a page landing is applied again when a later repaint of the page drops the focus, until the operator acts", async t => {
+  const s = shell(t);
+  s.document.getElementById("page-other").focus();
+  await s.pick("B"); await s.pick("A");
+  assert.equal(s.active(), s.document.getElementById("page-other"));
+  // The page's read answers: its content is drawn again (the focused node goes).
+  s.document.getElementById("stagehost").innerHTML = `<div><button id="page-control">Page control</button><button id="page-other">Other</button></div>`;
+  await settle();
+  assert.equal(s.active(), s.document.getElementById("page-other"), "back on the control, by identity");
+  s.c.inputs++; // a key: the operator has moved on
+  s.document.getElementById("stagehost").innerHTML = `<div><button id="page-control">Page control</button><button id="page-other">Other</button></div>`;
+  await settle();
+  assert.notEqual(s.active(), s.document.getElementById("page-other"), "after the operator acted, no repaint moves the focus");
+});
+
+test("a terminal whose session ended while A was hidden: its tab is selected and its tab has the focus; nothing reaches its input", async t => {
+  const s = shell(t);
+  let exit;
+  s.c.desk.onTermExit = (h, fn) => { exit = () => fn({ handle: h, exitCode: 0 }); return () => {}; };
+  const x = await s.open("x");
+  s.c.tabOpenIntents.begin(); s.selectTab(x.id, { focusContent: true });
+  await s.pick("B");
+  exit(); await settle();
+  await s.pick("A");
+  assert.equal(s.c.activeTab, x.id, "its tab is selected");
+  assert.equal(s.active(), s.c.tabs.get(x.id).triggerEl, "its tab has the focus, not the list");
+  assert.notEqual(s.active(), x.term.input, "the ended terminal takes no input focus (terminal-tab.mjs)");
 });
