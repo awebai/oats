@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,7 +55,8 @@ test('argv, cwd and env are passed; stdin is ignored; stdout and stderr are the 
   assert.equal(stderr, '');
   const seen = JSON.parse(stdout);
   assert.deepEqual(seen.argv, ['a b', '--c']);
-  assert.equal(seen.cwd, cwd);
+  // The child reports its cwd resolved: on macOS the temp dir is under /var, a link to /private/var.
+  assert.equal(seen.cwd, realpathSync(cwd));
   assert.equal(seen.env, 'seen');
   assert.equal(seen.stdin, true, 'stdin is /dev/null');
   assert.deepEqual(seen.files, [true, true], 'stdout and stderr are files, not pipes');
