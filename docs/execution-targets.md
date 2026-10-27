@@ -1261,12 +1261,16 @@ seen recently; refused this boot; keeps getting lost; started.
 
 - One sweep runs per machine: a second one answers `E_RESUME_BUSY`. A lock
   left by a process that is gone, or by another boot, is taken over.
-- A refused resume is not retried in the same boot: a later sweep reports it
-  again (`refused-this-boot`) and starts nothing.
+- A loss is answered once: whatever a sweep did with it (resumed, refused,
+  skipped or blocked), no later sweep starts it again, in this boot or after
+  a reboot; a later sweep reports it `not-seen-recently`. A refused resume is
+  never retried automatically: it is also noted for the boot, and reported
+  `refused-this-boot` should that answer be lost.
 - A home is started by sweeps at most 3 times in a boot. A home lost again
   after each resume (a harness that crashes the host or its terminal server,
-  say) is then reported `keeps-getting-lost` and not started again until the
-  next boot; start it by hand to try now. Every sweep start that launched
+  say) is then reported `keeps-getting-lost`, and that loss is answered: no
+  sweep starts it again, after a reboot either. Start it by hand: its next
+  loss is a new one, with a new count in each boot. Every sweep start that launched
   something counts (resumed, fresh or blocked), by home, as soon as that start
   has answered, so a sweep killed while other starts run has counted it; a
   refused, skipped or busy one does not. `oats session start --resume` run by hand is neither

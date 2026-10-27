@@ -8,10 +8,11 @@
   it recorded and a one-line resume notice as its prompt. Running instances
   are left alone; instances stopped with OATS, or whose harness ended by
   itself, stay stopped: stopping with OATS is the only way to keep an instance
-  down. One sweep runs per machine (`E_RESUME_BUSY`); a refused resume is
-  reported again, not retried, in the same boot; and a home is started by
-  sweeps at most 3 times in a boot, then reported `keeps-getting-lost` until
-  the next boot (on Linux and macOS, which have a boot to count in).
+  down. One sweep runs per machine (`E_RESUME_BUSY`); each loss is answered
+  once, so a refused resume is not tried again, after a reboot either; and a
+  home is started by sweeps at most 3 times in a boot (on Linux and macOS,
+  which have a boot to count in), then reported `keeps-getting-lost` and left
+  down, after a reboot too, until someone starts it.
   **An agent killed outside OATS (closed from tmux, or killed by a signal)
   comes back within 24 hours: only `oats instance stop` keeps it down.** The
   clients run it when they open, in a later change. See

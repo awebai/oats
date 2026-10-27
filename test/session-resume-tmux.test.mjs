@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { RESUME_NOTICE, stopInstanceSession } from "../lib/core.mjs";
 import { readStartExited } from "../lib/session-end.mjs";
@@ -355,7 +355,7 @@ test("`session resume --deployment <dir>` sweeps that deployment alone, register
   assert.deepEqual([launches("d1").length, launches("d3").length], [counts.d1, counts.d3], "the stopped homes were not started");
 });
 
-test("a home lost again after each resume is started by sweeps at most 3 times in a boot, then answered keeps-getting-lost, predicted by --plan; a start by hand is not counted; another boot starts it again", { skip: TMUX.skip || (!bootId() && "this host has no boot id: nothing is counted") }, async () => {
+test("a home lost again after each resume is started by sweeps at most 3 times in a boot, then answered keeps-getting-lost, predicted by --plan; a start by hand is not counted; a reboot does not bring back the loss the guard answered, and a new loss is counted afresh in another boot", { skip: TMUX.skip || (!bootId() && "this host has no boot id: nothing is counted") }, async () => {
   const E = v2Deployment({ name: "e", local: { "launch-configs": { "claude-e": config("claude", "dep-e") } } });
   later.push(E);
   const home = await spawnHome(E, "e1", "claude-e");
@@ -398,7 +398,12 @@ test("a home lost again after each resume is started by sweeps at most 3 times i
   assert.equal(count(), 3);
   assert.equal(statusRows(E).e1.sessionEnd, SESSION_END.LOST);
 
-  // Another boot's count is no count. That sweep judged this loss: a start by hand, and a new one.
+  // A reboot does not bring back the loss the guard answered (it was judged).
+  writeFileSync(notePath, JSON.stringify({ ...readJson(notePath), bootId: "another-boot" }));
+  assert.deepEqual(sweep().map((r) => [r.instance, r.outcome, r.reason]), [["e1", OUTCOME.SKIPPED, ROW_REASON.NOT_SEEN_RECENTLY]]);
+  assert.equal(launches("e1").length, runs, "nothing was started");
+
+  // Another boot's count is no count: a start by hand, and a new loss.
   assert.ok(ok(cli(E, ["session", "start", "--resume", "--home", home, "--json"]), "start --resume by hand").resume.resumed);
   await waitUntil(() => launches("e1").length === runs + 1, "e1's stand-in to run after the start by hand");
   await lose();
@@ -534,4 +539,23 @@ test("what status records never changes what it answers: a record that is corrup
   const local = spawnSync(process.execPath, [CLI, "status", "--json"], { cwd: H.dep, env, encoding: "utf8" });
   assert.equal(local.status, 0, local.stdout + local.stderr);
   assert.notEqual(readFileSync(clientFile, "utf8"), "{ not json", "control: the same read made here records");
+});
+
+test("a deployment named through a symlink reads and writes the same record as its real path: a plan through it neither loses nor duplicates what was seen, and a sweep through it judges the loss for both spellings", TMUX, async () => {
+  const I = v2Deployment({ name: "i", local: { "launch-configs": { "claude-i": config("claude", "dep-i") } } });
+  later.push(I);
+  const homes = await twoLost(I, ["i1", "i2"], "claude-i");
+  const link = join(base, "i-link");
+  symlinkSync(I.dep, link);
+  const plan = (dir) => ok(cli(I, ["session", "resume", "--deployment", dir, "--plan", "--json"]), `plan ${dir}`).rows.map((r) => [r.instance, r.outcome]);
+  const recorded = () => Object.keys(readSeen(join(I.dep, "agents")).homes).sort();
+  const both = [["i1", OUTCOME.RESUMED], ["i2", OUTCOME.RESUMED]];
+  assert.deepEqual(recorded(), [homes.i1, homes.i2].sort(), "one entry per home, by its real path");
+  assert.deepEqual(plan(I.dep), both);
+  assert.deepEqual(plan(link), both, "through the symlink: the same record");
+  assert.deepEqual(recorded(), [homes.i1, homes.i2].sort(), "neither lost nor duplicated");
+  assert.deepEqual(plan(I.dep), both);
+  const swept = await resumeSessions({ deployment: link, boot: "symlink-boot", start: () => Promise.resolve(RESUMED_ANSWER) });
+  assert.deepEqual(swept.rows.map((r) => [r.instance, r.outcome]), both);
+  assert.deepEqual(plan(I.dep), [["i1", OUTCOME.SKIPPED], ["i2", OUTCOME.SKIPPED]], "judged through the symlink, judged for the real path");
 });
