@@ -943,7 +943,7 @@ A row has no ⋯ button. Its actions (Open in split, Open pull request…,
 Knowledge & capabilities…, Start…, Restart with…, Stop…, Retire instance…, and
 Forget… for an instance its server no longer lists) are in the row's context
 menu (right-click, Shift+F10 or the ContextMenu key), as a workspace row's are.
-It opens at the pointer, or under the row from the keyboard; the arrow keys,
+It opens where you right-click, or on the row from the keyboard; the arrow keys,
 Home and End move in it, and Esc or Tab close it with the focus back on the
 row. A right-click never opens the row's terminal. While the menu can't be used
 (the roster is out of date, one of its actions is still running, or the row

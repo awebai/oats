@@ -8,6 +8,7 @@ import { instanceActs } from "../../client/instance-acts.mjs";
 import { iconElement } from "./shell-icons.mjs";
 import { reasonLine } from "./speaker-line.mjs";
 import { keymapTakes } from "./keybindings.mjs";
+import { whenRightButtonReleased } from "./context-menu-release.mjs";
 /** The menu's words for each act instanceActs can list. */
 const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'Start…', restart: 'Restart with…', stop: 'Stop…', retire: 'Retire instance…', forget: 'Forget…' });
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
@@ -39,8 +40,9 @@ export function captureInstanceActionMenu(root) {
 }
 
 /** The context menu of `row` (the roster row's button, its invoker): the menu element, for the caller to place
- * beside the row. It opens on the row's `contextmenu` (a right-click, Shift+F10, the Menu key), at the pointer
- * for a right-click and under the row for a key, on its first act; Esc or Tab close it back on the row.
+ * beside the row. It opens on the row's `contextmenu` (a right-click, Shift+F10, the Menu key), at its point when
+ * the event falls on the row (a right-click's pointer; Chromium gives a key's the focused row's centre), else under the row,
+ * on its first act; a right-click's once released (context-menu-release.mjs). Esc or Tab close it back on the row.
  * `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`.
  * `say(line)` says why the menu opens nothing (it is held: an act of it in flight, `stale`, a blocked row): one line,
  * announced, and the focus stays on the row. `stale`: the roster's stale reason while it is stale, else null.
@@ -92,7 +94,8 @@ export function instanceActions(doc, instance, { row, invoke, openLifecycle, ope
     if (restoreFocus && owns() && visible(row)) row.focus();
   };
   // Where it opens (the workspace row's context menu's rule): at the pointer when a right-click on the row opened it,
-  // else (a key: Shift+F10, the Menu key; a rebuild's reopening) under the row's start. Kept inside the window.
+  // or wherever else the event says it is on the row (Chromium: a key's, at the focused row's centre); else (no point,
+  // or one off the row; a rebuild's reopening with none) under the row's start. Kept inside the window.
   // `at`: { x, y } the pointer, { left, top } where a rebuild found it open, or null (under the row).
   let at = null;
   const position = () => {
@@ -110,17 +113,20 @@ export function instanceActions(doc, instance, { row, invoke, openLifecycle, ope
     (items.find((item) => item.dataset.action === action && !item.disabled) || defaultItem() || menu).focus();
   };
   menu.openActionMenu = open;
-  // The row's context menu: the page's own, never the native one (main's Copy/Paste); a right-click opens it and
-  // never activates the row (a secondary button sends no click). A held menu opens nothing and says why.
+  // The row's context menu: the page's own, never the native one (main's Copy/Paste); a right-click opens it once
+  // released and never activates the row (a secondary button sends no click). A held menu opens nothing and says why.
   row.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-    if (!owns() || !visible(row)) return;
-    const why = heldReason();
-    if (why !== null) { say(why); return; }
     const box = row.getBoundingClientRect();
     const atPointer = !!(event.clientX || event.clientY) && event.clientX >= box.left && event.clientX <= box.right
       && event.clientY >= box.top && event.clientY <= box.bottom;
-    open(undefined, atPointer ? { x: event.clientX, y: event.clientY } : null);
+    const place = atPointer ? { x: event.clientX, y: event.clientY } : null;
+    whenRightButtonReleased(event, () => {
+      if (!owns() || !visible(row)) return;
+      const why = heldReason();
+      if (why !== null) { say(why); return; }
+      open(undefined, place);
+    });
   });
   // Native popovers provide top-layer placement and outside-click dismissal.
   // Both native dismissal and explicit close update the menu's state.

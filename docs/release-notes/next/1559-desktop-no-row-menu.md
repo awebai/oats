@@ -14,6 +14,11 @@
 
 ## Fixed
 
+- **Desktop on Linux: a right-click on a workspace in the sidebar's list opens
+  its menu (Open in new window) and keeps it open.** It used to close as soon
+  as the mouse button came up. Shift+F10 and the ContextMenu key were not
+  affected.
+
 - **Desktop: Instance: name and colour… from the command palette keeps your
   place when there is no instance to act on.** It says "No instance is focused
   or selected." and the focus goes back where it was before the palette

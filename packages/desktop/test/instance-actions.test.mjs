@@ -418,8 +418,9 @@ test("the row's context menu gives way to the keymap's arrow chords, and only to
 });
 
 // Placed as the workspace row's context menu is (workspace-switcher.mjs openRowMenu): at the pointer for a
-// right-click on the row, under the row's start for a key's (no pointer) or a point outside the row, kept 8px inside the window.
-test("the row's context menu opens at the pointer for a right-click and under the row for a key, inside the window", () => {
+// right-click on the row (or wherever a key's event says it is on it: Chromium gives the focused row's centre), under the
+// row's start for an event with no point (jsdom's key-less model) or a point off the row, kept 8px inside the window.
+test("the row's context menu opens at the event's point on the row, else under the row, inside the window", () => {
   const dom = menuDom(), doc = dom.window.document, view = dom.window;
   Object.defineProperty(view, "innerWidth", { value: 400, configurable: true }); Object.defineProperty(view, "innerHeight", { value: 300, configurable: true });
   const control = attach(doc.body, menuFor(doc, { instance: "dev", home: "/home/dev" }, { invoke: assert.fail }));
@@ -428,11 +429,43 @@ test("the row's context menu opens at the pointer for a right-click and under th
   control.getBoundingClientRect = rect(0, 0, 200, 120);
   const at = (input) => { contextMenu(control, input); const place = [control.style.left, control.style.top]; control.hidePopover(); return place; };
   assert.deepEqual(at({ x: 60, y: 110 }), ["60px", "110px"], "a right-click: at the pointer");
-  assert.deepEqual(at({}), ["28px", "128px"], "a key: under the row, at its start");
+  assert.deepEqual(at({}), ["28px", "128px"], "no point: under the row, at its start");
   assert.deepEqual(at({ x: 380, y: 300 }), ["28px", "128px"], "a point outside the row is not a pointer on it");
   assert.deepEqual(at({ x: 210, y: 120 }), ["192px", "120px"], "kept inside the window's right edge");
   rowOf(control).getBoundingClientRect = rect(20, 250, 200, 28);
   assert.deepEqual(at({}), ["28px", "130px"], "with no room below, above the row");
+  dom.window.close();
+});
+
+// Linux and macOS fire a right-click's contextmenu on the press, with the right button down: opened then, the menu
+// would be light-dismissed by the release outside it (context-menu-release.mjs). It opens, or says why it is held,
+// once released, at the press's point; a cancelled press does neither.
+test("a right-click held down opens the row's context menu once released, and a held one says why only then", async () => {
+  const dom = menuDom(), doc = dom.window.document, view = dom.window, said = [];
+  let held = null;
+  const control = attach(doc.body, menuFor(doc, { instance: "dev", home: "/home/dev" }, { invoke: assert.fail, say: (line) => said.push(line) }));
+  const pending = attach(doc.body, menuFor(doc, { instance: "dev-held", home: "/home/dev-held" }, { invoke: () => new Promise((r) => { held = r; }), say: (line) => said.push(line) }));
+  pending.querySelector('[data-action="inspect"]').click();
+  rowOf(control).getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 30, width: 200, height: 30 });
+  const press = (menu, x = 0, y = 0) => {
+    const event = new view.MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, buttons: 2, clientX: x, clientY: y, view });
+    rowOf(menu).dispatchEvent(event); return event.defaultPrevented;
+  };
+  const end = (type) => view.dispatchEvent(new view.MouseEvent(type, { bubbles: true }));
+  const task = () => new Promise((r) => view.setTimeout(r));
+  assert.equal(press(control, 40, 12), true, "the native menu is prevented at once");
+  assert.equal(isOpen(control), false, "nothing opens while the button is down");
+  end("pointerup"); assert.equal(isOpen(control), false, "not in the release itself (its light dismiss runs there)");
+  await task();
+  assert.equal(isOpen(control), true); assert.equal(doc.activeElement.dataset.action, "inspect");
+  assert.equal(control.style.left, "40px", "at the press's point");
+  control.hidePopover();
+  press(control); end("pointercancel"); end("pointerup"); await task();
+  assert.equal(isOpen(control), false, "a cancelled press opens nothing, and a later release is not its own");
+  press(pending); assert.deepEqual(said, [], "a held menu says nothing while the button is down");
+  end("pointerup"); await task();
+  assert.deepEqual(said, ["Waiting for Knowledge & capabilities to finish"]); assert.equal(isOpen(pending), false);
+  held({}); await task();
   dom.window.close();
 });
 
