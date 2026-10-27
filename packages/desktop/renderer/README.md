@@ -1829,7 +1829,10 @@ Details disclosure, and `sticky` cards (background-spawn failures) that are
 exempt from the cap, report the operator's × through `onDismiss`, and collapse
 by `group` into one expandable "N … failed" entry when there are more than
 three. **No expiry timer**: dismissal is explicit, while a workspace
-visit or disposal revokes the old scope. Background arrival never focuses or
+visit or disposal revokes the old scope. An `app` card (sticky, with no Open
+and no buttons: the launch's session resume summary, `resume-notice.mjs`) is
+no workspace's: a workspace or connection change keeps it, and only its ×,
+its handle, the public `clear()` or disposal remove it. Background arrival never focuses or
 mints navigation intent. Actual notification entry does; dismissal recovery uses
 the shell's projection guard, a surviving next control or a visible same-scope
 return target. The polite live region is independent of roster repaints and

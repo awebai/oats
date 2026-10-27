@@ -7,6 +7,10 @@
  *   buttons  [{ label, ariaLabel?, activate(owns) }]  more owned callbacks, same ownership as Open;
  *   detail   technical text behind a "Details" disclosure;
  *   sticky   never evicted by capacity (the 3-entry bound holds non-sticky entries only);
+ *   app      (with sticky, never with descriptor, activate or buttons: anything else is refused) the app's own
+ *            notice, bound to no workspace or connection: a workspace switch and a connection change keep it, and
+ *            its Details keeps working there. It goes on its × (or its handle) and on dispose(), and on the
+ *            public clear() (a caller's own reset, which no workspace path calls: they use the scoped clear);
  *   onDismiss  called once when the operator dismisses it with its × (never on clear, eviction or dispose);
  *   group + groupLabel(n)  more than 3 sticky entries of one group collapse into one grouped entry
  *            that expands to its members, so the center stays bounded. */
@@ -62,9 +66,13 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
     try { applyFocus(() => el.focus({ preventScroll: true })); } finally { projecting = false; }
     revealInScrollport(root, el);
   };
-  function clear() {
-    actionSerial++; for (const entry of entries) entry.gone = true;
-    entries.length = 0; groups.clear(); list.replaceChildren(); returnTo = null; scope = generation();
+  /** Revoke every entry, or, for a workspace or connection change (`keepApp`), every entry but the app's own. */
+  function clear(keepApp = false) {
+    actionSerial++;
+    const kept = keepApp ? entries.filter(entry => entry.app) : [];
+    for (const entry of entries) if (!kept.includes(entry)) { entry.gone = true; entry.element.remove(); }
+    entries.splice(0, entries.length, ...kept); returnTo = null; scope = generation();
+    if (kept.length) layout(); else { groups.clear(); list.replaceChildren(); }
   }
   /** Keep `parent`'s children in `order`, moving only what must move (a moved node loses focus). */
   function reconcile(parent, order) {
@@ -117,7 +125,8 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
     || [...groups.values()].map(g => g.toggle).find(visible);
   function dismiss(entry) {
     const at = entries.indexOf(entry);
-    if (!alive || at < 0 || scope !== generation() || !visible(entry.element)) return;
+    // An app entry is no workspace's: a scope change never blocks its ×.
+    if (!alive || at < 0 || !entry.app && scope !== generation() || !visible(entry.element)) return;
     const focused = entry.element.contains(doc.activeElement);
     entries.splice(at, 1); entry.gone = true; entry.element.remove(); layout();
     if (focused) focus(nextDismiss(at) || (returnTo?.scope === scope && visible(returnTo.element) ? returnTo.element : fallbackFocus()));
@@ -141,12 +150,14 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
     onIntent(event);
   };
   root.addEventListener('pointerdown', entryIntent); root.addEventListener('focusin', entryIntent);
-  const unsubscribe = subscribe(() => { if (alive) clear(); });
-  const offConnection = subscribeConnections(() => { if (alive) clear(); });
+  const unsubscribe = subscribe(() => { if (alive) clear(true); });
+  const offConnection = subscribeConnections(() => { if (alive) clear(true); });
   return {
     notify(message, action = null) {
       if (!alive || typeof message !== 'string' || !message.trim()) return false;
-      if (scope !== generation()) clear();
+      const app = action?.app === true;
+      if (app && (action.sticky !== true || action.descriptor !== undefined || action.activate !== undefined || action.buttons !== undefined)) return false;
+      if (scope !== generation()) clear(true);
       const sticky = action?.sticky === true;
       // Explicit dismissal, not an accessibility-hostile expiry clock. Capacity
       // eviction skips the focused card and sticky cards; reset/disposal still revoke old scopes.
@@ -161,7 +172,7 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
       text.textContent = message; text.tabIndex = 0;
       const button = doc.createElement('button'); button.type = 'button'; button.className = 'app-toast-dismiss'; button.append(iconElement(doc, 'close', { size: 14 }));
       button.setAttribute('aria-label', 'Dismiss notification'); button.setAttribute('aria-describedby', text.id);
-      const record = { element, dismiss: button, sticky, gone: false,
+      const record = { element, dismiss: button, sticky, app, gone: false,
         group: sticky && typeof action?.group === 'string' && action.group ? action.group : null,
         groupLabel: typeof action?.groupLabel === 'function' ? action.groupLabel : null,
         onDismiss: typeof action?.onDismiss === 'function' ? action.onDismiss : null };
@@ -194,7 +205,8 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
         const row = doc.createElement('div'); row.className = 'app-toast-actions';
         let feedback = null;
         const birthScope = scope;
-        const eligible = () => alive && scope === birthScope && scope === generation() && entries.includes(record) && visible(element);
+        // An app entry has no buttons (refused above), so its Details is bound to no scope.
+        const eligible = () => alive && (app || scope === birthScope && scope === generation()) && entries.includes(record) && visible(element);
         for (const spec of buttons) {
           const b = doc.createElement('button'); b.type = 'button'; b.className = 'app-toast-action'; b.textContent = spec.label;
           if (typeof spec.ariaLabel === 'string' && spec.ariaLabel.trim()) b.setAttribute('aria-label', spec.ariaLabel);

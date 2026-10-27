@@ -226,7 +226,9 @@ after it, and at the bar's right **Spawn instance**, its words alone (a ground
 only on hover), which
 opens Quick Open (⌘P / Alt+P, named in its tooltip) to pick a soul and then
 the spawn dialog, and the settings cog, whose menu holds **Theme…**, **Font…** and
-**Keyboard shortcuts…**, each with its shortcut when it has one. A window opens on the **Workspace
+**Keyboard shortcuts…**, each with its shortcut when it has one, and **Resume
+lost sessions when Desktop opens**, an on/off item with a check mark when on
+([When Desktop opens](desktop-instance-start.md#when-desktop-opens)). A window opens on the **Workspace
 overview** page, on its **Souls** tab: at launch, and after you choose a
 workspace for it. Connections is in the command palette
 (**Settings: Connections…**), and the palette opens with its shortcut or

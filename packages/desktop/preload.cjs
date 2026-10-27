@@ -66,6 +66,22 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
     return () => ipcRenderer.removeListener("chord-family:changed", fn);
   },
 
+  /** Lost sessions resumed when Desktop opens (session-resume-launch.mjs). The launch's summary, taken once
+   * (null to every later caller, and before the sweep has one); the renderer decodes it again
+   * (resumeSummaryFact) before use. */
+  takeResumeNotice: () => ipcRenderer.invoke("session-resume:take"),
+  /** A summary became pending: take it (takeResumeNotice). No payload crosses; returns an unsubscribe. */
+  onResumeNoticeReady: (cb) => {
+    const fn = () => cb();
+    ipcRenderer.on("session-resume:ready", fn);
+    return () => ipcRenderer.removeListener("session-resume:ready", fn);
+  },
+  /** The preference, `{ resumeAtLaunch }`, read now (a file that is not one answers false). */
+  resumeAtLaunch: () => ipcRenderer.invoke("session-resume:preference"),
+  /** Write the preference: `{ ok: true, resumeAtLaunch }` or `{ ok: false, code }`. It takes effect at the
+   * next launch: it never starts or cancels a sweep. */
+  setResumeAtLaunch: (value) => ipcRenderer.invoke("session-resume:set-preference", value),
+
   /** Runtime workspace switcher (privileged; renderer modal is the UX layer). */
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),

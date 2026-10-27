@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { launchPromptOutcome, launchPromptDiffered, retainedSpawnDetails, retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
-import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
+import { launchPromptOutcome, launchPromptDiffered, retainedSpawnDetails, retainedSpawnMessage, boundedWarnings, boundedWarningsValid, launchFlagIgnored, FLAG_IGNORED_WARNINGS, FLAG_IGNORED_UNITS } from '../../client/launch-prompt-outcome.mjs';
+import { DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 import { launchPrompts, retained, differed, DIFFERED } from './helpers/launch-prompt-fixture.mjs';
 const d = { instance: 'dev-one', home: '/example/dev-one' };
 test('optional/partial target and diagnostics never turn retention into success or input authority', () => {
@@ -241,4 +241,22 @@ test('outcome: an answer the generic reason takes over the bound is unknown at t
   const whole = launchPromptOutcome(filled({ status: 'blocked', reason: 'blocked: unexpected prompt', answers: [] }));
   assert.equal(whole.status, 'blocked'); assert.equal(whole.receipt.length, 16);
   assert.deepEqual(launchPromptOutcome(whole), whole);
+});
+
+test('boundedWarnings: display lines in order, cut by position at both bounds; launchFlagIgnored uses it', () => {
+  assert.deepEqual(boundedWarnings(undefined), { warnings: [], omitted: 0 });
+  assert.deepEqual(boundedWarnings('one warning'), { warnings: [], omitted: 0 });
+  assert.deepEqual(boundedWarnings(['a', '', 7, null, 'token=abc123secret', 'b\nc']), { warnings: ['a', DETAIL_WITHHELD, 'b c'], omitted: 0 });
+  const many = Array.from({ length: FLAG_IGNORED_WARNINGS + 3 }, (_, i) => `w${i}`);
+  assert.deepEqual(boundedWarnings(many), { warnings: many.slice(0, FLAG_IGNORED_WARNINGS), omitted: 3 });
+  const long = 'x'.repeat(MAX_DISPLAY_LINE);
+  assert.equal(FLAG_IGNORED_UNITS, 2 * MAX_DISPLAY_LINE);
+  assert.deepEqual(boundedWarnings([long, 'a', long, 'b']), { warnings: [long, 'a'], omitted: 2 });
+  for (const raw of [many, [long, 'a', long, 'b'], ['a']]) {
+    const b = boundedWarnings(raw);
+    assert.ok(boundedWarningsValid(b.warnings, b.omitted));
+    assert.deepEqual(launchFlagIgnored({ launchPrompts: { status: 'flag-ignored' }, warnings: raw }), { reason: null, ...b });
+  }
+  assert.equal(boundedWarningsValid(['a'], 1), false);
+  assert.equal(boundedWarningsValid([], 0), true);
 });

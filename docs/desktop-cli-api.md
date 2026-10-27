@@ -5994,6 +5994,69 @@ stored file); a remote upload adds `server`, `instance` and `stderr?`. Errors:
 sha256 mismatch; the remote file is left), `E_SESSION_UNKNOWN`,
 `E_REMOTE_INCOMPATIBLE`.
 
+### How the clients run the sweep
+
+The kernel's machine sweep, `oats session resume --json`, is run by a client
+once per launch ([When Desktop opens](desktop-instance-start.md#when-desktop-opens)).
+The clients share one runner and one reader, so the Desktop and the TUI run it
+and read it the same way.
+
+**The runner**, `runResumeSweep` (`packages/client/session-resume-cli.mjs`):
+
+- It runs only when the probe is accepted, its `bin` is absolute and its
+  `features` list `session-resume` (`resumeSupported`). Otherwise it runs
+  nothing and answers `E_CLI_UNAVAILABLE` or `E_RESUME_FEATURE`. Nothing falls
+  back.
+- The argv is exactly `session resume --json`, with no `--deployment`, no
+  `--plan` and no `--server`. The working directory is `/`, so the kernel
+  resolves no deployment from the client's own. The environment is the
+  client's, without what Desktop's packaging adds (`cliEnvironment`) and without
+  the instance variables (`withoutInstanceVariables`,
+  `packages/client/kernel-environment.mjs`): a client started inside an
+  instance's pane must not scope the sweep to that instance. `OATS_HOME_DIR`
+  passes through.
+- It sets no deadline. The sweep runs in a process session of its own, and its
+  stdout and stderr are files, not pipes: `execFileToFiles`
+  (`packages/client/file-output-exec.mjs`) unlinks them right after the spawn
+  and reads them back from its own descriptors. Neither the client's exit nor
+  a signal to it reaches the sweep, and nothing is left on disk. A caller that
+  passes its own exec must keep those three properties: detached, file-backed,
+  and never signalling the child.
+- It answers the kernel's envelope: the result at exit 0, and an `ok:false`
+  envelope whatever the exit (`E_RESUME_BUSY` exits 1). Otherwise it answers
+  a code of its own, with no message: `E_CLI_OUTPUT_LIMIT` (more than 4 MiB),
+  `E_CLI_PROTOCOL` (no envelope), `E_CLI_FAILED` (a nonzero exit without an
+  `ok:false` envelope, or an exec that throws). No stderr and no exception text
+  reaches the answer.
+
+**The reader**, `readResumeSweep` (`packages/client/session-resume.mjs`),
+gives one of five readings: `unsupported` (nothing ran), `busy`
+(`E_RESUME_BUSY`), `failed` with a code, `quiet`, or `notice` with a summary.
+A plan answer (`plan: true`) is quiet.
+
+- The summary is facts: per row its instance, its deployment and its outcome's
+  reason, never a word of the kernel's text. `already-running` and `skipped`
+  rows are counted nowhere. A notice exists only when a row is `resumed`,
+  `fresh`, `blocked` or `refused`. Opted-out and unchecked deployments are
+  lines inside such a notice, never a notice on their own.
+- It is tolerant. A row without a string `instance` and `deployment`, with an
+  unknown `outcome`, or whose name the display filter withholds or empties, is
+  dropped. An unknown `reason` under a known outcome is read as no reason and
+  worded generically. A refusal's `code` is kept only when it matches
+  `^E_[A-Z0-9_]{1,64}$`.
+- A row's `warnings` are kept whole and in order, each as one display line
+  (`displayLine`), and cut by position only, at the bounds of
+  `launchFlagIgnored` (16 lines, 4096 UTF-16 units; `boundedWarnings`,
+  `packages/client/launch-prompt-outcome.mjs`). No warning is picked, matched
+  or dropped by its words.
+- A refused row's `message` is the kernel's prose. It is shown only after
+  "OATS says:", attributed, through the display filter, and never matched.
+- The summary keeps at most 100 rows, in the answer's order, and counts the
+  rest. The headline counts the real totals. `resumeSummaryFact` is the
+  summary's decoder at a boundary (the Desktop's main process hands it to a
+  window over IPC), and `resumeNotice` writes the headline and the Details in
+  the clients' own words.
+
 ### Launch configurations
 
 ```text

@@ -71,6 +71,7 @@ import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, NAV_TABS, navTab, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons, iconElement } from "./shell-icons.mjs";
 import { createSettingsMenu } from "./sidebar-settings.mjs";
+import { createResumeNotice, createResumePreference } from "./resume-notice.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
@@ -2339,6 +2340,8 @@ for (const button of document.querySelectorAll("#nav-foot [data-action]")) {
 }
 const settingsMenu = createSettingsMenu(document, document.getElementById("sidebar-settings"), {
   run: (id) => runAction(id), shortcut: (id) => { const chord = getBinding(id, isMac); return chord ? formatChord(chord, isMac) : ""; },
+  // Its on/off item reads main's preference each time the menu opens (resume-notice.mjs).
+  readChecked: (id) => (id === "app.resumeAtLaunch" ? resumePreference.read() : null),
 });
 
 // This is a chooser entry, not a launch or an inspection preselection. Capture
@@ -2369,6 +2372,7 @@ const chordDetail = (id) => () => {
 };
 const palette = createPalette({
   loadInstances: async () => {
+    resumePreference.refresh(); // its On/Off detail, read as the palette opens, beside (never before) the instances
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
     // The last-focus record as the palette opens: its order (#1383).
@@ -2399,6 +2403,7 @@ const palette = createPalette({
     { label: "Font: choose…", detail: chordDetail("app.fontPicker"), run: () => runAction("app.fontPicker") },
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
+    { label: "Settings: Resume lost sessions when Desktop opens", detail: () => resumePreference.detail(), run: () => runAction("app.resumeAtLaunch") },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
     // The palette hands focus to its command: back where it was opened first (a row the toggle hides then passes it to
     // the current row; a terminal keeps it), then the toggle, as its chord does from there.
@@ -2968,6 +2973,7 @@ registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", 
 registerAction({ id: "app.chooseSoul", label: "Souls: choose a soul to spawn (Workspace › Souls)", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
 registerAction({ id: "app.connections", label: "Settings: Connections…", context: "global", run: () => openConnections() });
+registerAction({ id: "app.resumeAtLaunch", label: "Resume lost sessions when Desktop opens", context: "global", run: () => resumePreference.toggle() });
 // A window with no workspace, showing the switcher (#481). No default chord: Ctrl+Shift+N stays Choose soul.
 if (typeof desktopBridge.windowOpenWorkspace === "function") {
   registerAction({ id: "app.newWindow", label: "Window: new window", context: "global", run: () => { void desktopBridge.windowOpenWorkspace(null); } });
@@ -3418,3 +3424,11 @@ import("./views/cli-status.mjs").then(({ refreshCli, reprobeCli }) => {
 
 // Home surface: the Workspace page (Workspace overview), on Souls, when no instance is open (the product owner, 2026-10-23).
 showStage("spawn");
+
+// Lost sessions resumed when Desktop opens (resume-notice.mjs): the preference (the settings menu's on/off item,
+// app.resumeAtLaunch and its palette entry) and the launch's notice, taken now and on each ready event, posted as
+// the app's own sticky entry. Declared last: nothing above calls them before the module has run.
+const resumePreference = createResumePreference({ desk, notify: (text) => notifications.notify(text) });
+const resumeLaunchNotice = createResumeNotice({ desk, notify: notifications.notify });
+resumeLaunchNotice.start();
+window.addEventListener("pagehide", () => resumeLaunchNotice.dispose(), { once: true });

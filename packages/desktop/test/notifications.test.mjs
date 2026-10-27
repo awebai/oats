@@ -264,3 +264,61 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: action butto
   assert.equal(u.dom.window.getComputedStyle(u.doc.querySelector('.app-toast-group-list .app-toast')).background, 'var(--primary-bg)');
   assert.match(notificationCSS, /\.app-toast button:focus-visible \{ background:var\(--primary-fg\); color:var\(--primary-bg\); \}/, 'focus inverts inside the toast (control rule 2)');
 });
+
+// `app: true` (session resume at launch): the app's own notice, bound to no workspace or connection. Valid only
+// sticky and with no descriptor, activate or buttons. A workspace switch (its listener and the stale-scope clear in
+// notify) and a connection change keep it, and its Details keeps toggling there; it goes on its ×, its handle,
+// dispose() and the public clear(). Every other entry behaves as before.
+test('app: refused unless sticky and free of descriptor, activate and buttons; posted like any sticky entry', t => {
+  const u = setup(t);
+  for (const bad of [{ app: true }, { app: true, sticky: false }, { app: true, sticky: true, descriptor: null }, { app: true, sticky: true, activate: () => {} },
+    { app: true, sticky: true, buttons: [] }, { app: true, sticky: 'yes' }]) assert.equal(u.center.notify('m', bad), false, JSON.stringify(bad));
+  assert.deepEqual(u.texts(), [], 'nothing posted');
+  const hostile = '<img src=x onerror=evil()>';
+  const h = u.center.notify('OATS resumed 1 instance whose session was lost.', { sticky: true, app: true, detail: hostile });
+  assert.equal(h.shown, true); assert.deepEqual(u.texts(), ['OATS resumed 1 instance whose session was lost.']);
+  const panel = u.doc.querySelector('.app-toast-detail');
+  assert.equal(panel.textContent, hostile, 'the detail is text'); assert.equal(u.doc.querySelector('img'), null);
+  for (let n = 0; n < 5; n++) u.center.notify(`m${n}`);
+  assert.equal(h.shown, true, 'sticky: never evicted by capacity');
+});
+
+test('app: survives a workspace switch (listener and stale scope) and a connection change; a non-app sticky entry does not', t => {
+  const dom = new JSDOM('<!doctype html><body><button id="fallback">x</button></body>'); t.after(() => dom.window.close());
+  const doc = dom.window.document; let gen = 0, workspaceListener, connectionListener;
+  const center = createNotificationCenter({ document: doc, generation: () => gen, subscribe: fn => { workspaceListener = fn; return () => {}; },
+    subscribeConnections: fn => { connectionListener = fn; return () => {}; }, fallbackFocus: () => doc.querySelector('#fallback') });
+  t.after(() => center.dispose());
+  const texts = () => [...doc.querySelectorAll('.app-notifications > ol > .app-toast > .app-toast-text')].map(el => el.textContent);
+  const app = center.notify('resumed', { sticky: true, app: true, detail: 'a: resumed in its own conversation.' });
+  const sticky = center.notify('failed', { sticky: true }), plain = center.notify('plain');
+  gen++; workspaceListener();
+  assert.equal(app.shown, true, 'the switch keeps the app entry'); assert.equal(sticky.shown, false, 'a non-app sticky entry is still cleared');
+  assert.equal(plain.shown, false); assert.deepEqual(texts(), ['resumed']);
+  // Its Details toggles after the switch: it is bound to no scope.
+  const toggle = doc.querySelector('.app-toast-details'), panel = doc.getElementById(toggle.getAttribute('aria-controls'));
+  toggle.click(); assert.equal(panel.hidden, false); assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  // The stale-scope clear inside notify (a generation moved with no listener call yet).
+  const other = center.notify('other sticky', { sticky: true });
+  gen++; center.notify('next workspace');
+  assert.equal(app.shown, true); assert.equal(other.shown, false); assert.deepEqual(texts(), ['resumed', 'next workspace']);
+  toggle.click(); assert.equal(panel.hidden, true, 'Details still toggles');
+  // A connection change.
+  const scoped = center.notify('scoped', { sticky: true });
+  connectionListener();
+  assert.equal(app.shown, true); assert.equal(scoped.shown, false); assert.deepEqual(texts(), ['resumed']);
+  // Its × still works after a generation moved with no listener call (the stale-dismissal guard is not its).
+  gen++; toggle.focus(); doc.querySelector('.app-toast-dismiss').click();
+  assert.equal(app.shown, false, 'the × removes it'); assert.deepEqual(texts(), []);
+  assert.equal(doc.activeElement, doc.querySelector('#fallback'), 'focus inside it moves on');
+});
+
+test('app: dispose() and the public clear() remove it; onDismiss runs only on its ×', t => {
+  const u = setup(t), seen = [];
+  const a = u.center.notify('A', { sticky: true, app: true, onDismiss: () => seen.push('A') });
+  u.center.clear(); assert.equal(a.shown, false, "the public clear is a caller's full reset");
+  const b = u.center.notify('B', { sticky: true, app: true, onDismiss: () => seen.push('B') });
+  u.visit(); assert.equal(b.shown, true);
+  u.cards()[0].querySelector('.app-toast-dismiss').click(); assert.deepEqual(seen, ['B']); assert.equal(b.shown, false);
+  const c = u.center.notify('C', { sticky: true, app: true }); u.center.dispose(); assert.equal(c.shown, false);
+});

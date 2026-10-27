@@ -57,6 +57,9 @@ import { validWorkspaceId } from "./renderer/workspace-id.mjs";
 import { validLayout } from "./renderer/layout-handover.mjs";
 import { createWindowSet } from "./window-set.mjs";
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from "./window-records.mjs";
+import { createResumeAtLaunch, installResumeHandlers, readResumePreference, sendToLiveWindows } from "./session-resume-launch.mjs";
+import { runResumeSweep, resumeSupported } from "../client/session-resume-cli.mjs";
+import { readResumeSweep } from "../client/session-resume.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -375,6 +378,19 @@ async function listOnComputer(path) {
   if (failure) console.error(`oats-desktop: could not list ${path} on this computer: ${failure.code}: ${failure.message}`);
   return failure;
 }
+// Lost sessions resumed when Desktop opens (session-resume-launch.mjs): the kernel's machine sweep, once per
+// app launch, started by the primary instance's startup only, after its deployments-list step settles. Its
+// child is detached and file-backed: shutdown() never touches it. The preference is this file, read when the
+// sweep starts; a missing file is on.
+const RESUME_PREFERENCE_FILE = () => join(app.getPath("userData"), "session-resume.json");
+const resumeAtLaunch = createResumeAtLaunch({
+  readCli: () => settledCli(readServedCli, { attempts: 60 }),
+  supported: resumeSupported, run: (cli) => runResumeSweep(cli), read: readResumeSweep,
+  preference: () => readResumePreference(RESUME_PREFERENCE_FILE()),
+  broadcast: () => sendToLiveWindows(BrowserWindow.getAllWindows(), "session-resume:ready"),
+  log: (line) => console.log(line), error: (line) => console.error(line),
+});
+installResumeHandlers({ ipc: ipcMain, guard, launch: resumeAtLaunch, file: RESUME_PREFERENCE_FILE });
 // Where Add workspace → Browse… opens next (picker-default-path.mjs): the
 // parent of the workspace most recently added or opened, across launches.
 const LAST_WORKSPACE_PARENT_FILE = () => join(app.getPath("userData"), "last-workspace-parent.json");
@@ -1078,8 +1094,10 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
     if (serverHost.owned() && startupSet.write) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), startupSet.open);
   }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
-  // This computer's deployments list (#1390): the one-time import, then the launch's own deployment.
-  void startupDeploymentList(launchedPath).catch((e) => console.error(`oats-desktop: ${e?.message || e}`));
+  // This computer's deployments list (#1390): the one-time import, then the launch's own deployment. Then,
+  // whether it succeeded or failed, the launch's session resume sweep (it reads the registry the import fills).
+  void startupDeploymentList(launchedPath).catch((e) => console.error(`oats-desktop: ${e?.message || e}`))
+    .finally(() => resumeAtLaunch.start());
   // Window activity: visibility flips that are not focus flips, hooked on
   // every window BEFORE the first one exists (focus/blur are app-level below).
   app.on("browser-window-created", (_event, win) => {

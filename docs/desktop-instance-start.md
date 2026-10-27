@@ -238,3 +238,68 @@ child remains running; a fallback shell or dead pane is stopped. Errors that
 prevent a reliable observation remain unknown. A row that records a Herdr
 target (Herdr was removed in 0.31.0) is never observed: it shows the kernel's
 `E_HERDR_REMOVED` text, and Open and Start are disabled.
+
+## When Desktop opens
+
+After a shutdown, a reboot or a crash, the instances that were running have
+lost their sessions. When OATS Desktop opens, it asks the kernel to resume
+them: it runs `oats session resume --json` once per app launch, and the kernel
+does the rest. The kernel looks at every deployment on this computer's list
+(local deployments only, never a server's) and resumes each lost session as it
+decides. What the kernel does to a session, and when it starts one fresh from
+its briefing instead, is the kernel's rule, written beside the command.
+Desktop owns no session: it runs the command, waits for the answer and shows a
+summary.
+
+The sweep runs once in each launch, after Desktop has imported its saved
+workspaces into this computer's deployments list, because the sweep reads that
+list. It does not hold up the windows or the roster. It does not run again for
+a new window, a workspace switch, a restarted backend or when Desktop comes
+back to the front. Quitting Desktop and opening it again is a new launch, and
+it runs again: the kernel's machine lock and its record of this boot make
+that safe. It runs only when the installed OATS CLI advertises the
+`session-resume` feature. Without it, nothing runs and nothing is said.
+
+**The notice.** When the sweep resumed an instance, started one fresh, left one
+waiting for you or could not resume one, one window shows a notice that stays
+until you dismiss it. Switching that window's workspace does not take it
+away. The headline counts them ("OATS resumed 3 instances whose sessions were
+lost. 1 of them is waiting for you: open its terminal."). Its Details list
+each instance, in this order: those waiting for you (at a launch prompt, or to
+choose how to resume it: open its terminal), those that could not be resumed,
+those that started fresh and why, then those resumed in their own
+conversation. The deployments the sweep did not check are listed after them.
+Text from OATS appears only after "OATS says:", as a quote. The Details show
+at most 100 instances, then say how many more there are. A window that opens
+after the sweep has finished still gets the notice, and only one window ever
+shows it. Closing that window loses it.
+
+There is no notice when nothing was lost, when the sessions were already
+running, when another sweep holds the machine (another Desktop, the TUI, or
+`oats session resume` run by hand), or when the only thing to report is a
+deployment that was not checked. A sweep that fails writes one line with its
+code to Desktop's log, and shows nothing.
+
+**Quitting does not stop a sweep.** The sweep runs in a process session of its
+own, and writes its answer to files rather than to Desktop. Quitting Desktop,
+or Desktop crashing, while it runs leaves it to finish. Its answer is then
+not shown.
+
+**Turning it off.** The settings menu (the cog at the foot of the sidebar)
+holds **Resume lost sessions when Desktop opens**, a check item, on by
+default. The palette has the same switch as **Settings: Resume lost sessions
+when Desktop opens**, showing On or Off. The choice is Desktop's own, kept in
+`session-resume.json` in Desktop's user-data folder, and takes effect at the
+next launch. Turning it off does not stop a sweep that is running, and
+turning it on does not start one. If that file cannot be read, Desktop treats
+the preference as off for that launch and writes one line to its log: it does
+not resume sessions when it cannot tell what you chose.
+
+To turn resuming off for one deployment, whichever client opens, set
+`session.resume: off` in that deployment's `oats-local.yaml`. That switch is
+the kernel's. Desktop only reports it, as a line under the notice's Details:
+"Not checked in ~/acme: resuming is turned off for this deployment
+(session.resume: off)."
+
+How the clients run the command and read its answer is in
+[desktop-cli-api.md](desktop-cli-api.md#how-the-clients-run-the-sweep).

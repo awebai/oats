@@ -95,6 +95,18 @@ The shell has three navigation contexts:
   the same directory, then a rename), and sends plain state to every window
   (`chord-family:get`, `chord-family:set`, `chord-family:changed`). The kernel
   never reads the file. `renderer/chord-family.mjs` is its page side.
+- `session-resume-launch.mjs` — lost sessions resumed when Desktop opens: once
+  per app launch, after the startup's deployments-list step settles, main runs
+  the kernel's machine sweep (`packages/client/session-resume-cli.mjs`, its
+  child detached and file-backed, so quitting never cancels it; nothing in
+  `shutdown()` touches it) and keeps a `notice` reading as the launch's pending
+  summary, taken once (`session-resume:take`, `session-resume:ready`). The
+  preference is `userData/session-resume.json` (`session-resume:preference`,
+  `session-resume:set-preference`, written atomically); a missing file is on,
+  an unreadable one off for that launch. `renderer/resume-notice.mjs` is its
+  page side: the notice (a sticky `app` entry of the notification center,
+  which a workspace switch keeps) and the settings menu's check item
+  ([When Desktop opens](../../docs/desktop-instance-start.md#when-desktop-opens)).
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.
 - `renderer/views/*.mjs` — feature views per the shared contract:
@@ -218,6 +230,17 @@ function over what its caller holds:
   feature. Each client puts the four states into its own words; the Desktop's
   are in `renderer/workspace-switcher.mjs`
   ([desktop-deployment-model.md](docs/desktop-deployment-model.md#this-computers-deployments-list)).
+- **The session resume sweep** (`session-resume-cli.mjs`, `session-resume.mjs`).
+  `runResumeSweep` runs `oats session resume --json` (feature
+  `session-resume`, cwd `/`, instance variables scrubbed, no deadline) through
+  `file-output-exec.mjs` `execFileToFiles`: execFile's signature, the child in
+  a session of its own, its stdout and stderr unlinked files read back from
+  the client's own descriptors, never signalled, so the change outlives the
+  client. `readResumeSweep` reads the answer into a summary of facts,
+  `resumeSummaryFact` decodes it at a boundary and `resumeNotice` puts it in
+  the clients' words; warnings are cut by position (`boundedWarnings`, shared
+  with `launchFlagIgnored`) and kernel text appears only after "OATS says:"
+  ([desktop-cli-api.md](../../docs/desktop-cli-api.md#how-the-clients-run-the-sweep)).
 
 It holds the souls a deployment offers and one soul's inspection: the spawn
 catalog (`soul-catalog.mjs`, over the holding rules of `keyed-catalog.mjs`),
