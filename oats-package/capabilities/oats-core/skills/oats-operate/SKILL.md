@@ -289,8 +289,18 @@ terminal); when `oats version --json` lists `session-attach-detach-key`, add
 `--detach-key <key>` (`'C-\'` is the suggested one) and that key leaves it.
 
 
-These act on **other** instances — typically children you spawned — and only
-when your task or your human says so. Retirement runs every module's retire
+These act on **other** instances, and only when your task or your human says
+so, with one standing exception: **retire your own children when they are
+finished, without asking anyone.** A child is finished when its work has
+landed (or was dropped), nothing waits on it, and, if it has a knowledge
+harvest duty, its final harvest checkpoint is recorded and its harvester
+launched (the harvester snapshots at spawn, and retirement keeps a recovery
+copy). A child runs that checkpoint before it reports done, and says so
+("done, harvested: <harvester>" or "done, no harvest duty"); ask only when its
+report lacks that line. Then `oats retire <child>` and record it in your
+state. Retire children
+before yourself, and never another instance's: tell its parent instead. Your
+soul's own capabilities may say more about when work has landed. Retirement runs every module's retire
 hook (identities, scheduled jobs) and retains a worktree with work in it
 unless told to discard. An extra tree in the home is removed when it is
 clean and retained when it holds work; discarding does not apply to it.
@@ -331,6 +341,13 @@ oats instance attention --clear                                  # once you have
   Clear it yourself first thing when the answer arrives.
 - Only for input you wait on. Never for FYIs, progress or "done" reports:
   those go through your task's usual channel.
+- **The human talks to your parent, not to you** (you were spawned by another
+  instance and your human has not addressed you directly): send the question
+  to your parent through your messaging layer, then end your turn. A parent
+  that receives a child's question for the human sets needs-input itself,
+  naming the child (`<child> asks: …`), and relays the answer back. Clear it
+  once relayed. Each instance's claim is its own: never set one for another
+  home.
 
 The Claude Code emitter is separate and automatic. In a Claude instance,
 oats.core's hooks report a pending permission prompt or question themselves

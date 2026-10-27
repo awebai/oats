@@ -9,63 +9,37 @@ You are the golden-fixture developer soul.
 <!-- oats:kernel:instance-boundary src=<kernel>/injects/instance-boundary.md -->
 ## Your two directories
 
-**`<instance-home>` is where this session starts** — the specific gitignored OATS
-instance directory you woke up in, given to your harness and to every lifecycle
-hook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository
-root, and not the work tree. Anything that says "your home" means this directory.
+**IMPORTANT: ALWAYS FOLLOW THESE INSTRUCTIONS FOR WORKING**, here and in your
+work-mode block below.
 
-- **Your brain and your state live here**: `AGENTS.md` (your composed
-  instructions), `TASK.md` (this task), `instance.json` (what you were given
-  and from where), and whatever working state your role keeps — your knowledge
-  layer names those files, if you have one. They belong here, not in the work
-  tree.
-- **Run OATS operational/lifecycle commands, and commands from active
-  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,
-  and whatever your own capabilities add; for example, when the
-  aweb messaging capability is active, run `aw` there too. They resolve their
-  scope from the directory you run them in, so running them from the work tree
-  points them at the wrong deployment. To act on a different package or config
-  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.
-- **Soul work is repository work.** If your TASK is to change soul content that
-  lives in this repository, that is ordinary code work — do it on tracked paths
-  under `work/`, reviewed like the rest. How your own learnings reach your soul
-  is your knowledge capability's business, and its instructions below say so if you
-  have one.
+- **Your home** (`$OATS_INSTANCE_HOME`, where this session starts; not `~`,
+  not the repository) holds your brain and state: `AGENTS.md`, `TASK.md`,
+  `instance.json` and your role's working state. **ALWAYS run `oats` and your
+  capabilities' commands from your home**: they resolve their scope from where
+  you run them. For another scope on purpose: `oats <cmd> --dir <path>`.
 
-**`<instance-home>/work` is your repository or workspace view** — whatever your
-work mode grants you of the code.
+**`./work` is your repository or workspace view**, as your work mode grants it.
 
 - **Repository work happens there, or in the extra trees your mode block
   grants, and nowhere else**: reading, editing, building, testing, git and
   commits, on repository content. Never from the main checkout or from your
   home root, beyond what your mode block names.
-- **What your mode permits is the mode block's call**, immediately below. Some
-  modes are read-only, some share a tree with others, and that block is the
-  authority on which operations are yours to perform.
-- This is about where the *repository's* content lives, not a ban on writing
-  anywhere else: the episodic files above, and whatever artifacts your role
-  calls for (a report written to a temp file before mailing it, a scratch
-  script), go where your task and tooling direct.
-
-Move between the two as the task needs — the boundary is what each directory is
-*for*, not a place to settle in.
+- **Your mode block, below, is the authority on what you may do there.**
+- When your task is to change soul content in the repository, that is ordinary
+  repository work; your own learnings reach your soul only through your
+  knowledge capability, if you have one.
+- Reports and scratch files go where your task and tooling direct.
 <!-- /oats:kernel:instance-boundary -->
 
 <!-- oats:work-mode:attached src=<kernel>/injects/work-attached.md -->
 ## Work mode: attached
 
-Your `./work` is a symlink to **another instance's work tree** — you share
-their branch and their uncommitted state. You are a guest in their workspace.
+Your `./work` is **another instance's work tree**, its branch and uncommitted
+state. You are a guest.
 
-- **Never switch branches, never rebase, never reset** — the tree belongs to
-  its owner; your job is focused additions on top of their current state.
-- Keep your changes and commits **small and clearly attributable** (your
-  instance name in commit messages where ambiguity is possible).
-- Do not touch files the owner is mid-editing unless your task says so; when
-  in doubt, coordinate through your messaging capability or your spawner.
-- Retiring you never removes the shared tree — cleanup of the tree is the
-  owner's concern, not yours.
-
-This mode fits service agents (harvesters, reviewers, fixers) that operate
-on a live instance's work in flight.
+- **NEVER switch branches, rebase or reset.** Keep changes and commits small;
+  name yourself in commit messages where authorship could be unclear.
+- Leave files the owner is editing alone unless your task says otherwise; when
+  unsure, ask through your messaging capability or your spawner.
+- The tree's cleanup is its owner's; retiring you never removes it.
 <!-- /oats:work-mode:attached -->

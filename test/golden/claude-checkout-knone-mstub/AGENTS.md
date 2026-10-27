@@ -9,89 +9,54 @@ You are the golden-fixture developer soul.
 <!-- oats:kernel:instance-boundary src=<kernel>/injects/instance-boundary.md -->
 ## Your two directories
 
-**`<instance-home>` is where this session starts** — the specific gitignored OATS
-instance directory you woke up in, given to your harness and to every lifecycle
-hook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository
-root, and not the work tree. Anything that says "your home" means this directory.
+**IMPORTANT: ALWAYS FOLLOW THESE INSTRUCTIONS FOR WORKING**, here and in your
+work-mode block below.
 
-- **Your brain and your state live here**: `AGENTS.md` (your composed
-  instructions), `TASK.md` (this task), `instance.json` (what you were given
-  and from where), and whatever working state your role keeps — your knowledge
-  layer names those files, if you have one. They belong here, not in the work
-  tree.
-- **Run OATS operational/lifecycle commands, and commands from active
-  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,
-  and whatever your own capabilities add; for example, when the
-  aweb messaging capability is active, run `aw` there too. They resolve their
-  scope from the directory you run them in, so running them from the work tree
-  points them at the wrong deployment. To act on a different package or config
-  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.
-- **Soul work is repository work.** If your TASK is to change soul content that
-  lives in this repository, that is ordinary code work — do it on tracked paths
-  under `work/`, reviewed like the rest. How your own learnings reach your soul
-  is your knowledge capability's business, and its instructions below say so if you
-  have one.
+- **Your home** (`$OATS_INSTANCE_HOME`, where this session starts; not `~`,
+  not the repository) holds your brain and state: `AGENTS.md`, `TASK.md`,
+  `instance.json` and your role's working state. **ALWAYS run `oats` and your
+  capabilities' commands from your home**: they resolve their scope from where
+  you run them. For another scope on purpose: `oats <cmd> --dir <path>`.
 
-**`<instance-home>/work` is your repository or workspace view** — whatever your
-work mode grants you of the code.
+**`./work` is your repository or workspace view**, as your work mode grants it.
 
 - **Repository work happens there, or in the extra trees your mode block
   grants, and nowhere else**: reading, editing, building, testing, git and
   commits, on repository content. Never from the main checkout or from your
   home root, beyond what your mode block names.
-- **What your mode permits is the mode block's call**, immediately below. Some
-  modes are read-only, some share a tree with others, and that block is the
-  authority on which operations are yours to perform.
-- This is about where the *repository's* content lives, not a ban on writing
-  anywhere else: the episodic files above, and whatever artifacts your role
-  calls for (a report written to a temp file before mailing it, a scratch
-  script), go where your task and tooling direct.
-
-Move between the two as the task needs — the boundary is what each directory is
-*for*, not a place to settle in.
+- **Your mode block, below, is the authority on what you may do there.**
+- When your task is to change soul content in the repository, that is ordinary
+  repository work; your own learnings reach your soul only through your
+  knowledge capability, if you have one.
+- Reports and scratch files go where your task and tooling direct.
 <!-- /oats:kernel:instance-boundary -->
 
 <!-- oats:work-mode:checkout src=<kernel>/injects/work-checkout.md -->
 ## Work mode: checkout
 
-Your `./work` is a symlink to the repo's **shared checkout** — you are working
-in the same tree as the human and possibly other agents.
+Your `./work` is the repository's **shared checkout**: the human and other
+agents work in the same tree.
 
-- **Work on the currently checked-out branch; never switch branches unless
-  explicitly asked.**
-- No destructive git operations (reset --hard, rebase, force-push, checkout
-  of another branch) without an explicit human instruction.
+- **Stay on the checked-out branch; never switch unless explicitly asked.**
+- **NO destructive git** (reset --hard, rebase, force-push, checking out
+  another branch) without an explicit human instruction.
 - Work that needs its own branch goes in an extra tree, not in `work/`.
 
 ### Extra trees
 
-When the work needs another branch, or another repository of this deployment,
-create an extra tree in your home. Run this from your home; `<base>` is the
-remote branch the work starts from (the branch itself, when you rework an
-existing one):
+For another branch or repository, from your home (`--preview` first; `--repo
+<member key|clone path>` for another repository; `<base>`: the remote branch
+to start from, or the one you rework):
 
     oats worktree add --purpose <purpose> --branch <branch> --base <base>
 
-It makes `.work-<purpose>` in your home, on a new `<branch>` at `origin`'s
-`<base>`. The repository is yours unless `--repo <member key|clone path>`
-names another; `--preview` shows what it would do.
-
-- It starts from the remote's current state and moves none of the clone's
-  refs. Never start a tree from a local branch of the clone, which may be stale.
-- Name `<branch>` by the repository's own rules, else `agents/<instance>-<purpose>`.
-  If it already exists in that clone, `add` refuses: use `<instance>/<branch>`.
-  Never `-C`/`-B`, which reset a branch someone else may own.
-- If a capability of yours sets up new trees, `add` runs that setup, which
-  may take minutes: give it a long timeout, or run it in the background and
-  wait for it to exit. A killed `add` rolls back; run it again. Once it has
-  finished, running it again with the same arguments does nothing.
-- The tree has no upstream: push with `git push origin HEAD:<remote-branch>`
-  (`<base>` when you rework an existing branch).
-- Before your task closes, merge each extra tree into your PR branch, or push its
-  branch and name it in your hand-back; then
-  `oats worktree remove --purpose <purpose>`, which keeps the branch and
-  refuses a tree with uncommitted work.
-  Retirement keeps a tree that still holds uncommitted work, but don't rely on it.
+- Name `<branch>` by the repository's rules, else `agents/<instance>-<purpose>`
+  (if taken, `<instance>/<branch>`). Never reset a branch with `-B`/`-C`.
+- `add` may take minutes: use a long timeout; if killed, rerun it.
+- Push with `git push origin HEAD:<remote-branch>` (`<base>` when reworking).
+- Before you finish, merge each tree into your PR branch, or push it and name
+  it in your hand-back; then `oats worktree remove --purpose <purpose>`.
+  Details: `oats worktree --help`, and `/oats-operate` if you have it.
 <!-- /oats:work-mode:checkout -->
 
 <!-- oats:capability:golden.messaging src=<base>/deployment/agents/dev/instances/dev-claude-checkout-knone-mstub/.oats/modules/golden.messaging/inject.md -->
