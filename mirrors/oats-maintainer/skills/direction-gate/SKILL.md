@@ -1,6 +1,6 @@
 ---
 name: direction-gate
-description: Judge whether a change belongs where it is and moves the project the way its roadmap and recorded decisions say - before a contract or structural change is built, and as the first gate of every PR review. Consult the recorded decisions first, and record each new architectural call with its reason and the alternatives rejected. Use before deciding any contract or structural change, and in every review.
+description: Judge whether a change belongs where it is and moves the project the way its roadmap and recorded decisions say - before a contract or structural change is built, and as the first gate of every PR review. Consult the recorded decisions first, and record each new architectural call with its reason and the alternatives rejected; superseding a decision a human accepted needs that human's own confirmation. Use before deciding any contract or structural change, and in every review.
 ---
 
 # Direction gate
@@ -43,5 +43,7 @@ again in review, against the full diff.
 ## Record
 - A new **architectural or structural call**: its reason and the alternatives rejected,
   in your knowledge. Supersede the decision it replaces; don't leave both standing.
+- **Superseding a decision a human accepted** needs that human's own confirmation, cited
+  exactly (the comment that says it, not the thread), before the knowledge change merges.
 - A changed direction: update the **living roadmap** in place.
 - A **coherence rule** you just enforced for the first time: write it down.

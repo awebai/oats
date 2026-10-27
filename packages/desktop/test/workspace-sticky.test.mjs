@@ -55,13 +55,16 @@ const opaqueBg = () => {
   }
 };
 
-test('Capabilities: the section pills and search are one sticky block, flush at the top on the opaque page background', async t => {
+test('Capabilities: the search is one sticky block, flush at the top on the opaque page background; the section pills scroll with All capabilities', async t => {
   const u = await mountWorkspace(t);
   u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
   const panel = u.get('.workspace-discovery'), block = u.get('.workspace-discovery > .ws-toolbar');
   assert.equal(panel.dataset.tab, 'capabilities');
   assert.ok(block.classList.contains('ws-sticky'));
-  assert.ok(block.querySelector('.capability-nav [data-jump]'), 'the section pills are in the pinned block');
+  // The section pills are All capabilities' own (the product owner, 2026-10-23): under its title, scrolling with it.
+  assert.equal(block.querySelector('.capability-nav'), null, 'the section pills are not pinned');
+  assert.equal(u.get('.capability-nav').closest('.ws-sticky'), null);
+  assert.equal(u.get('.capability-nav').previousElementSibling, u.get('#capability-part-all'), 'under All capabilities\' title');
   assert.ok(block.querySelector('.ws-search input'), 'and the search');
   assert.equal(panel.firstElementChild, block, 'the block opens the scroller');
   const style = u.css(block);
@@ -117,6 +120,8 @@ test('sticky-top: .is-stuck appears only once content has scrolled under the blo
 
 test('Souls: the bar sits outside the one scroller; the grid gets its top edge only while scrolled', async t => {
   const u = await mountWorkspace(t);
+  assert.equal(u.get('#workspace-tab-souls').getAttribute('aria-selected'), 'true', 'the page opens on Souls');
+  assert.equal(u.get('.souls-grid').hidden, false); assert.equal(u.get('.souls-bar').hidden, false);
   const grid = u.get('.souls-grid'), bar = u.get('.souls-bar');
   assert.equal(grid.contains(bar), false, 'the search and Group by never scroll');
   assert.equal(u.get('.workspace-header').contains(grid), false);
@@ -167,6 +172,14 @@ test('the Workspace view is one fixed column that can never scroll; the document
   assert.equal(discovery.overscrollBehavior, 'contain'); assert.match(discovery.minHeight, /^0(px)?$/);
   assert.equal(u.get('.workspace-header').parentElement, u.get('.workspace-main'), 'the header is outside every scroller');
   for (const scroller of [u.get('.souls-grid'), u.get('.workspace-discovery')]) assert.equal(scroller.contains(u.get('.workspace-header')), false);
+  // The Machines tab (the product owner, 2026-10-26): its panel fills the column under the header, which it never
+  // holds; the Deployments view in it scrolls inside itself.
+  u.get('#workspace-tab-machines').click(); await tick();
+  const machines = u.get('#workspace-machines');
+  assert.equal(machines.hidden, false); assert.equal(machines.contains(u.get('.workspace-header')), false);
+  assert.equal(machines.parentElement, u.get('.workspace-main'));
+  const panel = u.css(machines);
+  assert.equal(panel.display, 'flex'); assert.equal(panel.flexDirection, 'column'); assert.match(panel.minHeight, /^0(px)?$/);
   // The app shell: html clips at the viewport; the body is positioned and clipped, so an absolute
   // element with no positioned ancestor is contained by it and cannot stretch the document.
   assert.equal(u.css(u.doc.documentElement).overflow, 'clip');

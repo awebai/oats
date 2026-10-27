@@ -1,6 +1,6 @@
 ---
 name: plan-release
-description: Plan a release before anything is tagged - which PRs are in and why the others are out, patch, minor or major, release notes for each change, the merge order (including PRs that all append to the same notes file), the release-prep PR and its review, and what users must do. One maintainer owns each release and posts its plan on the forge, where its peers answer it. Use before any tag, and when deciding whether a PR waits for the next release.
+description: Plan a release before anything is tagged - which PRs are in and why the others are out, patch, minor or major, release notes for each change, the merge order (including PRs that all append to the same notes file), the release-prep PR and its review, what users must do, and a freeze that carries to a patch release. The release lane's maintainer owns each release and posts its plan on the forge, where every lane agrees what goes in. Use before any tag, and when deciding whether a PR waits for the next release.
 ---
 
 # Plan a release
@@ -58,12 +58,22 @@ peer, the reviewer you agreed with your human (`/cross-review-peer`).
 
 ## Write the plan down
 **One maintainer owns a release:** the release lane's maintainer (`/cross-review-peer`, "The
-release lane").
+release lane"). Every lane, whatever its arrangement, agrees with it what goes into a
+release and when, on this plan, and only the release lane tags.
 The owner writes the plan on the forge, in an issue or in the release-prep PR, before the
 first merge of the plan: the version; PRs in, and those out with their reasons; the merge
 order; who reviews the release-prep PR; the gates still to run; what users must do. Your
 state file names where it is (`/maintainer-intake`) and doesn't repeat it.
 
 A peer whose lane has PRs in the plan, or left out of it, is told once where the plan is,
-and answers there. A freeze before the tag is a hold on the default branch
-(`/cross-review-peer`), not a message. When the plan is done, ship it with `/ship-release`.
+and answers there: that is where its lane agrees what goes in. A freeze before the tag is a
+hold on the default branch (`/cross-review-peer`), not a message.
+
+## A freeze carries to a patch release
+When the human picks a patch release (x.y.1) with named changes while a freeze is on, the
+freeze stays. Each named change gets an exception on the hold: a comment that names the PR
+and its head and quotes the human who picked the patch release, confirmed as
+`/cross-review-peer` ("Decisions passed on from a human") says. See "Holds" there too.
+The patch's release-prep PR gets one too. Nothing else merges until the hold is lifted.
+
+When the plan is done, ship it with `/ship-release`.

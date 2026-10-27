@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { renderCapabilitySections, syncCapabilityNav } from '../renderer/workspace-catalog.mjs';
+import { renderCapabilitySections, syncCapabilityNav, catalogCSS } from '../renderer/workspace-catalog.mjs';
 import { workspaceDefaults, defaultRow, defaultsCSS, DEFAULTS_COPY } from '../renderer/workspace-defaults.mjs';
 import { ABOUT_COPY, aboutCSS, createAboutDialog } from '../renderer/about-dialog.mjs';
 import { takePickerFocusReturn } from '../renderer/overlay-picker.mjs';
@@ -38,13 +38,15 @@ function mount(t) {
   const style = doc.createElement('style'); style.textContent = defaultsCSS + aboutCSS; doc.head.append(style);
   const $ = sel => doc.querySelector(sel), $$ = sel => [...doc.querySelectorAll(sel)];
   const opened = [];
+  const u = { last: null };
   const render = (st, { rows = ROWS, query = '', shown, onOpen = row => opened.push(row) } = {}) => {
+    u.last = st;
     const sections = capabilitySections(rows);
     $('.lead').replaceChildren(); // the tab host clears its toolbar's jump before each paint
-    renderCapabilitySections($('.sections'), { sections, shown: shown ?? sections.workspace, filterHost: null, navHost: $('.lead'), privateListed: false, status: st, instances: [], query, onOpen });
+    renderCapabilitySections($('.sections'), { sections, shown: shown ?? sections.workspace, filterHost: null, privateListed: false, status: st, instances: [], query, onOpen });
   };
   const key = (el, name, init = {}) => el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init }));
-  return { dom, doc, $, $$, opened, render, key };
+  return Object.assign(u, { dom, doc, $, $$, opened, render, key });
 }
 const slotCells = u => u.$$('.ws-defaults-group[data-group=core] .ws-defaults-cells > li > .ws-default-cell');
 const addCells = u => u.$$('.ws-defaults-group[data-group=additional] .ws-defaults-cells > li > .ws-default-cell');
@@ -141,7 +143,7 @@ test('empty slots: None and the note, not interactive, a neutral tile; no additi
   assert.equal(u.$('[data-group=additional] ul'), null);
   u.render(status({ slots: { knowledge: null, messaging: null, tasks: null }, capabilities: [{ name: 'x', from: null, off: true }] }));
   assert.equal(slotCells(u).length, 3, 'a turned-off default is still something the workspace says'); assert.equal(addCells(u).length, 1);
-  assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '0');
+  assert.equal(u.$('[data-jump=defaults]'), null, 'no Defaults segment, so no count of them on the page');
 });
 
 // A core provider may be named under defaults.capabilities rather than defaults.<slot>: the kernel fills the slot by the
@@ -161,7 +163,7 @@ test('a core capability named under defaults.capabilities fills its core cell, a
     assert.equal(cell.getAttribute('aria-label'), 'Messaging: nw-chat, the workspace default — open its page');
     assert.equal(cell.dataset.focusKey, 'defaults:cap:nw-chat', 'its declaration\'s key, wherever it is drawn');
     assert.deepEqual(addCells(u).map(c => c.dataset.defaultCapability), ['oats.core'], 'not under Additional');
-    assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '3', 'the count is unchanged by where it shows');
+    assert.equal(workspaceDefaults(u.last).count, 3, 'the count is unchanged by where it shows');
     cell.click(); assert.equal(u.opened.at(-1), CHAT);
   }
   // Only the only one: with nothing else Additional says there is none.
@@ -245,7 +247,7 @@ test('empty state: no slot and no capability (a standalone deployment too): the 
   assert.equal(text(u.$('.ws-defaults-scope')), 'northwind sets no defaults. Each soul chooses all of its own capabilities.');
   assert.equal(u.$('.ws-defaults-sub').textContent, 'Each soul chooses all of its own capabilities.');
   assert.equal(u.$('.ws-defaults-group'), null, 'no groups');
-  assert.equal(u.$('[data-jump=defaults]').textContent, 'Defaults0');
+  assert.equal(u.$('[data-jump=defaults]'), null, 'never a segment');
   // No workspace name: "this workspace". A name with markup is text, never HTML.
   u.render(status({ slots: {}, capabilities: [] }, { key: HOST }));
   assert.equal(text(u.$('.ws-defaults-scope')), 'this workspace sets no defaults. Each soul chooses all of its own capabilities.');
@@ -260,29 +262,81 @@ test('without reported defaults: no section and no Defaults segment, nothing inf
   assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'workspace', 'Workspace owned is current, as before');
 });
 
-test('the Defaults segment comes first, counts filled slots plus defaults not turned off, is the initial current one and jumps', t => {
+// The Capabilities tab in two parts (the product owner, 2026-10-23): Workspace defaults, a part of its own, then All
+// capabilities, whose segmented nav (Workspace owned | Repo owned | Packages, no Defaults) sits under its title and
+// whose sections are its h3 subsections. The scroll sync tracks those sections only.
+test('two parts: Workspace defaults first, then All capabilities with its segments under its title; no Defaults segment', t => {
   const u = mount(t);
   u.render(status(FULL));
+  const sections = u.$('.sections');
+  assert.deepEqual([...sections.children].map(el => [el.tagName, el.className, el.dataset.section ?? null]),
+    [['SECTION', 'capability-section', 'defaults'], ['SECTION', 'capability-part', null]], 'the defaults, then All capabilities');
+  const defaultsHead = u.$('#capability-section-defaults');
+  assert.equal(defaultsHead.tagName, 'H2'); assert.ok(defaultsHead.classList.contains('capability-part-title'), 'titled as a part');
+  const all = u.$('.sections > .capability-part'), title = all.firstElementChild;
+  assert.deepEqual([title.tagName, title.id, title.className, title.textContent], ['H2', 'capability-part-all', 'capability-part-title', 'All capabilities']);
+  assert.equal(all.getAttribute('aria-labelledby'), 'capability-part-all');
+  assert.equal(title.nextElementSibling, u.$('.capability-nav'), 'the segments right under its title');
+  assert.equal(u.$('.lead .capability-nav'), null, 'not in the toolbar');
+  assert.equal(u.$$('.capability-nav').length, 1);
   const jumps = u.$$('.capability-nav button');
   assert.deepEqual(jumps.map(b => [b.dataset.jump, b.firstChild.textContent, b.querySelector('.capability-nav-count').textContent, b.getAttribute('aria-current')]),
-    [['defaults', 'Defaults', '5', 'true'], ['workspace', 'Workspace owned', '3', null], ['packages', 'Packages', '3', null]]);
-  assert.deepEqual(u.$$('.capability-section').map(el => el.dataset.section), ['defaults', 'workspace', 'packages']);
-  jumps[1].click(); jumps[0].click();
-  assert.equal(u.doc.activeElement, u.$('#capability-section-defaults')); assert.equal(jumps[0].getAttribute('aria-current'), 'true');
-  // Scroll sync tracks it like the others.
-  const tops = { defaults: -300, workspace: 10, packages: 400 };
+    [['workspace', 'Workspace owned', '3', 'true'], ['packages', 'Packages', '3', null]], 'Workspace owned is the initial current one');
+  // Its sections are its subsections (h3), in the segments' order.
+  assert.deepEqual([...all.querySelectorAll(':scope > .capability-section')].map(el => [el.dataset.section, el.querySelector('.capability-section-title').tagName]),
+    [['workspace', 'H3'], ['packages', 'H3']]);
+  for (const head of all.querySelectorAll('.capability-section-title')) assert.equal(head.classList.contains('capability-part-title'), false, `${head.id}: a subsection's title`);
+  jumps[1].click();
+  assert.equal(u.doc.activeElement, u.$('#capability-section-packages')); assert.equal(jumps[1].getAttribute('aria-current'), 'true');
+  jumps[0].click();
+  assert.equal(u.doc.activeElement, u.$('#capability-section-workspace'));
+  // Scroll sync tracks All capabilities' sections only: the defaults above them never make a segment current.
+  const tops = { defaults: -300, workspace: 200, packages: 400 };
   for (const el of u.$$('.capability-section')) el.getBoundingClientRect = () => ({ top: tops[el.dataset.section] });
-  syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) }, u.$('.lead'));
+  const scroller = { getBoundingClientRect: () => ({ top: 0 }) };
+  syncCapabilityNav(u.$('.sections'), scroller, u.$('.lead'));
+  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'workspace', 'with only the defaults scrolled past, the first section');
+  tops.workspace = -100; tops.packages = 10;
+  syncCapabilityNav(u.$('.sections'), scroller, u.$('.lead'));
+  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'packages');
+  // Without a pinned toolbar the top is the scroller's own.
+  tops.packages = 400; syncCapabilityNav(u.$('.sections'), scroller);
   assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'workspace');
-  tops.workspace = 200; syncCapabilityNav(u.$('.sections'), { getBoundingClientRect: () => ({ top: 0 }) }, u.$('.lead'));
-  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'defaults');
+  // Pinned (spec G), the toolbar's bottom edge is the top: a section under it is not in view.
+  tops.workspace = 200; tops.packages = 380;
+  const toolbar = u.$('.toolbar'); toolbar.classList.add('ws-sticky'); toolbar.getBoundingClientRect = () => ({ top: 0, bottom: 360 });
+  syncCapabilityNav(u.$('.sections'), scroller, u.$('.lead'));
+  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'packages', 'the section under the pinned toolbar is past');
+  syncCapabilityNav(u.$('.sections'), scroller);
+  assert.equal(u.$('.capability-nav [aria-current]').dataset.jump, 'workspace', 'measured from the scroller, Workspace owned is still in view');
+});
+
+test('without reported defaults All capabilities is the page\'s one part', t => {
+  const u = mount(t);
+  u.render(status(undefined));
+  assert.deepEqual([...u.$('.sections').children].map(el => el.className), ['capability-part']);
+  assert.equal(u.$('.capability-part > h2').textContent, 'All capabilities');
+  // No space above it then; after the defaults, its 32px.
+  const style = u.doc.createElement('style'); style.textContent = catalogCSS; u.doc.head.append(style);
+  assert.equal(u.dom.window.getComputedStyle(u.$('.capability-part')).marginTop, '0px');
+  u.render(status(FULL));
+  assert.equal(u.dom.window.getComputedStyle(u.$('.capability-part')).marginTop, '32px');
+});
+
+test('the parts\' titles: larger than the sections\' (18px at 700 over 15px at 650), in --fg; the segments their own width', () => {
+  const rule = selector => catalogCSS.match(new RegExp(`^${selector.replace(/[.()]/g, m => `\\${m}`)} \\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+  assert.match(rule('.capability-part-title, .capability-section-title.capability-part-title'), /color:var\(--fg\); font-size:18px; font-weight:700;/);
+  assert.match(rule('.capability-section-title'), /color:var\(--fg\); font-size:15px; font-weight:650;/);
+  assert.match(rule('.capability-part > .capability-nav'), /align-self:flex-start;/);
+  assert.match(rule('.capability-part'), /display:flex; flex-direction:column; gap:14px; margin-top:32px;/, 'after the defaults');
+  assert.match(rule('.capability-part:first-child'), /^ ?margin-top:0; ?$/, 'first, with no defaults reported: no space above it');
 });
 
 test('search and the repository pills never narrow the defaults', t => {
   const u = mount(t);
   u.render(status(FULL), { query: 'no-such-capability', shown: [] });
   assert.equal(slotCells(u).length, 3); assert.equal(addCells(u).length, 3);
-  assert.equal(u.$('[data-jump=defaults] .capability-nav-count').textContent, '5');
+  assert.equal(u.$('[data-jump=defaults]'), null);
   assert.equal(slotCells(u)[0].querySelector('.source-chip-version').textContent, '2.1.3', 'matched against every catalog row, not the filtered ones');
 });
 

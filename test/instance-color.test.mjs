@@ -28,6 +28,7 @@ import { style } from "../packages/tui/lib/term/style.mjs";
 import { MARKS } from "../packages/tui/lib/views/instances.mjs";
 import { SOUL_COLOURS } from "../packages/tui/lib/views/souls.mjs";
 import { CLI, draw, stateOf } from "../packages/tui/test/helpers.mjs";
+import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
 
 function okResult(r, what) {
   assert.equal(r.status, 0, `${what}: ${r.stdout}${r.stderr}`);
@@ -205,9 +206,11 @@ test("end to end: a colour set by the command reaches the TUI's row through the 
   const entry = observedEntry({ roster, workspaceStatus: { workspace: { name: "acme" } }, observedAt: "2026-10-20T15:00:00.000Z" },
     panelInstances([first, ...listed], [first, ...listed].map((row) => ({ running: true, runtimeState: "running", tmux: row.tmux }))), "2026-10-20T15:00:01.000Z");
   const d = draw(stateOf(entry), { cols: 120, rows: 24 });
-  const row = d.lines.findIndex((line) => line.includes(` ${spawned.instance}`));
-  assert.ok(row >= 0, `${spawned.instance} is drawn`);
-  const col = d.lines[row].indexOf(` ${spawned.instance}`) - 1;
+  // The row shows the name as words (instanceDisplayName), "Dev e2e" for dev-e2e.
+  const shown = instanceDisplayName(spawned.instance);
+  const row = d.lines.findIndex((line) => line.includes(` ${shown}`));
+  assert.ok(row >= 0, `${spawned.instance} is drawn, as ${shown}`);
+  const col = d.lines[row].indexOf(` ${shown}`) - 1;
   assert.deepEqual({ mark: d.lines[row][col], style: d.cells[row][col].style }, { mark: MARKS.utf8.running, style: style({ fg: SOUL_COLOURS.slate }) });
   // A value outside the palette, as a status document could carry it, is dropped: no colour.
   const doc = JSON.parse(r.stdout);

@@ -139,7 +139,11 @@ function openOf(m) {
  *  layout first, because the model's window is as tall (`page`), and the sentences in its list as
  *  wide, as this gives. The answer's `note` is the note's rows and `outcome` the line's: its
  *  sentence and each text under it (what the viewer printed, what the kernel said) set as a reason
- *  is, on as many rows as a reason may take; `above` is how many of those rows stand. `open` is the
+ *  is, on as many rows as a reason may take; `above` is how many of those rows stand. A line that
+ *  passes at the next key (`once`: the end of the list of workspaces) and takes one row stands
+ *  instead in the empty row under what stands above (`passing`), so nothing moves while it shows:
+ *  it takes no row of `above`, and `page` is a row shorter, so that empty row is always drawn. A
+ *  list that fills the sidebar has no such row: it moves a row down, giving up its last. `open` is the
  *  accordion's open view (null while the switcher is shown): the title, the three views' rows and
  *  the rules between the sidebar's parts take what they need, what stands above gives way to keep
  *  the list LIST_LEAST rows and the leader's, and `room` is what is left for the empty row under
@@ -160,15 +164,17 @@ export function layout(notice, size, { note = null, ascii = false, outcome = nul
     ...partRows(outcome.said, across, reasonRows, { ascii }),
     ...outcome.under.flatMap((text) => shownLines(text, across, reasonRows, { ascii }).map((line) => [{ col: 0, text: line, width: across }])),
   ] : [];
+  const passing = outcome?.once === true && after.length === 1 ? after[0] : null;
   // The title, a row per view, and the rules: one before the cheat sheet, one between the open
   // view's list and the views after it, and one between the views before it and its heading.
   const at = VIEWS.findIndex((view) => view.id === open);
   const rules = 1 + (at < 0 ? 0 : (at > 0 ? 1 : 0) + (at < VIEWS.length - 1 ? 1 : 0));
   const fixed = list + VIEWS.length + rules;
-  const said = (notice ? 1 + reason.length : 0) + noted.length + after.length;
+  const standing = passing === null ? after : [];
+  const said = (notice ? 1 + reason.length : 0) + noted.length + standing.length;
   const above = Math.min(said, Math.max(0, size.rows - fixed - 1 - LIST_LEAST));
   const room = Math.max(0, size.rows - fixed - above);
-  return { wide, listCols, reason, note: noted, outcome: after, above, open: at < 0 ? null : open, room, page: Math.max(1, room - 1), body: size.rows };
+  return { wide, listCols, reason, note: noted, outcome: standing, passing, above, open: at < 0 ? null : open, room, page: Math.max(1, room - 1 - (passing === null ? 0 : 1)), body: size.rows };
 }
 /** The layout the frame draws a model by. */
 const layoutOf = (m, size, given = {}) => layout(m.notice, size, { note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m), open: openOf(m), list: listRows(m), ...given });
@@ -436,7 +442,8 @@ function listOf(m, g) {
 }
 
 /** The sidebar (docs/tui.md, "What it shows") in `rows`, from column 0 in the sidebar's width:
- *  the title; what stands under it (sayings); an empty row; the views, the open one's heading
+ *  the title; what stands under it (sayings); an empty row, which a passing line takes (layout's
+ *  `passing`); the views, the open one's heading
  *  with its list (`list`, trailing empty rows left out) under it and a rule between the views
  *  before it and its heading, and between its list and the views after it; a rule, then the
  *  cheat sheet. It flows from the top. The list keeps its rows ahead of the cheat sheet: when both
@@ -453,6 +460,7 @@ function sidebar(m, g, rows, list) {
   while (n > 0 && list[n - 1].length === 0) n -= 1;
   const hints = cheatSheet(m), room = g.room;
   const [empty, count, shownRows] = n + 1 + hints.length <= room ? [1, hints.length, n] : n + 2 <= room ? [1, room - 1 - n, n] : [0, 1, Math.min(n, room - 1)];
+  if (empty && g.passing) rows[r] = placed(g.passing, MARGIN);
   r += empty;
   const at = VIEWS.findIndex((view) => view.id === g.open);
   VIEWS.forEach((view, i) => {

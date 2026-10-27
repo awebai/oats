@@ -11,6 +11,7 @@ import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { fillEmptyGroup } from "../renderer/split-layout.mjs";
 import { otherIncarnation, terminalOrigin } from "../renderer/retired-tabs.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const extract = name => source.match(new RegExp(`async function ${name}\\([^]*?\\n\\}`))[0];
@@ -80,10 +81,12 @@ test("navigating to a stage cancels an older terminal open", async t => {
   const f = fixture(t, "terminal");
   const pendingTerminal = f.run("first");
   const navigate = runInNewContext(`${extract("closeStage")}\n(${extract("showStage")})`, withShellWindowGlobals({
-    ...f.context, NAV: [{ name: "hierarchy" }], stage: { name: "hierarchy" },
+    // Automations, a page of its own (the product owner, 2026-10-26; hierarchy is now the Workspace page's Machines tab).
+    ...f.context, NAV: [{ name: "automations" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first */, stage: { name: "automations" },
     stageSidebarMode: () => "overview", showTabLayer() {},
   }));
-  await navigate("hierarchy");
+  assert.equal(navTab("automations"), null, "a page, not a tab of one");
+  await navigate("automations");
   f.requests[0].resolve({ instances: ["first"] }); await pendingTerminal;
   assert.deepEqual(f.activated, []);
 });

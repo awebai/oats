@@ -16,6 +16,7 @@ import { instanceSplitPlan } from "../renderer/instance-split.mjs";
 import { runtimeState, unsupportedSession } from "../../client/instance-presentation.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
+import { spokenText } from "./helpers/spoken-text.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
@@ -36,7 +37,7 @@ function fixture(t, rows, extra = {}) {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
-    contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
+    contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
     currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} },
@@ -51,7 +52,7 @@ function fixture(t, rows, extra = {}) {
   context.ownsInstanceTarget = target => roster.filter(row => sameInstanceActionTarget(target, row, "A")).length === 1;
   const render = runInNewContext(`${source}\nrenderContextRoster`, context);
   const list = doc.querySelector(".ctx-list");
-  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
+  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.dataset.name === name);
   return { doc, render, list, row, checked, live: () => doc.querySelector("#instance-roster > .ctx-spawn-live") };
 }
 
@@ -60,7 +61,7 @@ test("a pending spawn shows under its parent: “Spawning…” text and a spinn
   u.render(roster);
   const button = u.row("dev-new");
   assert.ok(button, "the pending row is painted");
-  const names = [...u.list.querySelectorAll(".ctx-name")].map(n => n.textContent);
+  const names = [...u.list.querySelectorAll(".ctx-name")].map(n => n.dataset.name);
   assert.ok(names.indexOf("dev-new") > names.indexOf("root") && names.indexOf("dev-new") < names.indexOf("solo"), "in its parent's group");
   assert.equal(button.closest(".ctx-tree-row").style.getPropertyValue("--depth"), "1", "one level under root");
   assert.equal(button.querySelector(".ctx-spawn-state").textContent, "Spawning…");
@@ -80,7 +81,7 @@ test("a background spawn into the view's second deployment sits under that deplo
   const u = fixture(t, () => [pending({ parentInstance: undefined, deployment: { id: "/b" } })], { context: { contextDeployments: deployments } });
   u.render([...onA, instance("dev-b", undefined, { deployment: { id: "/b" } })]);
   const order = [...u.list.children].map(el => el.classList.contains("ctx-deployment") ? `#${el.querySelector(".ctx-deployment-label").textContent}`
-    : el.querySelector(".ctx-name")?.textContent).filter(Boolean);
+    : el.querySelector(".ctx-name")?.dataset.name).filter(Boolean);
   assert.deepEqual(order, ["#This Mac · a", "root", "child-a", "solo", "#This Mac · b", "dev-b", "dev-new"]);
 });
 
@@ -170,9 +171,9 @@ test("Spec E: a just-spawned row says New (text and a dot) until its row is open
   const mark = u.row("solo").querySelector(".ctx-new");
   assert.ok(mark, "the mark"); assert.equal(mark.textContent, "New", "text, not colour alone");
   assert.equal(mark.querySelector(".ctx-new-dot").getAttribute("aria-hidden"), "true");
-  assert.match(u.row("solo").textContent, /^soloNew/, "the row's name says it to assistive tech too");
+  assert.match(spokenText(u.row("solo")), /^soloNew/, "the row's name says it to assistive tech too");
   assert.equal(u.row("root").querySelector(".ctx-new"), null, "only the new one");
-  assert.equal(u.row("solo").querySelector(".ctx-name").textContent, "solo");
+  assert.equal(u.row("solo").querySelector(".ctx-name").dataset.name, "solo");
   u.row("solo").click();
   assert.deepEqual(opened, ["solo"]); assert.equal(fresh.size, 0, "opening its row clears it");
   u.render(roster); assert.equal(u.row("solo").querySelector(".ctx-new"), null);

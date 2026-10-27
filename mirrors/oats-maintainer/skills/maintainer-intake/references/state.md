@@ -5,8 +5,10 @@ order. Keep it where your working state lives (your instance home, or wherever y
 says), not in the repository. Empty sections stay, with "none", so a reader can tell
 "nothing" from "not checked".
 
-It holds **your lane only**. Another lane's PRs, verdicts and holds are on the forge: read
-them there when you need them, and never copy them here.
+It holds **your lane only**: in a lane you share, the efforts you launched and the PRs
+handed to you. Another lane's PRs, verdicts and holds are on the forge: read them there when
+you need them, and never copy them here. The release lane's maintainer also lists the PRs
+handed to it for the final review and the sign-offs asked of it, under "Waiting on me".
 
 ```markdown
 # Maintainer state: <repositories>, lane <lane> (swept <date and time>)
@@ -20,7 +22,7 @@ them there when you need them, and never copy them here.
 |---|---|---|---|---|---|
 
 ## Open PRs
-| PR | Owner | Head | CI | Review (me / second reader) | Hold: reason, scope | Next |
+| PR | Owner | Head | CI | Review (me / second reader / release lane) | Hold: reason, scope | Next |
 |---|---|---|---|---|---|---|
 
 ## Waiting on others

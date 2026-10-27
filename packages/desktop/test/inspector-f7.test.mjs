@@ -11,6 +11,7 @@ import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { soulTeams } from '../renderer/teams-panel.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
+import { notePanel, resetViewDeployments } from '../renderer/view-deployments.mjs';
 
 const doc = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f7/${name}.json`, import.meta.url), 'utf8'));
 const soul = doc('inspect-soul').result, home = doc('inspect-home').result, teamsRun = doc('teams-initial').result;
@@ -284,4 +285,27 @@ test("the soul page's Refresh ('Inspect again') asks the server for a live inspe
   assert.ok(refresh, 'the Refresh control');
   refresh.click(); for (let i = 0; i < 4; i++) await tick();
   assert.deepEqual(bodies.at(-1), { action: 'inspect', selector: soulSelection.selector, refresh: true }, 'Refresh is a live read');
+});
+
+// #482's line (2026-10-23): in a view of two or more deployments the side panel's soul inspector says which deployment it
+// reads ("On <primary>", under its heading); the soul's page on the Workspace page does not (the Workspace pages name
+// no deployment). A view of one shows neither.
+test('the side panel\'s soul inspector names the deployment it reads in a view of two; the soul page does not', async t => {
+  t.after(resetViewDeployments);
+  const two = [
+    { id: '/d1', machine: 'This Mac', path: '/Users/ana/Agents/first', label: '~/Agents/first', local: true, primary: true, reachable: true },
+    { id: '/d2', machine: 'altair', path: '/srv/first', label: '~/first', local: false, primary: false, reachable: true },
+  ];
+  notePanel({ workspace: { id: '/team' }, deployments: two });
+  const side = await rendered(t, soulSelection, soul);
+  const line = side.el.querySelector('.deployment-scope');
+  assert.ok(line, 'the side panel shows the line');
+  assert.equal(line.hidden, false); assert.equal(line.textContent, 'On This Mac · ~/Agents/first');
+  assert.equal(line.previousElementSibling?.classList.contains('inspector-notice'), true, 'under the heading, its notice between');
+  const page = await rendered(t, soulSelection, soul, { layout: 'page' });
+  assert.ok(page.el.querySelector('.page-bar'), 'the soul page');
+  assert.equal(page.el.querySelector('.deployment-scope'), null, 'no line on the Workspace page');
+  assert.doesNotMatch(page.el.textContent, /On This Mac/);
+  notePanel({ workspace: { id: '/team' }, deployments: two.slice(0, 1) }); await tick();
+  assert.equal(line.hidden, true, 'one deployment: the side panel\'s line hides');
 });

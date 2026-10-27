@@ -1,7 +1,7 @@
 // The workspace list (renderer/workspace-switcher.mjs): always shown at the sidebar's top, one row per workspace
 // this window can show, whatever machine it is on. Its rows and their order (the matched views, then the unattached
 // ones, in one flat list with no heading), a row as one line with the name alone, the current row (marked by style
-// alone), the needs-input dot and its words, picking a row another window shows, an unattached row's deployment
+// alone), the needs-input mark and its words, Show only the current workspace, picking a row another window shows, an unattached row's deployment
 // tab, the leader's moves (`step`), the arrow keys and the roving tab stop, the empty message, the bounded height,
 // a switch on its way and the pick tokens. Nothing is asked of main for the list itself.
 // The Add dialog is workspace-switcher.test.mjs; Open in new window (⌘Enter / Ctrl+Enter, the row's context
@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { createWorkspaceSwitcher, moreBelowText, WAITING_NAME, WAITING_TITLE } from "../renderer/workspace-switcher.mjs";
+import { createWorkspaceSwitcher, moreBelowText, WAITING_NAME, WAITING_TITLE, CURRENT_ONLY_LABEL, CURRENT_ONLY_KEY } from "../renderer/workspace-switcher.mjs";
 import { UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
 import { onDeploymentTabRequest } from "../renderer/deployment-tabs.mjs";
 
@@ -56,7 +56,7 @@ test("rows: the matched views, then the unattached ones, in one flat list with n
   s.controller.begin()(A, [LOOSE, A, HELD]); await tick();
   assert.deepEqual(s.rows().map(s.keyOf), [A.id, HELD.id, LOOSE.id], "matched first, in their order, then the unattached");
   const list = s.document.getElementById("ws-list");
-  assert.equal(s.document.getElementById(list.getAttribute("aria-labelledby")).textContent, "Workspaces");
+  assert.equal(s.document.getElementById(list.getAttribute("aria-labelledby")).textContent, "Workspace", "the head's heading (the product owner, 2026-10-26)");
   const groups = [...s.document.querySelectorAll("#ws-options > *")];
   assert.equal(groups.length, 1, "one list");
   assert.equal(groups[0].tagName, "UL"); assert.ok(groups[0].classList.contains("ws-group"));
@@ -85,14 +85,17 @@ test("one workspace only: the list still shows it, one current row", async (t) =
   assert.deepEqual(s.calls.selected, []);
 });
 
-test("a row is one line, the name alone: no mark, icon, machine, state or button; the tooltip is the name, never a path or machine", async (t) => {
+test("a row is one line, the roster's circle and the name: no other mark, icon, machine, state or button; the tooltip is the name, never a path or machine", async (t) => {
   const s = setup(t);
   const busy = view("busy", { notLive: 2 });
   s.controller.begin()(A, [A, HELD, busy, LOOSE]); await tick();
   for (const button of s.rows()) {
     const item = button.closest(".ws-option-row");
-    const name = button.querySelector(".ws-option-name");
-    assert.deepEqual([...button.children], [name], `${button.dataset.workspaceId}: the name and nothing else`);
+    const name = button.querySelector(".ws-option-name"), mark = button.querySelector(".ctx-dot");
+    assert.deepEqual([...button.children], [mark, name], `${button.dataset.workspaceId}: the circle, the name and nothing else`);
+    // The instance roster's own circle (shell.css .ctx-dot), filled on the current row, a ring on the others; decorative.
+    assert.equal(mark.className, button.getAttribute("aria-current") === "true" ? "ctx-dot on" : "ctx-dot off");
+    assert.equal(mark.getAttribute("aria-hidden"), "true"); assert.equal(mark.textContent, "");
     assert.deepEqual([...item.children], [button], "no button beside the row");
     for (const selector of [".workspace-avatar", ".ws-option-meta", ".ws-check", "svg", ".ws-open-window", ".deployment-mark"]) {
       assert.equal(item.querySelector(selector), null, `${button.dataset.workspaceId}: no ${selector}`);
@@ -138,6 +141,11 @@ test("a long name: the line cuts it with an ellipsis (CSS) and the tooltip gives
   assert.equal(s.rows()[0].querySelector(".ws-option-name").textContent, long.name, "the whole name is drawn: CSS cuts it");
   const rule = css.match(/^\.ws-option-name\s*\{([^}]*)\}/m)[1];
   assert.match(rule, /text-overflow:\s*ellipsis/); assert.match(rule, /white-space:\s*nowrap/); assert.match(rule, /overflow:\s*hidden/);
+  // The name inherits the row's 13px and weight (the product owner, 2026-10-26: no larger, bolder name of its own).
+  assert.doesNotMatch(rule, /font-size|font-weight/, "the name keeps the row's type");
+  // One compact row (the product owner, 2026-10-26): 4px above and below, at least 24px tall.
+  const row = css.match(/^\.ws-option\s*\{([^}]*)\}/m)[1];
+  assert.match(row, /padding:\s*4px 8px 4px 10px;/); assert.match(row, /min-height:\s*24px;/);
 });
 
 test("the current row: aria-current on that row only, marked by style alone (no check icon); the list's description names it", async (t) => {
@@ -148,10 +156,14 @@ test("the current row: aria-current on that row only, marked by style alone (no 
   assert.deepEqual(s.rows().map((b) => b.getAttribute("aria-current")), [null, "true", null]);
   assert.equal(s.current().querySelector(".ws-check, svg"), null, "no icon");
   assert.equal(list.getAttribute("aria-description"), "Current workspace: beta");
-  assert.match(css, /\.ws-option\[aria-current="true"\]\s*\{[^}]*background:\s*var\(--sel\)/, "a background");
+  // Its circle filled like a running instance's, the others a ring (2026-10-23: no accent edge); its name bold.
+  const marks = () => s.rows().map((b) => b.querySelector(".ctx-dot").className);
+  assert.deepEqual(marks(), ["ctx-dot off", "ctx-dot on", "ctx-dot off"]);
+  assert.doesNotMatch(css, /\.ws-option\[aria-current="true"\]\s*\{/, "no rule of its own on the row: no edge, no fill");
   assert.match(css, /\.ws-option\[aria-current="true"\] \.ws-option-name\s*\{[^}]*font-weight:\s*650/, "and bold");
   s.controller.begin()(A, [A, B, HELD]);
   assert.equal(s.current(), s.row(A.id), "it follows what this window shows");
+  assert.deepEqual(marks(), ["ctx-dot on", "ctx-dot off", "ctx-dot off"], "and so does the filled circle");
   assert.equal(list.getAttribute("aria-description"), "Current workspace: alpha");
   const local = { id: "/h/Agents/here", path: "/h/Agents/here", name: "here" };
   s.controller.begin()(local, [A, local]);
@@ -164,7 +176,7 @@ test("the current row: aria-current on that row only, marked by style alone (no 
 /* ── the dot ── */
 const dotOf = (button) => button.querySelector(".ws-waiting");
 
-test("the dot: an instance needs input (waiting true) draws it after the name, says it in the row's name and its tooltip", async (t) => {
+test("the needs-input mark: an instance needs input (waiting true) draws it at the row's far right, says it in the row's name and its tooltip", async (t) => {
   const tipped = view("tipped", { waiting: true });
   const loose = { ...LOOSE, waiting: true };
   const s = setup(t);
@@ -173,7 +185,10 @@ test("the dot: an instance needs input (waiting true) draws it after the name, s
     const name = button.querySelector(".ws-option-name"), words = name.nextElementSibling, dot = dotOf(button);
     assert.ok(dot, "the dot, the current row and an unattached one included");
     assert.equal(dot.getAttribute("aria-hidden"), "true", "a graphic: its words are the name's");
-    assert.deepEqual([...button.children], [name, words, dot], "on the same line, after the name");
+    assert.deepEqual([...button.children], [button.querySelector(".ctx-dot"), name, words, dot], "on the same line, after the name");
+    // Pushed to the row's far right; the name, which may shrink, is cut off before it.
+    assert.match(css, /^\.ws-waiting \{[^}]*\bflex: none; margin-left: auto;/m);
+    assert.match(css, /^\.ws-option-name \{[^}]*\bflex: 0 1 auto; min-width: 0;/m);
     assert.ok(words.classList.contains("sr-only"));
     assert.equal(words.textContent, WAITING_NAME);
     assert.equal(button.textContent, `${name.textContent}${WAITING_NAME}`, "the accessible name reads it after the name");
@@ -182,7 +197,7 @@ test("the dot: an instance needs input (waiting true) draws it after the name, s
   assert.equal(WAITING_NAME, ", needs input"); assert.equal(WAITING_TITLE, "An instance here needs input");
 });
 
-test("the dot: false, unknown (null, absent) or anything but true draws none and says nothing", async (t) => {
+test("the needs-input mark: false, unknown (null, absent) or anything but true draws none and says nothing", async (t) => {
   const s = setup(t);
   const choices = [false, null, undefined, "true", 1, {}].map((waiting, i) => view(`w${i}`, { waiting }));
   s.controller.begin()(choices[0], choices); await tick();
@@ -193,7 +208,7 @@ test("the dot: false, unknown (null, absent) or anything but true draws none and
   }
 });
 
-test("the dot never reorders the list", async (t) => {
+test("the needs-input mark never reorders the list", async (t) => {
   const s = setup(t);
   s.controller.begin()(A, [A, B, C]);
   const before = s.rows().map(s.keyOf);
@@ -385,6 +400,28 @@ test("rows cut off below the list's bounded height are said under it, at any scr
   assert.equal(more.hidden, true, "all fit"); assert.equal(more.textContent, "");
 });
 
+test("the line under the list carries the rows' mark when a row cut off below waits on you, as the TUI's +N ●", async (t) => {
+  const s = setup(t);
+  const options = s.document.getElementById("ws-options"), more = s.document.querySelector(".ws-more");
+  let scrollTop = 0;
+  options.getBoundingClientRect = () => ({ top: 0, bottom: 100 });
+  t.after(() => { delete s.dom.window.HTMLButtonElement.prototype.getBoundingClientRect; });
+  s.dom.window.HTMLButtonElement.prototype.getBoundingClientRect = function () { const i = s.rows().indexOf(this); return { top: i * 40 - scrollTop, bottom: (i + 1) * 40 - scrollTop }; };
+  const dots = () => [...more.querySelectorAll(".ws-waiting")];
+  // A waiting row in view: its own dot says it, the line has none.
+  s.controller.begin()(A, [{ ...A, waiting: true }, B, C, HELD]); await tick();
+  assert.equal(more.textContent, moreBelowText(2)); assert.deepEqual(dots(), []);
+  // The fourth row, cut off below, waits: the line says the count and carries the dot, a graphic after the words.
+  s.controller.begin()(A, [A, B, C, { ...HELD, waiting: true }]); await tick();
+  assert.equal(more.textContent, moreBelowText(2), "the words stay the count: every row keeps its own words");
+  assert.equal(dots().length, 1); assert.equal(dots()[0].getAttribute("aria-hidden"), "true");
+  assert.equal(more.lastElementChild, dots()[0], "after the count");
+  assert.match(css, /^\.ws-more \{ display: flex; align-items: center;/m, "a row, so the dot keeps its size, at the far right");
+  // Scrolled so the waiting row shows: the line goes, its dot with it.
+  scrollTop = 60; options.dispatchEvent(new s.dom.window.Event("scroll"));
+  assert.equal(more.hidden, true); assert.deepEqual(dots(), []);
+});
+
 /* ── a switch on its way ── */
 test("a switch landing here keeps every row (the list never empties while the new roster is read, or when it fails); the next move goes on", async (t) => {
   const s = setup(t);
@@ -441,4 +478,118 @@ test("an older pick's answer never clears a newer pick of the same workspace: D 
   assert.equal(s.current().dataset.workspaceId, D.id, "D is shown");
   assert.equal(s.controller.step(1), true, "the newest pick, B, is still on its way: the move goes on from it");
   assert.equal(s.calls.selected.at(-1), C.id);
+});
+
+/* ── Show only the current workspace (2026-10-23) ── */
+const memory = (initial = {}) => { const m = new Map(Object.entries(initial)); return {
+  getItem: (k) => m.has(k) ? m.get(k) : null, setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); }, map: m }; };
+
+test("Show only the current workspace: a toggle before Add at the heading, named, off by default", async (t) => {
+  const s = setup(t, { storage: memory() });
+  s.controller.begin()(A, [A, B, C]); await tick();
+  const toggle = s.document.getElementById("ws-current-only");
+  assert.equal(toggle.nextElementSibling, s.document.getElementById("ws-add-open"), "before Add, at the heading's end");
+  const head = s.document.querySelector(".side-head");
+  assert.ok(head, "the sidebar's head");
+  assert.equal(toggle.closest(".side-head"), head, "in the head, after the Workspace heading");
+  assert.equal(toggle.previousElementSibling, s.document.getElementById("ws-heading"));
+  // The head holds only the heading and its two controls (the product owner, 2026-10-26: the OATS mark is the foot's),
+  // with no line between it and the list; the list's own line closes it, before the main views.
+  assert.deepEqual([...head.children].map((el) => el.id), ["ws-heading", "ws-current-only", "ws-add-open"]);
+  assert.equal(head.nextElementSibling, s.document.getElementById("ws-list"));
+  const headRule = css.match(/^\.side-head\s*\{([^}]*)\}/m)[1];
+  assert.doesNotMatch(headRule, /border(?!-box)/, "no line under the head");
+  // 40px tall, its 8px top padding keeping the heading's centre 24px down, the first row close under it.
+  assert.match(headRule, /height:\s*40px;/); assert.match(headRule, /box-sizing:\s*border-box;/);
+  assert.match(headRule, /padding:\s*8px 10px 0 17px;/);
+  assert.match(css.match(/^\.ws-list\s*\{([^}]*)\}/m)[1], /border-bottom:\s*1\.5px solid var\(--border\)/, "the line before the nav, a little bolder than the roster\'s");
+  assert.equal(toggle.getAttribute("aria-label"), CURRENT_ONLY_LABEL); assert.equal(toggle.title, CURRENT_ONLY_LABEL);
+  assert.equal(toggle.getAttribute("aria-pressed"), "false"); assert.equal(toggle.dataset.action, "workspaces.currentOnly");
+  assert.ok(toggle.querySelector("svg"), "its icon"); assert.equal(s.controller.currentOnly, false);
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [A.id, B.id, C.id]);
+});
+
+test("on, only the current row shows: the others leave the list and its keys, no line stands for them, and it is remembered", async (t) => {
+  const storage = memory();
+  const s = setup(t, { storage });
+  s.controller.begin()(B, [A, B, C]); await tick();
+  s.document.getElementById("ws-current-only").click();
+  assert.equal(s.document.getElementById("ws-current-only").getAttribute("aria-pressed"), "true");
+  assert.equal(storage.getItem(CURRENT_ONLY_KEY), "1");
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [B.id], "the current row alone");
+  for (const b of s.rows().filter((b) => b.hidden)) assert.equal(b.closest("li").hidden, true);
+  const more = s.document.querySelector(".ws-more");
+  assert.equal(more.hidden, true, "the other workspaces are not shown at all"); assert.equal(more.textContent, "");
+  // Its keys go over the shown row only: Arrow and End stay on it.
+  s.controller.focusList(); assert.equal(s.document.activeElement, s.row(B.id));
+  s.key("ArrowDown"); assert.equal(s.document.activeElement, s.row(B.id)); s.key("End"); assert.equal(s.document.activeElement, s.row(B.id));
+  // Off again: every row, and forgotten.
+  s.controller.toggleCurrentOnly();
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [A.id, B.id, C.id]);
+  assert.equal(storage.getItem(CURRENT_ONLY_KEY), null); assert.equal(more.getAttribute("aria-hidden"), "true");
+});
+
+test("on, a hidden workspace that waits shows nothing either; a remembered choice applies at start", async (t) => {
+  const s = setup(t, { storage: memory({ [CURRENT_ONLY_KEY]: "1" }) });
+  s.controller.begin()(A, [A, { ...B, waiting: true }, C]); await tick();
+  assert.equal(s.controller.currentOnly, true);
+  assert.equal(s.document.getElementById("ws-current-only").getAttribute("aria-pressed"), "true");
+  const more = s.document.querySelector(".ws-more");
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [A.id]);
+  assert.equal(more.hidden, true); assert.equal(more.textContent, ""); assert.equal(more.querySelector(".ws-waiting"), null);
+});
+
+test("on, a focused row that goes hands focus to the current row; with no current row every row shows", async (t) => {
+  const s = setup(t, { storage: memory() });
+  s.controller.begin()(A, [A, B, C]); await tick();
+  s.row(C.id).focus();
+  s.controller.toggleCurrentOnly();
+  assert.equal(s.document.activeElement, s.row(A.id), "never <body>");
+  s.controller.choose([A, B, C]); await tick();
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [A.id, B.id, C.id], "nothing current (choosing): nothing hidden");
+});
+
+test("a storage that throws: the toggle still works, remembered nowhere", async (t) => {
+  const broken = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }, removeItem() { throw new Error("denied"); } };
+  const s = setup(t, { storage: broken });
+  s.controller.begin()(A, [A, B]); await tick();
+  s.controller.toggleCurrentOnly();
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [A.id]);
+});
+
+// Remembered per computer: the shell hands the switcher the window's localStorage, and a new window (a reload) built
+// over the same storage starts as the last one left it, pressed or not.
+test("Show only the current workspace survives a reload: the same storage, a new list; the shell passes localStorage", async (t) => {
+  const storage = memory();
+  const first = setup(t, { storage });
+  first.controller.begin()(A, [A, B, C]); await tick();
+  first.controller.toggleCurrentOnly();
+  assert.deepEqual([...storage.map], [[CURRENT_ONLY_KEY, "1"]], "only its own key, under its own name");
+  assert.equal(CURRENT_ONLY_KEY, "oats-desktop-workspaces-current-only");
+  const second = setup(t, { storage });
+  second.controller.begin()(A, [A, B, C]); await tick();
+  assert.equal(second.controller.currentOnly, true);
+  assert.equal(second.document.getElementById("ws-current-only").getAttribute("aria-pressed"), "true");
+  assert.deepEqual(second.rows().filter((b) => !b.hidden).map(second.keyOf), [A.id]);
+  second.controller.toggleCurrentOnly();
+  const third = setup(t, { storage });
+  third.controller.begin()(A, [A, B, C]); await tick();
+  assert.equal(third.controller.currentOnly, false, "turned off is remembered too");
+  assert.deepEqual(third.rows().filter((b) => !b.hidden).map(third.keyOf), [A.id, B.id, C.id]);
+  const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
+  assert.match(shell, /const workspaceLabel = createWorkspaceSwitcher\(\{[^]*?\n  storage: \(\(\) => \{ try \{ return window\.localStorage; \} catch \{ return null; \} \}\)\(\),/, "the shell's storage is the window's localStorage");
+});
+
+// The rows it hides are still the workspaces of the list: the leader's ↑ / ↓ (step) move to the previous / next one,
+// which then shows alone.
+test("on, step still moves to the next or previous workspace, hidden as it was, which then shows alone", async (t) => {
+  const s = setup(t, { storage: memory({ [CURRENT_ONLY_KEY]: "1" }) });
+  const land = (workspace) => { s.controller.reset(workspace.id); s.controller.begin()(workspace, [A, B, C]); };
+  s.controller.begin()(A, [A, B, C]); await tick();
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [A.id]);
+  assert.equal(s.controller.step(1), true);
+  assert.deepEqual(s.calls.selected, [B.id], "the next workspace of the list, though hidden");
+  land(B); await tick();
+  assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [B.id], "now it alone shows");
+  assert.equal(s.controller.step(-1), true); assert.equal(s.calls.selected.at(-1), A.id);
 });

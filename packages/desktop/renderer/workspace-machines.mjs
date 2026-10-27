@@ -1,4 +1,5 @@
-/** The Setup tab's Machines box (#517): the registrations whose workspace key is this window's
+/** The Setup tab's Registered machines box (#517; "Machines" until 2026-10-26, when the Workspace page's
+ * Machines tab took the word): the registrations whose workspace key is this window's
  * (`/api/servers?ws=<view>`, server/machines.mjs), each with its name, ssh host, folder on the host, the
  * OATS version and reachability its last check reported, and Check and Remove; and "Add a machine to
  * this workspace…" (renderer/add-machine-dialog.mjs).
@@ -69,7 +70,7 @@ export function createWorkspaceMachines(doc, { ctx, ws, owns = () => true, backf
   const el = (tag, value, cls) => { const n = doc.createElement(tag); if (value !== undefined && value !== null) n.textContent = value; if (cls) n.className = cls; return n; };
   const query = () => `?ws=${encodeURIComponent(ws)}`;
   // A solid card: in the list view it sits in Setup's This computer zone, which says it is not shared.
-  const element = box(doc, 'Machines', 'that run this workspace', { heading: 'h4' });
+  const element = box(doc, 'Registered machines', 'that run this workspace', { heading: 'h4' });
   element.classList.add('setup-machines'); element.hidden = true;
   const head = element.querySelector('.setup-box-head');
   const body = el('div', undefined, 'machines-body'); element.append(body);

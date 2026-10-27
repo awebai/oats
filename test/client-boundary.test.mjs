@@ -61,6 +61,8 @@ const SURFACE = Object.freeze({
     "soulsData", "soulCapabilitiesOf", "capabilitiesData"],
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
   "refresh-loop.mjs": ["createRefreshLoop", "REFRESH_FOCUSED_MS", "REFRESH_BLURRED_MS"],
+  // 0.68.1: an instance name as words, the sidebar row's visible label in the Desktop and the TUI (display only).
+  "instance-display-name.mjs": ["instanceDisplayName"],
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead", "siblingText", "instanceColor"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingNames", "waitingBelowText", "waitingSentence"],
   "harness-names.mjs": ["HARNESSES", "HARNESS_NAMES", "harnessFeature", "harnessFlag", "harnessKey", "harnessOf", "harnessList"],
@@ -500,7 +502,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 69);
+  assert.equal(Object.keys(SURFACE).length, 70);
   // #482 in a switcher: a listed deployment's identity, read before it is served.
   assert.ok(Object.hasOwn(SURFACE, "deployment-identity.mjs"), "deployment-identity.mjs");
   // #1395: the keys both clients share; the TUI reads its defaults from them.

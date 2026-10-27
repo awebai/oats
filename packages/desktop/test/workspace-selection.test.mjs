@@ -215,6 +215,19 @@ for (const latest of ['soul', 'home']) for (const outcome of ['success', 'reject
   });
 }
 
+// A handoff turns the page to Souls itself: that tab change is its own step, never a newer choice superseding it
+// (Go to soul from the Machines tab turned the page and opened nothing).
+for (const kind of ['soul', 'home']) test(`a ${kind} handoff made while another Workspace tab is shown turns the page to Souls and opens`, async t => {
+  const u = await setup(t, { hold: true });
+  u.resolve(0); await tick();
+  u.tab('capabilities'); await tick();
+  handoff(kind); await tick();
+  assert.equal(u.selectedTab().id, 'workspace-tab-souls');
+  const expected = kind === 'soul' ? { soul: 'dev', agentsRoot: '/b/agents' } : { home: home.home };
+  assert.deepEqual(u.inspections().map(call => call.body.selector), [expected], 'the handoff opened what it carried');
+  assert.equal(u.doc.querySelector('.inspector-head h2').textContent, kind === 'soul' ? 'dev' : 'dev-seat');
+});
+
 for (const kind of ['soul', 'home']) for (const boundary of ['workspace A → B → A', 'unmount/remount']) for (const outcome of ['success', 'rejection']) {
   test(`pending ${kind} dies across ${boundary}, including old roster ${outcome}`, async t => {
     const u = await setup(t, { hold: true });

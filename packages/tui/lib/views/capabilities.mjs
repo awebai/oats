@@ -8,9 +8,9 @@
 // marked soul carry `>` as well as reverse video, a soul's colour is drawn on a mark that is there
 // without it, and the souls on an older version are said so in words before their warning style.
 import { lit, shown, shownLines } from "../term/text.mjs";
-import { COLORS, style } from "../term/style.mjs";
+import { style } from "../term/style.mjs";
 import { keyLabel } from "../actions.mjs";
-import { cutNote, headingRow, marksOf, measured } from "./instances.mjs";
+import { colourLook, cutNote, headingRow, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 import { COUNT_SIGN, SOUL_MARK, flowed, ownLines } from "./souls.mjs";
 
@@ -44,8 +44,9 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-/** The warning style: what it marks says so in words too. */
-const WARN = style({ bold: true, fg: "yellow" });
+/** The warning style: what it marks says so in words too. Red, not yellow: yellow says needs input,
+ *  and only that. */
+const WARN = style({ bold: true, fg: "red" });
 
 /** The mark between a group's name and its note, and before the instances on an older version. */
 const dotOf = (ascii) => (ascii ? "-" : "·");
@@ -209,9 +210,8 @@ export function capabilityDetailRows(m, cols) {
     const marked = i === m.capabilities.mark;
     if (marked) mark = rows.length;
     const look = (own) => (marked ? SELECTED : own);
-    const colour = typeof user.color === "string" && COLORS.includes(user.color) ? user.color : null;
     const spans = marked ? [{ col: LEFT, width: Math.max(0, cols - LEFT), style: SELECTED }, { col: LEFT, text: lit(">"), style: SELECTED, width: 1 }] : [];
-    spans.push({ col: INNER, text: lit(soulMark), style: look(colour ? style({ fg: colour }) : PLAIN), width: 1 });
+    spans.push({ col: INNER, text: lit(soulMark), style: look(colourLook(user.color) ?? PLAIN), width: 1 });
     const counted = `${sign}${user.count}`;
     const after = [{ text: lit(counted), width: counted.length, style: DIM }];
     if (user.behind) { const behind = measured(user.behind); after.push({ text: lit(dotOf(ascii)), width: 1, style: DIM }, { text: behind.text, width: behind.width, style: WARN }); }

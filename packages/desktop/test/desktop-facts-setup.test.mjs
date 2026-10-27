@@ -296,7 +296,7 @@ test('Setup list: hostile names and file paths render literally', () => {
   assert.equal(root.querySelector('[data-box=Members] .setup-row .setup-name-text').textContent, hostile);
 });
 
-test('Setup list: the Machines box sits in This computer, the same element across renders; the graph keeps it below', () => {
+test('Setup list: the Registered machines box sits in This computer, the same element across renders; the graph keeps it below', () => {
   const root = host(), machines = root.ownerDocument.createElement('section');
   renderSetup(root, { status: statusOf(), machines });
   assert.equal(machines.parentElement, root.querySelector('.setup-zone[data-zone=here]'), 'a descendant of the This computer zone');

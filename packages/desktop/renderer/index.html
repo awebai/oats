@@ -23,10 +23,13 @@
 <body>
   <div id="app">
     <aside id="sidebar">
+      <!-- The sidebar (the product owner, 2026-10-26): the head (the Workspace heading, Show only the current workspace
+           and Add local workspace…), the list of workspaces, the main views, a line, the instances, then the foot: the
+           OATS mark, Spawn instance (Quick Open) beside it, and the sidebar toggle and the settings cog. -->
       <div class="side-head">
-        <span class="ws-brand-mark" aria-hidden="true"><img class="ws-brand-image" src="../assets/brand/generated/sidebar-48.png" width="24" height="24" alt="" draggable="false"></span>
-        <span id="ws-heading" class="ws-heading">Workspaces</span>
-        <button id="ws-add-open" class="ws-add-open icon-button" type="button" aria-label="Add local workspace…" title="Add local workspace…"></button>
+        <span id="ws-heading" class="ws-heading">Workspace</span>
+        <button id="ws-current-only" class="side-icon-button ws-current-only icon-button" type="button" aria-pressed="false" data-action="workspaces.currentOnly"></button>
+        <button id="ws-add-open" class="ws-add-open side-icon-button icon-button" type="button" aria-label="Add local workspace…" title="Add local workspace…"></button>
       </div>
       <!-- The workspace list (workspace-switcher.mjs): always shown, one row per workspace, a list of buttons. -->
       <section id="ws-list" class="ws-list" aria-labelledby="ws-heading">
@@ -35,31 +38,18 @@
       <nav id="nav" aria-label="Main views"></nav>
       <section id="instance-roster" aria-label="Instances">
         <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
-        <label class="ctx-filter-field">
-          <span class="ctx-filter-icon" data-shell-icon="search" aria-hidden="true"></span>
-          <input class="ctx-filter" placeholder="Filter instances" autocomplete="off" aria-label="Filter instances"
-                 data-action="sidebar.focusFilter" title="Focus the instance roster filter">
-          <kbd class="shortcut-hint" data-shortcut="sidebar.focusFilter" aria-hidden="true" hidden></kbd>
-        </label>
         <div class="ctx-list"></div>
       </section>
+      <!-- The foot: the OATS mark (decorative) and the sidebar toggle, then at the right Spawn instance and the
+           settings cog (sidebar-settings.mjs builds its menu). -->
       <div id="nav-foot">
-        <button id="sidebar-spawn" class="primary" type="button" data-action="app.chooseSoul"
-                title="Choose a soul in Workspace to spawn an instance" aria-label="Spawn instance: choose a soul in Workspace">
-          <span data-shell-icon="plus" aria-hidden="true"></span><span>Spawn instance</span>
-          <kbd class="shortcut-hint" data-shortcut="app.chooseSoul" aria-hidden="true" hidden></kbd>
-        </button>
-        <div id="sidebar-tools" role="group" aria-label="Desktop tools">
-          <button id="sidebar-toggle" class="nav-item icon-button" type="button" data-action="sidebar.toggle"
+        <div id="sidebar-bar" role="group" aria-label="Sidebar tools">
+          <span class="sidebar-brand" aria-hidden="true"><img class="sidebar-brand-image" src="../assets/brand/generated/sidebar-48.png" width="20" height="20" alt="" draggable="false"></span>
+          <button id="sidebar-toggle" class="side-icon-button icon-button" type="button" data-action="sidebar.toggle"
                   title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
-          <button id="sidebar-theme" class="nav-item icon-button" type="button" data-action="app.themePicker" aria-haspopup="dialog"
-                  title="Choose a theme" aria-label="Choose a theme"><span data-shell-icon="theme" aria-hidden="true"></span></button>
-          <button id="sidebar-shortcuts" class="nav-item icon-button" type="button" data-action="app.shortcuts"
-                  title="Edit keyboard shortcuts" aria-label="Edit keyboard shortcuts"><span data-shell-icon="shortcuts" aria-hidden="true"></span></button>
-          <button id="sidebar-settings" class="nav-item icon-button" type="button" data-action="app.connections"
-                  title="Settings" aria-label="Settings"><span data-shell-icon="settings" aria-hidden="true"></span></button>
-          <button id="sidebar-palette" class="nav-item icon-button" type="button" data-action="app.palette"
-                  title="Open the command palette" aria-label="Open the command palette"><span data-shell-icon="palette" aria-hidden="true"></span></button>
+          <button id="sidebar-spawn" type="button" data-action="app.quickOpenSouls"
+                  title="Spawn instance" aria-label="Spawn instance">Spawn instance</button>
+          <button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"></button>
         </div>
       </div>
     </aside>
@@ -90,8 +80,8 @@
   <div id="ws-modal" class="ws-modal" hidden>
     <section class="ws-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-dialog-title" aria-describedby="ws-dialog-status">
       <header class="ws-dialog-head">
-        <div><span class="side-kicker">OATS desktop</span><h2 id="ws-dialog-title">Add workspace</h2></div>
-        <button id="ws-dialog-close" class="icon-button" type="button" aria-label="Close add workspace dialog" data-shell-icon="close"></button>
+        <div><span class="side-kicker">OATS desktop</span><h2 id="ws-dialog-title">Add local workspace</h2></div>
+        <button id="ws-dialog-close" class="icon-button" type="button" aria-label="Close Add local workspace" data-shell-icon="close"></button>
       </header>
       <p class="ws-dialog-intro">Choose a discovered OATS workspace or browse for another folder.</p>
       <input id="ws-suggestion-search" type="search" placeholder="Filter suggestions…" autocomplete="off" aria-label="Filter suggested OATS workspaces">
