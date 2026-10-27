@@ -1300,7 +1300,7 @@ could not resume, found was not lost, or left because it was lost long ago.
 Such an instance sets off no sweep until a later read shows it running or no
 longer lost, or a sweep resumes it. There
 is no timer and no queue: a read that comes too soon starts nothing, and the
-next read asks again. The rule is the Desktop's
+next read asks again. The rule is the shared client's
 (`packages/client/session-resume-trigger.mjs`). It runs only when the kernel
 advertises the `session-resume` feature; without it, nothing runs and
 nothing is said.
