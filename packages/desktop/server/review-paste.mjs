@@ -3,8 +3,10 @@
  * The pane is the kernel's answer (`inspect`, `oats session inspect --json` `paneId`, #1569), never the
  * window's active pane: in a window with more than one pane the active one may be another program's,
  * a no-echo prompt among them. A refused or unreadable inspect refuses the paste, so a kernel that
- * cannot tell, or one older than #1569 on a split window, pastes nothing. The pane must still be one of
- * the row's own anchored window, read after the inspect, or nothing is pasted.
+ * cannot tell, or one older than #1569 on a split window, pastes nothing. A pane id names a pane of one
+ * tmux server only, so the row read again after the inspect must record the same server, session and
+ * window as the row the kernel was asked for, and the pane must be one of that anchored window's, or
+ * nothing is pasted.
  * The per-request buffer is deleted on every path: `-d` on success, an explicit delete-buffer on
  * any failure after load-buffer. The block itself carries no CR/LF (review-threads.mjs).
  * Every tmux call goes to the tmux server the instance's row records (`tmux.socket`), through the
@@ -25,10 +27,12 @@ export function createReviewPaste({ exec = execFileSync, find, tmuxTarget, inspe
     try { tmuxTarget(inst); tmuxSocketArgs(inst.tmux?.socket); } catch { return 'E_TERMINAL_UNSUPPORTED'; }
     return null;
   }
-  /** The agent's pane, `%N`, or a stable code. */
-  async function agentPane(target) {
+  /** Where a row's terminal is: its tmux server (no socket: the default one), session and window. */
+  const endpoint = inst => JSON.stringify([inst?.tmux?.socket || null, inst?.tmux?.session ?? null, inst?.tmux?.window ?? null]);
+  /** The agent's pane of `inst`, `%N`, or a stable code. */
+  async function agentPane(inst) {
     let answer;
-    try { answer = await inspect(find(target)); } catch { answer = null; }
+    try { answer = await inspect(inst); } catch { answer = null; }
     const seen = answer?.ok === true ? answer.result : null;
     if (!seen || typeof seen !== 'object') return { code: 'E_TERMINAL_UNSUPPORTED' };
     // A kernel without `running` (session-inspect-running) says a live harness as `state: unknown`.
@@ -41,12 +45,15 @@ export function createReviewPaste({ exec = execFileSync, find, tmuxTarget, inspe
     const early = check(target);
     if (early) return early;
     if (typeof text !== 'string' || !text || /[\r\n]/.test(text)) return 'E_BAD_ARGS';
-    const { pane, code } = await agentPane(target);
+    const asked = find(target);
+    const { pane, code } = await agentPane(asked);
     if (code) return code;
-    // The row is read again after the inspect: the roster may have moved on meanwhile.
+    // The row is read again after the inspect: the roster may have moved on meanwhile, and a restart
+    // onto another server can hand the same pane id to another program there.
     const refused = check(target);
     if (refused) return refused;
     const inst = find(target), name = `oatsrt-${random()}`;
+    if (endpoint(inst) !== endpoint(asked)) return 'E_TERMINAL_UNSUPPORTED';
     let loaded = false, server;
     try {
       server = tmuxSocketArgs(inst.tmux?.socket);

@@ -131,6 +131,22 @@ test('the row is read again after the inspect: a row that stopped or moved meanw
   }
 });
 
+test('a row whose terminal moved to another tmux server, session or window during the inspect takes nothing, even where the pane id exists there', async () => {
+  // A pane id names a pane of one server: on the new server %5 is another program's (a prompt), the agent %9.
+  for (const moved of [{ socket: '/new.sock' }, { socket: null }, { session: 'other' }, { window: 'other' }]) {
+    let row = socketRow({ socket: '/old.sock' }); const calls = [];
+    const inspect = async () => { const answer = await inspected({ paneId: '%5' })(); row = socketRow({ socket: '/old.sock', ...moved }); return answer; };
+    const code = await createReviewPaste({ find: () => row, tmuxTarget: anchored, inspect, exec: tmuxOf(calls) }).paste(AT, 'x');
+    assert.equal(code, 'E_TERMINAL_UNSUPPORTED', JSON.stringify(moved));
+    assert.equal(calls.length, 0, `${JSON.stringify(moved)}: no tmux call on either server`);
+  }
+  let row = socketRow({ socket: '/old.sock' }); const calls = [];
+  const inspect = async () => { const answer = await inspected()(); row = { ...socketRow({ socket: '/old.sock' }), waitingOnYou: null }; return answer; };
+  assert.equal(await createReviewPaste({ find: () => row, tmuxTarget: anchored, inspect, random: () => 'r1', exec: tmuxOf(calls) }).paste(AT, 'x'), null,
+    'a fresh row of the same terminal still takes it');
+  assert.ok(calls.every(c => c[1].slice(0, 3).join(' ') === '-u -S /old.sock'));
+});
+
 // The paste and the tmux server the row records (#602). One test per claim, so each fails on its own.
 test('a row on another tmux server: every call carries -S <socket>, the panes listed in the same anchored window', async () => {
   const calls = []; const p = createReviewPaste({ find: () => socketRow({ socket: SOCKET }), tmuxTarget: anchored, inspect: inspected(), random: () => 'r1', exec: tmuxOf(calls) });

@@ -258,9 +258,12 @@ paste, the server runs `oats session inspect --home <home> --json`
 includes a kernel that can't tell which pane is the agent's, and a kernel
 before #1569 on a split window. A terminal that isn't present, or isn't
 running a harness, is `E_NOT_RUNNING`. Either way nothing is pasted. The row
-is then read again and checked as before. The pane must be one of the row's
-own anchored window (`list-panes -t =<session>:=<window>`), or the paste is
-`E_TERMINAL_UNSUPPORTED` and nothing is loaded.
+is then read again and checked as before. A pane id names a pane of one tmux
+server only, so the fresh row must record the same socket, session and window
+as the row the kernel was asked about (a restart onto another server can hand
+the same id to another program there). The pane must also be one of that
+anchored window's (`list-panes -t =<session>:=<window>`). Otherwise the paste
+is `E_TERMINAL_UNSUPPORTED` and nothing is loaded.
 
 Every tmux call (`list-panes`, `load-buffer`, `paste-buffer`, and the
 `delete-buffer` after a failed paste) goes to the tmux server the instance's row
