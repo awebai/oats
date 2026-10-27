@@ -60,6 +60,13 @@ test("the old or hybrid hierarchy, or a path that cannot be judged: not wrapped;
   assert.equal(plan(v1Scope, { invocationId: "x" }).warn.unit, "a systemd service", "a scope there is named as before: the warning path is #915's");
 });
 
+test("a Linux host not booted with systemd (a container's own init, another init system): not wrapped, nothing to say", () => {
+  // Its cgroup paths name no unit of a user manager: the rule above already answers no.
+  for (const cgroup of ["0::/\n", "0::/docker/0123456789abcdef\n", "0::/lxc.payload.c1\n", "0::/openrc.sshd\n", "0::/user/1000.user/1.session\n"]) {
+    assert.deepEqual(plan(cgroup, { invocationId: undefined }), { wrap: false }, cgroup);
+  }
+});
+
 test("an unreadable cgroup: as today, no warning", () => {
   assert.deepEqual(plan(null, { invocationId: "abc" }), { wrap: false });
   assert.deepEqual(plan(undefined), { wrap: false });
@@ -86,7 +93,7 @@ test("the warning names the unit, the consequence, the fixes and the reason", ()
 
 test("a launch configuration cannot set the #915 test seams: reserved, so no launch chooses the systemd-run the kernel runs or where it judges itself", async () => {
   const { validateLaunchConfig, RESERVED_LAUNCH_ENV } = await import("../lib/core.mjs");
-  for (const name of ["OATS_TEST_CGROUP", "OATS_TEST_SYSTEM_TOOL_DIRS"]) {
+  for (const name of ["OATS_TEST_CGROUP", "OATS_TEST_SYSTEMD_BOOTED", "OATS_TEST_SYSTEM_TOOL_DIRS"]) {
     assert.ok(RESERVED_LAUNCH_ENV.has(name), name);
     assert.throws(() => validateLaunchConfig("seam", { harness: "claude", env: { [name]: "/fixture" } }), (e) => e.code === "E_LAUNCH_CONFIG_INVALID" && e.message.includes(name));
   }
@@ -112,9 +119,28 @@ function probe(answer = { ok: true }) {
 }
 const paneOf = (env) => () => ({ env });
 
-test("the agent's host: Linux on the unified hierarchy, whatever unit the creator is in", () => {
-  for (const cgroup of [UNIFIED, TICK, "0::/\n", "0::/oats-fixture.scope\n"]) assert.equal(agentScopeHost({ platform: "linux", cgroup }), true, cgroup);
-  for (const [platform, cgroup] of [["darwin", TICK], ["linux", null], ["linux", "12:cpu:/\n1:name=systemd:/a.service\n"], ["linux", "1:name=systemd:/a\n0::/a.scope\n"], ["linux", "0::relative\n"]]) assert.equal(agentScopeHost({ platform, cgroup }), false, `${platform} ${cgroup}`);
+test("the agent's host: Linux booted with systemd, on the unified hierarchy, whatever unit the creator is in", () => {
+  for (const cgroup of [UNIFIED, TICK, "0::/\n", "0::/oats-fixture.scope\n"]) assert.equal(agentScopeHost({ platform: "linux", cgroup, systemdBooted: true }), true, cgroup);
+  for (const [platform, cgroup] of [["darwin", TICK], ["linux", null], ["linux", "12:cpu:/\n1:name=systemd:/a.service\n"], ["linux", "1:name=systemd:/a\n0::/a.scope\n"], ["linux", "0::relative\n"]]) assert.equal(agentScopeHost({ platform, cgroup, systemdBooted: true }), false, `${platform} ${cgroup}`);
+  for (const cgroup of ["0::/\n", "0::/docker/0123456789abcdef\n", UNIFIED]) assert.equal(agentScopeHost({ platform: "linux", cgroup, systemdBooted: false }), false, `not booted with systemd: ${cgroup}`);
+});
+
+test("the placement says whether the host was booted with systemd: io's, else the test seams, else sd_booted's", () => {
+  const saved = { cgroup: process.env.OATS_TEST_CGROUP, booted: process.env.OATS_TEST_SYSTEMD_BOOTED };
+  try {
+    delete process.env.OATS_TEST_CGROUP; delete process.env.OATS_TEST_SYSTEMD_BOOTED;
+    assert.equal(creatorPlacement({ platform: "linux", cgroup: UNIFIED, systemdBooted: false }).systemdBooted, false);
+    assert.equal(creatorPlacement({ platform: "linux", cgroup: UNIFIED }).systemdBooted, true, "a test's placement is a systemd host's");
+    process.env.OATS_TEST_CGROUP = UNIFIED;
+    assert.equal(creatorPlacement().systemdBooted, true, "OATS_TEST_CGROUP: a systemd host's");
+    process.env.OATS_TEST_SYSTEMD_BOOTED = "0";
+    assert.equal(creatorPlacement().systemdBooted, false, "unless OATS_TEST_SYSTEMD_BOOTED says otherwise");
+    assert.equal(creatorPlacement({ platform: "linux", cgroup: UNIFIED, systemdBooted: true }).systemdBooted, true, "io's own answer first");
+    process.env.OATS_TEST_SYSTEMD_BOOTED = "1";
+    assert.equal(creatorPlacement().systemdBooted, true);
+  } finally {
+    for (const [k, v] of [["OATS_TEST_CGROUP", saved.cgroup], ["OATS_TEST_SYSTEMD_BOOTED", saved.booted]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
 });
 
 test("the agent's unit name: a prefix per canonical home, a random part per launch", () => {
@@ -143,7 +169,7 @@ test("a probe that starts a scope in the pane's environment: wrapped, with the s
   assert.deepEqual(p.calls, [{ systemdRun: join(SYS, "systemd-run"), trueFile: join(SYS, "true"), env }], "the probe runs with the pane's values, and only those");
 });
 
-test("off Linux, on another hierarchy, or with a test's io that brings no probe: no scope and nothing said", () => {
+test("off Linux, without systemd (even with no systemd-run at all), on another hierarchy, or with a test's io that brings no probe: no scope and nothing said", () => {
   const p = probe();
   let read = 0;
   const paneEnv = () => { read++; return { env: {} }; };
@@ -152,6 +178,8 @@ test("off Linux, on another hierarchy, or with a test's io that brings no probe:
     { platform: "linux", cgroup: "12:cpu:/\n1:name=systemd:/user.slice/a.scope\n", systemToolDirs: [SYS], scopeProbe: p.fn },
     { platform: "linux", cgroup: null, systemToolDirs: [SYS], scopeProbe: p.fn },
     { platform: "linux", cgroup: UNIFIED, systemToolDirs: [SYS] },
+    { platform: "linux", cgroup: UNIFIED, systemdBooted: false, systemToolDirs: [SYS], scopeProbe: p.fn },
+    { platform: "linux", cgroup: "0::/\n", systemdBooted: false, systemToolDirs: [tools("none", [])], scopeProbe: p.fn },
   ]) assert.deepEqual(agentScope({ io, paneEnv }), {}, JSON.stringify(io));
   assert.equal(p.calls.length, 0, "no probe"); assert.equal(read, 0, "the pane's environment is not read");
 });

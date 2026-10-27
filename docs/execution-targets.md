@@ -188,7 +188,9 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
   own `oats-agent-*.scope` (an agent that spawns), the manager's `init.scope`.
   A login session's scope (`/user.slice/user-<uid>.slice/session-N.scope`, an
   ssh or tty login) sits beside the user manager, not in it, and starts the
-  server as before, as macOS does. A server that already answers is used as
+  server as before, as macOS does. So does a Linux host not booted with
+  systemd (a container's own init, another init system): its cgroup paths
+  name no unit of a user manager. A server that already answers is used as
   it is: one started before this rule keeps the cgroup it has.
 - **The limits.**
   - Only the unified cgroup hierarchy is judged. On the old or hybrid
@@ -230,8 +232,9 @@ user manager's default slice, wherever the server is:
   The scope is decided at each launch and is never recorded: the home's
   `command`, its launch recipe, the start's receipt and the retirement baseline
   are as before, and `oats spawn --preview` does not show it.
-- **The conditions.** Linux, and the launching process on the unified cgroup
-  hierarchy, whatever unit it is in. Before it wraps, the launch checks that a
+- **The conditions.** Linux booted with systemd (`/run/systemd/system` is a
+  directory, as `sd_booted` reads it), and the launching process on the
+  unified cgroup hierarchy, whatever unit it is in. Before it wraps, the launch checks that a
   scope can be created: it runs `systemd-run --user --scope --collect --quiet
   -- true` with the pane's own `XDG_RUNTIME_DIR` and
   `DBUS_SESSION_BUS_ADDRESS`: what the launch's command sets (a launch
@@ -239,13 +242,17 @@ user manager's default slice, wherever the server is:
   is bounded to 5 seconds. One OATS command
   checks once for each `systemd-run` and pair of values, so a start of many
   agents checks once.
-- **When it cannot.** When the check fails, `systemd-run`, `env` or `true` is
-  not in `/usr/bin` or `/bin`, or the pane's environment cannot be read, the
-  harness is launched exactly as before, and the answer's `warnings` (spawn,
-  session start and restart), and a `launch-warning` event, say once `the agent's harness runs in the OATS tmux server's cgroup, not a scope
-  of its own: <reason>`. A pane whose server has no `XDG_RUNTIME_DIR` or bus
-  (a server started where none was set) fails the check. Off Linux and on the
-  old or hybrid hierarchy nothing changes and nothing is said.
+- **When it cannot.** On a systemd host, when the check fails, `systemd-run`,
+  `env` or `true` is not in `/usr/bin` or `/bin`, or the pane's environment
+  cannot be read, the harness is launched exactly as before, and the answer's
+  `warnings` (spawn, session start and restart), and a `launch-warning`
+  event, say once `the agent's harness runs in the OATS tmux server's cgroup,
+  not a scope of its own: <reason>`. A pane whose server has no
+  `XDG_RUNTIME_DIR` or bus (a server started where none was set, a user
+  without lingering) fails the check. Off Linux, on a Linux host not booted
+  with systemd (a container's own init, another init system: no user manager
+  and no systemd-oomd), and on the old or hybrid hierarchy, nothing changes
+  and nothing is said.
 - **What is left.** `systemd-run` could still fail between the check and the
   pane. The pane's shell then reads exit status 1, an ordinary exit that is
   never taken for a harness to bring back.
@@ -621,8 +628,8 @@ operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 the login shell, honoured only for a process whose `HOME` is not your home
 directory; a launch configuration cannot set it),
 `OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS`, `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS`,
-`OATS_TEST_PROCESS_START_PS` (below), `OATS_TEST_CGROUP` and
-`OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's and the agents'
+`OATS_TEST_PROCESS_START_PS` (below), `OATS_TEST_CGROUP`,
+`OATS_TEST_SYSTEMD_BOOTED` and `OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's and the agents'
 [own scopes](#where-sessions-run-the-servers-scope-and-each-agents)), a `worktree` hook's tree
 (`OATS_TREE`, `OATS_TREE_CLONE`, `OATS_TREE_REMOTE`, `OATS_TREE_MEMBER`,
 `OATS_TREE_BASE`, `OATS_TREE_BASE_OID`, `OATS_PURPOSE`, `OATS_TREE_ORIGIN`), `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,

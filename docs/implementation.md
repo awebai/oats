@@ -721,17 +721,21 @@ and acts on every existing session through its recorded socket
   the host's `env` and `true`, and a `systemd-run` that runs what follows
   `--` in its own process. So every fixture launch is wrapped, and passes
   through that fake, never the host's user manager. A test of a scope sets
-  its own. Two test-only seams select where the kernel judges itself and
+  its own. Three test-only seams select where the kernel judges itself and
   which `systemd-run` it runs:
-  - `OATS_TEST_CGROUP`: the text of a `/proc/self/cgroup`, judged as Linux;
+  - `OATS_TEST_CGROUP`: the text of a `/proc/self/cgroup`, judged as Linux
+    booted with systemd;
+  - `OATS_TEST_SYSTEMD_BOOTED`: `1` or `0`, in place of whether
+    `/run/systemd/system` is a directory (sd_booted): `0` is a Linux host
+    without systemd, where no agent scope is judged;
   - `OATS_TEST_SYSTEM_TOOL_DIRS`: absolute directories separated by `:`, in
     place of `/usr/bin:/bin`. Any other value means no system tool, never a
     `PATH` lookup.
 
-  Both are reserved launch names (a launch configuration cannot set them),
+  All three are reserved launch names (a launch configuration cannot set them),
   are removed from a server's environment, and are stripped from the tick's
   children like every reserved name. In process, `io.cgroup`, `io.platform`,
-  `io.invocationId` and `io.systemToolDirs` do the same for
+  `io.invocationId`, `io.systemdBooted` and `io.systemToolDirs` do the same for
   `ensureOatsTmuxSession`, and `agentScope` takes `io.scopeProbe` in place
   of the real probe. A start given an `io` with no `scopeProbe` judges no
   agent scope at all (its tmux is a test's). The one test that reaches the

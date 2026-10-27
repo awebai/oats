@@ -177,6 +177,26 @@ test("a failed probe: the spawn and the start launch as before, and say once why
   assert.deepEqual(agentWarnings(bare), [agentScopeWarning(`no executable systemd-run in ${none}`)]);
 });
 
+test("on Linux not booted with systemd (a container's init, another init system): spawn and start wrap nothing, probe nothing and say nothing", async (t) => {
+  const { fx } = deployment(t);
+  const dir = systemDir(fx, "no-systemd", null); // and no systemd-run either: still nothing to say
+  const env = { OATS_TEST_SYSTEM_TOOL_DIRS: dir, OATS_TEST_SYSTEMD_BOOTED: "0", OATS_TEST_CGROUP: "0::/\n" };
+  const spawned = answer(fx.cli(["spawn", "dev", "--harness", "claude", "--json"], { env }));
+  assert.deepEqual(agentWarnings(spawned), []);
+  assert.equal((spawned.warnings ?? []).some(isScopeWarning), false, "nor about the server");
+  assert.doesNotMatch(paneStartCommand(spawned.home), /systemd-run|INVOCATION_ID/);
+  const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
+  execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);
+  const started = answer(fx.cli(["session", "start", "--home", spawned.home, "--json"], { env }));
+  assert.deepEqual(agentWarnings(started), []);
+  assert.doesNotMatch(paneStartCommand(spawned.home), /systemd-run|INVOCATION_ID/);
+  assert.equal(readEvents(spawned.home).events.some((e) => e.kind === "launch-warning" && e.data.message.startsWith(agentScopeWarning(""))), false, "and no launch-warning event");
+  // The same host booted with systemd and no systemd-run: the risk is real, so it is said.
+  execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);
+  const booted = answer(fx.cli(["session", "start", "--home", spawned.home, "--json"], { env: { ...env, OATS_TEST_SYSTEMD_BOOTED: "1" } }));
+  assert.deepEqual(agentWarnings(booted), [agentScopeWarning(`no executable systemd-run in ${dir}`)]);
+});
+
 test("on a cgroup hierarchy other than the unified one: no scope, no probe, nothing said", (t) => {
   const { fx } = deployment(t);
   const dir = systemDir(fx, "v1", RUNS_COMMAND);
