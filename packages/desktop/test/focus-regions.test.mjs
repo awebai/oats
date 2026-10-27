@@ -9,7 +9,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { createFocusRegions, REGIONS } from "../renderer/focus-regions.mjs";
+import { createFocusRegions, REGIONS, isShown } from "../renderer/focus-regions.mjs";
+import { createSidebarWidth } from "../renderer/sidebar-width.mjs";
 import { NAV } from "../renderer/shell-nav.mjs";
 import { createSurfaceReturn } from "../renderer/surface-return.mjs";
 import { captureFocusReturn } from "../renderer/focus-return.mjs";
@@ -429,4 +430,25 @@ test("a stage return that a newer action overtakes does not steal focus", async 
   row.focus(); // the operator is already elsewhere (the workspace list) when the stage mounts
   await new Promise(setImmediate);
   assert.equal(u.doc.activeElement, row);
+});
+
+// The sidebar's width handle is a Tab stop, the sidebar's last (after the foot), and counts as the foot:
+// no region, F6 on to main and Shift+F6 back to the roster. A hidden sidebar hides it.
+test("the sidebar's width handle: a Tab stop after the foot that F6 treats as the foot", t => {
+  const s = shell(t);
+  const { handle } = createSidebarWidth({ doc: s.doc, win: s.dom.window });
+  assert.equal(s.doc.getElementById("sidebar").lastElementChild, handle, "the sidebar's last element");
+  assert.equal(s.doc.getElementById("nav-foot").compareDocumentPosition(handle) & s.dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    s.dom.window.Node.DOCUMENT_POSITION_FOLLOWING, "after the foot in Tab order");
+  assert.equal(handle.tabIndex, 0);
+  handle.focus(); assert.equal(s.doc.activeElement, handle);
+  assert.equal(s.regions.regionOfFocus(), null, "no region");
+  s.regions.cycle(1); assert.equal(s.where(), "Souls", "F6: main");
+  handle.focus(); s.regions.cycle(-1); assert.equal(s.where(), "b", "Shift+F6: the roster's stop");
+  assert.equal(REGIONS.some(name => s.regions.visible(name) && s.regions.currentItem(name) === handle), false, "no region lands on it");
+  for (const cls of ["sidebar-hidden", "focus-mode"]) {
+    s.doc.getElementById("app").classList.add(cls);
+    assert.equal(isShown(handle), false, `${cls}: hidden with the sidebar`);
+    s.doc.getElementById("app").classList.remove(cls);
+  }
 });

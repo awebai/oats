@@ -17,7 +17,7 @@ import { sourceQuote, LEAD_INS } from './source-quote.mjs';
 export const pageCardCSS = `
 .workspace-page { padding:0 !important; }
 .page-bar { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:8px; height:var(--bar-h); min-height:48px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); font-size:12.5px; }
-.oats-view .page-bar button.page-back { display:inline-flex; align-items:center; gap:6px; height:30px; min-height:30px; margin-right:6px; padding:0 10px 0 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--sans,system-ui); cursor:pointer; flex:none; }
+.oats-view .page-bar button.page-back { display:inline-flex; align-items:center; gap:6px; height:30px; min-height:30px; margin-right:6px; padding:0 10px 0 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-weight:600; font-size:12.5px; line-height:normal; font-family:var(--ui-font,system-ui); cursor:pointer; flex:none; }
 .oats-view .page-bar button.page-back:hover { background:var(--surface-2); }
 .page-crumbs { display:flex; align-items:center; gap:8px; min-width:0; color:var(--muted); white-space:nowrap; overflow:hidden; }
 .page-crumbs .page-crumb-current { color:var(--fg); font-weight:650; overflow:hidden; text-overflow:ellipsis; }
@@ -35,7 +35,7 @@ export const pageCardCSS = `
 .page-identity-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
 .page-title { display:flex; align-items:center; gap:10px; min-width:0; margin:0; font-size:20px; font-weight:700; letter-spacing:-.01em; overflow-wrap:anywhere; }
 .page-title.mono { font:700 20px var(--mono,monospace); }
-.page-tag { display:inline-flex; align-items:center; height:22px; padding:0 7px; border-radius:5px; background:var(--chip-bg); color:var(--fg); font:650 11.5px var(--sans,system-ui); letter-spacing:0; white-space:nowrap; }
+.page-tag { display:inline-flex; align-items:center; height:22px; padding:0 7px; border-radius:5px; background:var(--chip-bg); color:var(--fg); font-weight:650; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); letter-spacing:0; white-space:nowrap; }
 .page-lede { margin:0; color:var(--muted); font-size:13px; }
 /* desktop/loading-states item 7: the catalog's facts arrive after the page (opened from a soul): a
    lede-sized line and a facts-sized block stand where they go; the catalog's age line sits under the bar. */
@@ -93,7 +93,7 @@ export const capabilityPageCSS = `
 .capability-page .used-meta.warn { color:var(--warn); }
 .capability-page .page-kv.why { align-items:start; }
 .capability-page .page-kv.why dt { padding-top:7px; }
-.capability-page .page-kv.why dd { display:flex; flex-direction:column; gap:2px; padding:7px 0; white-space:normal; overflow:visible; font:12px var(--sans,system-ui); }
+.capability-page .page-kv.why dd { display:flex; flex-direction:column; gap:2px; padding:7px 0; white-space:normal; overflow:visible; font-weight:normal; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); }
 .capability-page .page-why-label { color:var(--fg); font-weight:600; }
 .capability-page .page-why-note { color:var(--muted); line-height:1.45; }
 .capability-page .provides-card { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:0 16px; margin:0; padding:4px 14px; }
@@ -106,8 +106,8 @@ export const capabilityPageCSS = `
 .capability-page .provides-items .page-note { padding:2px 0; }
 /* Trigger sources: the manifest's own words, quoted (source-quote.mjs), or the plain lines that say they can't be read. */
 .capability-page .provides-items.provides-sources { flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:3px; padding:8px 0; }
-.capability-page .provides-unreadable { margin:0; color:var(--fg); font:12px/1.5 var(--sans,system-ui); }
-.capability-page .provides-unreadable-why { margin:0; color:var(--muted); font:11.5px/1.45 var(--sans,system-ui); overflow-wrap:anywhere; }
+.capability-page .provides-unreadable { margin:0; color:var(--fg); font-weight:normal; font-size:12px; line-height:1.5; font-family:var(--ui-font,system-ui); }
+.capability-page .provides-unreadable-why { margin:0; color:var(--muted); font-weight:normal; font-size:11.5px; line-height:1.45; font-family:var(--ui-font,system-ui); overflow-wrap:anywhere; }
 .capability-page pre { margin:0; padding:10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--fg); overflow:auto; font-size:11.5px; }
 `;
 
@@ -127,7 +127,7 @@ export const soulCapabilitiesCSS = `
 .soul-cap-copy { display:flex; flex-direction:column; min-width:0; }
 .soul-cap-slot { color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .oats-view .page-table button.soul-cap-row { height:auto; min-height:44px; font-size:12px; font-weight:400; }
-.soul-core .soul-cap-row.none .soul-cap-id { color:var(--muted); font-family:var(--sans,system-ui); font-weight:500; }
+.soul-core .soul-cap-row.none .soul-cap-id { color:var(--muted); font-family:var(--ui-font,system-ui); font-weight:500; }
 .soul-caps .page-note { padding:12px 16px; }
 `;
 

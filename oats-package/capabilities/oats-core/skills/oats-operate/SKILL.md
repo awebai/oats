@@ -334,10 +334,14 @@ oats instance attention --clear                                  # once you have
 
 The Claude Code emitter is separate and automatic. In a Claude instance,
 oats.core's hooks report a pending permission prompt or question themselves
-(producer `oats.core`) and clear it when the session moves on. So a question
-you ask through Claude's question dialog, or a permission prompt, needs no
-claim of yours; set your own for a question you ask in text, by mail or by
-chat. Your attention claim is yours alone, and the emitter never clears it.
+(producer `oats.core`) and clear it when the session moves on. From oats.core
+2.8.0 its claim carries the prompt's text: the question's own words, or Claude's
+"needs your permission to use <tool>". So a question you ask through Claude's
+question dialog, or a permission prompt, needs no claim of yours; set your own
+for a question you ask in text, by mail or by chat. Your attention claim is
+yours alone, and the emitter never clears it. A claim with text is shown over
+one without, so a later claim with no text does not hide your question. A later
+one with text, such as a permission prompt's, is shown in its place.
 
 ## Spawned by a trigger
 

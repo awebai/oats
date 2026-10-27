@@ -160,6 +160,24 @@ export const NO_ANSWER_RETRIES = 3;
 /** ssh exits 255 for its own failures: here, a link that died under the viewer. */
 export const LOST_LINK_EXIT = 255;
 
+// A resize drag (the sidebar's handle, sidebar-width.mjs) holds the PTY resizes: while any hold is on, a terminal
+// still refits every frame, but its program hears the size once, when the last hold lets go. Each terminal that
+// resized meanwhile then refits to the final layout and sends its size.
+let resizeHolds = 0;
+const heldResizes = new Set();
+/** Hold every terminal's PTY resize; answers the release (a second call does nothing). */
+export function holdTerminalResizes() {
+  resizeHolds++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--resizeHolds) return;
+    const settles = [...heldResizes]; heldResizes.clear();
+    for (const settle of settles) { try { settle(); } catch { /* a closed terminal */ } }
+  };
+}
+
 export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap, isActive, ownsFocus = () => false,
   focusInput = () => term.focus(), fit, observe, interceptKey, onError = () => {},
   clock = { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: t => clearTimeout(t) } }) {
@@ -237,6 +255,17 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     const result = desk.termWrite(h, data);
     if (result?.ok === false) banner(terminalFailure(result.code).message);
   };
+  // The program hears the grid's size from the current lease only.
+  const sendSize = () => {
+    const current = life.ptyId();
+    if (ready && !closed && !ended && current) desk.termResize(current, term.cols, term.rows);
+  };
+  // A held resize's release: refit to the layout now (a refit that changes the grid has sent it), else send it.
+  const settleSize = () => {
+    const { cols, rows } = term;
+    if (!closed && isActive()) { try { fit?.(); } catch { /* hidden geometry */ } }
+    if (term.cols === cols && term.rows === rows) sendSize();
+  };
   function wait() {
     link = 'waiting';
     dueAt = clock.now() + RECONNECT_DELAYS_MS[Math.min(failures, RECONNECT_DELAYS_MS.length - 1)];
@@ -310,10 +339,7 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
         if (byte !== null) write(byte);
         return false;
       });
-      subscriptions.push(term.onResize(({ cols, rows }) => {
-        const current = life.ptyId();
-        if (ready && !closed && !ended && current) desk.termResize(current, cols, rows);
-      }));
+      subscriptions.push(term.onResize(() => { if (resizeHolds) heldResizes.add(settleSize); else sendSize(); }));
       unobserve = (observe || defaultObserve)(wrap);
       if (desk.termAttachFiles) detachAttachments = wireTerminalAttachments({ wrap, desk, term,
         ptyId: () => !closed && !ended && ready ? life.ptyId() : null, ownsFocus,

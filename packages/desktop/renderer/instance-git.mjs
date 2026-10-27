@@ -61,7 +61,7 @@ export const instanceGitCSS = `
 .instance-git .git-count-del { color:var(--danger); }
 /* Red/green (and the letters) on --sel are not AA in every theme; the sign and the letter say which. */
 .instance-git .git-file[aria-pressed=true] .git-count-add, .instance-git .git-file[aria-pressed=true] .git-count-del, .instance-git .git-file[aria-pressed=true] .git-letter { color:var(--fg); }
-.instance-git .git-count-binary { color:var(--muted); font-family:var(--sans,system-ui); font-size:11px; }
+.instance-git .git-count-binary { color:var(--muted); font-family:var(--ui-font,system-ui); font-size:11px; }
 /* A path or branch breaks after its slashes; a segment breaks inside only when longer than the line. */
 .instance-git .git-seg { display:inline-block; max-width:100%; overflow-wrap:anywhere; }
 .instance-git .git-diff:empty { display:none; }

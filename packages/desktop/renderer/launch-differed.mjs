@@ -12,7 +12,7 @@ import { sourceQuote } from './source-quote.mjs';
 export const launchDifferedCSS = `
 .launch-differed { display:flex; flex-direction:column; gap:6px; min-width:0; margin:0; }
 .launch-differed[hidden] { display:none; }
-.launch-differed-lead { margin:0; color:var(--muted); font:12px/1.5 var(--sans,system-ui); overflow-wrap:anywhere; }
+.launch-differed-lead { margin:0; color:var(--muted); font-weight:normal; font-size:12px; line-height:1.5; font-family:var(--ui-font,system-ui); overflow-wrap:anywhere; }
 `;
 
 const serials = new WeakMap();

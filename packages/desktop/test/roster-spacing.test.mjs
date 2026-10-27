@@ -138,7 +138,7 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   assert.equal(u.rule(".ctx-group").height, "14px", "a 14px gap after a group (the product owner, 2026-10-26: as before the 6px of 2026-10-23)");
   assert.equal(u.rule(".ctx-group:first-child").height, "7px", "the first row sits closer to the head (human, 2026-09-29)");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
-  assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
+  assert.equal(u.rule(".ctx-name").fontSize, "var(--name-size, 12.5px)", "12.5px, or the font choice's (12px in Omarchy's font)");
   assert.equal(u.rule(".ctx-name").fontWeight, "600");
   // The meta line (the product owner, 2026-10-26): the soul in the UI face at the left, the repository in mono at the right.
   assert.equal(u.rule(".ctx-meta.ctx-soul-repo").fontSize, "11.5px", "Inconsolata is narrow: a step up from 10.5 (the operator, 2026-10-02)");
@@ -211,7 +211,7 @@ test("roster DOM contract: named group separators, identity, active state, hidde
   assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running");
   assert.equal(u.doc.querySelector(".ctx-count").title, "5 running · 0 stopped · 1 unknown");
   for (const row of u.rows) {
-    const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").textContent;
+    const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").dataset.name;
     assert.equal(button.dataset.treeInstance, `/synthetic/${name}`);
     assert.equal(button.hasAttribute("aria-expanded"), button.dataset.rosterChildren === "1", "only parents announce expansion");
     const trigger = row.querySelector(".ctx-instance-actions"), menu = row.querySelector(".ctx-instance-menu");
@@ -333,7 +333,7 @@ test('a row that cannot open says why on its meta line (text, not colour), with 
   ];
   u.render(rows.map(([row]) => row));
   for (const [row, label, sentence] of rows) {
-    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').textContent === row.instance);
+    const button = [...u.doc.querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name').dataset.name === row.instance);
     assert.ok(button, row.instance);
     const meta = button.querySelector('.ctx-meta-soul').textContent;
     assert.equal(meta, `dev · ${label}`, `${row.instance}: the meta line's soul side "${meta}" shows "${label}"`);

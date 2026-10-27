@@ -11,13 +11,14 @@ or workspace membership alone does not make a package official.
 |---|---|---|---|
 | `oats.framework` | `oats-framework/v1.14.1` (this repository) | `oats.core`, `oats.setup`, `oats.support`, `oats.knowledge-theory` | `knowledge-theory-expert` |
 | `oats.okf` | `v5.3.0` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
-| `oats.aweb` | `v1.31.0` | `oats.aweb` (messaging), `oats.aweb-tasks` (tasks) | |
+| `oats.aweb` | `v1.32.0` | `oats.aweb` (messaging), `oats.aweb-tasks` (tasks) | |
 | `oats.engineering` | `v1.13.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review`, `oats.maintainer` | `code-reviewer` |
 | `oats.authoring` | `v1.0.3` | `oats.authoring` | |
 | `oats.cloning` | `v1.0.1` | `oats.cloning` | `cloner` |
 | `oats.jira` | `v1.0.1` | `oats.jira` (tasks) | |
 | `oats.linear` | `v1.0.1` | `oats.linear` (tasks) | |
 | `oats.apps` | `v1.0.0` | `oats.folio`, `oats.library` | |
+| `oats.machine` | `v0.1.1` | `oats.machine-care` | `steward`, `technician` |
 
 Each package lives in its own `awebai/oats-*` repository except
 `oats.framework`, whose payload root is `oats-package/` here. A capability id

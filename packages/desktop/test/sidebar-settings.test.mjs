@@ -1,5 +1,5 @@
 // The sidebar's settings menu (sidebar-settings.mjs): the cog at the right end of the sidebar's foot, after the
-// sidebar toggle, and its menu (Theme…, Keyboard shortcuts…; Connections stays in the palette). Its items, their
+// sidebar toggle, and its menu (Theme…, Font…, Keyboard shortcuts…; Connections stays in the palette). Its items, their
 // order, words, actions and chords; the menu button's ARIA; the keys (↓/↑ on the cog, ↑/↓/Home/End in the menu,
 // Esc and Tab); choosing an item; its placement. The shell wires it in shell.mjs (shell-nav.test.mjs runs that wiring).
 import test from "node:test";
@@ -57,11 +57,11 @@ function rig(t, { shortcut } = {}) {
     onRun: (fn) => { onRun = fn; }, label: (item) => item.querySelector(".sidebar-settings-label").textContent };
 }
 
-test("the items, in order: Theme…, Keyboard shortcuts…, each its keymap action and its icon; no Connections, no Hide sidebar", (t) => {
+test("the items, in order: Theme…, Font…, Keyboard shortcuts…, each its keymap action and its icon; no Connections, no Hide sidebar", (t) => {
   assert.equal(SETTINGS_LABEL, "Settings");
   assert.ok(Object.isFrozen(SETTINGS_ITEMS), "a fixed list");
   assert.deepEqual(SETTINGS_ITEMS.map(({ action, label, icon }) => [action, label, icon]), [
-    ["app.themePicker", "Theme…", "theme"], ["app.shortcuts", "Keyboard shortcuts…", "shortcuts"],
+    ["app.themePicker", "Theme…", "theme"], ["app.fontPicker", "Font…", "font"], ["app.shortcuts", "Keyboard shortcuts…", "shortcuts"],
   ]);
   // Connections stays in the palette (Settings: Connections…), and the sidebar toggle is the foot's own button.
   assert.ok(!SETTINGS_ITEMS.some(({ action }) => action === "app.connections" || action === "sidebar.toggle"));
@@ -137,15 +137,15 @@ test("↓/↑ move through the items and wrap; Home and End go to the first and 
   r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
   const at = () => r.items.indexOf(r.doc.activeElement);
   const press = (key, init = {}) => r.key(r.doc.activeElement, { key, ...init });
-  assert.equal(r.items.length, 2);
+  assert.equal(r.items.length, 3);
   const visited = [];
   for (let i = 0; i < 4; i++) { assert.equal(press("ArrowDown").defaultPrevented, true); visited.push(at()); }
-  assert.deepEqual(visited, [1, 0, 1, 0], "↓ to the end, then back to the first");
+  assert.deepEqual(visited, [1, 2, 0, 1], "↓ to the end, then back to the first");
   const back = [];
   for (let i = 0; i < 4; i++) { press("ArrowUp"); back.push(at()); }
-  assert.deepEqual(back, [1, 0, 1, 0], "↑ wraps from the first to the last");
-  press("End"); assert.equal(at(), 1);
-  press("End"); assert.equal(at(), 1, "End stays on the last");
+  assert.deepEqual(back, [0, 2, 1, 0], "↑ wraps from the first to the last");
+  press("End"); assert.equal(at(), 2);
+  press("End"); assert.equal(at(), 2, "End stays on the last");
   press("Home"); assert.equal(at(), 0);
   press("Home"); assert.equal(at(), 0, "Home stays on the first");
   press("ArrowDown");
@@ -209,7 +209,7 @@ test("choosing an item runs its action once, after the menu has closed and the c
   }
   // A pointer choice, with the menu opened by a click, is the same.
   r.ran.length = 0; r.trigger.click(); await r.tick();
-  r.items[1].click(); await r.tick();
+  r.items.at(-1).click(); await r.tick();
   assert.deepEqual(r.ran, ["app.shortcuts"]); assert.equal(r.doc.activeElement, r.trigger);
 });
 
@@ -218,23 +218,23 @@ test("refresh() shows each item's chord and hides an empty one; opening refreshe
   const r = rig(t, { shortcut: (action) => chords[action] ?? "" });
   const shown = () => r.items.map((item) => { const keys = item.querySelector("kbd"); return keys.hidden ? null : keys.textContent; });
   const raw = () => r.items.map((item) => item.querySelector("kbd").textContent);
-  assert.deepEqual(raw(), ["", ""], "nothing read before the first refresh or opening");
+  assert.deepEqual(raw(), ["", "", ""], "nothing read before the first refresh or opening");
   r.settings.refresh();
-  assert.deepEqual(shown(), ["Ctrl+Shift+Space", "Ctrl+,"]);
-  chords = { ...chords, "app.themePicker": "Ctrl+Alt+T", "app.shortcuts": null };
+  assert.deepEqual(shown(), ["Ctrl+Shift+Space", null, "Ctrl+,"], "Font… has no default chord");
+  chords = { ...chords, "app.themePicker": "Ctrl+Alt+T", "app.fontPicker": "Ctrl+Alt+F12", "app.shortcuts": null };
   r.settings.refresh();
-  assert.deepEqual(shown(), ["Ctrl+Alt+T", null], "a rebind follows; an unbound one hides");
-  assert.equal(r.items[1].querySelector("kbd").textContent, "", "an unbound chord leaves no text behind");
+  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+F12", null], "a rebind or a chord given follows; an unbound one hides");
+  assert.equal(r.items[2].querySelector("kbd").textContent, "", "an unbound chord leaves no text behind");
   chords = { ...chords, "app.shortcuts": "Ctrl+Alt+K" };
   r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
-  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+K"], "opening reads them again");
+  assert.deepEqual(shown(), ["Ctrl+Alt+T", "Ctrl+Alt+F12", "Ctrl+Alt+K"], "opening reads them again");
   assert.deepEqual(r.items.map(r.label), SETTINGS_ITEMS.map(({ label }) => label), "the words never carry the chord");
 });
 
 test("with no shortcut reader, every chord is hidden", (t) => {
   const r = rig(t);
   r.settings.refresh();
-  assert.deepEqual(r.items.map((item) => item.querySelector("kbd").hidden), [true, true]);
+  assert.deepEqual(r.items.map((item) => item.querySelector("kbd").hidden), [true, true, true]);
 });
 
 // Placed as the instance actions' menu is (instance-actions.mjs): its right edge on the cog's, inside the window's
@@ -245,7 +245,7 @@ test("placed as the instance actions' menu: its right edge on the cog's, above t
   r.menu.getBoundingClientRect = () => box(0, 0, 220, 80);
   Object.defineProperty(r.win, "innerWidth", { value: 1200, configurable: true });
   Object.defineProperty(r.win, "innerHeight", { value: 800, configurable: true });
-  // The foot's cog in a 264px sidebar: 24px wide, its right edge 13px in from the sidebar's (250px), near the bottom.
+  // The foot's cog in a sidebar 264px wide (any width will do): 24px wide, its right edge 13px in from the sidebar's (250px), near the bottom.
   r.trigger.getBoundingClientRect = () => box(226, 768, 24, 24);
   r.trigger.focus(); r.key(r.trigger, { key: "ArrowDown" });
   assert.deepEqual([r.menu.style.left, r.menu.style.top], ["30px", "684px"], "right edges aligned (250 - 220), 4px above the cog");

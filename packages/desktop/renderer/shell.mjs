@@ -23,6 +23,7 @@ import { panelErrorCause } from "../../client/deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, currentTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
+  initFont, setFont, currentFont, onFontChange, fontChoices, fontFallsBack,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createInstanceRecency, recencyIdFromTerminalKey } from "./instance-recency.mjs";
@@ -49,11 +50,12 @@ import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { createInstanceColorDialog, instanceColorCSS } from './instance-color-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
-import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
+import { createThemePicker, createFontPicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
-import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer, holdTerminalResizes } from "./terminal-tab.mjs";
+import { createSidebarWidth } from "./sidebar-width.mjs";
 import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
@@ -82,12 +84,13 @@ import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
+import { syncWaitingRow } from "./waiting-row.mjs";
 import { createRosterPrs, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
 import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
 import { treeConnectors, treeGuides, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
-  terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE } from "./instance-tree-view.mjs";
+  terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE, rosterName } from "./instance-tree-view.mjs";
 import {
   tabVisibleInContext, canActivateTab,
   fallbackTabForContext, restoreTerminalTab,
@@ -108,6 +111,10 @@ import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
 
 const desk = window.oatsDesktop;
+// The font (Omarchy's font or System font; theme.mjs fontStacks) and the terminal size's default, both
+// defaulting by whether this is an Omarchy computer (main's check, preload's constant), before the first
+// await, so the window's first paint is already in them.
+initFont(navigator.platform.includes("Mac"), undefined, { isOmarchy: desk?.isOmarchy === true });
 // The chord family (keys.json, which main reads; renderer/chord-family.mjs): asked beside the window's
 // start and in place before the window listens to its first key, since the one keydown listener and
 // every terminal's key path are installed below these awaits. A change (the Shortcuts page, another
@@ -868,13 +875,13 @@ function closeRetiredTabs(panel, read) {
   }
 }
 
-/** Spec D's row mark: a shape plus text, never colour alone. "Needs input" on a waiting row (its reason and
- * age live in the card); "N below" on a row whose collapse hides N waiting rows, with a visually hidden
- * " need input" so the row's accessible name says what the short text means. */
-function needsInputMark(below = 0) {
-  const mark = document.createElement("span"); mark.className = below ? "ctx-attn rollup" : "ctx-attn";
-  mark.append(iconElement(document, "attention", { size: 10, className: "shell-icon attn-mark" }), below ? `${below} below` : "Needs input");
-  if (below) { const said = document.createElement("span"); said.className = "sr-only"; said.textContent = " need input"; mark.append(said); }
+/** Spec D's roll-up: "N below" on a row whose collapse hides N waiting rows, a shape plus text, never colour
+ * alone, with a visually hidden " need input" so the row's accessible name says what the short text means.
+ * A waiting row's own mark is its dot (renderContextRoster), not a pill (the product owner, 2026-10-26). */
+function needsInputMark(below) {
+  const mark = document.createElement("span"); mark.className = "ctx-attn rollup";
+  mark.append(iconElement(document, "attention", { size: 10, className: "shell-icon attn-mark" }), `${below} below`);
+  const said = document.createElement("span"); said.className = "sr-only"; said.textContent = " need input"; mark.append(said);
   return mark;
 }
 
@@ -1034,11 +1041,12 @@ function renderContextRoster(instances) {
         const heldStale = rowHeldStale(i);
         // Needs input: this row's own claim (waitingClaim is the only gate), and the waiting rows hidden under it.
         const claim = waitingClaim(i, { stale: heldStale }), below = waitingBelow.get(instanceId(i)) || [];
-        // Spec D (human, 2026-10-20): the name line keeps the name, whole; a waiting row's mark takes the meta line
-        // in place of its text (the repository, pull request and branch stay in the hover card, as a held home's do;
-        // a row with no card says them in its title and description, and the line keeps its own title).
-        // A held home's state wins that line: its description says the wait. "New" stays beside the name.
-        const attn = held ? null : claim ? needsInputMark() : below.length ? needsInputMark(below.length) : null;
+        // Spec D (human, 2026-10-20): the name line keeps the name, whole; the roll-up takes the meta line in place
+        // of its text (the repository, pull request and branch stay in the hover card, as a held home's do; a row
+        // with no card says them in its title and description, and the line keeps its own title). A row's own
+        // claim marks its dot instead, so a waiting parent shows both. A held home's state wins that line: its
+        // description says the wait. "New" stays beside the name.
+        const attn = held || !below.length ? null : needsInputMark(below.length);
         if (unavailable) {
           const replaced = attn ? [instanceRepoLabel(i), pr ? prText(pr) : null, i.branch].filter(Boolean).map(part => ` · ${part}`).join("") : "";
           const said = why + replaced + waitingSentence(claim, below, Date.now()); row.title = said; row.setAttribute("aria-description", said);
@@ -1048,14 +1056,23 @@ function renderContextRoster(instances) {
           // A held home's state takes its meta line over the mark (below): its description says the wait.
           if (held) row.setAttribute("aria-description", why + waitingSentence(claim, below, Date.now()));
         }
+        // A waiting row's dot is the needs-input mark (the product owner, 2026-10-26): the --warn disc with its "!"
+        // cut out, the only yellow mark (unknown liveness is a --muted bullseye), whatever the liveness, never in the
+        // instance's colour. Its words are the visually hidden "Needs input" after the name (a held home's
+        // description says the wait), so the row's name reads as it did with the pill.
         const dot = document.createElement("span");
-        dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
-        paintDotColor(dot, i, state);
+        if (claim) {
+          dot.className = "ctx-dot waiting";
+          dot.append(iconElement(document, "attention", { size: 10, className: "shell-icon attn-mark" }));
+        } else {
+          dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
+          paintDotColor(dot, i, state);
+        }
         const copy = document.createElement("span");
         copy.className = "ctx-copy";
-        const name = document.createElement("span");
-        name.className = "ctx-name";
-        name.textContent = i.instance;
+        const name = rosterName(document, i.instance);
+        const spoken = claim && !held ? document.createElement("span") : null;
+        if (spoken) { spoken.className = "sr-only"; spoken.textContent = " Needs input"; }
         // The meta line (the product owner, 2026-10-26): the soul at the left, the repository at the right; the
         // soul is cut first, the repository keeps about 10ch. The branch and the pull request are the hover card's
         // (rosterTipFacts); the pull request's link stays in the row tools.
@@ -1085,8 +1102,8 @@ function renderContextRoster(instances) {
           const mark = document.createElement("span"); mark.className = "ctx-new";
           const markDot = document.createElement("span"); markDot.className = "ctx-new-dot"; markDot.setAttribute("aria-hidden", "true");
           mark.append(markDot, "New"); line.append(name, mark);
-          copy.append(line, meta, ...heldLines);
-        } else copy.append(name, meta, ...heldLines);
+          copy.append(line, ...[spoken].filter(Boolean), meta, ...heldLines);
+        } else copy.append(name, ...[spoken].filter(Boolean), meta, ...heldLines);
         row.append(dot, copy);
         if (typeof i.harness === "string" && i.harness) {
           const runtime = createRuntimeBadge(document, i.harness);
@@ -1235,9 +1252,7 @@ function pendingSpawnRow(i, items, instances, startedAt = null) {
   mark.className = unknown && !checking ? "ctx-dot unknown" : "ctx-spawn-spinner";
   const copy = document.createElement("span");
   copy.className = "ctx-copy";
-  const name = document.createElement("span");
-  name.className = "ctx-name";
-  name.textContent = i.instance;
+  const name = rosterName(document, i.instance);
   const meta = document.createElement("span");
   meta.className = "ctx-meta ctx-spawn-state";
   meta.textContent = settingUp ? held.state : checking ? "Checking result…" : unknown ? "Outcome unknown" : "Spawning…";
@@ -1543,7 +1558,8 @@ function refreshPanelInstance(instances, workspace) {
  * aria-label and the title's note (setTabTitle: the name and the tab's key stay their writers') — never
  * rebuilds the trigger or the tab — so strip focus, an open tab menu or a drag survive the poll. Cleared
  * (or unknown), the tab gets back exactly the mark and label it was drawn with, and no note. The same pass keeps the dot's colour (instance-dot.mjs) the row's, so a colour set
- * or cleared reaches an open tab; the dot's state stays as it was drawn. */
+ * or cleared reaches an open tab; the dot's state stays as it was drawn. The same claim draws the waiting row over the
+ * tab's terminal (waiting-row.mjs, #1502), so each group's shown tab carries its own. */
 let tabNeedsInputRoster = { instances: [], workspace: null };
 function syncTabNeedsInput(instances, workspace) {
   tabNeedsInputRoster = { instances, workspace };
@@ -1571,6 +1587,7 @@ function syncTabNeedsInput(instances, workspace) {
     }
     if (trigger.getAttribute("aria-label") !== label) trigger.setAttribute("aria-label", label);
     setTabTitle(trigger, { note });
+    syncWaitingRow(tab.paneEl, claim, now);
   }
 }
 const workspaceTabMemory = createWorkspaceTabMemory();
@@ -1946,6 +1963,7 @@ function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false
     if (r && typeof r.then === "function" && t.key) reserveKey(t.key, r);
   } catch (e) { console.error(e); }
   t.tabEl.remove();
+  syncWaitingRow(t.paneEl, null);
   t.paneEl.remove();
   tabs.delete(id);
   revealActiveTabs(); // the remaining tabs widen: the active one may have moved out of view
@@ -2369,6 +2387,7 @@ const palette = createPalette({
     { label: "Theme: choose…", detail: chordDetail("app.themePicker"), run: () => runAction("app.themePicker") },
     { label: "Theme: cycle White / Solarized / Dark / This computer", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
+    { label: "Font: choose…", detail: chordDetail("app.fontPicker"), run: () => runAction("app.fontPicker") },
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
@@ -2383,6 +2402,7 @@ const palette = createPalette({
     // The instance it acts on is the leader's target when the palette opened (paletteTargetId).
     { label: "Instance: name and colour…", detail: chordDetail("instance.edit"), run: () => openInstanceEdit(paletteTargetId) },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
+    { label: "Sidebar: reset width", detail: chordDetail("sidebar.resetWidth"), run: () => runAction("sidebar.resetWidth") },
     { label: "Instance panel: show / hide", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
     { label: "Focus mode: toggle", detail: chordDetail("app.focusMode"), run: () => runAction("app.focusMode") },
     { label: "Split: terminal right (side by side)", detail: chordDetail("split.vertical"), run: () => splitPane("row") },
@@ -2478,15 +2498,20 @@ const connections = createConnections({ doc: document, desk,
     const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), fontWeight: terminalFontWeight(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
     const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(mount);
     const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); term.options.fontWeight = terminalFontWeight(); });
-    const offType = onTerminalTypographyChange(value => { term.options.fontSize = value.fontSize; term.options.fontFamily = value.fontFamily; });
-    const observers = new Set();
+    // A size or family change keeps the mount's box, so its ResizeObserver need not fire: the adapter tells its resize
+    // listeners itself, and Connections refits the grid and sends it to the sign-in PTY (forgeAuthResize).
+    const observers = new Set(), resizeListeners = new Set();
+    const offType = onTerminalTypographyChange(value => {
+      term.options.fontSize = value.fontSize; term.options.fontFamily = value.fontFamily;
+      for (const fn of [...resizeListeners]) fn();
+    });
     return {
       get cols() { return term.cols; }, get rows() { return term.rows; },
       write: value => term.write(value), focus: () => term.focus(), fit: () => fit.fit(),
       onData: fn => term.onData(fn), setKeyHandler: fn => term.attachCustomKeyEventHandler(fn),
-      onResize: fn => { const observer = new ResizeObserver(fn); observers.add(observer); observer.observe(mount);
-        return { dispose: () => { observer.disconnect(); observers.delete(observer); } }; },
-      dispose: () => { for (const observer of observers) observer.disconnect(); offTheme(); offType(); term.dispose(); },
+      onResize: fn => { const observer = new ResizeObserver(fn); observers.add(observer); resizeListeners.add(fn); observer.observe(mount);
+        return { dispose: () => { observer.disconnect(); observers.delete(observer); resizeListeners.delete(fn); } }; },
+      dispose: () => { for (const observer of observers) observer.disconnect(); resizeListeners.clear(); offTheme(); offType(); term.dispose(); },
     };
   },
 });
@@ -2596,6 +2621,14 @@ window.addEventListener('pagehide', () => instanceColorDialog.dispose(), { once:
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
   subscribe: onThemeChange, onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn) });
 window.addEventListener('pagehide', () => themePicker.dispose(), { once: true });
+// The font picker (app.fontPicker, the palette's Font: choose…): the same picker over this platform's
+// fonts; a choice goes through setFont, stored per computer and applied in place (open terminals
+// switch family and refit through onTerminalTypographyChange, keeping their state).
+// Its rows are read at each open and on each font notification, so the Omarchy row's fallback note follows
+// the latest fontDraws verdict (fontFallsBack), not the one at start.
+const fontPicker = createFontPicker({ doc: document, fonts: () => fontChoices(navigator.platform.includes("Mac"), fontFallsBack()), current: currentFont, choose: setFont,
+  subscribe: onFontChange, onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn) });
+window.addEventListener('pagehide', () => fontPicker.dispose(), { once: true });
 
 /** The sidebar's way into the instances, never nothing (the roster's filter was that once): the roster's current
  * row (the roving stop), else its first row, else a control the roster shows (Retry, after a failed read), else, on
@@ -2666,6 +2699,10 @@ function toggleSidebar() {
 document.getElementById("show-sidebar").addEventListener("click", () => runAction("sidebar.toggle"));
 document.getElementById("show-panel").addEventListener("click", () => { runAction("panel.toggle"); contextPanel.focus(); });
 try { if (localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") setSidebarHidden(true); } catch { /* storage-less */ }
+// The sidebar's width (sidebar-width.mjs): the handle on its right edge, kept on this computer beside the theme.
+// Hiding the sidebar leaves the width as it was.
+const sidebarWidth = createSidebarWidth({ doc: document, win: window, hold: holdTerminalResizes,
+  storage: (() => { try { return window.localStorage; } catch { return null; } })() });
 
 // Terminal copies (#672). Each open terminal tab's xterm, by its wrap, for terminal.copySelection.
 const terminalSelections = new Map();
@@ -2819,6 +2856,7 @@ window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregis
 }));
 // A held chord (key repeat) does nothing: it never opens and closes the picker over and over.
 registerAction({ id: "app.themePicker", label: "Choose a theme…", context: "global", run: (e) => { if (!e?.repeat) themePicker.toggle(); } });
+registerAction({ id: "app.fontPicker", label: "Font: choose…", context: "global", run: (e) => { if (!e?.repeat) fontPicker.toggle(); } });
 registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark / This computer theme", context: "global", run: () => toggleTheme() });
 // Explicit theme choices are rebindable, but add no default keyboard chords.
 THEMES.forEach(({ id, label }) => registerAction({
@@ -2828,6 +2866,7 @@ registerAction({ id: "app.workspaces", label: "Focus the list of workspaces", co
 registerAction({ id: "workspaces.currentOnly", label: "Show only the current workspace", context: "global", run: () => workspaceLabel.toggleCurrentOnly() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
+registerAction({ id: "sidebar.resetWidth", label: "Reset the sidebar's width", context: "global", run: () => sidebarWidth.reset() });
 registerAction({ id: "panel.toggle", label: "Show or hide the instance panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
 // Focus mode lives on the keyboard (rebindable, no default chord) and the palette.
 registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and instance panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });

@@ -252,7 +252,7 @@ test("w gives the list the focus on the open row; Up and Down move the cursor, E
 test("only the region with the focus draws >: with the list of workspaces focused the list of instances keeps its selection in reverse video, without its >", () => {
   const state = served();
   const cursors = (d) => d.lines.map((line, row) => (line.startsWith(">") ? row : -1)).filter((row) => row >= 0);
-  const before = draw(state), row = before.lines.findIndex((line) => line.slice(0, 38).includes("dev-a"));
+  const before = draw(state), row = before.lines.findIndex((line) => line.slice(0, 38).includes("Dev a"));
   assert.deepEqual(cursors(before), [row], "the list of instances has the focus: its selected row carries >");
   const focused = draw(key(state, "w").state);
   assert.deepEqual(cursors(focused), [0], "the list of workspaces has it: its cursor's row alone");

@@ -158,6 +158,16 @@ test("shownLines() breaks a display line at its spaces into rows of at most `wid
   }
 });
 
+test("shownLines() with `first`: the first row is that wide, every other `width`; the cut mark keeps to the last row's own room", () => {
+  assert.deepEqual(rowsOf("one two three four", 9, 4, { first: 3 }), ["one", "two three", "four"]);
+  assert.deepEqual(rowsOf("one two three four", 9, 4, { first: 13 }), ["one two three", "four"]);
+  assert.deepEqual(rowsOf("abcdefghij", 4, 5, { first: 2 }), ["ab", "cdef", "ghij"]);
+  assert.deepEqual(rowsOf("one two three four", 9, 1, { first: 7 }), ["one tw…"], "a first row that is also the last ends in the mark inside its own room");
+  assert.deepEqual(rowsOf("one two three four five", 9, 2, { first: 3 }), ["one", "two thre…"]);
+  assert.deepEqual(rowsOf("one two", 9, 4, { first: 0 }), [], "a first row with no room gives no row");
+  assert.deepEqual(rowsOf("one two three four", 9, 4, { first: 9 }), rowsOf("one two three four", 9, 4), "a first as wide as the rest changes nothing");
+});
+
 test("shownLines() cuts a word longer than the row between graphemes, never inside one", () => {
   assert.deepEqual(rowsOf("abcdefghij", 4, 5), ["abcd", "efgh", "ij"]);
   assert.deepEqual(rowsOf("abcdefghij", 10, 5), ["abcdefghij"]);

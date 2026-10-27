@@ -42,15 +42,15 @@ test('open: one centred overlay, a labelled modal dialog, the four themes in ord
   assert.ok(title && dialog.contains(title)); assert.equal(title.textContent, 'Theme');
   assert.equal(dialog.querySelector('.theme-picker-close').getAttribute('aria-label'), 'Close theme picker');
   const rows = f.rows();
-  assert.deepEqual(rows.map(row => row.dataset.themeId), THEMES.map(theme => theme.id));
+  assert.deepEqual(rows.map(row => row.dataset.choiceId), THEMES.map(theme => theme.id));
   assert.deepEqual(rows.map(row => row.querySelector('.theme-picker-label').textContent), ['White', 'Solarized', 'Dark', 'This computer']);
   assert.ok(rows.every(row => row.tagName === 'BUTTON' && row.type === 'button' && row.parentElement.tagName === 'LI'));
   assert.equal(rows[3].querySelector('.theme-picker-note').textContent, "Follows this computer's theme");
   assert.equal(rows.filter(row => row.querySelector('.theme-picker-note')).length, 1, 'only This computer has a second line');
   for (const row of rows) {
-    const isCurrent = row.dataset.themeId === 'dark';
-    assert.equal(row.getAttribute('aria-current'), isCurrent ? 'true' : null, row.dataset.themeId);
-    assert.equal(/Current/.test(row.textContent), isCurrent, `${row.dataset.themeId}: the visible word, not colour alone`);
+    const isCurrent = row.dataset.choiceId === 'dark';
+    assert.equal(row.getAttribute('aria-current'), isCurrent ? 'true' : null, row.dataset.choiceId);
+    assert.equal(/Current/.test(row.textContent), isCurrent, `${row.dataset.choiceId}: the visible word, not colour alone`);
     assert.equal(!!row.querySelector('.theme-picker-current svg[aria-hidden="true"]'), isCurrent, 'the check icon');
   }
   assert.equal(f.doc.activeElement, rows[2], 'focus on the current row');

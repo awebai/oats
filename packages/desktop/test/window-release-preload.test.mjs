@@ -23,7 +23,7 @@ function preload() {
     webUtils: {},
   };
   runInNewContext(readFileSync(new URL('../preload.cjs', import.meta.url), 'utf8'),
-    { require: (name) => (name === 'electron' ? electron : require(name === './terminal-bridge.cjs' ? '../terminal-bridge.cjs' : name)) });
+    { process: { argv: [] }, require: (name) => (name === 'electron' ? electron : require(name === './terminal-bridge.cjs' ? '../terminal-bridge.cjs' : name)) });
   const send = (message) => { for (const fn of listeners.get('window:release-workspace') ?? []) fn({ sender: 'main' }, message); };
   return { api, send, listeners };
 }

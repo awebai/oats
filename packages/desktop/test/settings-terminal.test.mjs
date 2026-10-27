@@ -1,5 +1,5 @@
 // Settings → Terminal (spec F, the operator's 2026-10-02 decision): the default
-// terminal size is 15px and every reset lands there; a stepper in Settings
+// terminal size is 15px, 13px on Omarchy (the product owner, 2026-10-26), and every reset lands there; a stepper in Settings
 // changes the size live, clamped to 9–28 and persisted, on the same store as
 // ⌘= / ⌘- / ⌘0 and the palette, so the keys and the control always agree.
 import test from "node:test";
@@ -15,7 +15,7 @@ const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url
 const themeSource = read("theme.mjs"), shell = read("shell.mjs");
 
 /** The shipped theme module over a jsdom document and a real-shaped storage. */
-function rig(t, stored = {}) {
+function rig(t, stored = {}, { isOmarchy = false } = {}) {
   const dom = new JSDOM('<!doctype html><body><button id="opener">Settings</button></body>', { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -26,10 +26,11 @@ function rig(t, stored = {}) {
     localStorage: { getItem: key => stored[key] ?? null, setItem: (key, value) => { stored[key] = String(value); }, removeItem: key => { delete stored[key]; } },
   };
   const theme = runInNewContext(`${themeSource.replace(/\bexport /g, "")}
-({ terminalTypography, setTerminalFontSize, resetTerminalFontSize, resetTerminalTypography, onTerminalTypographyChange, TERMINAL_FONT_SIZE })`, context);
-  // The section's default store, composed from this theme instance (the same four calls).
+({ terminalTypography, setTerminalFontSize, resetTerminalFontSize, resetTerminalTypography, onTerminalTypographyChange, terminalDefaultSize, initFont })`, context);
+  theme.initFont(false, () => true, { isOmarchy }); // the shell's start: the host's defaults
+  // The section's default store, composed from this theme instance (the same five calls).
   const store = { read: () => theme.terminalTypography().fontSize, set: theme.setTerminalFontSize,
-    reset: theme.resetTerminalFontSize, subscribe: theme.onTerminalTypographyChange };
+    reset: theme.resetTerminalFontSize, subscribe: theme.onTerminalTypographyChange, defaultSize: theme.terminalDefaultSize };
   const section = createTerminalSettings({ doc, store, chords: { bigger: "⌘=", smaller: "⌘-", reset: "⌘0" } });
   doc.body.append(section.element);
   const q = selector => section.element.querySelector(selector);
@@ -47,7 +48,7 @@ const SIZE = "oats.desktop.terminal.fontSize";
 
 test("the default terminal size is 15px, and every reset (⌘0, the palette, Settings) lands on 15", t => {
   const r = rig(t, { [SIZE]: "20", "oats.desktop.terminal.fontFamily": "Menlo" });
-  assert.equal(r.theme.TERMINAL_FONT_SIZE, 15);
+  assert.equal(r.theme.terminalDefaultSize(), 15);
   assert.equal(r.dom.window.getComputedStyle(r.doc.documentElement).getPropertyValue("--term-font-size").trim(), "15px");
   assert.equal(r.ui.input.value, "20", "a stored user size wins over the default");
   r.ui.reset.click();
@@ -59,6 +60,18 @@ test("the default terminal size is 15px, and every reset (⌘0, the palette, Set
   assert.equal(r.theme.terminalTypography().fontSize, 15);
   assert.equal(r.ui.input.value, "15");
   assert.equal(shell.match(/run: \(\) => resetTerminalTypography\(\) \}/g)?.length, 2, "both shell resets use the forgetting reset");
+});
+
+test("on Omarchy the default terminal size is 13px: shown, reset to, and a stored size still wins", t => {
+  const r = rig(t, { [SIZE]: "20" }, { isOmarchy: true });
+  assert.equal(r.theme.terminalDefaultSize(), 13);
+  assert.equal(r.dom.window.getComputedStyle(r.doc.documentElement).getPropertyValue("--term-font-size").trim(), "13px");
+  assert.equal(r.ui.input.value, "20", "a stored user size wins over the default");
+  assert.equal(r.ui.reset.textContent, "Reset to default (13)");
+  r.ui.reset.click();
+  assert.equal(r.theme.terminalTypography().fontSize, 13); assert.equal(r.ui.input.value, "13"); assert.equal(r.stored[SIZE], undefined);
+  r.theme.setTerminalFontSize(22); r.theme.resetTerminalTypography(); // ⌘0
+  assert.equal(r.theme.terminalTypography().fontSize, 13);
 });
 
 test("the stepper changes the size live, clamps to 9–28 and persists; its bounds stay focusable", t => {
@@ -154,7 +167,7 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   const html = read("index.html");
   // The sidebar layout (2026-10-23): Connections lives in the palette (Settings: Connections…) and the registry
   // (app.connections), both opening this dialog. The sidebar has no button for it, and the settings cog's menu
-  // (Theme…, Keyboard shortcuts…) leaves it out.
+  // (Theme…, Font…, Keyboard shortcuts…) leaves it out.
   assert.doesNotMatch(html, /data-action="app\.connections"/);
   assert.match(html, /<button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"><\/button>/,
     "the cog carries no action of its own: its menu does");

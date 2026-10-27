@@ -3,19 +3,20 @@
 // marks and the few words around them are the TUI's own. Nothing is told by colour alone: each
 // state has a mark of its own shape, the selected row carries `>` as well as reverse video (the `>`
 // only while the list has the focus, not the list of workspaces: the model's `cursor`), and a
-// waiting row carries a tag in words, `Needs input`, in reverse video. A row is quiet: its mark
+// waiting row's state mark is the needs-input mark, `!` in reverse video. A row is quiet: its mark
 // and its name, and a word only where the mark can't say it. Children stand under their parent by
 // indentation alone; a folded row says how many it folds away, `+n`, and how many of those wait,
 // `N below`. In a view of two or more deployments the list also holds a heading per deployment
 // and the sentences the model sets under one: a heading says in words what it is of.
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
-import { style } from "../term/style.mjs";
+import { COLORS, style } from "../term/style.mjs";
 import { textWidth } from "../term/width.mjs";
 
 /** The marks, in UTF-8 and in ASCII (docs/tui.md lists them; the help view draws them from here).
  *  The state marks are keyed by the word the shared home gives a row's state, with `shell` and
- *  `held` beside them (lib/model.mjs says when). A fold has no mark: a folded row shows `+n`. */
+ *  `held` beside them (lib/model.mjs says when). `waiting` takes the state mark's cell on a row
+ *  that needs input, whatever its state. A fold has no mark: a folded row shows `+n`. */
 export const MARKS = Object.freeze({
   utf8: Object.freeze({ running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", selected: ">", waiting: "!" }),
   ascii: Object.freeze({ running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", selected: ">", waiting: "!" }),
@@ -25,8 +26,8 @@ export const marksOf = (ascii) => (ascii ? MARKS.ascii : MARKS.utf8);
 /** Two cells of indent per level, and no deeper than this many levels: a deeper row sits at the last. */
 const INDENT = 2, LEVELS = 6;
 /** The cells every row keeps at its right edge, so the word column stands in one place whether a
- *  row waits or not: they hold a needs-input tag in its short form, ` ! ` to ` 99+ `, whose
- *  padding is its gap. A tag in words takes more, and one cell of gap before it. */
+ *  row folds waiting rows away or not: they hold the roll-up's tag in its short form, ` 1 ` to
+ *  ` 99+ `, whose padding is its gap. A tag in words takes more, and one cell of gap before it. */
 const EDGE = 5;
 /** A row's cells before its name: the selection mark, a gap, the state mark, a gap. */
 const LEAD = 4;
@@ -52,27 +53,42 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-/** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does. */
-export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
+/** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does.
+ *  No state is yellow: yellow says needs input, and only that. */
+export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: DIM, held: style({ fg: "magenta" }) });
 /** The marks an instance's colour (feature instance-color) draws: running in it, stopped and at its shell in
  *  it and dim. The shape still says the state; `unknown` and `held` keep their own look whatever the colour. */
 const COLOURED = Object.freeze({ running: false, stopped: true, shell: true });
-/** A state mark's look for a row of colour `colour` (a terminal colour name, or null for none). */
-export function markLook(mark, colour) {
-  if (colour && Object.hasOwn(COLOURED, mark)) return style({ fg: colour, dim: COLOURED[mark] });
-  return LOOK[mark] ?? LOOK.unknown;
+/** The colour that is the terminal's own foreground, no `fg` at all: `sand`'s (views/souls.mjs
+ *  SOUL_COLOURS), which can't be yellow and stays seen on a light theme as on a dark one. */
+export const DEFAULT_FG = "default";
+/** The look an instance's or a soul's colour draws, with `attributes` (`{ dim }`): `colour` a terminal
+ *  colour name or DEFAULT_FG; null for any other value, which draws no colour. */
+export function colourLook(colour, attributes = {}) {
+  if (colour === DEFAULT_FG) return style(attributes);
+  return typeof colour === "string" && COLORS.includes(colour) ? style({ fg: colour, ...attributes }) : null;
 }
-/** The needs-input tag: reverse video in the waiting colour, so the reverse video alone carries it
- *  under NO_COLOR. On the selected row, which is in reverse already, it is the other way round:
- *  not reversed, a gap in the selection's bar. */
-const WAITS = style({ fg: "yellow", bold: true, reverse: true });
+/** A state mark's look for a row of colour `colour` (a terminal colour name, DEFAULT_FG, or null for none). */
+export function markLook(mark, colour) {
+  const coloured = Object.hasOwn(COLOURED, mark) ? colourLook(colour, { dim: COLOURED[mark] }) : null;
+  return coloured ?? LOOK[mark] ?? LOOK.unknown;
+}
+/** The needs-input look, of a waiting row's mark and of the roll-up's tag: bold, in reverse video in
+ *  the waiting colour (the mark is then a yellow cell with the `!` cut out, the Desktop's disc in
+ *  one cell), so the reverse video and the `!` carry it under NO_COLOR. On the selected row, which
+ *  is in reverse already, it is the other way round: not reversed, a gap in the selection's bar.
+ *  An instance's colour never draws it. */
+export const WAITS = style({ fg: "yellow", bold: true, reverse: true });
 const WAITS_SELECTED = style({ fg: "yellow", bold: true });
 
-/** The needs-input tag's words, the Desktop's (packages/desktop/renderer/shell.mjs, needsInputMark;
- *  a test pins them equal): `Needs input` on a waiting row, `N below` on a row that folds away N
- *  waiting rows, `99+ below` past 99. A row that is both says `Needs input`, as the Desktop's does:
- *  its own claim wins, and the detail's `below` line names the rest. */
+/** The words for an instance that needs input: the shared home's for a claim that names no reason
+ *  of its own (packages/client/waiting-on-you.mjs, waitingLabel, which the detail says; a test pins
+ *  them equal), the help's for the mark, and the waiting row's (views/frame.mjs). A list row says
+ *  them by its mark, not in words. */
 export const NEEDS_INPUT = "Needs input";
+/** The roll-up tag's words, the Desktop's (packages/desktop/renderer/shell.mjs, needsInputMark; a
+ *  test pins them equal): `N below` on a row that folds away N waiting rows, `99+ below` past 99,
+ *  whether the row waits itself or not: its mark says its own claim, the tag the rest. */
 /** A count of waiting rows as the tag says it, or the help's letter for one (`N`) as it is. */
 const count = (n) => (typeof n === "number" && n > 99 ? "99+" : String(n));
 export const belowText = (n) => `${count(n)} below`;
@@ -93,16 +109,15 @@ export function measured(value) {
   return { text, width: textWidth(textOf(text)) };
 }
 
-/** A row's needs-input tag, in words and in its short form (`!`, or the count alone), or null when
- *  the row neither waits nor folds a waiting row away. Drawn with a cell of padding either side. */
-function tagOf(row, marks) {
-  if (row.waiting) return { full: NEEDS_INPUT, short: marks.waiting };
+/** A row's roll-up tag, in words and in its short form (the count alone), or null when the row
+ *  folds no waiting row away. Drawn with a cell of padding either side. */
+function tagOf(row) {
   return row.below > 0 ? { full: belowText(row.below), short: count(row.below) } : null;
 }
 
-/** One instance's row in a pane `cols` wide: the state mark, the name cut to what is left, on a
- *  folded row `+n` after the name, the row's word (when it has one) in the word column, and the
- *  needs-input tag at the edge. A row with no word gives its name the word column's cells too. The
+/** One instance's row in a pane `cols` wide: the state mark (the needs-input mark on a waiting
+ *  row), the name cut to what is left, on a folded row `+n` after the name, the row's word (when it
+ *  has one) in the word column, and the roll-up tag at the edge. A row with no word gives its name the word column's cells too. The
  *  name wins over the word: it keeps NAME_LEAST cells (all of it when it is shorter), and when the
  *  word column would leave it fewer, the word is cut to what the name leaves, after it, or given
  *  up under WORD_LEAST cells; the mark and the detail still say it. The name is cut before `+n`
@@ -121,7 +136,7 @@ function instanceRow(row, cols, wordWidth, marks) {
   // The tag, and where the name and the word end: before the tag in words and a gap, or the EDGE.
   const hasWord = wordWidth > 0 && row.word !== null && row.word !== undefined;
   const whole = name.width + (fold ? fold.length + 1 : 0) + (hasWord ? 2 + wordWidth : 0);
-  const tag = tagOf(row, marks), wide = tag !== null && cols - tag.full.length - 3 - nameCol >= whole;
+  const tag = tagOf(row), wide = tag !== null && cols - tag.full.length - 3 - nameCol >= whole;
   const waits = tag && (wide ? tag.full : tag.short), end = wide ? cols - tag.full.length - 3 : cols - EDGE, room = end - nameCol;
   // The word's cells: its column's, or what the name's claim leaves of the row, or none.
   const left = room - claim - 2;
@@ -131,7 +146,9 @@ function instanceRow(row, cols, wordWidth, marks) {
   const spans = [];
   if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED });
   if (row.selected && row.cursor !== false) spans.push({ col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
-  spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(markLook(row.mark, row.color)), width: 1 });
+  const waitLook = row.selected ? WAITS_SELECTED : WAITS;
+  if (row.waiting) spans.push({ col: MARK + at, text: lit(marks.waiting), style: waitLook, width: 1 });
+  else spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(markLook(row.mark, row.color)), width: 1 });
   if (nameEnd > nameCol) {
     // The count and the gap before it, when there is room for them and for a cell of the name.
     const after = fold && nameEnd - nameCol > fold.length + 1 ? fold.length + 1 : 0;
@@ -141,9 +158,9 @@ function instanceRow(row, cols, wordWidth, marks) {
   }
   if (wordCells) spans.push({ col: wordCol, text: shown(row.word), style: look(DIM), width: wordCells });
   // The tag: its padding a blank span in its style, the words over it.
-  const tagCol = waits ? cols - waits.length - 2 : 0, tagLook = row.selected ? WAITS_SELECTED : WAITS;
+  const tagCol = waits ? cols - waits.length - 2 : 0;
   if (waits && tagCol > MARK + at) {
-    spans.push({ col: tagCol, width: waits.length + 2, style: tagLook }, { col: tagCol + 1, text: lit(waits), style: tagLook, width: waits.length });
+    spans.push({ col: tagCol, width: waits.length + 2, style: waitLook }, { col: tagCol + 1, text: lit(waits), style: waitLook, width: waits.length });
   }
   return spans;
 }

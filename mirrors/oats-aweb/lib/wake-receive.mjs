@@ -243,10 +243,14 @@ function receiveRecord(home) {
   catch { return {error: 'captured Claude channel mode is malformed'}; }
   // The kernel's record of the last start's launch prompt; anything unreadable is no outcome.
   const launchPromptStatus = object(doc.launchPrompts) && typeof doc.launchPrompts.status === 'string' ? doc.launchPrompts.status : undefined;
+  // The last start, as the kernel's desktop facts read it: the last restart's
+  // startedAt, else a launched spawn's createdAt. Both precede the harness.
+  const lastRestart = Array.isArray(doc.restarts) && doc.restarts.length ? doc.restarts[doc.restarts.length - 1]?.startedAt : undefined;
+  const startedAt = Date.parse(lastRestart ?? (doc.launched === true ? doc.createdAt : undefined));
   // Kernel launch receipts govern readiness. Provider meta may precede a
   // failed launch; configuration names and caller env do not identify a start.
   // Lifecycle callers retain recordedRuntime's historical cleanup semantics.
-  return {meta, runtime: doc.launch?.harness ?? doc.harness ?? meta.runtime, identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks, launchPromptStatus};
+  return {meta, runtime: doc.launch?.harness ?? doc.harness ?? meta.runtime, identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks, launchPromptStatus, startedAt};
 }
 
 /** Preserve valid retained facts even when a legacy record lacks ownership.
@@ -310,7 +314,7 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   // Incomplete projections retain known joins but do not manufacture an exact
   // primary plan from settings or the broker's supplied binding list.
   if (!incomplete && primaryBroker) bindings.unshift({identity_home: primary, team: meta.identity?.team || meta.team || meta.defaultTeam?.team, label: joined.length ? 'default' : undefined, controls: true, event_classes: []});
-  return {problems: [], warnings, runtimeDelivery, runtime, primary, ...(grant ? {grantHome: primary} : {}), primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0};
+  return {problems: [], warnings, runtimeDelivery, runtime, primary, ...(grant ? {grantHome: primary} : {}), primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0, startedAt: captured.startedAt};
 }
 
 /** Milliseconds since the epoch of an RFC 3339 timestamp as aw writes them,

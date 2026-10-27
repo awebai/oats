@@ -48,10 +48,12 @@ function keyTables(socket = AGENTS) {
   for (const keys of Object.values(tables)) keys.sort();
   return tables;
 }
-/** The keys a viewer's table holds: the two mouse bindings, and its detach key when it has one. */
-const bindings = (...keys) => ["MouseDrag1Pane", "WheelUpPane", ...keys].sort();
+/** The keys every viewer's table holds: the two mouse bindings and the scrollback key, which tmux
+ *  lists as `S-PPage` (bound as `S-PageUp`). */
+const VIEWER_KEYS = ["MouseDrag1Pane", "S-PPage", "WheelUpPane"];
+/** The keys a viewer's table holds: the viewer's own, and its detach key when it has one. */
+const bindings = (...keys) => [...VIEWER_KEYS, ...keys].sort();
 const LOCKED = "oatsview-locked";
-const MOUSE_KEYS = ["MouseDrag1Pane", "WheelUpPane"];
 /** After a test, whatever it left: a failed test must not fail the ones after it. Killing a viewer
  *  session ends its client, and so its command. */
 function sweep() {
@@ -74,6 +76,10 @@ process.stdin.setRawMode(true);
 process.stdin.on("data", (data) => process.stdout.write([...data].map((b) => (b < 32 ? "^" + String.fromCharCode(b + 64) : b === 127 ? "^?" : String.fromCharCode(b))).join("")));
 process.stdout.write("pane-ready:");
 `);
+// The same agent once it has grabbed the mouse, as Claude Code's fullscreen renderer does: it asks
+// for mouse reports (button events, SGR encoding), so a wheel turn is its own to read.
+const grabbingProgram = join(base, "agent-pane-mouse.mjs");
+writeFileSync(grabbingProgram, readFileSync(paneProgram, "utf8").replace('process.stdout.write("pane-ready:");', 'process.stdout.write("\\u001b[?1000h\\u001b[?1006hpane-ready:");'));
 tmuxOn(AGENTS, "new-session", "-d", "-s", SESSION, "-n", "hq", "-x", "120", "-y", "40", "-c", base, "cat");
 // The terminals. A pane stays after its command so that a failure can show what it printed.
 tmuxOn(TERM, "new-session", "-d", "-s", "term", "-n", "hold", "-x", "120", "-y", "40", "-c", base, "cat");
@@ -85,7 +91,7 @@ const baselineOf = (home) => join(dirname(home), ".oats-retirement", "baselines"
 const homes = new Map();
 /** An agent: a real workspace-model home recorded as launched in the window `name` of AGENTS, and
  *  that window, new each time (its screen starts with the history and nothing else). */
-async function agent(name) {
+async function agent(name, { program = paneProgram } = {}) {
   if (!homes.has(name)) {
     const { home } = await withPath(fx.env.PATH, () => fx.spawn("dev", { name, harness: "claude" }));
     const { launch: _recipe, ...spawned } = readJson(join(home, "instance.json"));
@@ -95,7 +101,7 @@ async function agent(name) {
     homes.set(name, home);
   }
   try { tmuxOn(AGENTS, "kill-window", "-t", `=${SESSION}:=${name}`); } catch { /* not there yet */ }
-  tmuxOn(AGENTS, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", base, `${shq(process.execPath)} ${shq(paneProgram)}`);
+  tmuxOn(AGENTS, "new-window", "-d", "-t", `=${SESSION}:`, "-n", name, "-c", base, `${shq(process.execPath)} ${shq(program)}`);
   const a = { name, home: homes.get(name), target: `=${SESSION}:=${name}` };
   await waitUntil(() => typed(a) !== null, `${name}'s pane reads its terminal`);
   return a;
@@ -216,7 +222,7 @@ test("the kernel's own viewer, prepared with a key: its table holds the two mous
       assert.equal(viewer.session, session);
       assert.deepEqual(keyTables()[session], bindings(key), key);
       assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", session, "key-table"), session);
-      const binding = lines(tmuxOn(AGENTS, "list-keys")).find((line) => line.includes(`-T ${session} `) && !MOUSE_KEYS.some((m) => line.includes(m)));
+      const binding = lines(tmuxOn(AGENTS, "list-keys")).find((line) => line.includes(`-T ${session} `) && !VIEWER_KEYS.some((k) => line.includes(k)));
       assert.match(binding, /\sset-option @oats-detached 1 \\; set-hook -u client-detached \\; detach-client$/, "one binding of three commands");
       assert.equal(viewer.detached(), false, "prepared, never left");
       assert.equal(LOCKED in keyTables(), false, "a keyed viewer makes no locked table");
@@ -314,6 +320,42 @@ test("the lock still holds for a keyed viewer: beside a sibling window in the ag
   assert.equal(await viewer.ended(), 0, `the window ended, the key was not used: ${viewer.shows()}`);
   assert.equal(typed(sibling), "", "the sibling's pane read nothing");
   nothingLeft("the agent's window ended");
+});
+
+test("a viewer without a detach key scrolls back with the wheel: its session has the mouse on, a wheel turn enters copy mode and scrolls, q leaves it with nothing read by the agent; an agent that grabbed the mouse reads the wheel itself; the lock holds throughout", async (t) => {
+  t.after(sweep);
+  const sibling = await agent("wheel-sibling"), a = await agent("wheel-plain");
+  const viewer = await view(a);
+  assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", viewer.session, "mouse"), "on", "the mouse is the viewer session's, on");
+  assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", viewer.session, "key-table"), LOCKED);
+  const scrolled = () => Number(tmuxOn(AGENTS, "display-message", "-p", "-t", a.target, "#{scroll_position}"));
+  assert.equal(inMode(a), "0");
+  viewer.send(WHEEL_UP);
+  await waitUntil(() => inMode(a) === "1", `the wheel put the pane in copy mode; the terminal shows: ${viewer.shows()}`);
+  viewer.send(WHEEL_UP);
+  await waitUntil(() => scrolled() > 1, `the wheel scrolled the pane back (it is at ${scrolled()})`);
+  viewer.press("q");
+  await waitUntil(() => inMode(a) === "0", "q left copy mode");
+  assert.equal(typed(a), "", "the agent read neither the wheel nor q");
+  assert.equal(viewer.isAttached(), true);
+  // The lock: the prefix and the window keys are text for the agent, and the viewer keeps one window.
+  viewer.press("C-b", "n", "C-b", "c");
+  await waitUntil(() => typed(a) === "^Bn^Bc", `the agent read the window keys (it read ${JSON.stringify(typed(a))})`);
+  assert.deepEqual(lines(tmuxOn(AGENTS, "list-windows", "-t", `=${viewer.session}`, "-F", "#{window_name}")), [a.name]);
+  tmuxOn(AGENTS, "kill-window", "-t", a.target);
+  assert.equal(await viewer.ended(), 0, viewer.shows());
+  assert.equal(typed(sibling), "", "the sibling's pane read nothing");
+  nothingLeft("the plain viewer's agent window ended");
+
+  // An agent that asked for mouse reports gets the wheel, in its own encoding; tmux stays out of copy mode.
+  const grabbing = await agent("wheel-grabbing", { program: grabbingProgram });
+  const second = await view(grabbing);
+  second.send(WHEEL_UP);
+  await waitUntil(() => /^\^\[\[<64;\d+;\d+M$/.test(typed(grabbing)), `the agent read the wheel (it read ${JSON.stringify(typed(grabbing))})`);
+  assert.equal(inMode(grabbing), "0", "no copy mode: the wheel was the agent's");
+  tmuxOn(AGENTS, "kill-window", "-t", grabbing.target);
+  assert.equal(await second.ended(), 0, second.shows());
+  nothingLeft("the grabbing agent's window ended");
 });
 
 for (const mode of ["emacs", "vi"]) {

@@ -515,7 +515,7 @@ function ambiguousClusterGuides(t, ambiguity, shellSource = source) {
   s.renderContextRoster(full);
   const rows = [...s.document.querySelectorAll(".ctx-tree-row")];
   assert.equal(rows.length, full.length, "ambiguity must not hide a row");
-  const row = name => rows.find(r => r.querySelector(".ctx-name").textContent === name);
+  const row = name => rows.find(r => r.querySelector(".ctx-name").dataset.name === name);
   assert.equal(row("worker").querySelectorAll(".ctx-guide.elbow").length, 0, "shipped caller must not forge an ambiguous parent guide");
   assert.equal(row("child").querySelectorAll(".ctx-guide.elbow").length, 1, "unambiguous parent still draws its elbow");
 }

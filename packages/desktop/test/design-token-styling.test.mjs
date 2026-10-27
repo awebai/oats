@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { shellIcon } from "../renderer/shell-icons.mjs";
+import { createResizeHandle } from "../renderer/split-resize.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const theme = read("theme.css"), shell = read("shell.css");
@@ -79,10 +80,12 @@ function fixture(t, palette = "light") {
     style: selector => dom.window.getComputedStyle(doc.querySelector(selector)) };
 }
 
-test("visual shell geometry: 264px sidebar, aligned 48px bars, the Workspace head and 16px icons", t => {
+test("visual shell geometry: a 288px sidebar by default, aligned 48px bars, the Workspace head and 16px icons", t => {
   const u = fixture(t);
-  assert.equal(u.style("#sidebar").width, "264px");
-  assert.equal(u.style("#sidebar").minWidth, "264px");
+  // The width lives in one custom property on #app: 288px until its handle (sidebar-width.mjs) moves it.
+  assert.equal(u.rule("#app").getPropertyValue("--sidebar-w"), "288px");
+  assert.equal(u.style("#sidebar").width, "var(--sidebar-w)");
+  assert.equal(u.style("#sidebar").minWidth, "var(--sidebar-w)");
   assert.equal(u.style("#sidebar").flexShrink, "0");
   assert.equal(u.rule(':root, [data-theme="dark"]').getPropertyValue("--bar-h"), "48px");
   // Every bar is 48px including its 1px rule; the flat strip's inner row
@@ -155,7 +158,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, the Workspace hea
   assert.deepEqual([name.flexGrow, name.flexShrink, name.minWidth, name.overflow], ["0", "1", "0px", "hidden"]);
   // The names inherit the sidebar's 13px at the row's weight again (no size or weight of their own), the current one at 650.
   assert.deepEqual([u.rule(".ws-option-name").fontSize, u.rule(".ws-option-name").fontWeight], ["", ""], "no size or weight of its own");
-  assert.match(shell, /^body \{[^}]*font: 13px\/1\.45 /m, "the 13px they inherit");
+  assert.match(shell, /^body \{[^}]*font-size: 13px; line-height: 1\.45; /m, "the 13px they inherit");
   assert.equal(u.style('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650");
   assert.notEqual(u.style('.ws-option:not([aria-current]) .ws-option-name').fontWeight, "650", "another row's name is not bold");
   assert.equal(shell.match(/\.ws-option-(?:meta|line|copy|section)\b|\.ws-check\b|\.ws-open-window\b|\.ws-option \.workspace-avatar/), null, "no mark, machine line, check or button rules");
@@ -423,4 +426,21 @@ test("theme component rules remain token-only, including all new identity marker
   const components = theme.slice(theme.indexOf("/* Keyboard-first" )).replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(components, /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|\bopacity\s*:/i);
   assert.doesNotMatch(components, /\battr\(/i, "data attributes select named rules, never arbitrary CSS values");
+});
+
+// The sidebar's width handle is the split panes' resizer (one rule, no second resizer): a 6px col-resize strip
+// across the sidebar's right edge, its hover and keyboard focus the --accent fill (held to 3:1 on --surface, --bg
+// and --term-bg by theme-contrast's focus edges).
+test("the sidebar's width handle takes the split resizer's rule on the sidebar's right edge", t => {
+  const u = fixture(t);
+  const handle = createResizeHandle(u.doc, { label: "Sidebar width", orientation: "row" });
+  u.get("#sidebar").append(handle);
+  assert.equal(u.style("#sidebar").position, "relative", "the handle's containing block");
+  const style = u.style("#sidebar > .split-resizer");
+  assert.deepEqual([style.position, style.top, style.bottom, style.right, style.width, style.cursor, style.touchAction],
+    ["absolute", "0px", "0px", "-3px", "6px", "col-resize", "none"]);
+  const focus = u.rule(".split-resizer:hover, .split-resizer:focus-visible");
+  assert.equal(focus.background, "var(--accent)");
+  assert.equal(focus.outline, "none", "the fill is the focus indicator");
+  assert.equal(shell.match(/#sidebar-resizer|\.sidebar-resizer/), null, "no rule of its own");
 });

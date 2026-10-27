@@ -162,14 +162,21 @@ validates the field and never synthesizes it.
     ([the status row](../../../docs/desktop-cli-api.md#the-roster-oats-status---json)).
   - A last-known roster (an unreached server, a held-stale row) never shows
     it.
-- **The mark.** A "Needs input" pill (an alert icon and text, never colour
-  alone) takes the row's second line, in place of its soul and repository,
-  which stay in the card with its branch and pull request (a row with no card says them in
-  its title and description, before the wait). The name line keeps the name
-  at its full width, and "New" beside it. A held home's state wins that line:
-  the mark is not shown, and the row's description says the wait. The mark
-  becomes part of the row's accessible name. The dot stays liveness. Rows are
-  not reordered, keep their height, and nothing animates.
+- **The mark** (the product owner, 2026-10-26). The row's dot is the
+  needs-input mark (`.ctx-dot.waiting`: the `attention` icon, a `--warn` disc
+  with the "!" cut out in `--surface`), whatever the liveness, never in the
+  instance's colour. It is 10px, centred on the 8px dot's slot with the dot's
+  2px ring in the row's fill, so the name and the tree guides do not move.
+  Yellow means needs input only: unknown liveness is a `--muted` bullseye
+  (`.ctx-dot.unknown`). The mark is also the one the terminal tab and the
+  workspace list show, and its "!" shape says it without the colour. The row
+  keeps its second line (soul and repository) and "New" beside the name. A
+  visually hidden " Needs input" follows the name, so the row's accessible
+  name says it as the pill it replaced did. A held home's state still wins
+  its second line; its dot is the mark, and its description says the wait
+  instead of its name. Rows are not reordered, keep their height, and nothing
+  animates. This supersedes the earlier decision to keep the dot liveness
+  while a pill took the second line.
 - **The card** (hover or keyboard focus) adds `Waiting` (the reason in words,
   how long, and the local start time) and `Message`. A claim without a note
   (none, malformed or withheld) has no `Message` row: `Waiting` already says
@@ -180,7 +187,12 @@ validates the field and never synthesizes it.
   month table, like the rest of the copy), judged against the show or paint
   time.
 - **Collapsed parents.** A waiting row hidden by a collapse is counted on its
-  nearest visible ancestor as "N below", in the same place as the mark (`waitingRollup` in
+  nearest visible ancestor as "N below", a pill (the mark and text) that takes
+  that row's second line in place of its soul and repository, which stay in
+  the card (a row with no card says them in its title and description, before
+  the wait); a visually hidden " need input" completes its accessible name. A
+  parent that waits itself shows its own mark as its dot and the roll-up on
+  its second line (`waitingRollup` in
   `packages/client/instance-tree.mjs`, beside `instanceVisibleInTree`, which it mirrors), following the parent relation only
   (never across a remote server), and never outside the deployment section the
   waiting row is painted in. A collapse hides only rows of its own section
@@ -197,6 +209,24 @@ validates the field and never synthesizes it.
   name and title are mutated (focus, an open tab menu or a drag survive the
   poll); cleared, the tab gets back the dot, name and title it was drawn with.
   The tab is matched by its qualified key (`terminalKey`), never a bare name.
+- **The waiting row** (#1502, `renderer/waiting-row.mjs`). The same pass
+  draws a row over the tab's terminal, inside its pane, so each split
+  group's shown tab carries its own. Its head is the pill and the age
+  (`waitedText`, " · 12 min") on one line that never wraps. Under it is the
+  message, set as text (`textContent`, `dir="auto"`) or, when it is null, the
+  reason in words (`waitingLabel`, muted). The message wraps to at most 3
+  lines, and the whole row stays within a quarter of the pane. It is cut with
+  "…" (`-webkit-line-clamp` from `--waiting-lines`), and hidden when not one
+  line fits. The row is hidden too when not even its head fits in the
+  quarter, and the terminal keeps the pane. The pane turns into a column, and the terminal takes the rest of
+  it. The row's height therefore changes only when the claim starts or clears,
+  or its shown text changes. An age tick rewrites only the age, inside the
+  head's one line, so it never refits the terminal. The clamp follows the
+  pane's own height through one `ResizeObserver` on the pane, never a timer.
+  The observation ends when the claim clears or the tab closes (`closeTab`).
+  This departs on purpose from the TUI's row (#1502), where the age sits on
+  the message's first line: Desktop's text is proportional, so an age there
+  would reflow the message as it ticked.
 - **Display only.** Nothing in Desktop acts on a claim.
 
 The waited age is never painted into the row, so the roster signature changes

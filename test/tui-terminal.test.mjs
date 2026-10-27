@@ -21,6 +21,7 @@ import { comparableStty } from "./helpers/stty-line.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
+import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -355,7 +356,7 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [], se
   const hidden = new Set([...gone, ...(folded ? ["beta"] : [])]);
   // A row is its mark and its name, indented by its level: no disclosure mark and no word (every
   // row here is stopped, which the mark says). A folded row says how many it folds away.
-  const row = (name, depth, fold = "") => new RegExp(`^${name === selected ? ">" : " "} ${"  ".repeat(depth)}${literal(look.stopped)} ${name}${fold ? literal(` ${fold}`) : ""}$`);
+  const row = (name, depth, fold = "") => new RegExp(`^${name === selected ? ">" : " "} ${"  ".repeat(depth)}${literal(look.stopped)} ${instanceDisplayName(name)}${fold ? literal(` ${fold}`) : ""}$`);
   const wanted = [["alpha", 0, folded ? "+1" : ""], ["beta", 1], ["gamma", 0], ...extra.map((name) => [name, 0])].filter(([name]) => !hidden.has(name));
   const NO_MATCH = "   No instance matches the filter.";
   const drawn = list.filter((text) => text !== "" && text !== NO_MATCH);
@@ -368,7 +369,7 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, listed = [], se
   } else {
     for (const want of wanted) { const n = drawn.filter((text) => row(...want).test(text)).length; if (n !== 1) faults.push(`${n} rows of the list are ${row(...want)}: ${JSON.stringify(drawn)}`); }
     if (drawn.length !== wanted.length) faults.push(`the list draws ${drawn.length} rows, not ${wanted.length}: ${JSON.stringify(drawn)}`);
-    for (const name of hidden) if (drawn.some((text) => new RegExp(`\\b${name}\\b`).test(text))) faults.push(`a row still shows ${name}`);
+    for (const name of hidden) if (drawn.some((text) => new RegExp(`\\b${instanceDisplayName(name)}\\b`).test(text))) faults.push(`a row still shows ${name}`);
   }
   // From 80 columns the detail stands beside the sidebar, from the first row.
   if (cols >= 80) {
@@ -701,7 +702,7 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   // The sidebar: the title (the name alone: no count, and no time of a read), an empty row, the
   // views with the open one's list, and the cheat sheet; the detail beside it from the first row.
   const rule = "─".repeat(38);
-  const side = ["  fixture", "", viewRow("Instances", "1"), "> ○ alpha", "    ○ beta", "", "  ○ gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
+  const side = ["  fixture", "", viewRow("Instances", "1"), "> ○ Alpha", "    ○ Beta", "", "  ○ Gamma", rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
   const detail = ["   alpha", "   soul     dev", "   state    stopped", "   harness  claude", "   work     directory", "   home     …/agents/dev/instances/alpha"];
   assert.deepEqual(term.screen(), Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? "")), "the Instances view, row for row");
 
@@ -893,7 +894,7 @@ test("the reason the kernel gives for an instance it could not observe stands in
    *  row: it names no act, the instance whose state is not known or another. */
   const screenOf = (selected, detail) => {
     const at = (name) => (name === selected ? ">" : " "), rule = "─".repeat(38);
-    const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
+    const list = [`${at("alpha")} ○ Alpha`, `${at("beta")}   ○ Beta`, "", listed(`${at("gamma")} ? Gamma`, "state unknown")];
     const side = ["  fixture", "", viewRow("Instances", "1"), ...list, rule, viewRow("Souls", "2"), viewRow("Capabilities", "3"), rule, ...sheetRows(LIST_SHEET)];
     return Array.from({ length: 24 }, (_, i) => two(side[i] ?? "", detail[i] ?? ""));
   };
@@ -1331,12 +1332,16 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   // the agent's terminal and the leader's keys under it (whose rows depend on how the leader's label
   // wraps: one more with `Ctrl+X`, the default, than with `Alt+O`), the switcher's `remove`, `soul-instances`, the open terminal's keys, the
   // split's, the four acts with the rules of a confirmation under them, and the spawn's, each
-  // sentence wrapped to that width. The movement keys scroll the help: with either of those labels the line
-  // of `quit` is on the screen from 147 rows down to 167 on macOS, from 187 to 205 elsewhere, and
-  // 157 and 196 rows down show it.
-  const down = process.platform === "darwin" ? 157 : 196;
-  for (let i = 0; i < down; i++) term.press("j");
-  await until(term, () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row)) && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
+  // sentence wrapped to that width. How many rows that is changes with any sentence of the help, so
+  // the help is scrolled a row at a time until the line of `quit` is on the screen: each `j` waited
+  // on until the help has moved, at most 300 (a help that stops moving first fails here, by name).
+  const quitShown = () => mainOf(term.screen()).some((row) => /^ *x {2,}quit$/.test(row));
+  for (let i = 0; i < 300 && !quitShown(); i++) {
+    const before = JSON.stringify(mainOf(term.screen()));
+    term.press("j");
+    await until(term, () => quitShown() || JSON.stringify(mainOf(term.screen())) !== before, `the help moved a row down at the ${i + 1}th j, towards its line of quit`);
+  }
+  await until(term, () => quitShown() && JSON.stringify(sheetOf(term.screen())) === JSON.stringify(words(withX(HELP_SHEET))), "the help with x as the quit key, in it and in its cheat sheet, after a q that did not quit");
   assert.equal(mainOf(term.screen()).some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
   await run.view("after the help was closed");
@@ -1415,7 +1420,7 @@ test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and th
   const screen = term.screen();
   assert.equal(sidebarOf(screen)[7], "-".repeat(38), "the rule under the list");
   assert.equal(screen[23], `${"".padEnd(38)}|`, "the line between the sidebar and the main area reaches the last row");
-  assert.equal(screen[3].slice(0, 38).trimEnd(), "> - alpha");
+  assert.equal(screen[3].slice(0, 38).trimEnd(), "> - Alpha");
   assert.equal(screen.some((row) => /[^\x20-\x7e]/.test(row)), false, `every character on the screen is printable ASCII:\n${term.shows()}`);
   term.press("h");
   await run.view("after h in an ASCII locale: collapsed", { folded: true });
@@ -1448,11 +1453,11 @@ test("the Souls view, with the real `oats souls`: the leader then 2 shows the wo
   const filtered = viewRow("Instances  soul dev", "1");
   await until(term, () => sidebarOf(term.screen())[2] === filtered, "the Instances view, filtered by dev, which its heading says");
   const shown = () => listUnder(term.screen(), sidebarOf(term.screen())[2]).join("\n");
-  assert.match(shown(), /alpha/);
-  assert.match(shown(), /beta/);
-  assert.doesNotMatch(shown(), /gamma/, "the reviewer's instance is not dev's");
+  assert.match(shown(), /Alpha/);
+  assert.match(shown(), /Beta/);
+  assert.doesNotMatch(shown(), /Gamma/, "the reviewer's instance is not dev's");
   term.press("Escape");
-  await until(term, () => /gamma/.test(shown()) && sidebarOf(term.screen())[2] === viewRow("Instances", "1"), "Esc clears the soul filter, and the heading says no more of it");
+  await until(term, () => /Gamma/.test(shown()) && sidebarOf(term.screen())[2] === viewRow("Instances", "1"), "Esc clears the soul filter, and the heading says no more of it");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });

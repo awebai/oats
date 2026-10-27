@@ -2453,6 +2453,10 @@ it to a temporary copy (`soulFetched: true`).
   otherwise. Show it, and `yolo`, whenever it is `true`. An explicit
   `--launch-config none` asks for the bare harness and bypasses the default;
   to run the host's default, omit `--launch-config`.
+- `launchConfigSource` (0.69) is the directory of the file that declares
+  `launchConfig`: the deployment, or `~/.oats/config` for
+  [this machine's launch configurations](configuration.md#this-machines-launch-configurations);
+  `null` when there is no `launchConfig`. A spawn records the same value.
 - `modelSource` is `"explicit"`, `"soul default"`, `"launch-config <name>"`,
   `"native default"` or `"native default (explicit)"` (`--model
   @native-default`). Omitting `--model` and asking for the native default are
@@ -3696,7 +3700,9 @@ An envelope, `ok: true` whenever no step failed, human steps included
 - `registration` is the registration as written or found (`sshHost`,
   `workspace`: the absolute path the host resolved for `--dir`, never `~`;
   `workspaceKey`; and `oatsPath`, `path`,
-  `label` when set), `null` until the `register` step has run.
+  `label` when set, given or, without `--path`, read from the host user's
+  [login shell](servers.md#the-hosts-login-shell-path)), `null` until the
+  `register` step has run.
 - `human` lists the remedies of the `needs-human` steps, in order. A
   `readiness` step that needs a human has one line per problem
   (`<souls>: <subject>: <reason>[ → <remedy>]`, plus `readiness not checked
@@ -4012,7 +4018,10 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   message}` per producer with a live claim in the current incarnation
   (cleared ones included). A producer's latest row with `data.waitingOnYou`
   decides. `waitingOnYou` is `{since, producer, reason, message}` of the
-  newest positive claim, or `null` (unknown, not "not waiting"). See
+  newest positive claim that has a message, so a claim with no text never
+  hides one with text; when its `reason` is `null`, the newest text-less
+  claim's reason fills it. With no message anywhere it is the newest
+  positive claim, or `null` (unknown, not "not waiting"). See
   [Waiting on you](#waiting-on-you) for the producers and the rules.
 - Errors: `E_SESSION_UNKNOWN`, `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`,
   `E_BAD_ARGS`, `E_EVENTS_FAILED`.
@@ -4063,8 +4072,14 @@ oats instance attention [--message <text>] [--clear] --json
   only ever the message, never a flag (`--message=--clear` sets the message
   "--clear"). The spaced form `--message --deploy` reads `--deploy` as a
   flag and is `E_BAD_ARGS`. It is stored as given, only on a
-  positive claim. The reader applies the same rule again: an invalid stored
-  message (a hand-edited log) reads as `null`, and the claim still counts.
+  positive claim. The reader applies the same rule again, with one
+  difference: a stored message over 200 code points (a row from another
+  producer or an older writer, or a remote kernel's claim) is cut to 200, the
+  last one `…`. So `waitingOnYou.message` and each `waitingClaims[].message`
+  are never longer than 200 code points, whoever wrote them. The cut counts
+  code points: a surrogate pair is never split, but a combining mark may be
+  left out. A message that is still invalid after that (a refused character,
+  a hand-edited log) reads as `null`, and the claim still counts.
   A stored `reason` outside `permission`, `question`, `attention` reads as
   `null` too, and a row whose `producer` is neither `kernel` nor a valid
   producer id, or whose `at` is not a date, is no claim at all.
