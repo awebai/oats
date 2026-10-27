@@ -31,7 +31,7 @@ export const soulTeamsHereCSS = `
 .soul-teams-here .sth-row { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:10px; row-gap:4px; align-items:start; padding:8px 0; border-top:1px solid var(--tag-bg); }
 .soul-teams-here .sth-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
 .soul-teams-here .sth-head { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; min-width:0; }
-.soul-teams-here .sth-label { color:var(--fg); font:650 12.5px var(--mono,monospace); overflow-wrap:anywhere; }
+.soul-teams-here .sth-label { color:var(--fg); font-weight:650; font-size:12.5px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .soul-teams-here .sth-meta { color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
 .soul-teams-here .sth-meta.warn { color:var(--warn); }
 .soul-teams-here .sth-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
@@ -47,7 +47,7 @@ export const soulTeamsHereCSS = `
 .soul-teams-here .sth-error { grid-column:1 / -1; border-left:2px solid var(--danger); padding-left:8px; color:var(--fg); font-size:12px; line-height:1.45; }
 .soul-teams-here .sth-error p { margin:0; overflow-wrap:anywhere; }
 .soul-teams-here .sth-error summary { color:var(--muted); font-size:11.5px; cursor:pointer; }
-.soul-teams-here .sth-error pre { margin:4px 0 0; color:var(--fg); font:11px var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.soul-teams-here .sth-error pre { margin:4px 0 0; color:var(--fg); font-weight:normal; font-size:11px; line-height:normal; font-family:var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
 /* Loading placement: the skeleton reads as the default line and two rows (loading.css styles the bones). */
 .soul-teams-here .skeleton-lines { gap:14px; padding:4px 0 6px; }
 .soul-teams-here .skeleton-lines .skeleton-line { height:12px; width:85%; }

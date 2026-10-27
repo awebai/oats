@@ -1172,10 +1172,10 @@ test("real script, real CLI: the text of the prompt reaches waitingOnYou, the qu
   assert.equal(claimOf(a), null);
 });
 
-test("packaging: the capability ships bin/oats-core.mjs, bin/claude-waiting.sh and bin/claude-waiting-message.mjs as regular files, wired as spawn and launch hooks", () => {
+test("packaging: the capability ships bin/oats-core.mjs, bin/claude-waiting.sh and bin/claude-waiting-message.mjs as regular files, wired as spawn, launch and upgrade hooks", () => {
   for (const f of ["bin/oats-core.mjs", "bin/claude-waiting.sh", "bin/claude-waiting-message.mjs"]) assert.ok(lstatSync(join(CAP, f)).isFile(), f);
   const manifest = readJson(join(CAP, "oats.json"));
-  assert.deepEqual(manifest.hooks, { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" });
+  assert.deepEqual(manifest.hooks, { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch", upgrade: "bin/oats-core.mjs upgrade" });
   assert.equal(manifest.launchPreview, true);
   assert.match(readFileSync(SCRIPT, "utf8"), /^#!\/bin\/sh\n(?:#.*\n)*exec >\/dev\/null 2>&1\n(?:#.*\n)*if \[ -e \/dev\/fd\/0 \]; then exec 3<&0; else exec 3<\/dev\/null; fi\nexec <\/dev\/null\n/, "the script detaches stdout and stderr first, keeps the input on fd 3 and detaches stdin");
 });

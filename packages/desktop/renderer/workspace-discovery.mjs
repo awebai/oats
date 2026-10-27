@@ -56,7 +56,7 @@ ${capabilityWarningsCSS}
 .workspace-header[hidden] { display:none; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 ${tabBarCSS('.workspace-tabs')}
-.workspace-count { color:var(--muted); font:10.5px var(--mono,monospace); }
+.workspace-count { color:var(--muted); font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); }
 .workspace-count:empty { display:none; }
 /* Visually hidden, announced; anchored at its containing block's origin so it can never stretch a scroller or the document (spec G). */
 .workspace-sr-only { position:absolute; top:0; left:0; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }

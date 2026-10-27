@@ -136,7 +136,7 @@ test('the preview column: a skeleton with aria-busy while reading, then the fact
   const created = u.q('.spawn-preview-created .spawn-preview-body');
   assert.deepEqual([...created.children].map(c => c.className), ['spawn-preview-identity', 'spawn-preview-facts']);
   assert.equal(u.q('.spawn-preview-name').textContent, data.instance); assert.equal(u.q('.spawn-preview-home').title, data.home);
-  assert.match(u.rule('.spawn-preview-name', 'font'), /13\.5px.*var\(--mono/); assert.equal(u.style(u.q('.spawn-preview-name')).color, 'var(--fg)');
+  assert.equal(u.rule('.spawn-preview-name', 'font-size'), '13.5px'); assert.match(u.rule('.spawn-preview-name', 'font-family'), /^var\(--mono/); assert.equal(u.style(u.q('.spawn-preview-name')).color, 'var(--fg)');
   assert.equal(u.style(u.q('.spawn-preview-home')).color, 'var(--muted)');
   assert.ok([...u.q('.spawn-preview-identity').querySelectorAll('dt')].every(dt => dt.classList.contains('workspace-sr-only')), 'the terms are for assistive tech');
   assert.equal(u.q('.spawn-preview-facts dd .mono').textContent, data.branch, 'the branch in monospace');

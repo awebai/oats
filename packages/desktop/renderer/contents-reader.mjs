@@ -45,7 +45,7 @@ export const contentsCardCSS = `
 .cap-tree [role=treeitem] [role=group] .cap-node { padding-left:22px; font-family:var(--mono,monospace); font-size:11.5px; }
 .cap-tree .cap-more { padding:3px 6px 3px 22px; color:var(--muted); font-size:11px; }
 .cap-reader-head { position:sticky; top:0; z-index:1; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg); font-size:11.5px; }
-.cap-reader-path { color:var(--fg); font:600 11.5px var(--mono,monospace); overflow-wrap:anywhere; }
+.cap-reader-path { color:var(--fg); font-weight:600; font-size:11.5px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .cap-reader-size { color:var(--muted); }
 .cap-reader-flag { color:var(--warn); font-weight:600; }
 .cap-reader-body { padding:14px 18px 24px; }

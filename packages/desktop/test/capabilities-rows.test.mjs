@@ -78,7 +78,8 @@ test('each capability is one row card: header, 58px grid, tile + name/kind + one
   }
   const okf = u.$('.catalog-row[data-capability="oats.okf"]');
   assert.equal(okf.querySelector('.catalog-cap-line').textContent, 'oats.okfKnowledge', 'name and kind chip share one line');
-  assert.match(u.css(okf.querySelector('.catalog-name')).font, /650 13px var\(--mono/);
+  const name = u.css(okf.querySelector('.catalog-name'));
+  assert.deepEqual([name.fontWeight, name.fontSize, name.fontFamily], ['650', '13px', 'var(--mono,monospace)']);
   assert.equal(u.$('.catalog-row[data-capability="oats.authoring"] .catalog-core'), null, 'no kind chip without a layer');
   assert.equal(u.$('.catalog-row[data-capability="nw-quiet"] .catalog-desc'), null, 'no description line when the kernel reports none');
   assert.doesNotMatch(catalogCSS, /catalog-source/, 'no Source cell rule, wide or narrow');

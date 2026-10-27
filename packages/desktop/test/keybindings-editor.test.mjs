@@ -994,7 +994,7 @@ for (const [platform, isMac] of [["macOS", true], ["Linux", false]]) {
       // The sidebar's Spawn instance runs Quick Open: its row, in the family in use.
       assert.deepEqual(caps(rowIn("Global", "Quick open a soul to spawn")),
         isMac ? ["⌘", "P"] : { alt: ["Alt", "P"], "ctrl+alt": ["Ctrl", "Alt", "P"], "ctrl+shift": ["Ctrl", "Shift", "P"] }[family]);
-      assert.deepEqual(caps(rowIn("Global", "Spawn instance: choose a soul in Workspace")), isMac ? ["⌘", "N"] : ["Ctrl", "Shift", "N"]);
+      assert.deepEqual(caps(rowIn("Global", "Souls: choose a soul to spawn (Workspace › Souls)")), isMac ? ["⌘", "N"] : ["Ctrl", "Shift", "N"]);
       const machines = rowIn("Global", "View: Workspace › Machines");
       assert.ok(machines, "Machines says it is the Workspace page's tab");
       assert.deepEqual(caps(machines), mod("1"));

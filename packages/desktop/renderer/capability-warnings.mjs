@@ -27,7 +27,7 @@ export const capabilityWarningsCSS = `
 .cap-warning { display:flex; flex-direction:column; gap:3px; min-width:0; padding-left:10px; border-left:2px solid var(--warn); }
 .cap-warning-head { display:flex; align-items:center; gap:6px; min-width:0; color:var(--warn); font-size:12px; font-weight:650; line-height:1.4; }
 .cap-warning-head .shell-icon { flex:none; }
-.cap-warning-capability { min-width:0; color:var(--muted); font:500 11.5px var(--mono, ui-monospace, Menlo, monospace); overflow-wrap:anywhere; }
+.cap-warning-capability { min-width:0; color:var(--muted); font-weight:500; font-size:11.5px; line-height:normal; font-family:var(--mono, ui-monospace, Menlo, monospace); overflow-wrap:anywhere; }
 .cap-warning-message { margin:0; color:var(--fg); font-size:12.5px; line-height:1.5; overflow-wrap:anywhere; }
 .cap-warning-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .cap-warning-foot { display:flex; flex-wrap:wrap; align-items:flex-start; gap:4px 10px; min-width:0; }

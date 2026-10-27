@@ -33,7 +33,7 @@ export const addMachineCSS = `
 .machine-fields { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px 12px; }
 .machine-field { display:flex; flex-direction:column; gap:4px; min-width:0; color:var(--muted); font-size:12px; font-weight:600; }
 .machine-field.wide { grid-column:1 / -1; }
-.machine-dialog input.field { height:30px; padding:0 9px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:12.5px var(--mono,monospace); box-sizing:border-box; min-width:0; }
+.machine-dialog input.field { height:30px; padding:0 9px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font-weight:normal; font-size:12.5px; line-height:normal; font-family:var(--mono,monospace); box-sizing:border-box; min-width:0; }
 .machine-dialog input.field::placeholder { color:var(--muted); } /* the Folder hint is the field's only format note: --muted holds AA on --surface */
 .machine-dialog input.field:focus-visible { outline:none; border-color:var(--accent); }
 .machine-dialog input.field:disabled { background:var(--surface-2); color:var(--muted); }
@@ -57,7 +57,7 @@ export const addMachineCSS = `
 .machine-step-remedy { color:var(--fg); white-space:pre-line; } /* a readiness remedy is its lines joined by newlines */
 .machine-commands { display:flex; flex-direction:column; gap:4px; }
 .machine-command { display:flex; align-items:center; gap:8px; min-width:0; }
-.machine-command code { min-width:0; overflow-wrap:anywhere; padding:2px 6px; border-radius:5px; background:var(--surface); color:var(--fg); font:11.5px var(--mono,monospace); }
+.machine-command code { min-width:0; overflow-wrap:anywhere; padding:2px 6px; border-radius:5px; background:var(--surface); color:var(--fg); font-weight:normal; font-size:11.5px; line-height:normal; font-family:var(--mono,monospace); }
 .machine-status { color:var(--muted); }
 .machine-status:focus { outline:none; }
 .machine-dialog button { height:30px; padding:0 14px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:inherit; font-weight:600; cursor:pointer; }
