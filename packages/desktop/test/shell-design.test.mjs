@@ -22,6 +22,7 @@ import { createFocusRegions } from "../renderer/focus-regions.mjs";
 import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree-view.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
+import { resumePaletteCommand } from "../renderer/resume-notice.mjs";
 import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, handleKeydown, setBinding, resetBinding, onKeymapChange, paletteGroupDirection, paletteGroupHint } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
@@ -72,7 +73,8 @@ function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
     toggleTheme: () => events.push(["theme"]), themePicker: { toggle: () => events.push(["themePicker"]) },
     fontPicker: { toggle: () => events.push(["fontPicker"]) },
     // The resume-at-launch preference (resume-notice.mjs): its toggle, as the shell's registry entry runs it.
-    resumePreference: { toggle: () => events.push(["resumeAtLaunch"]), read: async () => null, refresh() {}, detail: () => "" },
+    resumePreference: { toggle: () => events.push(["resumeAtLaunch"]), read: async () => null, refresh: async () => {}, alongside: (load) => load(), detail: () => "" },
+    resumePaletteCommand, // its palette entry, as shipped
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     sidebarWidth: { reset: () => events.push(["sidebarWidth", "reset"]) },
     fileOpener: { choose() {}, dispose() {} },
