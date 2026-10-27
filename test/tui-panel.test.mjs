@@ -30,6 +30,7 @@ import { backKeyLabel } from "../packages/tui/lib/actions.mjs";
 import { defaultDetachKey } from "../packages/tui/lib/config.mjs";
 import { instanceDisplayName } from "../packages/client/instance-display-name.mjs";
 import { STATUS_WAIT_MS, createPanel } from "../packages/tui/lib/panel.mjs";
+import { tmuxForwardsBoundKey } from "../lib/session-viewer.mjs";
 import { captureRows } from "../packages/tui/lib/term/capture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -39,6 +40,10 @@ const hostTool = (name) => { try { return systemExecutable(name); } catch { retu
 
 // The host's own tools, found before the environment is isolated (PATH is then the fixture's).
 const REAL_TMUX = hostTool("tmux");
+/** Whether this tmux's viewer takes C-b [ (3.3 and later, lib/session-viewer.mjs tmuxForwardsBoundKey),
+ *  as the kernel the TUI runs answers in its version --json `sessionViewer`: the fixture's PATH
+ *  links this tmux. */
+const FORWARDS = REAL_TMUX ? tmuxForwardsBoundKey(execFileSync(REAL_TMUX, ["-V"], { encoding: "utf8", timeout: 10000 })) : false;
 /** The panel makes its keeper's FIFO with the base system's `mkfifo` (packages/tui/lib/panel.mjs,
  *  THE KEEPER), which the fixture's PATH does not link: the host's is linked there for this file. */
 const HOST_MKFIFO = hostTool("mkfifo");
@@ -213,14 +218,23 @@ const LEADER_KEY = defaultDetachKey(), LEADER = backKeyLabel(LEADER_KEY);
 /** The leader and the palette, which the sheet names first in every focus of the list. */
 const LEAD = `${LEADER} commands   Ctrl+K palette   `;
 const OPEN_HINT = `${LEAD}Enter open   `;
+/** The viewer's scroll key after the leader's (docs/tui.md, "Tabs"): the short form beside the
+ *  terminal, the 30 cells of the sidebar holding one key. */
+const SCROLL = FORWARDS ? "Ctrl+B [ scroll back" : "Shift+PageUp scroll back";
+/** The same in a zoomed terminal's title row, 120 columns wide: both keys fit beside the tab. */
+const ZOOMED_SCROLL = FORWARDS ? "Shift+PageUp or Ctrl+B [ scroll back" : "Shift+PageUp scroll back";
+/** A zoomed terminal's title row ends with the leader's keys and, where it still has room, the scroll
+ *  keys, the first given up: on Linux and Windows the Alt family's chords lead the row, and at these
+ *  120 columns they leave the scroll keys no room; on macOS, with one tab, there are no chords to show. */
+const ZOOMED_KEYS = `${LEADER} commands   ${LEADER} Esc the list${process.platform === "darwin" ? `   ${ZOOMED_SCROLL}` : ""}`;
 /** The whole sheet while the terminal has the focus, with `tabs` tabs open: on Linux and Windows the
  *  Alt family's chords first, as every one is read in any terminal, the protocol or not (docs/tui.md,
  *  "Chords"): the palette, the instance before or after, the tab before or after with two tabs or
- *  more, close and zoom; then the leader, the leader then Esc (the list's focus) and the leader
- *  twice (the leader typed into the terminal). On macOS the TUI's chords are the Alt arrows alone,
+ *  more, close and zoom; then the leader, the leader then Esc (the list's focus), the leader
+ *  twice (the leader typed into the terminal) and the viewer's scroll key. On macOS the TUI's chords are the Alt arrows alone,
  *  so the sheet names the tab before or after, with two tabs or more. */
 const backWith = (tabs) => [...(process.platform === "darwin" ? (tabs > 1 ? ["Alt+Left/Right tab"] : []) : ["Alt+K palette", "Alt+Shift+Up/Down agent", ...(tabs > 1 ? ["Alt+Left/Right tab"] : []), "Alt+W close", "Alt+Z zoom"]),
-  `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}`].join("   ");
+  `${LEADER} commands   ${LEADER} Esc the list   ${LEADER} ${LEADER} types ${LEADER}   ${SCROLL}`].join("   ");
 const BACK = backWith(1);
 /** Whether the tabs carry their numbers: not on macOS, where no chord reaches them (docs/tui.md, "Tabs"). */
 const NUMBERED = process.platform !== "darwin";
@@ -558,7 +572,7 @@ test("what is typed reaches the agent and shows in the panel; the leader then Es
   await until(term, () => run.beside("abcd"), "the panel redrawn with the list focused");
 
   term.press("z");
-  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`${oneTab(NAME)} `) && term.screen()[0].endsWith(`${LEADER} commands   ${LEADER} Esc the list`) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the agent's screen from the first column, no list and no cheat sheet");
+  await until(term, () => run.zoomed("abcd") && term.screen()[0].startsWith(`${oneTab(NAME)} `) && term.screen()[0].endsWith(ZOOMED_KEYS) && run.sheet() === "", "the terminal zoomed: its tab bar on the first row, the shown tab bracketed, with the leader's keys at its right, and the viewer's scroll keys where they fit, and the agent's screen from the first column, no list and no cheat sheet");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
   await run.back();
