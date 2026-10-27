@@ -654,6 +654,22 @@ body {
    partial row would otherwise give the pane a classic scrollbar on Linux. */
 .term-wrap { overflow: hidden; }
 .tab-pane:has(> .term-wrap) { overflow: hidden; }
+/* #1502: the waiting row (waiting-row.mjs) over a terminal whose instance needs input. The pane becomes a column and
+   the terminal takes the rest, so it gives up exactly the row's height; without the row the pane is as above. The head
+   (the list's Needs input tag and the age) is one line that never wraps, so an age tick never moves the message. The
+   message wraps to --waiting-lines (at most 3, and the whole row within a quarter of the pane) and ends in "…"; a pane
+   too short for the head shows no row. */
+.tab-pane.active:has(> .waiting-row) { display: flex; flex-direction: column; }
+.waiting-row ~ .term-wrap { position: relative; inset: auto; flex: 1 1 0; min-height: 0; height: auto; }
+.tab-pane > .waiting-row { flex: none; height: auto; box-sizing: border-box; padding: 6px 12px; border-bottom: 1px solid var(--attn-border);
+  background-color: var(--attn-bg); color: var(--fg); font-size: 13px; }
+.waiting-head { display: flex; align-items: center; margin-bottom: 2px; white-space: nowrap; overflow: hidden; line-height: 18px; }
+.waiting-age { color: var(--muted); white-space: pre; }
+.waiting-message { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--waiting-lines, 3);
+  overflow: hidden; line-height: 18px; overflow-wrap: anywhere; white-space: normal; }
+.tab-pane > .waiting-row[hidden] { display: none; }
+.waiting-message[hidden] { display: none; }
+.waiting-message.reason { color: var(--muted); }
 .term-banner {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;

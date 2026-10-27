@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { capabilityFiles } from "./helpers/v2-deployment.mjs";
 import { pathLimitSkip } from "./helpers/path-limit.mjs";
@@ -21,9 +21,13 @@ import {
 // ---- A file of the worktree that cannot be read ----
 // Proving the work unchanged reads every file of a provable worktree, also one under a work root a
 // capability declared disposable, and also when the snapshot before the hooks holds the home only.
-// A file that cannot be read (here: over 2 GiB, which one read cannot take) refuses the retire
-// before its hooks. No flag skips that read.
-test("a file over 2 GiB under a declared disposable work root, with only a home note to preserve: the retire refuses with E_WORK_INSPECTION_FAILED before its hooks, with --force too, names the worktree, writes no recovery and keeps the home and the work", () => {
+// A file that cannot be read (here: one without read permission) refuses the retire before its
+// hooks. No flag skips that read.
+test("a file without read permission under a declared disposable work root, with only a home note to preserve: the retire refuses with E_WORK_INSPECTION_FAILED before its hooks, with --force too, names the worktree, writes no recovery and keeps the home and the work", (t) => {
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    t.skip("root reads a file without read permission");
+    return;
+  }
   const capability = hookCapability(quietHook(""));
   capability["acme.hook"].manifest.retirement = { disposable: { work: ["cache"] } };
   const f = fixture({ capabilities: capability });
@@ -31,10 +35,9 @@ test("a file over 2 GiB under a declared disposable work root, with only a home 
   const work = join(spawned.home, "work");
   assert.deepEqual(readJson(baselineOf(spawned.home)).disposableReceipts, [{ owner: "acme.hook", root: "cache" }], "fixture premise: the work root was declared disposable at spawn");
   write(join(spawned.home, "notes", "x.md"), "an authored note\n");
-  const large = join(work, "cache", "large.bin");
-  const LARGE = 2 ** 31 + 1;
-  write(large, "");
-  truncateSync(large, LARGE); // sparse: no byte of it is written
+  const closed = join(work, "cache", "closed.bin");
+  write(closed, "bytes no one may read\n");
+  chmodSync(closed, 0o000);
   assert.deepEqual(statusRowsIn(porcelain(work)), ["!! cache/"], "fixture premise: Git reports the declared root as ignored whole, so only the home has something to preserve");
 
   for (const flags of [["--discard-worktree"], ["--force"]]) {
@@ -46,7 +49,7 @@ test("a file over 2 GiB under a declared disposable work root, with only a home 
     assert.equal(hookRan(spawned.home), false, `${flags[0]}: no retire hook ran`);
     assert.equal(existsSync(recoveryRootOf(spawned.home)), false, `${flags[0]}: no recovery was written`);
     assert.equal(readFileSync(join(spawned.home, "notes", "x.md"), "utf8"), "an authored note\n", `${flags[0]}: the home is kept`);
-    assert.equal(lstatSync(large).size, LARGE, `${flags[0]}: the work is kept as it was`);
+    assert.equal(lstatSync(closed).mode & 0o7777, 0o000, `${flags[0]}: the work is kept as it was`);
   }
 });
 

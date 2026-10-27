@@ -2061,7 +2061,8 @@ the trigger's tooltip names the key it stands for, the live binding of
 tooltip has three writers, each setting only its part through `tab-a11y.mjs`
 `setTabTitle`: the name (`createTabChrome`), the key (`numberTabStrips`) and the
 needs-input note (`syncTabNeedsInput`); harnesses that run `syncTabNeedsInput` by
-its text give it `setTabTitle`. The number never crowds out
+its text give it `setTabTitle`, and `syncWaitingRow` (`waiting-row.mjs`, the row it
+draws over the tab's terminal). The number never crowds out
 the name: the trigger wraps and shows only its first line, and the label's flex
 basis is `--tab-name-min` (102px, what the floor budgets the name), so line
 breaking sees the name at its minimum and the number wraps out of sight, whole,

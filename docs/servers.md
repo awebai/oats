@@ -71,7 +71,7 @@ which is where a [macOS keychain](#git-on-a-macos-host) problem shows up.
 ## Connect a machine
 
 ```bash
-oats server connect altair-aweb --ssh altair --dir '~/acme' --path /opt/homebrew/bin --install-oats
+oats server connect altair-aweb --ssh altair --dir '~/acme' --install-oats
 ```
 
 Run from a deployment, `server connect` puts that deployment's workspace on
@@ -83,7 +83,7 @@ missing, so after a human step you run the same command again.
 |---|---|
 | `--dir <path>` | none, inside a deployment too: the folder on the host for this deployment, absolute or `~/…` (resolved by the host). Without it: `E_BAD_ARGS` "--dir <path on the host> is required: the folder on `<host>` for this deployment (absolute, or ~/… resolved there)". A registration made before it was required is unchanged |
 | `--workspace-ref <ref>` | this deployment's `oats-local.yaml` `workspace:` |
-| `--oats <path>`, `--path <dirs>`, `--label <text>` | as for `server add`; `--path` is where the host finds `npm`, `oats` and the harnesses |
+| `--oats <path>`, `--path <dirs>`, `--label <text>` | as for `server add`; `--path` is where the host finds `npm`, `oats` and the harnesses. Without it, connect uses the PATH of the host user's [login shell](#the-hosts-login-shell-path) |
 | `--install-oats` | off: a missing or older OATS is a human step |
 | `--replace` | off: an id registered for another host or directory is refused |
 
@@ -91,8 +91,8 @@ The steps, in order:
 
 | Step | Checks | When something is missing |
 |---|---|---|
-| `ssh` | the host answers a non-interactive ssh | `failed` `E_SSH` |
-| `oats` | `oats version --json` there is this kernel's version or newer and advertises `server-connect` (a build of the same version without it is not enough) | with `--install-oats`: runs `npm install -g @awebai/oats@<this version>` there (`done`); without it, or with no `npm` on the host's PATH: `needs-human` with the command to run |
+| `ssh` | the host answers a non-interactive ssh; without `--path`, the PATH of the host user's [login shell](#the-hosts-login-shell-path) is read (its `detail` says whether) | `failed` `E_SSH` |
+| `oats` | `oats version --json` there is this kernel's version or newer and advertises `server-connect` (a build of the same version without it is not enough) | with `--install-oats`: runs `npm install -g @awebai/oats@<this version>` there (`done`); without it: `needs-human` with the command to run. With no `npm` on the PATH it searched (named in `detail`): `needs-human` to install Node.js there, with a command that checks the login shell finds `npm`, then check again |
 | `git` | the host's Git reads the workspace remote | `needs-human` with the remedy (and the [keychain hint](#git-on-a-macos-host)) |
 | `deployment` | `--dir` holds a deployment of this workspace | an absent or empty directory is onboarded there (`done`); a deployment of another workspace is `failed` `E_SERVER_WORKSPACE_MISMATCH`; a non-empty directory without `oats-local.yaml` is `failed` `E_DIR_NOT_EMPTY` and nothing is written into it |
 | `register` | the registration exists, with its `workspaceKey` | written (`done`); an id registered for another target is `failed` `E_SERVER_EXISTS` unless `--replace` (checked before anything else, so a requested id never reports ready while it routes elsewhere); a new id whose host and directory are already registered under another id is reported (`ok`, naming that id; the text result then names that id to spawn with) and not registered twice |
@@ -104,6 +104,37 @@ or `failed` (the run ends). The result is `ready` when no step needs a
 human. Connect never handles credentials: what Git on the host cannot read
 is always a human step there. The `--json` shape is in
 [desktop-cli-api.md](desktop-cli-api.md#oats-server-connect).
+
+### The host's login-shell PATH
+
+A non-interactive ssh command does not read the user's login files, so on a
+host whose PATH comes from `~/.zprofile`, `~/.bash_profile` or `~/.profile`
+(a Homebrew or version-manager directory, say) it finds neither `npm` nor
+`oats`. Without `--path`, connect therefore asks the host user's own login
+shell for its PATH once, in the `ssh` step, by the rules OATS uses for the
+local login environment ([execution-targets.md](execution-targets.md)):
+
+- The shell is the host's `$SHELL`, which sshd sets from the host's password
+  database. Only bash, zsh or fish at an absolute path is run; it runs
+  `-l -i -c` (login and interactive, so both its profile and its rc files are
+  read) and prints its PATH between two delimiters that carry a random nonce,
+  within 15 s and 1 MiB.
+- The PATH's absolute directories (each once, in order) become the
+  registration's `path`, the field `--path` sets, so every later step and
+  every later `--server` command runs with them. `oats` found on that PATH is
+  recorded as `oatsPath` by its absolute path.
+- Another shell, no answer in time, or an answer that is not one PATH: the
+  `ssh` step stays `ok`, its `detail` says why the PATH could not be read, and
+  connect goes on with ssh's own PATH.
+- An explicit `--path` always wins: the login shell is not asked. An explicit
+  `--oats` is kept as given.
+- A registration of the same host and directory made before keeps the `path`
+  and `oatsPath` it has; connect only fills in the ones it lacks (`register`
+  `done`, "recorded …"), and `--replace` rewrites them with what it found.
+- The recorded `path` and `oatsPath` are a snapshot of the login shell at
+  connect time. On a host whose Node comes from a version manager (nvm,
+  asdf), a later Node upgrade can leave `oatsPath` pointing at a directory
+  that is gone; `oats server connect … --replace` reads them again.
 
 ### What connect runs on the host
 
