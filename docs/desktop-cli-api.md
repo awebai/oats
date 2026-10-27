@@ -3301,7 +3301,8 @@ its absence.
 - <a id="row-session-end"></a>**`sessionEnd`** (feature `session-resume`, OATS
   0.69): how the last session of a launched home that does not run ended:
   `lost` (the host went down, its tmux server died, or the harness was killed
-  by a signal: a resume brings it back), `stopped` (stopped with OATS:
+  by a signal: the sweep brings it back when it can vouch for the loss,
+  [Which losses come back](execution-targets.md#which-losses-come-back)), `stopped` (stopped with OATS:
   `oats instance stop`, Desktop's Stop) or `exited` (the harness ended by
   itself: `/exit`, its own error). Present only on a row that reads
   `running: false` and records `launched: true`, a row at its fallback shell
@@ -3313,6 +3314,15 @@ its absence.
   the home, not a contract ([execution-targets.md](execution-targets.md#how-a-sessions-end-is-read)).
   A home spawned before 0.69 and never restarted since reads `lost` when its
   harness ended on its own; its next start covers it.
+- **A local status read records what it sees** (feature `session-resume`,
+  OATS 0.69): per home, its current start, when it was last seen running and
+  first seen not running, with the boot of each, in a kernel-private file of
+  this machine, one per deployment, under `~/.oats/session-resume/seen/`
+  (`$OATS_HOME_DIR` when set), beside the sweep's per-boot note; it is not a
+  contract, and only the sweep reads it. It never changes the answer: not the
+  output, not the exit status, and nothing is printed, whether or not it can
+  be read or written. A status routed with `--server` records nothing on this
+  machine ([execution-targets.md](execution-targets.md#which-losses-come-back)).
 - **`color`** (feature `instance-color`): the instance's colour, one of
   `sand`, `sage`, `slate`, `mauve`, `clay`, `olive`, or `null` for none,
   from the home's own record ([An instance's colour](#an-instances-colour-oats-instance-color));
@@ -6097,7 +6107,7 @@ whatever the rows say:
   | `resumed` | none |
   | `fresh` | `no-conversation`, `no-receipts`, `resume-unproven` |
   | `already-running` | none |
-  | `skipped` | `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`: it stopped or started between the read and the start) |
+  | `skipped` | `not-seen-recently` (the sweep cannot vouch for this loss: OATS never saw the home running for its current start, an earlier sweep already answered the loss, the loss was first seen 24 hours ago or more, or, within one boot, it was first seen 24 hours or more after the last running look; with a `message` that says which, nothing started: [Which losses come back](execution-targets.md#which-losses-come-back)), `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`: it stopped or started between the read and the start) |
   | `blocked` | `resume-confirmation` (Claude's resume-cost dialog: the session runs and waits for its human), `launch-prompt` (`code` `E_SPAWN_INCOMPLETE`, with `launchPrompts`: the session is kept) |
   | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start: reported again with that `code` and `message`, nothing started), `keeps-getting-lost` (sweeps started this home 3 times in this boot and it was lost again each time: nothing started, no `code`, a `message` that says so; a sweep tries it again after the next boot, or a person starts it by hand) |
 
@@ -6105,8 +6115,13 @@ whatever the rows say:
   module, `lib/session-resume-contract.mjs`; a change to one is a contract
   change ([#1567](https://github.com/awebai/oats/issues/1567)).
 
+- A lost home is answered with the first that applies: `not-seen-recently`,
+  `refused-this-boot`, `keeps-getting-lost`, then its start. A sweep that is
+  not a plan answers each lost home once: a later sweep answers that loss
+  `not-seen-recently`.
 - `--plan`: the same shape with `"plan": true`; nothing is started, no lock
-  taken, no note written. A lost home's outcome is the prediction: `resumed`
+  taken, no note written, no loss answered (its own status read records what
+  it sees, as any local status read does). A lost home's outcome is the prediction: `resumed`
   (with `sessionId`) or `fresh` with its reason, `refused` for a noted
   refusal, a home sweeps started 3 times in this boot, or a home with no
   recipe. Clients should not call `--plan` on open.

@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describeLaunchCommand, parseLaunchCommand, renderLaunchCommand, renderLaunchRecipe, RESUME_NOTICE, startInstanceSession } from "../lib/core.mjs";
 import { readStartExited, sessionEndOf } from "../lib/session-end.mjs";
 import { acquireResumeLock, bootId, noteSweep, readBootNote, resumeSessions, resumeStateDir, rowFromStart } from "../lib/session-resume.mjs";
+import { nextSeen, resumeEligible } from "../lib/session-seen.mjs";
 import { FRESH_REASON, NOT_SWEPT, OUTCOME, RESUME_WAITING, ROW_REASON, SESSION_END, SESSION_RESUME_FEATURE } from "../lib/session-resume-contract.mjs";
 
 const scratch = (t) => { const d = mkdtempSync(join(tmpdir(), "oats-resume-")); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
@@ -45,7 +46,7 @@ test("the session-resume contract's names", () => {
   assert.deepEqual(FRESH_REASON, { NO_CONVERSATION: "no-conversation", NO_RECEIPTS: "no-receipts", RESUME_UNPROVEN: "resume-unproven" });
   assert.deepEqual(RESUME_WAITING, { RESUME_CONFIRMATION: "resume-confirmation" });
   assert.deepEqual(OUTCOME, { RESUMED: "resumed", FRESH: "fresh", ALREADY_RUNNING: "already-running", SKIPPED: "skipped", BLOCKED: "blocked", REFUSED: "refused" });
-  assert.deepEqual(ROW_REASON, { UNKNOWN: "unknown", START_BUSY: "start-busy", NOT_LOST: "not-lost", RESUME_CONFIRMATION: "resume-confirmation", LAUNCH_PROMPT: "launch-prompt", START_REFUSED: "start-refused", REFUSED_THIS_BOOT: "refused-this-boot", KEEPS_GETTING_LOST: "keeps-getting-lost" });
+  assert.deepEqual(ROW_REASON, { UNKNOWN: "unknown", START_BUSY: "start-busy", NOT_LOST: "not-lost", NOT_SEEN_RECENTLY: "not-seen-recently", RESUME_CONFIRMATION: "resume-confirmation", LAUNCH_PROMPT: "launch-prompt", START_REFUSED: "start-refused", REFUSED_THIS_BOOT: "refused-this-boot", KEEPS_GETTING_LOST: "keeps-getting-lost" });
   assert.deepEqual(NOT_SWEPT, { NOT_OK: "not-ok", UNREADABLE: "unreadable" });
 });
 
@@ -203,4 +204,52 @@ test("a start's answer maps to the sweep's row", () => {
   assert.deepEqual(fail("E_SESSION_RUNNING"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.NOT_LOST, code: "E_SESSION_RUNNING" });
   assert.deepEqual(fail("E_LAUNCH_LEGACY"), { ...id, outcome: OUTCOME.REFUSED, reason: ROW_REASON.START_REFUSED, code: "E_LAUNCH_LEGACY", message: "E_LAUNCH_LEGACY message" });
   assert.equal(rowFromStart(row, undefined).code, "E_SESSION_START_FAILED", "no answer");
+});
+
+// What the kernel has seen of a home (lib/session-seen.mjs): the record's transitions and the rule,
+// both pure, over times and boots given here.
+const H = "/d/agents/s/instances/a";
+const T = (s) => Date.parse(`2026-10-27T${s}Z`);
+const DAY = 24 * 60 * 60_000;
+const running = (startId = "s1") => ({ home: H, startId, running: true, launched: true });
+const lost = (startId = "s1") => ({ home: H, startId, running: false, launched: true });
+
+test("the record of a home: a new start resets it, a running look is refreshed at most every 10 minutes in a boot, the loss is first seen once, unknown changes nothing, an unlisted home is dropped", () => {
+  const first = nextSeen({}, [running()], { now: T("10:00:00.000"), boot: "A" });
+  assert.deepEqual(first, { changed: true, homes: { [H]: { startId: "s1", lastSeenRunningAt: "2026-10-27T10:00:00.000Z", lastSeenRunningBoot: "A", firstNotRunningAt: null, firstNotRunningBoot: null, judgedBy: null } } });
+  assert.equal(nextSeen(first.homes, [running()], { now: T("10:09:59.999"), boot: "A" }).changed, false, "under 10 minutes: no write");
+  assert.equal(nextSeen(first.homes, [running()], { now: T("10:10:00.000"), boot: "A" }).homes[H].lastSeenRunningAt, "2026-10-27T10:10:00.000Z", "10 minutes: refreshed");
+  assert.equal(nextSeen(first.homes, [running()], { now: T("10:01:00.000"), boot: "B" }).homes[H].lastSeenRunningBoot, "B", "another boot: refreshed");
+  const loss = nextSeen(first.homes, [lost()], { now: T("11:00:00.000"), boot: "A" });
+  assert.deepEqual([loss.changed, loss.homes[H].firstNotRunningAt, loss.homes[H].firstNotRunningBoot], [true, "2026-10-27T11:00:00.000Z", "A"]);
+  assert.equal(nextSeen(loss.homes, [lost()], { now: T("12:00:00.000"), boot: "A" }).changed, false, "the loss is first seen once");
+  assert.equal(nextSeen(loss.homes, [{ ...lost(), running: null }], { now: T("12:00:00.000"), boot: "A" }).changed, false, "unknown: unchanged");
+  assert.equal(nextSeen({}, [lost()], { now: T("12:00:00.000"), boot: "A" }).changed, false, "a loss with no record of its start records nothing");
+  assert.equal(nextSeen(first.homes, [lost("s0")], { now: T("12:00:00.000"), boot: "A" }).changed, false, "nor one of another start");
+  const judged = { ...loss.homes[H], judgedBy: { at: "x", boot: "A", outcome: "resumed" } };
+  assert.deepEqual(nextSeen({ [H]: judged }, [running("s2")], { now: T("12:00:00.000"), boot: "A" }).homes[H], { startId: "s2", lastSeenRunningAt: "2026-10-27T12:00:00.000Z", lastSeenRunningBoot: "A", firstNotRunningAt: null, firstNotRunningBoot: null, judgedBy: null }, "a new start resets the record, its judgement included");
+  assert.deepEqual(nextSeen(first.homes, [], { now: T("12:00:00.000"), boot: "A" }), { homes: {}, changed: true }, "a home no longer listed is dropped");
+});
+
+test("a lost home is resumed only when seen running for its start, not judged, first seen lost under 24 h ago and, within one boot, lost under 24 h after its last running look", () => {
+  const record = (o) => ({ startId: "s1", lastSeenRunningAt: null, lastSeenRunningBoot: "A", firstNotRunningAt: null, firstNotRunningBoot: "A", judgedBy: null, ...o });
+  const at = (ms) => new Date(ms).toISOString();
+  const yes = (r, now, what) => assert.deepEqual(resumeEligible(r, lost(), { now }), { eligible: true }, what);
+  const no = (r, now, why, what) => { const a = resumeEligible(r, lost(), { now }); assert.equal(a.eligible, false, what); assert.match(a.why, why, what); };
+  // An OOM kill at 02:00, a status at 02:01, the sweep at 09:00.
+  yes(record({ lastSeenRunningAt: at(T("01:55:00.000")), firstNotRunningAt: at(T("02:01:00.000")) }), T("09:00:00.000"), "an OOM kill seen by a status, swept in the morning");
+  // The laptop off two weeks: seen running in boot A, first seen lost in boot B when it opens.
+  yes(record({ lastSeenRunningAt: at(T("18:00:00.000") - 14 * DAY), firstNotRunningAt: at(T("09:00:00.000")), firstNotRunningBoot: "B" }), T("09:00:05.000"), "across a reboot");
+  // An overnight tmux crash, first seen lost at the morning open, in the same boot.
+  yes(record({ lastSeenRunningAt: at(T("18:00:00.000") - DAY), firstNotRunningAt: at(T("08:00:00.000")) }), T("08:00:05.000"), "overnight, one boot");
+  for (const outcome of ["resumed", "fresh", "blocked", "refused", "skipped"]) no(record({ lastSeenRunningAt: at(T("01:55:00.000")), firstNotRunningAt: at(T("02:01:00.000")), judgedBy: { at: at(T("02:02:00.000")), boot: "A", outcome } }), T("02:03:00.000"), /earlier sweep already answered/, `judged ${outcome}`);
+  no(record({ lastSeenRunningAt: at(T("01:55:00.000")), firstNotRunningAt: at(T("02:01:00.000")) }), T("02:01:00.000") + DAY, /first seen .* 24 hours ago or more/, "first seen 24 h ago");
+  yes(record({ lastSeenRunningAt: at(T("01:55:00.000")), firstNotRunningAt: at(T("02:01:00.000")) }), T("02:01:00.000") + DAY - 1, "first seen just under 24 h ago");
+  no(record({ lastSeenRunningAt: at(T("02:00:00.000") - DAY), firstNotRunningAt: at(T("02:00:00.000")) }), T("02:01:00.000"), /24 hours or more before its loss/, "a long boot: last running look 24 h before the loss");
+  no(record({ startId: "s0", lastSeenRunningAt: at(T("01:55:00.000")), firstNotRunningAt: at(T("02:01:00.000")) }), T("02:02:00.000"), /never saw it running for its current start/, "seen running for another start");
+  no(undefined, T("02:02:00.000"), /never saw it running/, "no record");
+  no(record({ firstNotRunningAt: at(T("02:01:00.000")) }), T("02:02:00.000"), /never saw it running/, "never seen running");
+  no(record({ lastSeenRunningAt: at(T("01:55:00.000")) }), T("02:02:00.000"), /not seen it stop/, "its loss not recorded");
+  // No boot id: the in-boot clause applies to every loss.
+  no(record({ lastSeenRunningAt: at(T("18:00:00.000") - 14 * DAY), firstNotRunningAt: at(T("09:00:00.000")), lastSeenRunningBoot: null, firstNotRunningBoot: null }), T("09:00:05.000"), /24 hours or more before its loss/, "no boot id: two weeks off is not resumed");
 });

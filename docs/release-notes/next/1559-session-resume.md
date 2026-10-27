@@ -2,7 +2,8 @@
 
 - Sessions come back after a shutdown, a reboot or a crash (feature
   `session-resume`, #1559). `oats session resume` starts every instance whose
-  session was lost, on every deployment in this computer's list, each in its
+  session OATS saw alive and then lost, on every deployment in this
+  computer's list, each in its
   own harness conversation (Claude `--resume`, pi `--session`) with the launch
   it recorded and a one-line resume notice as its prompt. Running instances
   are left alone; instances stopped with OATS, or whose harness ended by
@@ -10,7 +11,9 @@
   down. One sweep runs per machine (`E_RESUME_BUSY`); a refused resume is
   reported again, not retried, in the same boot; and a home is started by
   sweeps at most 3 times in a boot, then reported `keeps-getting-lost` until
-  the next boot (on Linux and macOS, which have a boot to count in). The
+  the next boot (on Linux and macOS, which have a boot to count in).
+  **An agent killed outside OATS (closed from tmux, or killed by a signal)
+  comes back within 24 hours: only `oats instance stop` keeps it down.** The
   clients run it when they open, in a later change. See
   [Resume after a shutdown](../execution-targets.md#resume-after-a-shutdown).
 - `oats session start --resume --home <abs>`: one home's resume. It refuses a
@@ -20,6 +23,18 @@
   the [Desktop CLI API](../desktop-cli-api.md#resume-a-lost-session---resume).
 - `sessionEnd` (`lost`, `stopped`, `exited`) on `oats status --json` rows of
   launched instances that do not run.
+- Only a loss OATS saw is resumed. The sweep brings back a lost instance when
+  OATS saw it running (in `oats status`, OATS Desktop or `oats tui`), no
+  earlier sweep has answered that loss, OATS first saw it stopped less than a
+  day ago, and, if the computer did not restart in between, it stopped less
+  than a day after OATS last saw it run. Any other lost instance is reported
+  `not-seen-recently` and left as it is; start it by hand to bring it back.
+  So an agent killed in the night comes back in the morning, and a laptop
+  closed for two weeks brings back what ran when it was closed.
+- A local `oats status` now records what it saw of each instance, for the
+  sweep: in a private file under `~/.oats/session-resume/`, one per
+  deployment. It never changes what status prints or exits with. A status
+  run on another machine with `--server` records nothing on this one.
 
 ## Changed
 
@@ -35,10 +50,16 @@
 
 ## Upgrade
 
-- **One legacy gap.** An instance spawned before this release, whose harness
-  ended by itself and that was never restarted since its spawn, reads `lost`
-  and comes back once at the first sweep. Its next start records what is
-  needed; stop it with OATS first to keep it stopped.
+- **Run `oats status` once before you restart.** After upgrading, open OATS
+  Desktop or `oats tui`, or run `oats status`, once before you restart this
+  computer, or nothing from before the upgrade comes back: the sweep only
+  resumes what OATS saw running.
+- **A boot nobody looked at.** A whole boot with no OATS read leaves that boot
+  unknown: what ran in it and was lost there is not resumed.
+- **One legacy gap.** An instance spawned before this release, never
+  restarted since, whose harness ends by itself after the upgrade, reads
+  `lost` and comes back once. Its next start records what is needed; stop it
+  with OATS to keep it stopped.
 - **Claude's resume-cost dialog.** On some plans Claude asks, at the first
   message of a resumed long conversation, whether to resume from a summary or
   in full. OATS sends no key: the person chooses. The resume is reported

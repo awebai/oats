@@ -59,7 +59,11 @@ a retained dead pane also reads `false`. A wrapper shell with a live non-shell
 descendant still reads `true`. Status shares session inspection's pane rule,
 with one batched pane read per socket/session and one lazy process scan across
 all panes that need it. A recorded server or pane that cannot be read gives
-`running: null` with `runtimeState: "unreachable"`. The environment variables are read when the spawn runs, and `oats
+`running: null` with `runtimeState: "unreachable"`. A local status read (0.69)
+also records, in a kernel-private file of this machine beside the resume
+sweep's per-boot note, what it saw of each home, for the sweep alone; it
+never changes the answer, and a status routed with `--server` records nothing
+here ([Which losses come back](#which-losses-come-back)). The environment variables are read when the spawn runs, and `oats
 inspect --json` reports the session a new spawn would open in as `session`
 (`{tmuxSession}`). A spawn refuses an instance name that is a live window in the
 session it would open in, on the OATS tmux server (`E_INSTANCE_NAME_TAKEN`); a
@@ -1107,8 +1111,9 @@ reads as lost ([Resume after a shutdown](#resume-after-a-shutdown)).
 ### Resume after a shutdown
 
 After a shutdown, a reboot or a crash (OATS 0.69, #1559), `oats session
-resume` brings back every instance session that was alive, on every
-deployment in this computer's list
+resume` brings back every instance session that OATS saw alive and then lost
+([Which losses come back](#which-losses-come-back)), on every deployment in
+this computer's list
 ([workspaces.md](workspaces.md#this-computers-deployments)), each in its own
 harness conversation, with the launch it recorded. OATS Desktop and `oats
 tui` run it once when they open. Running instances are left alone; instances
@@ -1126,8 +1131,8 @@ for its current start (`startId` in `instance.json`):
 |---|---|---|
 | a stop's record that names it (or, a record from before 0.69, written after the start) | `stopped` | no |
 | an exit marker that names it with an exit status below 128 (`/exit`, Ctrl-C handled by the harness, its own error), or the marker of a kernel before 0.69 | `exited` | no: the row offers Start, as before |
-| an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | yes |
-| neither (the host went down, or the tmux server died under the live harness) | `lost` | yes |
+| an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | when the sweep can vouch for the loss ([below](#which-losses-come-back)) |
+| neither (the host went down, or the tmux server died under the live harness) | `lost` | when the sweep can vouch for the loss |
 
 The window a spawn or a start makes writes the exit marker,
 `.oats-start-exited`, when the harness exits; `oats instance stop` writes its
@@ -1135,8 +1140,10 @@ record, `.oats-stop.json`. Both are kernel-private files of the home, not a
 contract: read `sessionEnd`. A shutdown kills the window's shell with the
 harness, so a lost session leaves no marker. A home spawned before 0.69 and
 never restarted since names no start: it reads `stopped` only after a stop,
-and otherwise `lost`, so one whose harness ended by itself before the upgrade
-comes back once. Its next start records the markers.
+and otherwise `lost`, also when its harness ended by itself. It comes back only
+when OATS saw it running since the upgrade, so one that ended before the
+upgrade stays down, and one that ends by itself after it comes back once
+(stop it with OATS to keep it down). Its next start records the markers.
 
 #### What a resume runs
 
@@ -1184,12 +1191,71 @@ A resume answers no prompt that an ordinary start does not:
   Code's strings and documentation (`lib/launch-prompt-fixtures/README.md`);
   a screen it does not recognise is not a block.
 
+#### Which losses come back
+
+The sweep resumes a lost home only when OATS can vouch for the loss, from
+what its own reads of that home saw (`oats status`, OATS Desktop and `oats
+tui` reading it, and the sweep's own read). All four must hold:
+
+1. OATS saw the home running for its current start.
+2. No earlier sweep answered this loss. A sweep answers each lost home once,
+   whatever it did with it (resumed, started fresh, blocked, refused or
+   skipped). A status read never uses a loss up, and `--plan` answers none.
+3. OATS first saw it not running less than 24 hours ago.
+4. Within one boot, OATS first saw it not running less than 24 hours after it
+   last saw it running. Across a reboot this one does not apply.
+
+Any other lost home is reported `skipped`, `not-seen-recently`, with the
+reason, and nothing is started; its status row still reads `sessionEnd:
+lost`, and `oats session start --resume --home <abs>` run by hand still
+resumes it. So:
+
+- a harness killed by an out-of-memory kill at 02:00 and seen by a status at
+  02:01 comes back at a 09:00 sweep;
+- a computer off for two weeks brings back what ran when it went down, at the
+  first client that opens;
+- a tmux server that crashed overnight brings its instances back at the
+  morning's first client;
+- **an agent killed outside OATS (closed from tmux, or killed by a signal)
+  comes back within 24 hours: only `oats instance stop` keeps it down;**
+- a loss first seen a day ago or more, or a session that died before any read
+  of OATS saw it run, stays down.
+
+Two limits follow from reading only what OATS saw:
+
+- **After upgrading to 0.69**, open OATS Desktop or `oats tui`, or run `oats
+  status`, once before you restart the computer, or nothing from before the
+  upgrade comes back.
+- A whole boot with no OATS read leaves that boot unknown: what ran in it and
+  was lost there is not resumed.
+
+Without a boot id (neither Linux nor macOS: both have one), clause 4 applies
+to every loss and the 3-resumes-per-boot guard (below) is off.
+
+**Status records what it sees.** Every local listing of a deployment's
+instances (`oats status`, and every command that lists them) records, per
+home, its current start, when it was last seen running, when it was first
+seen not running, the boot of each, and whether a sweep answered the loss. It
+goes in a kernel-private file, one per deployment,
+`session-resume/seen/<16 hex>.json` under `~/.oats` (`$OATS_HOME_DIR` when
+set), beside the sweep's per-boot note; it is not a contract. Writing it never
+changes what status answers, prints nothing, and is skipped when nothing
+changed: a running home's last look is rewritten at most every 10 minutes in
+a boot. A record that cannot be read counts as empty, which resumes nothing,
+and is rewritten whole; one that cannot be written is left as it is. A status
+routed to another machine with `--server` records nothing on this one.
+`oats session resume --plan` records what its own read sees, as any status
+read does, and answers no loss. The three figures are constants of the
+kernel (`lib/session-seen.mjs`).
+
 #### The sweep
 
 `oats session resume` reads this computer's list of deployments and never
 writes it, and skips a deployment `oats deployments remove` took out of it;
 `--deployment <dir>` sweeps one directory, listed or not. It starts each lost
-home with `--resume` in that home's own deployment scope, at most 4 at once.
+home it can vouch for with `--resume` in that home's own deployment scope, at
+most 4 at once. What it answers a lost home, the first that applies: not
+seen recently; refused this boot; keeps getting lost; started.
 `--plan` says what it would do and starts nothing. Its answer is in
 [desktop-cli-api.md](desktop-cli-api.md#the-machine-sweep-oats-session-resume).
 
@@ -1207,9 +1273,9 @@ home with `--resume` in that home's own deployment scope, at most 4 at once.
   bounded nor counted.
 - The boot is the boot id on Linux and the boot time on macOS. Elsewhere there
   is no boot: nothing is noted or counted, and every sweep tries again.
-- The lock and the per-boot note live in `session-resume/` under
-  `~/.oats` (`$OATS_HOME_DIR` when set). Both are kernel-private, not a
-  contract.
+- The lock, the per-boot note and the record of what status saw live in
+  `session-resume/` under `~/.oats` (`$OATS_HOME_DIR` when set). All three
+  are kernel-private, not a contract.
 - Local only: a client does not resume a server's instances. A server runs
   `oats session resume` itself.
 
