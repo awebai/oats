@@ -83,9 +83,10 @@ function fixture(t) {
   f.noted = async (i) => (await fx.inEnv(() => readBootNote(bootId()))).refused.filter((r) => r.home?.endsWith(`/instances/${i.name}`));
   return f;
 }
+let gated = 0;
 /** The kernel's CLI on `i`, held once it holds the home's claim (the `linkSync` that takes it). */
 async function heldOnClaim(f, i, argv, verb) {
-  const run = startGated([CLI, ...argv], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates", `${i.name}-${verb}`),
+  const run = startGated([CLI, ...argv], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates", `${i.name}-${verb}-${++gated}`),
     gates: [{ name: "claimed", fn: "linkSync", arg: 1, path: i.lock, when: "after", waitMs: 120000 }] });
   try {
     await run.waitGate("claimed");
@@ -215,31 +216,38 @@ test("a claim taken after the sweep read the row: the start answers E_LIFECYCLE_
   assert.ok([OUTCOME.RESUMED, OUTCOME.FRESH].includes(f.row(f.sweep(), i)?.outcome), "not judged: the next sweep resumes it");
 });
 
-test("one claim for every spelling of a home: a resume of H/. or of H through a link to its deployment meets the claim at H, and a retire meets the claim a resume of such a spelling holds", TMUX, async (t) => {
+test("one claim for every spelling of a home: a resume of H/., of H through a link to its deployment or of a link to H itself meets a stop's or an upgrade's claim at H, and a retire meets the claim a resume of such a spelling holds", TMUX, async (t) => {
   const f = fixture(t);
   const i = await f.lostHome("spelled");
-  const link = join(f.fx.base, "deployment-link");
-  symlinkSync(f.fx.dep, link);
-  const spellings = [`${i.home}/.`, join(link, relative(f.fx.dep, i.home))];
-  const claim = await f.claim(i, "stop");
-  for (const home of spellings) {
-    const hand = f.resume(home);
-    assert.deepEqual([hand.error?.code, hand.error?.details?.action, hand.error?.details?.lock], ["E_LIFECYCLE_BUSY", "stop", i.lock], `${home}: ${JSON.stringify(hand)}`);
+  const deploymentLink = join(f.fx.base, "deployment-link"), homeLink = join(f.fx.base, "home-link");
+  symlinkSync(f.fx.dep, deploymentLink);
+  symlinkSync(i.home, homeLink);
+  const spellings = [`${i.home}/.`, join(deploymentLink, relative(f.fx.dep, i.home)), homeLink];
+  for (const action of ["stop", "upgrade"]) {
+    const claim = await f.claim(i, action);
+    for (const home of spellings) {
+      const hand = f.resume(home);
+      assert.deepEqual([hand.error?.code, hand.error?.details?.action, hand.error?.details?.lock], ["E_LIFECYCLE_BUSY", action, i.lock], `${home}: ${JSON.stringify(hand)}`);
+    }
+    assert.equal(readFileSync(i.lock, "utf8"), claim, `the ${action}'s claim is as it was`);
+    rmSync(i.lock);
   }
-  assert.equal(readFileSync(i.lock, "utf8"), claim, "the stop's claim is as it was");
   assert.equal(f.launches(i.name), 1, "nothing was started");
-  rmSync(i.lock);
   // The other way round: a resume of a spelling holds H's claim, and a retire of H meets it.
-  const run = await heldOnClaim(f, i, ["session", "start", "--resume", "--home", spellings[0], "--json"], "resume");
-  try {
-    const retire = f.cli(["retire", i.name, "--json"]);
-    assert.deepEqual([retire.error?.code, retire.error?.details?.action], ["E_LIFECYCLE_BUSY", "resume"], JSON.stringify(retire));
-    run.release("claimed");
-    const r = await run.done;
-    assert.deepEqual([r.code, r.timedOut], [0, []], r.stdout + r.stderr);
-    await waitUntil(() => f.launches(i.name) === 2, "the resumed harness to start", 30000);
-    assert.deepEqual(f.claimFiles(i), [], "the resume released its claim");
-  } finally { await run.finish(); }
+  for (const [n, home] of spellings.entries()) {
+    const run = await heldOnClaim(f, i, ["session", "start", "--resume", "--home", home, "--json"], "resume");
+    try {
+      const retire = f.cli(["retire", i.name, "--json"]);
+      assert.deepEqual([retire.error?.code, retire.error?.details?.action], ["E_LIFECYCLE_BUSY", "resume"], `${home}: ${JSON.stringify(retire)}`);
+      run.release("claimed");
+      const r = await run.done;
+      assert.equal(r.timedOut.length, 0, r.stdout + r.stderr);
+      // The first resumes the home; the later ones find it running, and start nothing.
+      assert.equal(JSON.parse(r.stdout).ok ? "ok" : JSON.parse(r.stdout).error.code, n === 0 ? "ok" : "E_SESSION_RUNNING", `${home}: ${r.stdout}${r.stderr}`);
+      await waitUntil(() => f.launches(i.name) === 2, "the resumed harness to start", 30000);
+      assert.deepEqual(f.claimFiles(i), [], "the resume released its claim");
+    } finally { await run.finish(); }
+  }
 });
 
 test("an upgrade that took the claim and wrote its partial receipt after the sweep read the row: the start is busy, not a partial upgrade; the row is skipped lifecycle-busy, nothing is noted or judged", TMUX, async (t) => {
