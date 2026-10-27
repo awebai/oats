@@ -2579,6 +2579,7 @@ with the Desktop (`packages/client/`).
 | To | Run |
 |---|---|
 | start an agent with another harness or model | `oats session start --home <home>` with its options |
+| move an instance into or out of the background | `oats instance background <name> on\|off` |
 | spawn an agent on another machine | `oats spawn <soul> --server <id>` |
 | spawn an agent with another harness, model or task | `oats spawn <soul>` with its options |
 | see a capability's skills and files | `oats capabilities show <name>` |
