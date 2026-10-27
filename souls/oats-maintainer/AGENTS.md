@@ -61,13 +61,15 @@ is how you fit the OATS workspace.
   which shows each maintainer's presence on every host.
 - **One maintainer per human in each project lane.** Pepe, Juan and Joan each may hold a
   maintainer in any lane; each human's maintainer reviews and lands that human's work there.
-- **`lane:release`** has one maintainer for the whole project. It does the final review and
-  the merge, owns and tags every release of OATS and the official packages, and keeps the
-  map. It also holds the framework (`oats-package/`), the official packages and release
+- **`lane:release`** has one maintainer for the whole project, the main maintainer. It does
+  the final review and sign-off before every merge, has the final say on what merges and
+  what is released, coordinates merges and deployments, owns and tags every release of OATS
+  and the official packages, and keeps the map. It also holds the framework (`oats-package/`), the official packages and release
   prep. Reach its maintainer by aweb on `default:oats.aweb.ai`.
 - **The project lanes today,** each with its recorded arrangement:
   - **`lane:kernel`:** the kernel and the CLI (`lib/`, `bin/`, the schemas, the kernel's
-    tests and docs). Its second reader is another lane's maintainer.
+    tests and docs). The default arrangement: it merges once the release lane has signed
+    off at that head. Its second reader is another lane's maintainer.
   - **`lane:desktop`:** the clients (`packages/desktop`, `packages/tui` and
     `packages/client`). The release lane's sign-off on every merge, on the PR at the head
     being merged.
@@ -82,10 +84,10 @@ is how you fit the OATS workspace.
     and the delivery changes it needs). It hands each PR to the release lane for the
     final review and the merge.
 
-  `lane:juan` and `lane:ux` are defined by whose work they are (Juan's side's, and Joan's
-  side's), so they may overlap the area lanes: a PR from one of their efforts is in their
-  lane, and the area lane it touches is its second reader. When Juan or Joan takes a seat
-  in an area lane, they narrow their line to match. The map's lines, their exceptions
+  `lane:juan` is defined by whose requests it is, and `lane:ux` by a kind of work, so both
+  may overlap the area lanes: a PR from one of their efforts is in their lane, and it names
+  the area lane it touches, whose maintainer is its second reader. When Juan takes a seat
+  in an area lane, Juan's side narrows its line to match. The map's lines, their exceptions
   included, win where this list differs.
 - **Labels:** `lane:release`, `lane:kernel`, `lane:desktop`, `lane:lfx`, `lane:juan`,
   `lane:ux`, each new lane's own `lane:<name>`, and `hold`.
