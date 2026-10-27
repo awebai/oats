@@ -122,8 +122,9 @@ test("the background file is kernel-owned: a capability cannot declare it, and i
   assert.ok(KERNEL_HOME_RECEIPTS.has(BACKGROUND_FILE));
   for (const root of [BACKGROUND_FILE, ".oats-background", ".oats-background.json.tmp-1"]) assert.equal(disposableHomeRootProblem(root), "kernel-owned", root);
   const schema = JSON.parse(readFileSync(new URL("../docs/capability-manifest.schema.json", import.meta.url), "utf8"));
-  const patterns = JSON.stringify(schema);
-  assert.ok(patterns.includes("attachments|color|background)"), "the manifest schema refuses it too");
+  // The schema's kernel-owned prefix pattern (one of `retirement.disposable.home`'s `not` patterns) matches it.
+  const patterns = []; JSON.stringify(schema, (k, v) => { if (k === "pattern" && typeof v === "string") patterns.push(v); return v; });
+  assert.ok(patterns.some((p) => p.startsWith("^\\.oats-(?:") && new RegExp(p).test(BACKGROUND_FILE)), "the manifest schema refuses it too");
   const h = home(t);
   writeFileSync(join(h, "AGENTS.md"), "# x\n");
   const digest = () => storedTreeDigest(h, 2, { instanceHome: true });
