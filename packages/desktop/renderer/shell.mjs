@@ -1272,9 +1272,11 @@ function renderContextRoster(instances) {
   // Polling restores the same logical focus; it must not cancel a pending
   // terminal open from that row as if the user had re-entered the sidebar.
   tabOpenIntents.applyFocus(() => {
-    // The heading had focus (its own toggle repaints the list), or a row it now holds closed did.
+    // The heading had focus (its own toggle repaints the list), or a row it now holds closed did. A heading that
+    // is gone (its last row moved out or was retired, or the feature was withdrawn) hands the focus to the row
+    // drawn last, the one that stood above it, so the focus stays in the roster.
     const toHeading = focusedBefore?.dataset.rosterBackground === "1" || closedHere(focusedBefore?.dataset.treeInstance);
-    if (!restoreTreeState() && toHeading) heading.focus({ preventScroll: true });
+    if (!restoreTreeState() && toHeading) (heading || [...listEl.querySelectorAll(".ctx-inst")].at(-1))?.focus({ preventScroll: true });
     restoreActionMenu();
   });
   rosterTip.sync(listEl);

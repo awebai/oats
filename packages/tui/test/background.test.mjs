@@ -5,11 +5,11 @@ process.env.TZ = "UTC";
 // functions (helpers.mjs); no test needs a terminal.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BACKGROUND_FEATURE, instanceId } from "../lib/client.mjs";
+import { BACKGROUND_FEATURE, instanceId, rosterRows, panelInstances, observedEntry } from "../lib/client.mjs";
 import { BACKGROUND_ID, paletteItems, roster } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
 import { BACKGROUND, CHEVRONS, NEEDS_INPUT } from "../lib/views/instances.mjs";
-import { CLI, NOW, draw, drawnName, instanceRow, observed, press, stateOf, took } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, draw, drawnName, instanceRow, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
 
 /** The kernel record of a run whose kernel lists the feature, and of one whose kernel does not (CLI). */
 const BG_CLI = Object.freeze({ ...CLI, features: Object.freeze([...CLI.features, BACKGROUND_FEATURE]) });
@@ -224,4 +224,27 @@ test("the open state is the workspace's, kept for the run as a collapse is", () 
   assert.deepEqual([...s.background], [s.open]);
   // Another workspace's open section is not this one's.
   assert.equal(heading(Object.freeze({ ...s, background: new Set(["/elsewhere"]) })).open, false);
+});
+
+test("a view of two deployments: Right on the open heading goes to the section's first row, past the machine's heading (review round 1)", () => {
+  const identity = { key: "github.com/acme/platform", ref: "main", keyFrom: "workspace", standalone: false, defaultTeam: { label: "eng", team: "team-1" }, teams: { eng: "team-1" }, teamsFrom: "observed" };
+  const entry = (dir, name) => {
+    const row = instanceRow("dev", name, { home: `${dir}/agents/dev/instances/${name}`, background: true });
+    const document = { ...rosterOf([row]), root: `${dir}/agents`, workspace: { reachable: true, ...identity } };
+    const listed = rosterRows(document, BG_CLI);
+    const instances = panelInstances(listed, listed.map((each) => ({ running: each.running, runtimeState: each.runtimeState, tmux: each.tmux })));
+    return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: new Date(NOW).toISOString() }, instances, new Date(NOW).toISOString());
+  };
+  let s = stateOf(entry(DEPLOYMENT, "bg-a"), { cli: BG_CLI });
+  s = reduce(s, { admitted: "/srv/deploy-b", at: new Date(NOW).toISOString() }).state;
+  s = took(s, entry("/srv/deploy-b", "bg-b"), 2, "/srv/deploy-b");
+  s = press(s, ["G", "right"]).state;
+  const r = roster(s);
+  assert.equal(r.multi, true);
+  assert.equal(r.background.open, true);
+  const at = r.items.findIndex((item) => item?.kind === "background");
+  assert.ok(r.items[at + 1]?.heading, "a machine's heading stands right under the open heading");
+  const after = press(s, ["right"]).state;
+  assert.equal(after.selected, instanceId(r.instances.find((row) => row.instance === r.items.find((item, i) => i > at && item?.row)?.row.instance)));
+  assert.notEqual(after.selected, BACKGROUND_ID);
 });

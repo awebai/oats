@@ -327,3 +327,19 @@ test("an explicit ask to see a row opens the section: Show in roster and Show it
   assert.equal(u.heading().getAttribute("aria-expanded"), "true");
   assert.ok(u.drawn().indexOf("newbie@0") > u.drawn().indexOf("|Background|"), "the pending row stands in the section");
 });
+
+test("the focused heading going away (its last row moved out, or the feature withdrawn) leaves the focus in the roster (review round 1)", t => {
+  for (const after of [[at("lead"), at("solo"), at("bg")], "withdrawn"]) {
+    const u = fixture(t);
+    const before = [at("lead"), at("solo"), at("bg", { background: true })];
+    u.render(before);
+    u.heading().focus();
+    if (after === "withdrawn") u.context.backgroundShown = () => false;
+    assert.doesNotThrow(() => u.render(after === "withdrawn" ? before : after), String(after));
+    assert.equal(u.heading(), null);
+    // The row drawn last (the one above the heading) takes the focus, and it is the one tab stop.
+    const rows = [...u.list.querySelectorAll(".ctx-inst")];
+    assert.equal(u.doc.activeElement, rows.at(-1), String(after));
+    assert.deepEqual(rows.filter(r => r.tabIndex === 0), [rows.at(-1)]);
+  }
+});

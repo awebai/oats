@@ -1810,7 +1810,9 @@ function onBackground(state, r, at, action, event, page) {
       if (wanted) background.add(state.open); else background.delete(state.open);
       return { state: rehomed(r, next(state, { background, top: settledTop(state, r, page), loose: false })), effect: null };
     }
-    return action === "expand" && r.items[at].open && isInstance(r.items[at + 1]) ? { state: selectAt(state, r, at + 1, page), effect: null } : stay;
+    // Its first row: the first instance after it, past the deployments' headings and notes of a view of two or more.
+    const first = action === "expand" && r.items[at].open ? r.items.findIndex((item, i) => i > at && isInstance(item)) : -1;
+    return first >= 0 ? { state: selectAt(state, r, first, page), effect: null } : stay;
   }
   return ["stop", "retire", "start", "restart", "detail"].includes(action) ? stay : null;
 }
