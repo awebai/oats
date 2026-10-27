@@ -169,7 +169,7 @@ export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRu
   /* Send review threads (W6 item 4): preview composes the block (review-threads.mjs) from the
      instance's own PR and answers its exact text + digest; send recomposes, requires the same
      digest (else E_THREADS_CHANGED), re-verifies the Git observation and pastes through the
-     injected terminal (review-paste.mjs: one bracketed paste, no Enter). The renderer supplies
+     injected terminal (review-paste.mjs: one bracketed paste into the kernel's agent pane, no Enter). The renderer supplies
      no text, only the selector, the observation key and (for send) the digest. */
   const noThreads = { target: null, observation: null, text: null, digest: null };
   function reviewThreads(request, getContext, epoch = 'standalone:0', terminal = null) {
@@ -217,7 +217,7 @@ export function createForgeBoundary({ env = forgeEnvironment(), run = createGhRu
       if (again.failure || gitTargetKey(again.target) !== gitTargetKey(admitted.target)) return fail('E_OBSERVATION_CHANGED', echo);
       const verified = await observe(again, latest.cli, deadline);
       if (verified.observationKey !== observation.observationKey) return fail('E_OBSERVATION_CHANGED', echo);
-      const pasted = terminal.paste(admitted.target, block.text);
+      const pasted = await terminal.paste(admitted.target, block.text);
       if (pasted) return fail(pasted, echo);
       return done({ sent: true });
     }, noThreads);

@@ -10,6 +10,8 @@
 // ("can't find window") instead of silently prefix-matching, which the
 // renderer surfaces as its "could not attach" state.
 
+import { agentPane } from '../client/tmux-status.mjs';
+
 /**
  * @param {string} session  tmux session name (no ':' — it's the separator;
  *                          no leading '=' games; conservative charset)
@@ -97,6 +99,31 @@ export function viewerPrefix(pid) {
  */
 let viewerSeq = 0;
 
+/**
+ * In a window of more than one pane, select the agent's before the viewer's client attaches (#1569),
+ * as the kernel's own viewer does: the viewer links the whole window and types into its active pane,
+ * which may be another program's, a no-echo prompt OATS's setup split off among them. The agent's pane
+ * is resolved here, on this computer's tmux, with the client's copy of the kernel's rule
+ * (packages/client/tmux-status.mjs `agentPane`, pinned to the kernel's by its test): a local open
+ * carries no home to ask the kernel with, and widening the open's admission for one is not worth a CLI
+ * run on every open. `name` is the window's recorded name, the agent pane's mark. One pane, a window
+ * named by index only, a rule that can't tell or a tmux call that fails: nothing is selected and the
+ * open goes on as before; the row's own state decides whether an open is offered. A changed terminal
+ * context still ends the open.
+ */
+function selectAgentPane(io, target, name) {
+  if (name === undefined) return;
+  try {
+    const panes = io.tmuxOut(["list-panes", "-t", target, "-F", "#{pane_id}\t#{@oats-agent}"]).split("\n").filter(Boolean)
+      .map((line) => { const [paneId, ...mark] = line.split("\t"); return { paneId, mark: mark.join("\t") }; });
+    if (panes.length < 2 || panes.some((p) => !/^%\d+$/.test(p.paneId))) return;
+    const { pane } = agentPane(panes, String(name));
+    if (pane) io.tmux(["select-pane", "-t", pane.paneId]);
+  } catch (error) {
+    if (error?.code === "E_TERM_CONTEXT_CHANGED") throw error;
+  }
+}
+
 /** The locked key table's COMPLETE binding set — wheel scrollback, drag-to-select and Shift+PgUp.
  * An inert (nonexistent) table blocked window escape but also killed wheel
  * handling entirely: pi runs on the alternate screen, so scrollback history
@@ -171,6 +198,7 @@ export function openTerm(spec, io) {
   } catch {
     throw new Error(`term:open: no tmux target ${target}`);
   }
+  selectAgentPane(io, target, spec.window);
   const viewer = io.uniqueName ? io.uniqueName()
     : `${viewerPrefix(process.pid)}${++viewerSeq}-${Math.random().toString(36).slice(2, 8)}`;
   // 1. placeholder session — exists only to receive the link. Capture the

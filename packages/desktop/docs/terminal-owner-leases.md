@@ -58,6 +58,18 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
   before the sessions and empties each viewer table whose session is gone. It
   never touches another app's tables, or the shared `oatsdesk-locked` table an
   older Desktop may still use. Nothing is set with `-g`.
+- In a window of more than one pane (#1569), a local open selects the agent's
+  pane (`select-pane -t %N`) after the preflight and before the viewer exists,
+  as the kernel's own viewer does. The viewer links the whole window, and keys
+  go to its active pane, which may be a no-echo prompt OATS's setup split off.
+  The pane is resolved on this computer's tmux with the client's copy of the
+  kernel's rule (`agentPane` in `packages/client/tmux-status.mjs`, pinned to
+  `resolveAgentPane` by `test/desktop-tmux-status.test.mjs`). A local open
+  carries no home to ask the kernel with, and widening its admission for one
+  is not worth a CLI run on every open. One pane, a target with no window, a
+  window the rule can't tell, or a tmux call that fails: nothing is selected
+  and the open goes on as before. Remote opens use the kernel's own viewer,
+  which selects the pane itself.
   Each viewer is created with its own `detach-on-destroy on` (`-t <viewer>`,
   never `-g`): when the source window dies, tmux detaches the client and the
   PTY exits ("session ended"), instead of moving it to another session (often
