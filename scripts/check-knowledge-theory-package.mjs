@@ -139,7 +139,9 @@ const OPERATIONAL_CAPABILITIES = [
   {
     slug: "oats-core", names: ["oats-operate", "oats-souls", "oats-token-saving"], injection: "injects/oats.md",
     // 0.40.0: `oats instance waiting`, which the emitter calls, and `oats instance attention`, which the skills teach.
-    compatibility: ">=0.40.0",
+    // 0.49.0: a kernel before it drops a capability that declares a hook event it does not know, and
+    // oats.core declares `upgrade` (#1549), which only 0.68.0's `oats instance upgrade` runs.
+    compatibility: ">=0.49.0",
     executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch", upgrade: "bin/oats-core.mjs upgrade" }, launchPreview: true, files: ["bin/claude-waiting-message.mjs", "bin/claude-waiting.sh", "bin/oats-core.mjs"] },
   },
   { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-setup-expert", "oats-host-delivery", "oats-agent-permissions", "oats-git-setup", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations", "oats-upgrade"], injection: "injects/setup.md", compatibility: ">=0.30.0" },

@@ -15,6 +15,10 @@
   - `apply` carries the empty metadata unchanged. Neither phase reads the home
     or calls the host. The next start's launch hook rewrites the Claude Code
     waiting hooks for the moved module copy.
+  - **oats.core's kernel floor rises from 0.40.0 to 0.49.0.** A kernel before
+    0.49.0 drops a capability that declares a hook event it does not know, so
+    it would lose oats.core on every soul. From 0.49.0 the kernel ignores the
+    hook; only OATS 0.68.0 and later (`oats instance upgrade`) run it.
   - Known effect: after the move, the record holds
     `capabilityMeta["oats.core"]: {}`, as oats.aweb-tasks' adoption leaves it.
   - See [oats.core across `oats instance upgrade`](../capabilities.md#oatscore-needs-input).

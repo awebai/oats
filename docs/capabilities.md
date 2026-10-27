@@ -1252,7 +1252,10 @@ refuses any other value as state it cannot vouch for, with the remedy
 `respawn the instance: oats retire <instance>, then oats spawn`. `apply`
 returns `{"meta":{}}`, which the kernel records as
 `capabilityMeta["oats.core"]`, and exits 1 with a JSON `warning` on any other
-metadata. Neither phase reads the home or calls the host.
+metadata. Neither phase reads the home or calls the host. oats.core 2.8.0
+requires OATS 0.49.0: an earlier kernel drops a capability that declares a
+hook event it does not know, so it would lose oats.core whole. Only OATS
+0.68.0 and later run the hook.
 
 **Why the project settings file, not `--settings`.** On Claude Code
 2.1.288, Claude honours only the last `--settings` flag on a command line:
