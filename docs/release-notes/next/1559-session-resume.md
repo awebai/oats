@@ -22,6 +22,9 @@
   (`E_RESUME_NOT_LOST`); with no conversation to continue it starts fresh on
   `TASK.md` and says why (`resumed: false`). Its answer and the sweep's are in
   the [Desktop CLI API](../desktop-cli-api.md#resume-a-lost-session---resume).
+  A warning the sweep's starts say of the computer rather than of their
+  instance (today only that harnesses get no scope of their own) is said once,
+  in the sweep's own `warnings`, not in each row.
 - `sessionEnd` (`lost`, `stopped`, `exited`) on `oats status --json` rows of
   launched instances that do not run.
 - Only a loss OATS saw is resumed. The sweep brings back a lost instance when

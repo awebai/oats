@@ -6100,7 +6100,8 @@ whatever the rows say:
   `instance`, `home`, `outcome`, and only when they apply `reason`, `code`,
   `message`, `launchPrompts`, `sessionId` (resumed) and `warnings` (the
   start's warnings verbatim, an array of strings, present only when not
-  empty: a client lists `channel-cache-unchecked` from here).
+  empty: a client lists `channel-cache-unchecked` from here), without the
+  host-wide ones the sweep's own `warnings` carries.
 
   | `outcome` | `reason` |
   |---|---|
@@ -6115,6 +6116,12 @@ whatever the rows say:
   module, `lib/session-resume-contract.mjs`; a change to one is a contract
   change ([#1567](https://github.com/awebai/oats/issues/1567)).
 
+- **`warnings`**, beside `rows`, present only when there is one: an array
+  of distinct strings, each a warning the sweep's starts said of the host
+  rather than of their home, once whatever the number of starts that said
+  it, verbatim. Today that is only the agent-scope warning (the harness
+  runs in the OATS tmux server's cgroup, not a scope of its own, and why).
+  Each start still records it in its own home's events. `--plan` has none.
 - A lost home is answered with the first that applies: `not-seen-recently`,
   `refused-this-boot`, `keeps-getting-lost`, then its start. A sweep that is
   not a plan answers each lost home once: a later sweep answers that loss

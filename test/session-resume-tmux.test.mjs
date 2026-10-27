@@ -22,6 +22,8 @@ import { FRESH_REASON, OUTCOME, ROW_REASON, SESSION_END } from "../lib/session-r
 import { fixtureBase, isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
+import { agentScopeWarning, isAgentScopeWarning } from "../lib/tmux-server-scope.mjs";
+import { readEvents } from "../lib/instance-events.mjs";
 
 const hasTmux = !spawnSync("tmux", ["-V"], { stdio: "ignore" }).error;
 /** The PATH this file was started with: the isolated environment (test.before) keeps a small one. */
@@ -582,4 +584,25 @@ test("the per-boot note names a home by its real path: a budget used up through 
     rmSync(notePath, { force: true });
     if (saved) writeFileSync(notePath, saved);
   }
+});
+
+test("a sweep of 3 homes on a host whose harnesses get no scope of their own says why once, in the sweep's warnings, and in none of its rows; each start's own event stays with its home", TMUX, async () => {
+  const K = v2Deployment({ name: "k", local: { "launch-configs": { "claude-k": config("claude", "dep-k") } } });
+  later.push(K);
+  const names = ["k1", "k2", "k3"];
+  await twoLost(K, names, "claude-k");
+  // A systemd host (the unified hierarchy's root) whose system directories hold no systemd-run: every
+  // start launches unscoped and says so.
+  const tools = join(base, "k-no-systemd-run");
+  mkdirSync(tools, { recursive: true });
+  const host = { OATS_TEST_CGROUP: "0::/\n", OATS_TEST_SYSTEMD_BOOTED: "1", OATS_TEST_SYSTEM_TOOL_DIRS: tools };
+  const warning = agentScopeWarning(`no executable systemd-run in ${tools}`);
+  const sweep = ok(cli(K, ["session", "resume", "--deployment", K.dep, "--json"], host), "the sweep");
+  assert.deepEqual(sweep.rows.map((r) => [r.instance, r.outcome]), names.map((n) => [n, OUTCOME.RESUMED]));
+  assert.deepEqual(sweep.warnings, [warning], "said once, verbatim");
+  assert.equal(sweep.rows.some((r) => (r.warnings ?? []).some(isAgentScopeWarning)), false, "and in no row");
+  for (const r of sweep.rows) assert.equal(readEvents(r.home).events.filter((e) => e.kind === "launch-warning" && e.data.message === warning).length, 1, `${r.instance}'s start recorded its own`);
+  // A plan starts nothing and says nothing of the host.
+  const plan = ok(cli(K, ["session", "resume", "--deployment", K.dep, "--plan", "--json"], host), "the plan");
+  assert.equal(Object.hasOwn(plan, "warnings"), false);
 });

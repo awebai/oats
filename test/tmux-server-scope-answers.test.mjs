@@ -177,6 +177,29 @@ test("a failed probe: the spawn and the start launch as before, and say once why
   assert.deepEqual(agentWarnings(bare), [agentScopeWarning(`no executable systemd-run in ${none}`)]);
 });
 
+test("a start refused after its harness was judged unscoped leaves no launch-warning event; the start that goes ahead says it in its answer and records it once", async (t) => {
+  const { fx } = deployment(t);
+  const dir = systemDir(fx, "no-bus-refused", "echo 'Failed to connect to bus: No medium found' >&2\nexit 1");
+  const env = { OATS_TEST_SYSTEM_TOOL_DIRS: dir };
+  const warning = agentScopeWarning("`systemd-run --user --scope` could not start a scope in the pane's environment: Failed to connect to bus: No medium found");
+  const spawned = answer(fx.cli(["spawn", "dev", "--harness", "claude", "--json"], { env }));
+  const launchWarnings = () => readEvents(spawned.home).events.filter((e) => e.kind === "launch-warning" && e.data.message === warning).length;
+  assert.equal(launchWarnings(), 1, "premise: the spawn's");
+  const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
+  execFileSync("tmux", ["-S", meta.tmux.socket, "kill-window", "-t", `=${meta.tmux.session}:=${meta.tmux.window}`]);
+  // A tmux whose new-window fails: the start judges the scope, then is refused making the window.
+  const shim = join(fx.base, "refusing-tmux");
+  mkdirSync(shim, { recursive: true });
+  writeFileSync(join(shim, "tmux"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = new-window ] && { echo 'new-window refused by the test' >&2; exit 1; }; done\nexec '${systemExecutable("tmux")}' "$@"\n`, { mode: 0o755 });
+  const refused = fx.cli(["session", "start", "--home", spawned.home, "--json"], { env: { ...env, PATH: `${shim}:${fx.env.PATH}` } });
+  assert.notEqual(refused.status, 0, refused.stdout + refused.stderr);
+  assert.equal(refused.json().error.code, "E_SESSION_START_FAILED", "the window was never made");
+  assert.equal(launchWarnings(), 1, "the refused start left no event");
+  const started = answer(fx.cli(["session", "start", "--home", spawned.home, "--json"], { env }));
+  assert.deepEqual(agentWarnings(started), [warning]);
+  assert.equal(launchWarnings(), 2, "the start that went ahead recorded its own");
+});
+
 test("on Linux not booted with systemd (a container's init, another init system): spawn and start wrap nothing, probe nothing and say nothing", async (t) => {
   const { fx } = deployment(t);
   const dir = systemDir(fx, "no-systemd", null); // and no systemd-run either: still nothing to say

@@ -250,8 +250,10 @@ user manager's default slice, wherever the server is:
   `env` or `true` is not in `/usr/bin` or `/bin`, or the pane's environment
   cannot be read, the harness is launched exactly as before, and the answer's
   `warnings` (spawn, session start and restart), and a `launch-warning`
-  event, say once `the agent's harness runs in the OATS tmux server's cgroup,
-  not a scope of its own: <reason>`. A pane whose server has no
+  event once the launch is recorded (a launch refused after the check leaves
+  none), say once `the agent's harness runs in the OATS tmux server's cgroup,
+  not a scope of its own: <reason>`. The sweep (`oats session resume`) says
+  it once in its own `warnings`, not in each row. A pane whose server has no
   `XDG_RUNTIME_DIR` or bus (a server started where none was set, a user
   without lingering) fails the check. Off Linux, on a Linux host not booted
   with systemd (a container's own init, another init system: no user manager

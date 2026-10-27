@@ -12,7 +12,8 @@
   booted with systemd (no user manager or bus in the pane, no `systemd-run`),
   the harness is launched as before, and the answer's `warnings` say `the agent's harness runs in the OATS
   tmux server's cgroup, not a scope of its own: <reason>`, as does a
-  `launch-warning` event. Off Linux, on a Linux host not booted with systemd
+  `launch-warning` event once the launch is recorded (a start refused after
+  the check leaves none). Off Linux, on a Linux host not booted with systemd
   (a container's own init, another init system) and on the old or hybrid
   hierarchy, nothing changes and nothing is said (#1559).
 - The OATS tmux server is now started in a scope of its own from inside any
