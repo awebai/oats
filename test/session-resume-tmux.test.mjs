@@ -16,7 +16,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { dirname, join } from "node:path";
 import { RESUME_NOTICE, stopInstanceSession } from "../lib/core.mjs";
 import { readStartExited } from "../lib/session-end.mjs";
-import { bootId } from "../lib/session-resume.mjs";
+import { bootId, readBootNote, resumeSessions } from "../lib/session-resume.mjs";
+import { FRESH_REASON, OUTCOME, ROW_REASON, SESSION_END } from "../lib/session-resume-contract.mjs";
 import { fixtureBase, isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -118,6 +119,11 @@ async function spawnHome(fx, name, launchConfig, { launch = false, env = {} } = 
   try { return (await fx.spawn("dev", { name, launchConfig, ...(launch ? { launch: true } : {}) })).home; }
   finally { for (const k of ["PATH", ...Object.keys(env)]) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
 }
+/** Kill the window of `home`'s session by hand: no marker, no stop; the home reads lost. */
+function killWindow(home) {
+  const { tmux } = readJson(join(home, "instance.json"));
+  execFileSync("tmux", ["-u", tmux.socket.includes("/") ? "-S" : "-L", tmux.socket, "kill-window", "-t", `${tmux.session}:${tmux.window}`], { stdio: "ignore" });
+}
 async function startHome(fx, home, name, extra = {}) {
   ok(cli(fx, ["session", "start", "--home", home, "--json"], extra), `start ${name}`);
   await waitUntil(() => launches(name).length > 0, `${name}'s stand-in to run`);
@@ -163,7 +169,7 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   await waitUntil(() => !existsSync(socket) || spawnSync("tmux", ["-u", "-S", socket, "has-session"]).status !== 0, "the server to be gone");
   const rowsA = statusRows(A);
   assert.deepEqual(Object.fromEntries(Object.entries(rowsA).map(([n, r]) => [n, [r.running, r.sessionEnd]])),
-    { a1: [false, "lost"], a2: [false, "stopped"], a3: [false, "exited"], a4: [false, "lost"], a5: [false, "lost"], a6: [false, "lost"], a7: [false, "lost"] });
+    { a1: [false, SESSION_END.LOST], a2: [false, SESSION_END.STOPPED], a3: [false, SESSION_END.EXITED], a4: [false, SESSION_END.LOST], a5: [false, SESSION_END.LOST], a6: [false, SESSION_END.LOST], a7: [false, SESSION_END.LOST] });
 
   // Exited and stopped homes are refused one by one, before anything starts.
   for (const name of ["a2", "a3"]) {
@@ -178,7 +184,7 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   const plan = ok(cli(A, ["session", "resume", "--plan", "--json"]), "plan");
   assert.equal(plan.plan, true);
   const planned = Object.fromEntries(plan.rows.map((r) => [r.instance, [r.outcome, r.reason ?? r.sessionId ?? null]]));
-  assert.deepEqual(planned, { a1: ["resumed", ids.a1], a4: ["resumed", ids.a4], a5: ["fresh", "resume-unproven"], a6: ["resumed", ids.a6], a7: ["resumed", ids.a7], c1: ["fresh", "no-conversation"], c2: ["resumed", planned.c2?.[1]] });
+  assert.deepEqual(planned, { a1: [OUTCOME.RESUMED, ids.a1], a4: [OUTCOME.RESUMED, ids.a4], a5: [OUTCOME.FRESH, FRESH_REASON.RESUME_UNPROVEN], a6: [OUTCOME.RESUMED, ids.a6], a7: [OUTCOME.RESUMED, ids.a7], c1: [OUTCOME.FRESH, FRESH_REASON.NO_CONVERSATION], c2: [OUTCOME.RESUMED, planned.c2?.[1]] });
   assert.match(planned.c2[1], /^[0-9a-f-]{36}$/, "c2's refusal comes at its start: a plan reads the conversation only");
   assert.equal(existsSync(join(oatsHome, "session-resume")), false, "a plan takes no lock and writes no note");
   assert.deepEqual(Object.fromEntries(Object.keys(homes).map((n) => [n, before(n)])), counts, "a plan starts nothing");
@@ -201,13 +207,13 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
     if (r.warnings !== undefined) assert.ok(Array.isArray(r.warnings) && r.warnings.length && r.warnings.every((w) => typeof w === "string"), JSON.stringify(r.warnings));
   }
   const outcome = (r) => [r.outcome, r.reason ?? null, r.sessionId ?? null, r.code ?? null];
-  assert.deepEqual(outcome(rows.a1), ["resumed", null, ids.a1, null]);
-  assert.deepEqual(outcome(rows.a4), ["resumed", null, ids.a4, null]);
-  assert.deepEqual(outcome(rows.a5), ["fresh", "resume-unproven", null, null]);
-  assert.deepEqual(outcome(rows.a6), ["resumed", null, ids.a6, null]);
-  assert.deepEqual(outcome(rows.a7), ["blocked", "resume-confirmation", ids.a7, null]);
-  assert.deepEqual(outcome(rows.c1), ["fresh", "no-conversation", null, null]);
-  assert.deepEqual(outcome(rows.c2), ["refused", "start-refused", null, "E_LAUNCH_ENV_MISSING"]);
+  assert.deepEqual(outcome(rows.a1), [OUTCOME.RESUMED, null, ids.a1, null]);
+  assert.deepEqual(outcome(rows.a4), [OUTCOME.RESUMED, null, ids.a4, null]);
+  assert.deepEqual(outcome(rows.a5), [OUTCOME.FRESH, FRESH_REASON.RESUME_UNPROVEN, null, null]);
+  assert.deepEqual(outcome(rows.a6), [OUTCOME.RESUMED, null, ids.a6, null]);
+  assert.deepEqual(outcome(rows.a7), [OUTCOME.BLOCKED, ROW_REASON.RESUME_CONFIRMATION, ids.a7, null]);
+  assert.deepEqual(outcome(rows.c1), [OUTCOME.FRESH, FRESH_REASON.NO_CONVERSATION, null, null]);
+  assert.deepEqual(outcome(rows.c2), [OUTCOME.REFUSED, ROW_REASON.START_REFUSED, null, "E_LAUNCH_ENV_MISSING"]);
   assert.match(rows.c2.message, /RESUME_TEST_SRC/);
 
   // What each stand-in received: the selector and the notice; the fresh ones their task prompt.
@@ -239,8 +245,8 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   // from this boot's note (on a host that has a boot id).
   const again = ok(cli(A, ["session", "resume", "--json"]), "second sweep");
   const second = Object.fromEntries(again.rows.map((r) => [r.instance, [r.outcome, r.reason ?? null, r.code ?? null]]));
-  for (const name of ["a1", "a4", "a5", "a6", "a7", "c1"]) assert.deepEqual(second[name], ["already-running", null, null], name);
-  assert.deepEqual(second.c2, bootId() ? ["refused", "refused-this-boot", "E_LAUNCH_ENV_MISSING"] : ["refused", "start-refused", "E_LAUNCH_ENV_MISSING"]);
+  for (const name of ["a1", "a4", "a5", "a6", "a7", "c1"]) assert.deepEqual(second[name], [OUTCOME.ALREADY_RUNNING, null, null], name);
+  assert.deepEqual(second.c2, bootId() ? [OUTCOME.REFUSED, ROW_REASON.REFUSED_THIS_BOOT, "E_LAUNCH_ENV_MISSING"] : [OUTCOME.REFUSED, ROW_REASON.START_REFUSED, "E_LAUNCH_ENV_MISSING"]);
   assert.equal(before("c2"), counts.c2);
   for (const name of ["a1", "a4", "a5", "a6", "a7", "c1"]) assert.equal(before(name), counts[name] + 1, `${name} was not started again`);
 
@@ -266,7 +272,7 @@ test("a home launched by spawn whose harness exits on its own retires without a 
   assert.match(startId ?? "", /^[0-9a-f-]{36}$/, "spawn records its launch's start id");
   await waitUntil(() => readStartExited(home) !== null, "the exit marker of spawn's window");
   assert.deepEqual(readStartExited(home), { startId, status: 0 });
-  assert.equal(statusRows(A).r1.sessionEnd, "exited");
+  assert.equal(statusRows(A).r1.sessionEnd, SESSION_END.EXITED);
   const retired = cli(A, ["retire", "r1", "--json"]);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(home), false, "the home is gone");
@@ -280,10 +286,7 @@ test("`session resume --deployment <dir>` sweeps that deployment alone, register
   const homes = {};
   for (const name of ["d1", "d2"]) { homes[name] = await spawnHome(D, name, "claude-d"); await startHome(D, homes[name], name); }
   // d1 and d2 lose their windows (killed by hand: no marker, no stop).
-  for (const name of ["d1", "d2"]) {
-    const { tmux } = readJson(join(homes[name], "instance.json"));
-    execFileSync("tmux", ["-u", tmux.socket.includes("/") ? "-S" : "-L", tmux.socket, "kill-window", "-t", `${tmux.session}:${tmux.window}`], { stdio: "ignore" });
-  }
+  for (const name of ["d1", "d2"]) killWindow(homes[name]);
   // d3: launched by spawn, its harness ended by itself; then made a home from before 0.69, which
   // records no start id and whose window wrote no marker.
   homes.d3 = ok(cli(D, ["spawn", "dev", "--name", "d3", "--launch-config", "exit-d", "--json"]), "spawn d3").home;
@@ -292,7 +295,7 @@ test("`session resume --deployment <dir>` sweeps that deployment alone, register
   const legacy = readJson(join(homes.d3, "instance.json"));
   delete legacy.startId;
   writeFileSync(join(homes.d3, "instance.json"), JSON.stringify(legacy, null, 2) + "\n");
-  await waitUntil(() => { const r = statusRows(D); return ["d1", "d2", "d3"].every((n) => r[n].sessionEnd === "lost"); }, "d1, d2 and d3 to read lost");
+  await waitUntil(() => { const r = statusRows(D); return ["d1", "d2", "d3"].every((n) => r[n].sessionEnd === SESSION_END.LOST); }, "d1, d2 and d3 to read lost");
 
   // The explicit form, on a deployment the registry does not list; its refusals.
   const plan = ok(cli(D, ["session", "resume", "--deployment", D.dep, "--plan", "--json"]), "plan --deployment");
@@ -324,9 +327,9 @@ test("`session resume --deployment <dir>` sweeps that deployment alone, register
     assert.deepEqual([receipt.stop, receipt.startId], [null, readJson(join(homes[name], "instance.json")).startId ?? null], name);
   }
   const rows = statusRows(D);
-  assert.deepEqual(["d1", "d2", "d3"].map((n) => rows[n].sessionEnd), ["stopped", "lost", "stopped"]);
+  assert.deepEqual(["d1", "d2", "d3"].map((n) => rows[n].sessionEnd), [SESSION_END.STOPPED, SESSION_END.LOST, SESSION_END.STOPPED]);
   const swept = ok(cli(D, ["session", "resume", "--deployment", D.dep, "--json"]), "sweep --deployment");
-  assert.deepEqual(swept.rows.map((r) => [r.instance, r.outcome]), [["d2", "resumed"]]);
+  assert.deepEqual(swept.rows.map((r) => [r.instance, r.outcome]), [["d2", OUTCOME.RESUMED]]);
   await waitUntil(() => launches("d2").length === counts.d2 + 1, "d2's stand-in to run again");
   assert.deepEqual([launches("d1").length, launches("d3").length], [counts.d1, counts.d3], "the stopped homes were not started");
 });
@@ -339,9 +342,8 @@ test("a home lost again after each resume is started by sweeps at most 3 times i
   const notePath = join(oatsHome, "session-resume", "note.json");
   const count = () => (existsSync(notePath) ? readJson(notePath).resumes?.[home] : undefined);
   const lose = async () => {
-    const { tmux } = readJson(join(home, "instance.json"));
-    execFileSync("tmux", ["-u", tmux.socket.includes("/") ? "-S" : "-L", tmux.socket, "kill-window", "-t", `${tmux.session}:${tmux.window}`], { stdio: "ignore" });
-    await waitUntil(() => statusRows(E).e1.sessionEnd === "lost", "e1 to read lost");
+    killWindow(home);
+    await waitUntil(() => statusRows(E).e1.sessionEnd === SESSION_END.LOST, "e1 to read lost");
   };
   const sweep = (...flags) => ok(cli(E, ["session", "resume", "--deployment", E.dep, ...flags, "--json"]), `sweep ${flags.join(" ")}`).rows;
   assert.equal(count(), undefined, "a start by hand is not counted");
@@ -349,7 +351,7 @@ test("a home lost again after each resume is started by sweeps at most 3 times i
   for (let n = 1; n <= 3; n++) {
     await lose();
     const runs = launches("e1").length;
-    assert.deepEqual(sweep().map((r) => [r.instance, r.outcome]), [["e1", "resumed"]], `sweep ${n}`);
+    assert.deepEqual(sweep().map((r) => [r.instance, r.outcome]), [["e1", OUTCOME.RESUMED]], `sweep ${n}`);
     await waitUntil(() => launches("e1").length === runs + 1, `e1's stand-in to run after sweep ${n}`);
     assert.equal(count(), n, `sweep ${n} is counted`);
   }
@@ -364,18 +366,44 @@ test("a home lost again after each resume is started by sweeps at most 3 times i
   // The fourth sweep: predicted, then answered, and nothing started.
   await lose();
   runs = launches("e1").length;
-  const keeps = (r) => { assert.deepEqual([r.instance, r.outcome, r.reason, r.code], ["e1", "refused", "keeps-getting-lost", undefined]); assert.match(r.message, /resumed 3 times in this boot/); };
+  const keeps = (r) => { assert.deepEqual([r.instance, r.outcome, r.reason, r.code], ["e1", OUTCOME.REFUSED, ROW_REASON.KEEPS_GETTING_LOST, undefined]); assert.match(r.message, /resumed 3 times in this boot/); };
   const [predicted] = sweep("--plan");
   keeps(predicted);
   const [answered] = sweep();
   keeps(answered);
   assert.equal(launches("e1").length, runs, "nothing was started");
   assert.equal(count(), 3);
-  assert.equal(statusRows(E).e1.sessionEnd, "lost");
+  assert.equal(statusRows(E).e1.sessionEnd, SESSION_END.LOST);
 
   // Another boot's count is no count.
   writeFileSync(notePath, JSON.stringify({ ...readJson(notePath), bootId: "another-boot" }));
-  assert.deepEqual(sweep().map((r) => [r.instance, r.outcome]), [["e1", "resumed"]]);
+  assert.deepEqual(sweep().map((r) => [r.instance, r.outcome]), [["e1", OUTCOME.RESUMED]]);
   await waitUntil(() => launches("e1").length === runs + 1, "e1's stand-in to run in the new boot");
   assert.deepEqual(readJson(notePath).resumes, { [home]: 1 }, "the note of this boot, the count started again");
+});
+
+test("the sweep notes each start's count as soon as that start has answered: a home whose start answered is counted while another start of the sweep still runs (a sweep killed then has counted it), once each, and its 4th sweep is keeps-getting-lost", TMUX, async () => {
+  const F = v2Deployment({ name: "f", local: { "launch-configs": { "claude-f": config("claude", "dep-f") } } });
+  later.push(F);
+  const homes = {};
+  for (const name of ["f1", "f2"]) { homes[name] = await spawnHome(F, name, "claude-f"); await startHome(F, homes[name], name); killWindow(homes[name]); }
+  await waitUntil(() => { const r = statusRows(F); return r.f1.sessionEnd === SESSION_END.LOST && r.f2.sessionEnd === SESSION_END.LOST; }, "f1 and f2 to read lost");
+  // The starts are the test's (resumeSessions' `start`): f1's answers at once, f2's when the test
+  // releases it. Nothing is launched, so both homes stay lost from one sweep to the next. The sweep
+  // runs in this file's machine environment (OATS_HOME_DIR is oatsHome), where the note is read.
+  const boot = "interrupted-sweep-boot";
+  const counted = (name) => readBootNote(boot).resumes[homes[name]] ?? 0;
+  const answer = { ok: true, result: { warnings: [], resume: { resumed: true, harness: "claude", sessionId: "seam" } } };
+  for (let n = 1; n <= 3; n++) {
+    let release;
+    const f2Answer = new Promise((r) => { release = r; });
+    const sweep = resumeSessions({ deployment: F.dep, boot, start: (row) => (row.instance === "f1" ? Promise.resolve(answer) : f2Answer) });
+    await waitUntil(() => counted("f1") === n, `f1's answer in sweep ${n} to be noted while f2's start runs`);
+    assert.equal(counted("f2"), n - 1, `sweep ${n}: f2's start has not answered`);
+    release(answer);
+    assert.deepEqual((await sweep).rows.map((r) => [r.instance, r.outcome]), [["f1", OUTCOME.RESUMED], ["f2", OUTCOME.RESUMED]]);
+    assert.deepEqual([counted("f1"), counted("f2")], [n, n], `sweep ${n}: each answer counted once`);
+  }
+  const fourth = await resumeSessions({ deployment: F.dep, boot, start: () => assert.fail("a 4th sweep starts nothing") });
+  assert.deepEqual(fourth.rows.map((r) => [r.instance, r.outcome, r.reason]), [["f1", OUTCOME.REFUSED, ROW_REASON.KEEPS_GETTING_LOST], ["f2", OUTCOME.REFUSED, ROW_REASON.KEEPS_GETTING_LOST]]);
 });

@@ -1201,8 +1201,9 @@ home with `--resume` in that home's own deployment scope, at most 4 at once.
   after each resume (a harness that crashes the host or its terminal server,
   say) is then reported `keeps-getting-lost` and not started again until the
   next boot; start it by hand to try now. Every sweep start that launched
-  something counts (resumed, fresh or blocked), by home; a refused, skipped or
-  busy one does not. `oats session start --resume` run by hand is neither
+  something counts (resumed, fresh or blocked), by home, as soon as that start
+  has answered, so a sweep killed while other starts run has counted it; a
+  refused, skipped or busy one does not. `oats session start --resume` run by hand is neither
   bounded nor counted.
 - The boot is the boot id on Linux and the boot time on macOS. Elsewhere there
   is no boot: nothing is noted or counted, and every sweep tries again.

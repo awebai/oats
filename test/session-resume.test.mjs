@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describeLaunchCommand, parseLaunchCommand, renderLaunchCommand, renderLaunchRecipe, RESUME_NOTICE, startInstanceSession } from "../lib/core.mjs";
 import { readStartExited, sessionEndOf } from "../lib/session-end.mjs";
 import { acquireResumeLock, bootId, noteSweep, readBootNote, resumeSessions, resumeStateDir, rowFromStart } from "../lib/session-resume.mjs";
+import { FRESH_REASON, NOT_SWEPT, OUTCOME, RESUME_WAITING, ROW_REASON, SESSION_END, SESSION_RESUME_FEATURE } from "../lib/session-resume-contract.mjs";
 
 const scratch = (t) => { const d = mkdtempSync(join(tmpdir(), "oats-resume-")); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
 const write = (home, name, value) => writeFileSync(join(home, name), typeof value === "string" ? value : JSON.stringify(value));
@@ -36,28 +37,40 @@ test("the exit marker reads in both forms: the legacy start id on one line, and 
   }
 });
 
+// The contract's names, pinned here once: every other test reads them from the module. A change is a
+// contract change for both product sides (awebai/oats#1567).
+test("the session-resume contract's names", () => {
+  assert.equal(SESSION_RESUME_FEATURE, "session-resume");
+  assert.deepEqual(SESSION_END, { LOST: "lost", STOPPED: "stopped", EXITED: "exited" });
+  assert.deepEqual(FRESH_REASON, { NO_CONVERSATION: "no-conversation", NO_RECEIPTS: "no-receipts", RESUME_UNPROVEN: "resume-unproven" });
+  assert.deepEqual(RESUME_WAITING, { RESUME_CONFIRMATION: "resume-confirmation" });
+  assert.deepEqual(OUTCOME, { RESUMED: "resumed", FRESH: "fresh", ALREADY_RUNNING: "already-running", SKIPPED: "skipped", BLOCKED: "blocked", REFUSED: "refused" });
+  assert.deepEqual(ROW_REASON, { UNKNOWN: "unknown", START_BUSY: "start-busy", NOT_LOST: "not-lost", RESUME_CONFIRMATION: "resume-confirmation", LAUNCH_PROMPT: "launch-prompt", START_REFUSED: "start-refused", REFUSED_THIS_BOOT: "refused-this-boot", KEEPS_GETTING_LOST: "keeps-getting-lost" });
+  assert.deepEqual(NOT_SWEPT, { NOT_OK: "not-ok", UNREADABLE: "unreadable" });
+});
+
 test("sessionEnd: the full table, legacy forms included", (t) => {
   const created = "2026-10-01T10:00:00.000Z", restarted = "2026-10-02T10:00:00.000Z";
   const meta = { startId: "s2", createdAt: created, restarts: [{ startedAt: restarted }] };
   const before = "2026-10-01T12:00:00.000Z", after = "2026-10-02T12:00:00.000Z";
   const rows = [
-    ["a stop that names this start", { stop: { at: before, startId: "s2" } }, "stopped"],
-    ["a stop that names this start, beside its 143", { stop: { at: after, startId: "s2" }, exited: { startId: "s2", status: 143 } }, "stopped"],
-    ["a stop of an earlier start, the harness then ended on its own", { stop: { at: after, startId: "s1" }, exited: { startId: "s2", status: 0 } }, "exited"],
-    ["a stop of an earlier start, nothing else", { stop: { at: after, startId: "s1" } }, "lost"],
-    ["a stop receipt without a start id, after this start", { stop: { at: after } }, "stopped"],
-    ["a stop receipt without a start id, before this start", { stop: { at: before } }, "lost"],
-    ["a stop receipt whose start id is null, after this start", { stop: { at: after, startId: null } }, "stopped"],
-    ["exit status 0 (/exit)", { exited: { startId: "s2", status: 0 } }, "exited"],
-    ["exit status 1 (its own error)", { exited: { startId: "s2", status: 1 } }, "exited"],
-    ["exit status 127", { exited: { startId: "s2", status: 127 } }, "exited"],
-    ["exit status 128", { exited: { startId: "s2", status: 128 } }, "lost"],
-    ["killed (137, an OOM kill of the harness alone)", { exited: { startId: "s2", status: 137 } }, "lost"],
-    ["143 with no stop", { exited: { startId: "s2", status: 143 } }, "lost"],
-    ["a marker of an earlier start", { exited: { startId: "s1", status: 0 } }, "lost"],
-    ["the legacy marker naming this start", { exited: "s2\n" }, "exited"],
-    ["the legacy marker naming an earlier start", { exited: "s1\n" }, "lost"],
-    ["neither file", {}, "lost"],
+    ["a stop that names this start", { stop: { at: before, startId: "s2" } }, SESSION_END.STOPPED],
+    ["a stop that names this start, beside its 143", { stop: { at: after, startId: "s2" }, exited: { startId: "s2", status: 143 } }, SESSION_END.STOPPED],
+    ["a stop of an earlier start, the harness then ended on its own", { stop: { at: after, startId: "s1" }, exited: { startId: "s2", status: 0 } }, SESSION_END.EXITED],
+    ["a stop of an earlier start, nothing else", { stop: { at: after, startId: "s1" } }, SESSION_END.LOST],
+    ["a stop receipt without a start id, after this start", { stop: { at: after } }, SESSION_END.STOPPED],
+    ["a stop receipt without a start id, before this start", { stop: { at: before } }, SESSION_END.LOST],
+    ["a stop receipt whose start id is null, after this start", { stop: { at: after, startId: null } }, SESSION_END.STOPPED],
+    ["exit status 0 (/exit)", { exited: { startId: "s2", status: 0 } }, SESSION_END.EXITED],
+    ["exit status 1 (its own error)", { exited: { startId: "s2", status: 1 } }, SESSION_END.EXITED],
+    ["exit status 127", { exited: { startId: "s2", status: 127 } }, SESSION_END.EXITED],
+    ["exit status 128", { exited: { startId: "s2", status: 128 } }, SESSION_END.LOST],
+    ["killed (137, an OOM kill of the harness alone)", { exited: { startId: "s2", status: 137 } }, SESSION_END.LOST],
+    ["143 with no stop", { exited: { startId: "s2", status: 143 } }, SESSION_END.LOST],
+    ["a marker of an earlier start", { exited: { startId: "s1", status: 0 } }, SESSION_END.LOST],
+    ["the legacy marker naming this start", { exited: "s2\n" }, SESSION_END.EXITED],
+    ["the legacy marker naming an earlier start", { exited: "s1\n" }, SESSION_END.LOST],
+    ["neither file", {}, SESSION_END.LOST],
   ];
   for (const [what, files, want] of rows) {
     const home = scratch(t);
@@ -69,10 +82,10 @@ test("sessionEnd: the full table, legacy forms included", (t) => {
   // createdAt names it; a legacy marker cannot.
   const legacy = { createdAt: created };
   for (const [what, files, want] of [
-    ["no start id, no stop", { exited: "whatever\n" }, "lost"],
-    ["no start id, a stop after createdAt", { stop: { at: before } }, "stopped"],
-    ["no start id, a stop before createdAt", { stop: { at: "2026-09-30T00:00:00.000Z" } }, "lost"],
-    ["no start id, a stop that names a start", { stop: { at: before, startId: "s0" } }, "lost"],
+    ["no start id, no stop", { exited: "whatever\n" }, SESSION_END.LOST],
+    ["no start id, a stop after createdAt", { stop: { at: before } }, SESSION_END.STOPPED],
+    ["no start id, a stop before createdAt", { stop: { at: "2026-09-30T00:00:00.000Z" } }, SESSION_END.LOST],
+    ["no start id, a stop that names a start", { stop: { at: before, startId: "s0" } }, SESSION_END.LOST],
   ]) {
     const home = scratch(t);
     if (files.stop) write(home, ".oats-stop.json", { instance: "x", ...files.stop });
@@ -82,8 +95,8 @@ test("sessionEnd: the full table, legacy forms included", (t) => {
   // The current start's time is the last restart's, else createdAt.
   const spawned = scratch(t);
   write(spawned, ".oats-stop.json", { at: before });
-  assert.equal(sessionEndOf(spawned, { startId: "s1", createdAt: created }), "stopped", "after createdAt, no restart");
-  assert.equal(sessionEndOf(spawned, { startId: "s2", createdAt: created, restarts: [{ startedAt: restarted }] }), "lost", "before the last restart");
+  assert.equal(sessionEndOf(spawned, { startId: "s1", createdAt: created }), SESSION_END.STOPPED, "after createdAt, no restart");
+  assert.equal(sessionEndOf(spawned, { startId: "s2", createdAt: created, restarts: [{ startedAt: restarted }] }), SESSION_END.LOST, "before the last restart");
 });
 
 test("renderLaunchRecipe: the resume selectors, byte for byte, `--` included; Codex has none", () => {
@@ -180,14 +193,14 @@ test("a start's answer maps to the sweep's row", () => {
   const id = { deployment: "/d", instance: "a", home: row.home };
   const ok = (result) => rowFromStart(row, { ok: true, result });
   const fail = (code, details) => rowFromStart(row, { ok: false, error: { code, message: `${code} message`, ...(details ? { details } : {}) } });
-  assert.deepEqual(ok({ resume: { resumed: true, harness: "claude", sessionId: "x" }, warnings: [] }), { ...id, outcome: "resumed", sessionId: "x" });
-  assert.deepEqual(ok({ resume: { resumed: true, harness: "claude", sessionId: "x" }, warnings: ["w channel-cache-unchecked"] }), { ...id, outcome: "resumed", sessionId: "x", warnings: ["w channel-cache-unchecked"] });
-  assert.deepEqual(ok({ resume: { resumed: true, harness: "claude", sessionId: "x", waiting: "resume-confirmation" } }), { ...id, outcome: "blocked", reason: "resume-confirmation", sessionId: "x" });
-  for (const reason of ["no-conversation", "no-receipts", "resume-unproven"]) assert.deepEqual(ok({ resume: { resumed: false, reason, harness: "pi" } }), { ...id, outcome: "fresh", reason });
-  assert.deepEqual(fail("E_SPAWN_INCOMPLETE", { launchPrompts: { status: "blocked" } }), { ...id, outcome: "blocked", reason: "launch-prompt", code: "E_SPAWN_INCOMPLETE", launchPrompts: { status: "blocked" } });
-  assert.deepEqual(fail("E_SESSION_START_BUSY"), { ...id, outcome: "skipped", reason: "start-busy", code: "E_SESSION_START_BUSY" });
-  assert.deepEqual(fail("E_RESUME_NOT_LOST"), { ...id, outcome: "skipped", reason: "not-lost", code: "E_RESUME_NOT_LOST" });
-  assert.deepEqual(fail("E_SESSION_RUNNING"), { ...id, outcome: "skipped", reason: "not-lost", code: "E_SESSION_RUNNING" });
-  assert.deepEqual(fail("E_LAUNCH_LEGACY"), { ...id, outcome: "refused", reason: "start-refused", code: "E_LAUNCH_LEGACY", message: "E_LAUNCH_LEGACY message" });
+  assert.deepEqual(ok({ resume: { resumed: true, harness: "claude", sessionId: "x" }, warnings: [] }), { ...id, outcome: OUTCOME.RESUMED, sessionId: "x" });
+  assert.deepEqual(ok({ resume: { resumed: true, harness: "claude", sessionId: "x" }, warnings: ["w channel-cache-unchecked"] }), { ...id, outcome: OUTCOME.RESUMED, sessionId: "x", warnings: ["w channel-cache-unchecked"] });
+  assert.deepEqual(ok({ resume: { resumed: true, harness: "claude", sessionId: "x", waiting: RESUME_WAITING.RESUME_CONFIRMATION } }), { ...id, outcome: OUTCOME.BLOCKED, reason: ROW_REASON.RESUME_CONFIRMATION, sessionId: "x" });
+  for (const reason of [FRESH_REASON.NO_CONVERSATION, FRESH_REASON.NO_RECEIPTS, FRESH_REASON.RESUME_UNPROVEN]) assert.deepEqual(ok({ resume: { resumed: false, reason, harness: "pi" } }), { ...id, outcome: OUTCOME.FRESH, reason });
+  assert.deepEqual(fail("E_SPAWN_INCOMPLETE", { launchPrompts: { status: "blocked" } }), { ...id, outcome: OUTCOME.BLOCKED, reason: ROW_REASON.LAUNCH_PROMPT, code: "E_SPAWN_INCOMPLETE", launchPrompts: { status: "blocked" } });
+  assert.deepEqual(fail("E_SESSION_START_BUSY"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.START_BUSY, code: "E_SESSION_START_BUSY" });
+  assert.deepEqual(fail("E_RESUME_NOT_LOST"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.NOT_LOST, code: "E_RESUME_NOT_LOST" });
+  assert.deepEqual(fail("E_SESSION_RUNNING"), { ...id, outcome: OUTCOME.SKIPPED, reason: ROW_REASON.NOT_LOST, code: "E_SESSION_RUNNING" });
+  assert.deepEqual(fail("E_LAUNCH_LEGACY"), { ...id, outcome: OUTCOME.REFUSED, reason: ROW_REASON.START_REFUSED, code: "E_LAUNCH_LEGACY", message: "E_LAUNCH_LEGACY message" });
   assert.equal(rowFromStart(row, undefined).code, "E_SESSION_START_FAILED", "no answer");
 });

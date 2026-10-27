@@ -6101,6 +6101,10 @@ whatever the rows say:
   | `blocked` | `resume-confirmation` (Claude's resume-cost dialog: the session runs and waits for its human), `launch-prompt` (`code` `E_SPAWN_INCOMPLETE`, with `launchPrompts`: the session is kept) |
   | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start: reported again with that `code` and `message`, nothing started), `keeps-getting-lost` (sweeps started this home 3 times in this boot and it was lost again each time: nothing started, no `code`, a `message` that says so; a sweep tries it again after the next boot, or a person starts it by hand) |
 
+  The kernel defines every `sessionEnd`, `resume` and row name in one
+  module, `lib/session-resume-contract.mjs`; a change to one is a contract
+  change ([#1567](https://github.com/awebai/oats/issues/1567)).
+
 - `--plan`: the same shape with `"plan": true`; nothing is started, no lock
   taken, no note written. A lost home's outcome is the prediction: `resumed`
   (with `sessionId`) or `fresh` with its reason, `refused` for a noted

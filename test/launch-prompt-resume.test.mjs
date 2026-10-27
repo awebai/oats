@@ -4,6 +4,7 @@ import { RESUME_CONFIRMATION_ENTRIES, validateResumeConfirmationEntries, validat
   DEV_CHANNEL_ENTRIES, showsClaudeSession, normalizeScreen } from "../lib/launch-prompt-fixtures.mjs";
 import { watchResumeConfirmation } from "../lib/launch-prompt-resume.mjs";
 import { sessions } from "./helpers/dev-channel-screens.mjs";
+import { RESUME_WAITING } from "../lib/session-resume-contract.mjs";
 
 // No real capture of the resume dialogs exists: these screens are built from the
 // strings the entries were derived from (README: resume-confirmation entries).
@@ -169,14 +170,14 @@ const watch = (f, extra = {}) => watchResumeConfirmation({ transport: f.transpor
 test("the watcher reports the dialog at once, with no key", () => {
   const dialog = render(costDialog("Resume from summary (instant, recommended)"), 80, "ruled");
   const f = fake(["", "\n  loading\n", dialog]);
-  assert.deepEqual(watch(f), { waiting: "resume-confirmation", entry: COST });
+  assert.deepEqual(watch(f), { waiting: RESUME_WAITING.RESUME_CONFIRMATION, entry: COST });
   assert.equal(f.calls.snapshots.length, 3);
   assert.equal(f.calls.sends, 0);
 });
 
 test("a dialog that appears after the session first showed still reports waiting", () => {
   const f = fake([sessionScreen, sessionScreen, sessionScreen, render(documentedDialog, 50, "boxed")]);
-  assert.deepEqual(watch(f), { waiting: "resume-confirmation", entry: DOCUMENTED });
+  assert.deepEqual(watch(f), { waiting: RESUME_WAITING.RESUME_CONFIRMATION, entry: DOCUMENTED });
   assert.equal(f.calls.sends, 0);
 });
 
