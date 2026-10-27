@@ -10,7 +10,7 @@ import {
   hasInstanceChildren, heldHome, instanceSiblings, siblingText, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts, instanceColor, instanceDisplayName,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, listedViews, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, machineLabels,
-  openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
+  openAct, deployments as heldDeployments, localScrollKeys, hostScrollKeys, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
   defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel, subsequenceScore, soulMatches, soulCatalogFailure, catalogFailure,
   memberNames, capabilitySource, groupCapabilities, hostKeyOf, capabilitySections, matchCapabilities, soulsComposition, rosterAgentName, layerLabel, capabilityUsers,
@@ -408,6 +408,23 @@ export const SPLIT_WORDS = Object.freeze({
   twice: () => [{ own: "The panel has two groups already." }],
   small: (dir, min) => [{ own: dir === "right" ? `No room to split side by side: each group needs ${min.cols} columns.` : `No room to split one above the other: each group needs ${min.rows} rows.` }],
 });
+/** The scroll keys the shown terminal's viewer takes, `{ shift, prefix }`, so the cheat sheet names
+ *  them (docs/tui.md, "Tabs"): as the tab's host's kernel says, this machine's for a tab of this
+ *  machine, the group's roster probe for another's (`rows`, the roster's instances, find the tab's
+ *  row and so its group). Ctrl+B [ is not named with the leader Ctrl+B, which the TUI takes before
+ *  the viewer reads it. No terminal shown, or a tab whose row is gone: neither. */
+export function scrollKeys(state, rows, at) {
+  const t = state.terminal;
+  if (!t) return NO_SCROLL_KEYS;
+  let keys = localScrollKeys(state.cli);
+  if (t.routed) {
+    const row = rows.find((r) => instanceId(r) === t.id);
+    const group = row ? heldDeployments(heldOf(state, at)).find((d) => d.id === row.deployment?.id)?.group : undefined;
+    keys = group ? hostScrollKeys(state.cli, group) : NO_SCROLL_KEYS;
+  }
+  return keys.prefix && state.leaderKey === "ctrl+b" ? Object.freeze({ ...keys, prefix: false }) : keys;
+}
+const NO_SCROLL_KEYS = Object.freeze({ shift: false, prefix: false });
 /** The groups of the panel as the frame draws them (docs/tui.md, "Splits"): one, or two with a
  *  split, each `{ tabs, shown }`: its tabs in the strip's order (`{ id, name, machine, routed,
  *  shown, activity }`, `machine` only for another machine's) and its shown tab's id, or null for
@@ -905,7 +922,7 @@ export function model(state, { page, body = page, now, at, cols, area = cols }) 
     // The palette's own keys, `[key id, does]` (actions.mjs paletteKeys; none on macOS): its cheat
     // sheet and the help name them.
     paletteKeys: [...state.paletteKeys],
-    terminal: state.terminal, onTerminal: false,
+    terminal: state.terminal, onTerminal: false, scrollKeys: scrollKeys(state, r.instances, at),
     // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
     // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,
     // a hidden one's activity. A strip is drawn with two tabs or more; one reads as a title row.

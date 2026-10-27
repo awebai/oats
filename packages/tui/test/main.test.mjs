@@ -1721,6 +1721,44 @@ const TWO_ENTRY = observedAt(DEPLOYMENT, [
   instanceRow("acme-expert", "acme-expert-tui", { tmux: { session: "oats-agents", window: "acme-expert-tui", socket: AGENTS_SOCKET } }),
   instanceRow("acme-ledger", "acme-ledger-dev", { tmux: { session: "oats-agents", window: "acme-ledger-dev", socket: AGENTS_SOCKET } }),
 ]);
+test("a tab's viewer is asked for no status line (--no-status-line) where the kernel advertises session-attach-no-status-line: the TUI's cheat sheet names the scroll keys itself (#1502 part E)", async () => {
+  const QUIET = cliRecord({ version: CLI.version, workspaceApi: CLI.workspaceApi, features: [...CLI.features, "session-attach-no-status-line"], remote: ["roster", "session"] }, { bin: CLI.bin, source: "tui" });
+  const r = await started({ kernel: { ok: true, cli: QUIET }, config: KEY_CONFIG });
+  r.reader.answer(TWO_ENTRY);
+  r.stdin.type("\r");
+  await settle();
+  assert.deepEqual(r.panel.opens[0].argv, [process.execPath, QUIET.bin, "session", "attach", "--home", HOME, "--no-status-line"]);
+  r.panel.opens[0].made("@1");
+  await settle();
+  leaderEscape(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the cheat sheet of a focused terminal of this machine names the scroll keys its kernel's version --json says the viewer takes: Ctrl+B [ where sessionViewer.prefixScroll is true, Shift+PageUp alone where it is false, and none where the kernel does not list session-attach-prefix-scroll (#1502 part E)", async () => {
+  const payload = { version: CLI.version, workspaceApi: CLI.workspaceApi, remote: ["roster", "session"] };
+  const withFeature = CLI.features, withoutFeature = CLI.features.filter((name) => name !== "session-attach-prefix-scroll");
+  for (const [why, record, hint] of [
+    ["prefixScroll true", { ...payload, features: withFeature, sessionViewer: { prefixScroll: true } }, "Ctrl+B [ scroll back"],
+    ["prefixScroll false", { ...payload, features: withFeature, sessionViewer: { prefixScroll: false } }, "Shift+PageUp scroll back"],
+    ["a kernel before the feature", { ...payload, features: withoutFeature, sessionViewer: { prefixScroll: true } }, null],
+  ]) {
+    const cli = cliRecord(record, { bin: CLI.bin, source: "tui" });
+    const r = await started({ kernel: { ok: true, cli }, config: KEY_CONFIG, columns: 120, rows: 40 });
+    r.reader.answer(TWO_ENTRY);
+    r.stdin.type("\r");
+    await settle();
+    r.panel.opens[0].made("@1");
+    await settle();
+    const drawn = sidebarOf(r);
+    assert.equal(drawn.includes(hint ?? "scroll back"), hint !== null, `${why}: ${drawn}`);
+    if (hint !== "Ctrl+B [ scroll back") assert.equal(drawn.includes("Ctrl+B [ scroll back"), false, `${why}: ${drawn}`);
+    leaderEscape(r);
+    r.stdin.type("q");
+    assert.equal(await r.status, 0);
+  }
+});
+
 /** A run with two running agents of this machine, the first one's terminal open with the focus in it. */
 async function viewingFirstOfTwo() {
   const r = await started({ kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG });

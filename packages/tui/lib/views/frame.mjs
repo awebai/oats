@@ -252,6 +252,19 @@ function viewRow(m, view, cols, open) {
 const made = (id, key, word) => ({ id, key, word: typeof word === "string" ? { spans: [{ col: 0, text: lit(word), width: word.length }], width: word.length } : word });
 /** A hint of keys that are no action's (a key name the TUI writes, like `Enter`). */
 const own = (id, keys, word) => made(id, { text: lit(keys), width: keys.length }, word);
+/** The viewer's scroll keys (docs/tui.md, "Tabs"), the viewer's own and never the TUI's, as the
+ *  model's `scrollKeys` says the shown tab's host takes them: Shift+PageUp, and Ctrl+B [ where its
+ *  viewer takes that too; none for a host whose kernel does not say. Both keys where the row holds
+ *  them; where it holds one, `short`: Ctrl+B [ (cheatRows, withKeys). A block of its own, so its
+ *  long key does not move the other hints' column. */
+const SCROLL_BOTH = "Shift+PageUp or Ctrl+B [", SCROLL_PREFIX = "Ctrl+B [", SCROLL_SHIFT = "Shift+PageUp";
+function scrollHints(m) {
+  if (!m.scrollKeys?.shift) return [];
+  const hint = own("scroll", m.scrollKeys.prefix ? SCROLL_BOTH : SCROLL_SHIFT, "scroll back");
+  return [{ ...hint, block: "scroll", ...(m.scrollKeys.prefix ? { short: { text: lit(SCROLL_PREFIX), width: SCROLL_PREFIX.length } } : {}) }];
+}
+/** A hint with its `short` key where its own key and word do not fit `room` cells. */
+const fitted = (h, room) => (h.short && h.key.width + GAP + h.word.width > room ? { ...h, key: h.short } : h);
 /** `types <the leader>`: what the leader pressed twice does while a terminal has the focus. */
 function types(m) {
   const key = leaderText(m);
@@ -296,7 +309,7 @@ function cheatSheet(m) {
   const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
   if (listing && m.terminal?.focus === "terminal" && !m.palette && !m.spawn) {
     const label = backKeyLabel(m.detachKey), list = keyLabel(LEADER.find((entry) => entry.does === "list").keys[0]);
-    const leader = [made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m))];
+    const leader = [made("list", keyText(`${label} ${list}`), "the list"), made("again", keyText(`${label} ${label}`), types(m)), ...scrollHints(m)];
     return m.chordsLead ? [...chordHints(m), ...led(leader)] : [...led(leader), ...chordHints(m)];
   }
   if (m.palette) return led([own("run", "Enter", "run"), own("move", "Up/Down", "move"), own("close", "Esc", "close"), paletteGroups(m)]);
@@ -386,8 +399,9 @@ function givenUp(hints) {
  *  (the chords') have a column of their own, after their own widest key, and as far left as
  *  leaves their words whole: those words are the TUI's own and short, where their keys are long
  *  (`Alt+Shift+Left/Right` in the 30 cells beside a terminal). */
-function cheatRows(hints, cols) {
+function cheatRows(given, cols) {
   const edge = cols - MARGIN;
+  const hints = given.map((h) => fitted(h, edge - MARGIN));
   const columns = new Map();
   for (const h of hints) {
     const c = columns.get(h.block) ?? { widest: 0, word: 6 };
@@ -412,13 +426,15 @@ const titleSheet = (m) => cheatSheet(m).filter((h) => m.chordsLead || h.block !=
  *  right, dim, as many as fit after what the row holds, given up from the end. With `first`, the
  *  first key always stands (a detail page's way back): what the row holds is cut to leave it room. */
 function withKeys(given, hints, cols, { skip = ["leader", "palette", "help", "quit"], first = false } = {}) {
-  const keys = hints.filter((h) => !skip.includes(h.id));
   const widthOf = (list) => list.reduce((sum, h) => sum + h.key.width + 1 + h.word.width, 0) + Math.max(0, list.length - 1) * GAP;
-  const limit = first && keys.length ? cols - MARGIN - widthOf(keys.slice(0, 1)) - GAP : Infinity;
+  const whole = hints.filter((h) => !skip.includes(h.id));
+  const limit = first && whole.length ? cols - MARGIN - widthOf(whole.slice(0, 1)) - GAP : Infinity;
   const row = limit === Infinity ? given : given.filter((span) => span.text === undefined || span.col < limit)
     .map((span) => (span.text === undefined ? span : { ...span, width: Math.min(span.width ?? textWidth(textOf(span.text)), limit - span.col) }));
   // What the row holds ends where its text does: a span may be given more cells than its text takes.
   const end = row.reduce((most, span) => (span.text !== undefined ? Math.max(most, span.col + Math.min(span.width ?? Infinity, textWidth(textOf(span.text)))) : most), 0);
+  // A hint with a short key takes it when the row, after what it holds, cannot hold every key as it is.
+  const keys = end + GAP + widthOf(whole) <= cols - MARGIN ? whole : whole.map((h) => (h.short ? { ...h, key: h.short } : h));
   let kept = keys;
   // Given up from the end, the leader last (givenUp).
   while (kept.length && end + GAP + widthOf(kept) > cols - MARGIN) kept = givenUp(kept);

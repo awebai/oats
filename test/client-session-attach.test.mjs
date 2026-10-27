@@ -11,7 +11,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { prepareRemoteTerm, sessionAttachArgv, detachKeySupported, hostDetachKeySupported, preflightFailure, remoteTargetKey, DETACH_KEY_FEATURE } from "../packages/client/session-attach.mjs";
+import { prepareRemoteTerm, sessionAttachArgv, detachKeySupported, hostDetachKeySupported, preflightFailure, remoteTargetKey, DETACH_KEY_FEATURE, NO_STATUS_LINE_FEATURE, PREFIX_SCROLL_FEATURE, localScrollKeys, hostScrollKeys } from "../packages/client/session-attach.mjs";
+import { NO_STATUS_LINE_FEATURE as KERNEL_NO_STATUS_LINE_FEATURE, PREFIX_SCROLL_FEATURE as KERNEL_PREFIX_SCROLL_FEATURE } from "../lib/session-viewer.mjs";
+import { cliRecord } from "../packages/client/cli-locator.mjs";
 import { attachExit } from "../packages/client/attach-exit.mjs";
 
 const HOME = "/srv/agents/dev/instances/dev-task", KEY = "C-\\";
@@ -42,6 +44,19 @@ test("the viewer's arguments: this machine and another, without a key and with o
     first.push("--changed");
     assert.equal(sessionAttachArgv(KEYED, target, options).includes("--changed"), false, "a caller that appends changes nothing else");
   }
+});
+
+test("statusLine false asks for the viewer without its status line (--no-status-line, after any key) where this machine's CLI advertises session-attach-no-status-line; one without it is asked nothing (it would show the line anyway); the default is the line (#1502 part E)", async () => {
+  assert.equal(NO_STATUS_LINE_FEATURE, KERNEL_NO_STATUS_LINE_FEATURE, "the client's name is the kernel's");
+  const QUIET = cliWith(DETACH_KEY_FEATURE, "server-probe-features", NO_STATUS_LINE_FEATURE);
+  assert.deepEqual(sessionAttachArgv(QUIET, HERE, { statusLine: false }), ["session", "attach", "--home", HOME, "--no-status-line"]);
+  assert.deepEqual(sessionAttachArgv(QUIET, THERE, { statusLine: false }), ["session", "attach", "--server", "build", "--home", HOME, "--no-status-line"]);
+  assert.deepEqual(sessionAttachArgv(QUIET, HERE, { detachKey: KEY, statusLine: false }), ["session", "attach", "--home", HOME, "--detach-key", KEY, "--no-status-line"]);
+  assert.deepEqual(sessionAttachArgv(QUIET, HERE), ["session", "attach", "--home", HOME], "the default keeps the line");
+  assert.deepEqual(sessionAttachArgv(QUIET, HERE, { statusLine: true }), ["session", "attach", "--home", HOME]);
+  assert.deepEqual(sessionAttachArgv(KEYED, HERE, { statusLine: false }), ["session", "attach", "--home", HOME], "a CLI without the feature is asked nothing");
+  const run = async () => ({ stdout: PRESENT });
+  assert.deepEqual(await prepareRemoteTerm(QUIET, THERE, { run, statusLine: false }), { binary: "/selected/oats", args: ["session", "attach", "--server", "build", "--home", HOME, "--no-status-line"] });
 });
 
 test("the viewer's arguments refuse a target they cannot name: a home on this machine by the remote home's rule, another machine as remoteTargetKey does", () => {
@@ -201,4 +216,32 @@ test("an attach's exit status as a word: the kernel's table, read once", () => {
   }
   // Every answer is one of the five words.
   for (const status of [0, 1, 20, 255, 7, null]) assert.ok(["left", "ended", "failed", "link", "unknown"].includes(attachExit(status, { keyed: true, routed: true })));
+});
+
+test("the viewer's scroll keys a client may name (feature session-attach-prefix-scroll): cliRecord keeps this machine's sessionViewer only as a boolean prefixScroll; localScrollKeys reads it, hostScrollKeys a group's probe when this machine's CLI relays hosts' lists; a kernel without the feature, or one not known, has neither key", () => {
+  const payload = (extra) => ({ version: "0.70.0", features: ["server-probe-features", PREFIX_SCROLL_FEATURE], ...extra });
+  const record = (extra) => cliRecord(payload(extra), { bin: "/opt/oats", source: "tui" });
+  assert.equal(PREFIX_SCROLL_FEATURE, "session-attach-prefix-scroll");
+  assert.equal(PREFIX_SCROLL_FEATURE, KERNEL_PREFIX_SCROLL_FEATURE, "the kernel's name");
+  assert.deepEqual(record({ sessionViewer: { prefixScroll: true, later: 1 } }).sessionViewer, { prefixScroll: true }, "a copy of the one field");
+  assert.deepEqual(record({ sessionViewer: { prefixScroll: false } }).sessionViewer, { prefixScroll: false });
+  for (const sessionViewer of [undefined, null, "yes", {}, { prefixScroll: "true" }]) assert.equal("sessionViewer" in record({ sessionViewer }), false, JSON.stringify(sessionViewer));
+  // This machine.
+  assert.deepEqual(localScrollKeys(record({ sessionViewer: { prefixScroll: true } })), { shift: true, prefix: true });
+  assert.deepEqual(localScrollKeys(record({ sessionViewer: { prefixScroll: false } })), { shift: true, prefix: false });
+  assert.deepEqual(localScrollKeys(record({})), { shift: true, prefix: false }, "the feature without the fact: Shift+PageUp");
+  assert.deepEqual(localScrollKeys(cliRecord({ version: "0.69.0", features: [], sessionViewer: { prefixScroll: true } }, { bin: "/opt/oats", source: "tui" })), { shift: false, prefix: false }, "a kernel before the feature");
+  for (const cli of [null, { ok: false }, { ok: true, features: "session-attach-prefix-scroll" }]) assert.deepEqual(localScrollKeys(cli), { shift: false, prefix: false }, JSON.stringify(cli));
+  // Another machine: its group's probe, never this machine's fact.
+  const here = record({ sessionViewer: { prefixScroll: true } });
+  const group = (probe) => ({ server: "garnet", probe });
+  assert.deepEqual(hostScrollKeys(here, group({ ok: true, features: [PREFIX_SCROLL_FEATURE], sessionViewer: { prefixScroll: true } })), { shift: true, prefix: true });
+  assert.deepEqual(hostScrollKeys(here, group({ ok: true, features: [PREFIX_SCROLL_FEATURE], sessionViewer: { prefixScroll: false } })), { shift: true, prefix: false });
+  assert.deepEqual(hostScrollKeys(here, group({ ok: true, features: [PREFIX_SCROLL_FEATURE], sessionViewer: null })), { shift: true, prefix: false });
+  for (const probe of [{ ok: true, features: ["session-attach-detach-key"], sessionViewer: { prefixScroll: true } }, { ok: true, features: null }, { ok: true }, { ok: false, error: { code: "E_SSH", message: "x" } }, undefined]) {
+    assert.deepEqual(hostScrollKeys(here, group(probe)), { shift: false, prefix: false }, JSON.stringify(probe));
+  }
+  const notRelaying = cliRecord({ version: "0.48.0", features: [PREFIX_SCROLL_FEATURE] }, { bin: "/opt/oats", source: "tui" });
+  assert.deepEqual(hostScrollKeys(notRelaying, group({ ok: true, features: [PREFIX_SCROLL_FEATURE], sessionViewer: { prefixScroll: true } })), { shift: false, prefix: false }, "a CLI that does not relay hosts' lists: the probe's features say nothing of the host");
+  assert.deepEqual(hostScrollKeys(here, null), { shift: false, prefix: false });
 });

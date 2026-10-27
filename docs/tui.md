@@ -473,11 +473,39 @@ fit; the detail shows them whole. The TUI's own words end the same way:
   reason holds it (an instance gone from its machine, say). An agent on another machine is asked first whether it
   can be opened (`Esc` gives that up); a machine whose OATS cannot open its
   sessions is said then.
-- **No scrollback but the viewer's own, and no mouse.** The panel shows
-  what the agent's window shows now; what has scrolled away is reached as
-  the agent's own terminal reaches it. `Shift+PageUp` scrolls the viewer
-  back (tmux's copy mode, as in `oats session attach`): `PageUp` and
-  `PageDown` then move, and `q` leaves the scrollback.
+- **The viewer's scroll keys, and no mouse.** The panel shows what the
+  agent's window shows now. What has scrolled away is reached through the
+  viewer's own keys, as in `oats session attach`: `Shift+PageUp`, or
+  `Ctrl+B` then `[`, put it in tmux's copy mode. Then `PageUp`, `PageDown`,
+  the arrows, `Ctrl+U` and `Ctrl+D` move, and `q` or `Esc` leaves. The TUI
+  adds no key of its own: they reach the viewer as a terminal without the
+  kitty keyboard protocol sends them (re-encoded under it), and the viewer
+  shows no status line of its own (`--no-status-line`, where the kernel has
+  it).
+  - **The cheat sheet names them** while a terminal has the focus, and so
+    does a zoomed terminal's title row where it has room: `Shift+PageUp or
+    Ctrl+B [`, then `scroll back`. Where the row holds one key, `Ctrl+B [`.
+    The title row gives them up first: in the Alt family, whose chords lead
+    that row, a zoomed terminal 120 columns wide or less does not name
+    them. The help does.
+  - **As the tab's host says.** Each tab runs its host's viewer, so the
+    keys named are the ones that host's kernel says its viewer takes: this
+    machine's `oats version --json` for a tab of this machine, the roster's
+    probe of its server for another's
+    ([`session-attach-prefix-scroll`](desktop-cli-api.md#features)).
+    `Shift+PageUp` where the host's kernel lists the feature, and
+    `Ctrl+B [` too where its `sessionViewer.prefixScroll` is true (a tmux of
+    3.3 or later, see
+    [Inspect, input and attach](execution-targets.md#inspect-input-and-attach)).
+    A host whose kernel does not list it, or one the roster did not reach,
+    gets no scroll keys named at all: an older viewer may hand
+    `Shift+PageUp` to the agent.
+  - **A leader of `Ctrl+B`** (`open.detachKey: "C-b"` in
+    [`tui.json`](#change-the-keys-tuijson)) takes `Ctrl+B` before the
+    viewer reads it, so `Ctrl+B [` cannot be typed there. The sheet and the
+    help name `Shift+PageUp` alone.
+  - Copy mode is the agent's pane's: while a tab is scrolled back, every
+    other viewer of that agent shows the same frozen screen.
 - **How it works.** The terminal is the kernel's own viewer,
   `oats session attach`, run in a pane of a tmux server private to this run
   of `oats tui`: its socket is in a directory of the run's own (mode 0700,
@@ -2458,7 +2486,8 @@ version:
 - The Souls and Capabilities views list a workspace of this machine's
   souls and capabilities: both are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be
-  folded. An open terminal has no scrollback but the viewer's own.
+  folded. An open terminal scrolls back with the viewer's own keys,
+  `Shift+PageUp` and `Ctrl+B [`, and no other.
 - Up to four terminals are open at a time, as tabs, in at most two
   groups. The split cannot be resized or nested, a tab moves only between
   the two groups, and no tab or split is kept from one run to the next, or

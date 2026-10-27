@@ -112,10 +112,15 @@ function commandRows(command, at, cols) {
  *  takes, what it does not do, and where the keys that can be the back key are listed (the help
  *  does not restate the grammar). */
 export const OPEN_RULES = Object.freeze([
-  "While the terminal has the focus every other key but Shift+PageUp goes to the agent, Ctrl+C and Ctrl+Z too.",
-  "Up to 4 terminals are open at a time, each a tab, with no mouse. Shift+PageUp scrolls back; PageUp, PageDown move, q leaves.",
+  "While the terminal has the focus every key but its scroll keys goes to the agent, Ctrl+C and Ctrl+Z too.",
+  "Up to 4 terminals, as tabs, no mouse. Shift+PageUp or Ctrl+B [ (tmux 3.3+) scrolls back; PageUp, PageDown move, q leaves.",
   "docs/tui.md has the keys that can be the leader.",
 ]);
+/** OPEN_RULES for a leader of Ctrl+B, which the TUI takes before the viewer reads it: Ctrl+B [
+ *  cannot be typed into a terminal there, so the help does not name it. */
+const OPEN_RULES_CTRL_B = Object.freeze(OPEN_RULES.map((sentence, i) => (i === 1 ? "Up to 4 terminals, as tabs, no mouse. Shift+PageUp scrolls back; PageUp, PageDown move, q leaves." : sentence)));
+/** The rules for the leader `detachKey`. */
+const openRulesFor = (detachKey) => (backKeyLabel(detachKey) === "Ctrl+B" ? OPEN_RULES_CTRL_B : OPEN_RULES);
 /** The rows under the line of `open`, in `room` cells: the leader then Esc, which takes the focus
  *  from the open terminal, and the leader twice, which types it into the terminal (tui.json's
  *  open.detachKey, text from outside), then OPEN_RULES, each sentence on as many rows as it needs. */
@@ -128,7 +133,7 @@ function openRows(detachKey, room, chorded = false) {
   return [
     ...pair(`${label} ${esc}`, "takes the focus from the terminal back to the list; the agent keeps running."),
     ...pair(`${label} ${label}`, "types the leader into the terminal."),
-    ...[...OPEN_RULES, ...(chorded ? [CHORD_OPEN_RULE] : [])].flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
+    ...[...openRulesFor(detachKey), ...(chorded ? [CHORD_OPEN_RULE] : [])].flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
   ];
 }
 /** Under OPEN_RULES, while the chords are listed: they too are the TUI's in a terminal. */

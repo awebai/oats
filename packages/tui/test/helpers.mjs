@@ -117,7 +117,7 @@ import { frame, layout, mainArea } from "../lib/views/frame.mjs";
 
 /** The fixture's deployment and the kernel record the shared gates accept. */
 export const DEPLOYMENT = "/srv/deploy";
-export const CLI = Object.freeze({ ok: true, bin: "/opt/oats/bin/oats.mjs", source: "tui", version: "0.52.0", workspaceApi: 2, features: Object.freeze(["workspace-v2", "instance-modules", "served-identity", "packages-no-approval", "waiting-on-you", "workspace-identity", "deployments-list"]) });
+export const CLI = Object.freeze({ ok: true, bin: "/opt/oats/bin/oats.mjs", source: "tui", version: "0.52.0", workspaceApi: 2, features: Object.freeze(["workspace-v2", "instance-modules", "served-identity", "packages-no-approval", "waiting-on-you", "workspace-identity", "deployments-list", "session-attach-prefix-scroll"]), sessionViewer: Object.freeze({ prefixScroll: false }) });
 /** The time of every paint in a test that does not say otherwise; run the tests with TZ=UTC in mind:
  *  a clock time on the screen is local, so a test that reads one computes it the same way. */
 export const NOW = Date.parse("2026-10-11T10:00:30.000Z");
