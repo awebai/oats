@@ -32,7 +32,8 @@ export function spawnApplyChoicesSupported(cli, choices, wakeRequested = false) 
     && (!choices.launchConfig || has(cli?.features, 'launch-config'))
     && (!wakeRequested || has(cli?.features, 'schedule'))
     && (choices.name === undefined || has(cli?.features, 'spawn-name'))
-    && (choices.identity === undefined || has(cli?.features, 'spawn-provider-payload'));
+    && (choices.identity === undefined || has(cli?.features, 'spawn-provider-payload'))
+    && (choices.background === undefined || has(cli?.features, 'instance-background'));
 }
 export function spawnWake(v) {
   if (!exact(v, ['cron', 'tz', 'message', 'enabled']) || !text(v.cron, 256) || !v.cron.trim()

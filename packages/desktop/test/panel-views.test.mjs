@@ -273,3 +273,21 @@ test('workspaceChoices `waiting`: a live deployment with a row that needs input,
   const pending = juanState().state; pending.snapshot.byWs.delete(B);
   assert.equal(waits(heldOf(pending))[V_OATS], false);
 });
+
+test('workspaceChoices `waiting` (#1579): a waiting row in the Background section still marks its view', () => {
+  const CLAIM = { since: '2026-10-11T11:00:00.000Z', producer: 'agent', reason: 'question' };
+  const waits = (held) => Object.fromEntries(views.workspaceChoices(held, DESKTOP_TERMS).map(c => [c.id, c.waiting]));
+  // A background row waits, and a row under a background parent waits: the section is a sidebar placement only.
+  for (const rows of [
+    [row(B, 'dev-b', { runtimeState: 'running', background: true, waitingOnYou: CLAIM })],
+    [row(B, 'dev-b', { runtimeState: 'running', background: true }), row(B, 'dev-c', { runtimeState: 'running', parentInstance: 'dev-b', waitingOnYou: CLAIM })],
+  ]) {
+    const state = juanState().state;
+    state.snapshot.byWs.set(B, observed(B, { reachable: true, ...identity() }, rows));
+    const held = heldOf(state);
+    // The flag reaches the rows the workspace reads (so this is not true only because the field was dropped).
+    const d = views.deployments(held).find(w => w.id === B);
+    assert.equal(views.deploymentPanel(held, d).instances.find(r => r.instance === 'dev-b').background, true);
+    assert.deepEqual(waits(held), { [V_OATS]: true, [V_LAB]: false, [L]: false }, rows.map(r => r.instance).join());
+  }
+});

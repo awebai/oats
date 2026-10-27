@@ -334,7 +334,9 @@ function cheatSheet(m) {
   }
   // A view's list or its detail: a small sheet; the rest is the leader's, the palette's and the help's.
   const asking = listing && m.opening?.phase === "preflight";
+  // On the Background heading (#1579) Enter opens the section or closes it.
   const enter = asking ? [hint("close", "stop opening")] : listing && m.onTerminal ? [hint("open", "focus terminal")] : listing && m.openable ? [hint("open")]
+    : listing && m.onBackground && m.focus === "list" ? [hint("open", m.onBackground === "open" ? "close" : "open")]
     : soul?.detail ? [hint("open", soul.focus === "detail" ? "instances" : "detail")]
     : capability?.detail ? (capability.focus !== "detail" ? [hint("open", "detail")] : capability.mark >= 0 ? [hint("open", "soul")] : []) : [];
   const detailed = soul ? soul.focus === "detail" && Boolean(soul.detail) : capability ? capability.focus === "detail" && Boolean(capability.detail) : listing && m.focus === "detail";

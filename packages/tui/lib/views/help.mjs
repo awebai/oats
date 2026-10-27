@@ -39,6 +39,8 @@ export const NOT_YET = Object.freeze([
   Object.freeze({ what: "see a capability's skills and files", command: "oats capabilities show <name>" }),
   Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
   Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
+  // The list places a background instance (#1579); moving one into or out of the background is the kernel's verb.
+  Object.freeze({ what: "move an instance into or out of the background", command: "oats instance background <name> on|off" }),
   Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias> --dir <path on that machine>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),

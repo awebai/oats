@@ -7,7 +7,9 @@
 // and its name, and a word only where the mark can't say it. Children stand under their parent by
 // indentation alone; a folded row says how many it folds away, `+n`, and how many of those wait,
 // `N below`. In a view of two or more deployments the list also holds a heading per deployment
-// and the sentences the model sets under one: a heading says in words what it is of.
+// and the sentences the model sets under one: a heading says in words what it is of. Last stands
+// the Background section's heading (#1579), which can be selected: its chevron says whether the
+// section is open, and the needs-input tag whether a row in it waits.
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
 import { COLORS, style } from "../term/style.mjs";
@@ -20,6 +22,11 @@ import { textWidth } from "../term/width.mjs";
 export const MARKS = Object.freeze({
   utf8: Object.freeze({ running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", selected: ">", waiting: "!" }),
   ascii: Object.freeze({ running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", selected: ">", waiting: "!" }),
+});
+/** The Background heading's chevron (#1579), open and closed, in UTF-8 and in ASCII: no state's mark. */
+export const CHEVRONS = Object.freeze({
+  utf8: Object.freeze({ open: "▾", closed: "▸" }),
+  ascii: Object.freeze({ open: "v", closed: ">" }),
 });
 export const marksOf = (ascii) => (ascii ? MARKS.ascii : MARKS.utf8);
 
@@ -53,6 +60,7 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
+const SELECTED_BOLD = style({ reverse: true, bold: true });
 /** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does.
  *  No state is yellow: yellow says needs input, and only that. */
 export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: DIM, held: style({ fg: "magenta" }) });
@@ -165,6 +173,34 @@ function instanceRow(row, cols, wordWidth, marks) {
   return spans;
 }
 
+/** The Background section's heading (#1579). */
+export const BACKGROUND = "Background";
+/** The Background section's heading in a pane `cols` wide (lib/model.mjs backgroundRow): its chevron in
+ *  the mark's column, open or closed, the word in bold where a row's name stands, as a machine's heading
+ *  is bold, and how many rows the section holds, dim. While a row in it waits, open or closed, the
+ *  needs-input tag stands at the edge in the roll-up's look, `Needs input` and no time, where the word
+ *  and the count fit beside it, else the needs-input mark alone in the cells every row keeps. Selected,
+ *  it is in reverse video with `>`, as a row is. */
+function backgroundRow(item, cols, marks, chevrons) {
+  const spans = [], count = String(item.count);
+  const whole = BACKGROUND.length + GAP + count.length;
+  const tag = item.waiting ? (cols - NEEDS_INPUT.length - 3 - LEAD >= whole ? NEEDS_INPUT : marks.waiting) : null;
+  const end = tag === NEEDS_INPUT ? cols - NEEDS_INPUT.length - 3 : cols - EDGE;
+  if (item.selected) spans.push({ col: 0, width: cols, style: SELECTED });
+  if (item.selected && item.cursor !== false) spans.push({ col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
+  spans.push({ col: MARK, text: lit(item.open ? chevrons.open : chevrons.closed), style: item.selected ? SELECTED_BOLD : BOLD, width: 1 });
+  const word = Math.max(0, Math.min(BACKGROUND.length, end - LEAD));
+  if (word) spans.push({ col: LEAD, text: lit(BACKGROUND), style: item.selected ? SELECTED_BOLD : BOLD, width: word });
+  // The count whole or not at all: a cut number says another.
+  const at = LEAD + BACKGROUND.length + GAP;
+  if (at + count.length <= end) spans.push({ col: at, text: lit(count), style: item.selected ? SELECTED : DIM, width: count.length });
+  if (tag !== null) {
+    const look = item.selected ? WAITS_SELECTED : WAITS, col = cols - tag.length - 2;
+    if (col > MARK) spans.push({ col, width: tag.length + 2, style: look }, { col: col + 1, text: lit(tag), style: look, width: tag.length });
+  }
+  return spans;
+}
+
 /** A deployment's heading in a pane `cols` wide: its label in bold, its path, and, when it is not
  *  live, the shared word for its state and the short reason; at the right edge the time a machine
  *  reported its rows at. The state and the time always stand. When the row is too narrow for the
@@ -234,6 +270,7 @@ export function instances(m, size) {
     else if (item.own) rows[i] = [{ col: SENTENCE_INDENT, text: lit(item.own), style: DIM, width: sentence }];
     else if (item.empty === "none") rows[i] = noneRow(m, aside);
     else if (item.empty) rows[i] = [{ col: SENTENCE_INDENT, text: lit(EMPTY_TEXT[item.empty]), style: DIM, width: aside }];
+    else if (item.kind === "background") rows[i] = backgroundRow(item, size.cols, marks, m.ascii ? CHEVRONS.ascii : CHEVRONS.utf8);
     else rows[i] = instanceRow(item, size.cols, m.wordWidth, marks);
   });
   const note = cutNote(m.above, m.below);

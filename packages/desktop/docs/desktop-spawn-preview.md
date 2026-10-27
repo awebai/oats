@@ -45,6 +45,15 @@ and the kernel numbers the instance, unless the dialog has a suggested name for
 the task (below): then the choices carry that name as `name`. Also work
 (`worktree` for a checkout soul), worktree-only branch/base, advertised
 harness/backend, launchConfig, yolo, model, relation and identity.
+`background` (feature `instance-background`, #1579) is the dialog's **Run in
+background** switch: sent only when it differs from the soul's default (the
+souls catalog's `background: true`, corrected by a preview read without the
+flag), as `--background` / `--no-background`, the same to preview and apply.
+The switch is shown only where this CLI lists the feature and, for another
+machine, the host's `servers[].features` does too; there the soul's default is
+not reported, so the switch is sent once it was switched, and `/api/spawn`
+forwards it to `spawn --server` (a host without the feature refuses with
+`E_REMOTE_INCOMPATIBLE`).
 `identity` is `{provider, mode:"local"}` or `{provider, mode:"global", resident}`
 (decision 27): `provider` is the soul's messaging capability as the preview
 reported it (the one module on layer `messaging`), and the argv is
@@ -257,6 +266,12 @@ reports `runtime`; the Desktop reads either and sends `--harness` or `--runtime`
 by the feature: packages/client/harness-names.mjs). Child policy is boolean; relation is null or
 `{kind,anchor{instance,agentsRoot}}`; model/config/yolo can be null. Old API2 READ
 without effective remains an observation, never a synthesized executable plan.
+With feature `instance-background` the effective decision binds `background: true`
+exactly when the instance runs in the background (absent otherwise; any other value
+refuses the preview), and the preview's top-level `background` (a boolean, always
+present on such a kernel) must agree with it; `backgroundFrom` (`flag` or `soul`,
+absent when neither declared it) is kept for the dialog. Absent `background` is an
+older kernel, which the dialog offers no switch for.
 
 Projection preserves bounded work/harness/model provenance, the `resolution`
 binding (top-level facts cross-checked against `decision.effective`),

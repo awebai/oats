@@ -65,7 +65,10 @@ test('the dialog shows what the kernel decided: name, harness, model and work â€
   assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native/i);
   // Board 6: the capabilities are the preview's facts (read-only), never a choice.
   assert.equal(dialog.querySelector('.spawn-preview :is(input, select, button, textarea)'), null, 'no capability toggles');
-  assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fwake-enabled)').length, 0);
+  // The checkboxes are the dialog's own choices: the worktree, the wake, and Run in background (#1579), a switch shown
+  // only where the CLI lists instance-background (this one does not).
+  assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fwake-enabled):not(.fbackground)').length, 0);
+  assert.equal(u.q('.spawn-background').hidden, true);
   assert.equal(u.q('.spawn-prefix-toggle'), null); assert.doesNotMatch(dialog.textContent, /Prefix with the soul name/);
   assert.equal(u.q('.fspawn').disabled, false); assert.equal(u.q('.fspawn').hidden, false, 'the shell must not rewrite the Spawn button');
   assert.equal(u.q('.fspawn').textContent, 'Spawn'); assert.ok(u.q('.fspawn').dataset.chord);
