@@ -2369,7 +2369,7 @@ for (const [name] of palettes) test(`${name}: a capability trigger source's quot
     assert.ok(ratio('accent', nearest(el, 'background')) >= 3, `${name} ${target}: --accent on --${nearest(el, 'background')}`);
   }
   // The quote's side rule is not what tells a quote apart (the lead-in and the typeface do): it carries no text.
-  assert.match(/\.source-quote-text \{([^}]*)\}/.exec(capabilityQuoteCSS)[1], /font:12px\/1\.5 var\(--mono,monospace\)/);
+  assert.match(/\.source-quote-text \{([^}]*)\}/.exec(capabilityQuoteCSS)[1], /font-weight:normal; font-size:12px; line-height:1\.5; font-family:var\(--mono,monospace\)/);
 });
 
 // The shortcuts editor (Spec A PR 2): search, sticky group headings, labels, keycaps, quiet markers,

@@ -26,7 +26,7 @@ export const automationsCSS = `
 .automations[hidden], .automations [hidden] { display:none !important; }
 .auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
-.auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }
+.auto-count { color:var(--muted); font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); font-weight:400; }
 /* The Automations bar, in the Workspace's tab style: Schedules | Triggers, then the page's tools. */
 .auto-header.auto-framed { align-items:stretch; gap:22px; }
 .auto-header.auto-framed > :not(.auto-heading) { align-self:center; }
@@ -37,7 +37,7 @@ export const automationsCSS = `
 .oats-view .auto-tabs button:hover { color:var(--fg); }
 .oats-view .auto-tabs button[aria-selected=true] { color:var(--fg); font-weight:650; box-shadow:inset 0 -2px 0 var(--live); }
 .oats-view .auto-tabs button:focus-visible { background:var(--sel); border-radius:6px; padding:0 6px; margin:0 -6px; } /* layout-neutral inset */
-.auto-tab-count { color:var(--muted); font:10.5px var(--mono,monospace); }
+.auto-tab-count { color:var(--muted); font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); }
 .auto-tab-count:empty { display:none; }
 .auto-spacer { flex:1; }
 .auto-scheduler { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
@@ -58,7 +58,7 @@ export const automationsCSS = `
 .oats-view .auto-seg button { display:inline-flex; align-items:center; gap:6px; height:100%; min-height:0; padding:0 10px; border:0; border-radius:0; background:transparent; color:var(--muted); font-weight:normal; font-size:12px; line-height:normal; font-family:var(--ui-font,system-ui); }
 .oats-view .auto-seg button + button { border-left:1px solid var(--border); }
 .oats-view .auto-seg button[aria-pressed=true] { background:var(--surface-2); color:var(--fg); font-weight:650; }
-.auto-seg-count { font:10.5px var(--mono,monospace); }
+.auto-seg-count { font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono,monospace); }
 .auto-search { display:flex; align-items:center; gap:7px; flex:0 1 240px; min-width:0; height:28px; padding:0 10px; box-sizing:border-box; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--muted); }
 .auto-search .shell-icon { flex:none; }
 .oats-view .auto-search input { flex:1; min-width:0; height:100%; min-height:0; padding:0; border:0; background:transparent; color:var(--fg); font-size:12px; outline:none; }
@@ -81,7 +81,7 @@ export const automationsCSS = `
 .auto-sub.auto-remedy { white-space:normal; overflow:visible; overflow-wrap:anywhere; line-height:1.45; }
 .auto-mono { font-family:var(--mono,monospace); }
 .oats-view .auto-row button.auto-open { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--fg); text-align:left; font:inherit; cursor:pointer; }
-.auto-open .auto-id { max-width:100%; font:650 12.5px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.auto-open .auto-id { max-width:100%; font-weight:650; font-size:12.5px; line-height:normal; font-family:var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .oats-view .auto-row button.auto-open:hover .auto-id { text-decoration:underline; }
 .auto-tags { display:flex; flex-wrap:wrap; gap:4px; min-width:0; }
 .auto-tag { display:inline-flex; align-items:center; gap:4px; height:18px; padding:0 6px; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-size:10.5px; font-weight:600; white-space:nowrap; }
@@ -124,7 +124,7 @@ export const automationsCSS = `
 /* Detail facts wrap instead of cropping (the list rows keep one line, with a title). */
 .auto-page .page-kv { align-items:start; padding:7px 0; min-height:0; }
 .auto-page .page-kv dd { white-space:normal; overflow-wrap:anywhere; }
-.auto-prompt { margin:0; padding:12px 14px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--fg); font:12.5px/1.6 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.auto-prompt { margin:0; padding:12px 14px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--fg); font-weight:normal; font-size:12.5px; line-height:1.6; font-family:var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
 .auto-token { padding:1px 4px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font-weight:650; }
 .auto-verdict { display:flex; align-items:center; gap:7px; margin-top:4px; font-size:12.5px; font-weight:600; }
 .auto-verdict.warn { color:var(--warn); }
@@ -141,13 +141,13 @@ export const automationsCSS = `
 .auto-fire { margin:2px 0 0 12px; }
 /* The summary line: authored, or derived from the prompt's first line (muted italic, its title says so). */
 .auto-sub.auto-summary.derived { font-style:italic; }
-.auto-qid { margin:0; color:var(--muted); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-qid { margin:0; color:var(--muted); font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .auto-page .page-lede { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; overflow-wrap:anywhere; }
 .oats-view .auto-page button.auto-lede-edit { height:24px; min-height:24px; padding:0 8px; border-radius:6px; font-size:12px; font-weight:600; }
 /* A command's argv, verbatim: one chip per argument, so the boundaries show. */
 .auto-argv { display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:12px 14px; list-style:none; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
-.auto-argv li { padding:1px 6px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font:12.5px/1.6 var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
-.auto-command { padding:1px 4px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-argv li { padding:1px 6px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font-weight:normal; font-size:12.5px; line-height:1.6; font-family:var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.auto-command { padding:1px 4px; border-radius:4px; background:var(--chip-bg); color:var(--fg); font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .auto-card-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
 .oats-view .auto-card-actions button.act { height:28px; min-height:28px; padding:0 10px; border-radius:6px; font-size:12px; font-weight:600; }
 /* Edit summary: a small modal sheet over the page. */
@@ -169,11 +169,11 @@ export const automationsCSS = `
 .auto-source-lists { display:flex; flex-direction:column; gap:8px; min-width:0; margin-top:8px; }
 .auto-source-lists .auto-list-head { margin:0; }
 .auto-confirm { gap:8px; border-color:var(--attn-border); }
-.auto-confirm .auto-test-line code, .auto-test-line code.auto-mono { font:12px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-confirm .auto-test-line code, .auto-test-line code.auto-mono { font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .auto-confirm-status:focus-visible, .page-card-title:focus-visible { outline:1px solid var(--accent); outline-offset:2px; border-radius:3px; }
 .auto-confirm-status { margin:0; color:var(--muted); font-size:12px; }
 .auto-confirm-status:empty { display:none; }
-.auto-fire .auto-fire-url { display:block; color:var(--muted); font:11.5px var(--mono,monospace); overflow-wrap:anywhere; }
+.auto-fire .auto-fire-url { display:block; color:var(--muted); font-weight:normal; font-size:11.5px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 `;
 
 /** "14:05" today, else "6 Oct, 14:05": when a run state began (its title keeps the full date). */

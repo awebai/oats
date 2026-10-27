@@ -164,7 +164,7 @@ function nextSelectionIntent() {
 function ownsSelection(s, ref) {
   return s.alive && ref.gen === workspaceGeneration() && ref.intent === selectionIntent;
 }
-/** The shell's navigation to a Workspace tab (⌘1 on Machines, Choose a soul's chord on Souls, the leader's 3
+/** The shell's navigation to a Workspace tab (⌘1 on Machines, app.chooseSoul's chord on Souls, the leader's 3
  * on Capabilities, the palette's) is an inspection intent, never a launch. */
 export function preselectWorkspaceTab(name) {
   if (!workspaceTabs.includes(name)) return false;

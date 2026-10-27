@@ -7,7 +7,7 @@ import { iconElement } from './shell-icons.mjs';
 export const groupHeadingCSS = `
 .souls-group-title { display:flex; align-items:center; gap:8px; margin:0; padding:0 2px; color:var(--fg); font-size:13px; font-weight:650; min-width:0; }
 .souls-group-title .shell-icon { flex:none; color:var(--muted); }
-.souls-group-name { font:650 13px var(--mono,monospace); overflow-wrap:anywhere; }
+.souls-group-name { font-weight:650; font-size:13px; line-height:normal; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .souls-group-name.plain { font-family:inherit; }
 .souls-group-title.warn .souls-group-name { color:var(--warn); }
 .souls-group-title.warn .shell-icon { color:var(--warn); }

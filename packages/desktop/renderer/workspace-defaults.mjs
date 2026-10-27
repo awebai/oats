@@ -43,7 +43,7 @@ export const defaultsCSS = `
 .ws-default-tile[data-tint=clay] { background:var(--soul-clay-bg); color:var(--soul-clay-fg); }
 .ws-default-stack { display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; }
 .ws-default-label { height:24px; color:var(--muted); font-weight:600; font-size:12px; font-family:var(--ui-font,system-ui); line-height:24px; }
-.ws-default-name { min-width:0; max-width:100%; color:var(--fg); font:650 14px var(--mono,monospace); line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ws-default-name { min-width:0; max-width:100%; color:var(--fg); font-weight:650; font-size:14px; font-family:var(--mono,monospace); line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ws-default-none { color:var(--muted); font-weight:500; font-size:14px; font-family:var(--ui-font,system-ui); line-height:24px; }
 .ws-default-note { color:var(--muted); font-size:12px; line-height:1.4; }
 .ws-default-cell .source-chip { max-width:100%; }

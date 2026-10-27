@@ -26,8 +26,8 @@ export const sourceQuoteCSS = `
 .source-quote-lead { margin:0; color:var(--muted); font-weight:normal; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); }
 .source-quote-lines { display:flex; flex-direction:column; gap:4px; margin:0; padding:0; list-style:none; min-width:0; }
 .source-quote-line { display:flex; flex-direction:column; gap:2px; min-width:0; }
-.source-quote-text { margin:0; padding:1px 0 1px 8px; border-left:2px solid var(--border); color:var(--fg); font:12px/1.5 var(--mono,monospace); white-space:normal; overflow-wrap:anywhere; }
-.source-quote-label { color:var(--fg); font:600 12px/1.45 var(--mono,monospace); overflow-wrap:anywhere; }
+.source-quote-text { margin:0; padding:1px 0 1px 8px; border-left:2px solid var(--border); color:var(--fg); font-weight:normal; font-size:12px; line-height:1.5; font-family:var(--mono,monospace); white-space:normal; overflow-wrap:anywhere; }
+.source-quote-label { color:var(--fg); font-weight:600; font-size:12px; line-height:1.45; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .source-quote-note { color:var(--muted); font-weight:normal; font-size:11.5px; line-height:1.45; font-family:var(--ui-font,system-ui); overflow-wrap:anywhere; }
 `;
 

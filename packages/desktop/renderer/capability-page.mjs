@@ -34,7 +34,7 @@ export const pageCardCSS = `
 .page-glyph { display:grid; place-items:center; background:var(--chip-bg); color:var(--fg); }
 .page-identity-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
 .page-title { display:flex; align-items:center; gap:10px; min-width:0; margin:0; font-size:20px; font-weight:700; letter-spacing:-.01em; overflow-wrap:anywhere; }
-.page-title.mono { font:700 20px var(--mono,monospace); }
+.page-title.mono { font-weight:700; font-size:20px; line-height:normal; font-family:var(--mono,monospace); }
 .page-tag { display:inline-flex; align-items:center; height:22px; padding:0 7px; border-radius:5px; background:var(--chip-bg); color:var(--fg); font-weight:650; font-size:11.5px; line-height:normal; font-family:var(--ui-font,system-ui); letter-spacing:0; white-space:nowrap; }
 .page-lede { margin:0; color:var(--muted); font-size:13px; }
 /* desktop/loading-states item 7: the catalog's facts arrive after the page (opened from a soul): a
@@ -60,14 +60,14 @@ export const pageCardCSS = `
 .page-card-title { display:flex; align-items:baseline; gap:8px; margin:0 0 4px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 .page-card-title .shell-icon { align-self:center; }
 .page-card-lead { color:var(--muted); font-size:11.5px; font-weight:400; letter-spacing:0; text-transform:none; }
-.page-card-count { color:var(--muted); font:11px var(--mono,monospace); letter-spacing:0; text-transform:none; }
+.page-card-count { color:var(--muted); font-weight:normal; font-size:11px; line-height:normal; font-family:var(--mono,monospace); letter-spacing:0; text-transform:none; }
 .page-note { margin:0; color:var(--muted); font-size:12px; line-height:1.5; }
-.page-list-item { display:flex; align-items:center; gap:8px; min-height:26px; font:12px var(--mono,monospace); min-width:0; }
+.page-list-item { display:flex; align-items:center; gap:8px; min-height:26px; font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); min-width:0; }
 .page-list-item > :first-child { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .page-kv { display:grid; grid-template-columns:84px minmax(0,1fr); gap:10px; align-items:center; min-height:32px; border-bottom:1px solid var(--tag-bg); }
 .page-kv:last-child { border-bottom:0; }
 .page-kv dt { color:var(--muted); font-size:12px; }
-.page-kv dd { margin:0; font:12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.page-kv dd { margin:0; font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .page-kv.wrap dd { white-space:normal; overflow:visible; padding:6px 0; }
 .page-kv.wrap .path-part { white-space:nowrap; }
 .page-kv-list { margin:0; }
@@ -99,10 +99,10 @@ export const capabilityPageCSS = `
 .capability-page .provides-card { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:0 16px; margin:0; padding:4px 14px; }
 .capability-page .provides-row { display:contents; }
 .capability-page .provides-kind { display:flex; align-items:baseline; gap:6px; padding:9px 0; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
-.capability-page .provides-count { font:11px var(--mono,monospace); letter-spacing:0; }
+.capability-page .provides-count { font-weight:normal; font-size:11px; line-height:normal; font-family:var(--mono,monospace); letter-spacing:0; }
 .capability-page .provides-items { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; margin:0; padding:6px 0; }
 .capability-page .provides-row + .provides-row > * { border-top:1px solid var(--tag-bg); }
-.capability-page .provides-chip { display:inline-block; max-width:100%; padding:2px 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font:12px/1.5 var(--mono,monospace); overflow-wrap:anywhere; }
+.capability-page .provides-chip { display:inline-block; max-width:100%; padding:2px 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-weight:normal; font-size:12px; line-height:1.5; font-family:var(--mono,monospace); overflow-wrap:anywhere; }
 .capability-page .provides-items .page-note { padding:2px 0; }
 /* Trigger sources: the manifest's own words, quoted (source-quote.mjs), or the plain lines that say they can't be read. */
 .capability-page .provides-items.provides-sources { flex-direction:column; flex-wrap:nowrap; align-items:stretch; gap:3px; padding:8px 0; }
@@ -116,7 +116,7 @@ export const soulCapabilitiesCSS = `
 .soul-caps .soul-cap-row { grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr); min-height:44px; }
 .soul-caps .soul-cap-row.head { min-height:34px; }
 .soul-cap-name { display:flex; flex-direction:column; min-width:0; }
-.soul-cap-id { color:var(--fg); font:600 12.5px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-cap-id { color:var(--fg); font-weight:600; font-size:12.5px; line-height:normal; font-family:var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .soul-cap-note { color:var(--muted); font-size:11px; }
 .soul-cap-row.off:not(.none) .soul-cap-id { color:var(--muted); text-decoration:line-through; }
 .soul-cap-why { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; padding:6px 0; font-size:12px; }

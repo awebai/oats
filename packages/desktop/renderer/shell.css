@@ -136,7 +136,7 @@ body {
                  padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--muted);
                  font-family: inherit; font-size: 12px; line-height: 1; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .shortcut-hint { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-                 font: 500 10.5px var(--mono); }
+                 font-weight: 500; font-size: 10.5px; line-height: normal; font-family: var(--mono); }
 .shortcut-hint[hidden] { display: none; }
 #sidebar-spawn:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
 #sidebar-spawn:focus-visible { background: var(--sel); color: var(--fg); }
@@ -225,7 +225,7 @@ body {
 .ctx-instance-menu button { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 8px; appearance: none; border: 0; border-radius: 6px; padding: 7px 8px;
   background: none; color: var(--fg); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
 .ctx-instance-menu button small { grid-column:1/-1; color:var(--muted); font-size:11px; }
-.ctx-instance-menu button kbd { color:var(--muted); font:10.5px var(--mono); }
+.ctx-instance-menu button kbd { color:var(--muted); font-weight:normal; font-size:10.5px; line-height:normal; font-family:var(--mono); }
 .ctx-instance-menu button [hidden] { display:none; }
 .ctx-instance-menu button:hover, .ctx-instance-menu button:focus-visible { background: var(--sel); }
 .ctx-instance-menu button[data-action="retire"], .ctx-instance-menu button.danger { color: var(--danger); }

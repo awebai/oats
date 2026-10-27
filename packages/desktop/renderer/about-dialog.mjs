@@ -22,7 +22,7 @@ export const aboutCSS = `
 .lifecycle-dialog.about-dialog { width:min(520px, calc(100vw - 32px)); font-size:13px; }
 .about-dialog h2, .about-dialog > p { color:var(--fg); }
 .about-dialog .lifecycle-mark { color:var(--accent); }
-.about-dialog code { font:12px var(--mono,monospace); }
+.about-dialog code { font-weight:normal; font-size:12px; line-height:normal; font-family:var(--mono,monospace); }
 .lifecycle-dialog.about-dialog dl.about-terms { grid-template-columns:max-content minmax(0,1fr); gap:10px 14px; align-items:baseline; margin:0; padding:12px 14px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
 .lifecycle-dialog.about-dialog .about-terms dt { display:flex; align-items:center; align-self:start; gap:7px; color:var(--fg); font-weight:650; white-space:nowrap; line-height:1.5; }
 .about-dialog .about-terms dt .shell-icon { flex:none; color:var(--muted); }

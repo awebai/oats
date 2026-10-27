@@ -177,8 +177,11 @@ export function readKeyboardLayout(nav = globalThis.navigator) {
   return Promise.resolve();
 }
 function macOptionKey(e) {
-  // ⌥Space types a no-break space: the Space key is Space on every layout, so a ⌥ chord with Space
-  // given in the shortcuts editor (the font picker's, say) matches.
+  // ⌥Space types a no-break space, a key no chord names. Every ⌘⌥ / ⌃⌥ press on Space reads Space, as a
+  // letter or digit key reads its letter or digit here, not only the font picker's: the key is read before any
+  // action is known, and the shortcuts editor records what this reads, so a ⌥ chord with Space given there, for
+  // any action, matches its own press. No default holds ⌥ with ⌘ or ⌃ on Space in any family, so no default's
+  // matching changes (keymap-linux.test.mjs).
   if (e.code === "Space") return "space";
   const m = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(String(e.code || ""));
   if (!m) return null;
