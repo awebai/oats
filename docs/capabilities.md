@@ -1061,7 +1061,16 @@ claim belongs to producer `agent`. Only `--clear` or the next session start,
 restart or stop clears it. An instance whose human talks to its parent rather
 than to it sends the question to its parent instead; the parent sets its own
 claim naming the child and relays the answer. A claim is never set for
-another home. The message is one line of at most 200
+another home.
+
+**Retiring finished children.** The oats.core inject and `/oats-operate` also
+teach every instance to retire its own children once they are finished,
+without asking a human, unless its task or human says to keep them. Finished
+means the work landed (or was dropped), nothing waits on the child, the child
+has retired its own children, and any final knowledge harvest is launched; the
+child says so in its done report ("done, harvested: <harvester>" or "done, no
+harvest duty"). Every other act on another instance still needs the task's or
+the human's word. The message is one line of at most 200
 characters; control characters, the Unicode line and paragraph separators,
 bidi controls (U+202A–202E, U+2066–2069), U+200B, U+2060, U+FEFF and tag
 characters (U+E0000–E007F) are refused, and everything else (emoji ZWJ

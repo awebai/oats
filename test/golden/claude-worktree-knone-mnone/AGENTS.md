@@ -12,22 +12,28 @@ You are the golden-fixture developer soul.
 **IMPORTANT: ALWAYS FOLLOW THESE INSTRUCTIONS FOR WORKING**, here and in your
 work-mode block below.
 
-- **Your home** (`$OATS_INSTANCE_HOME`, where this session starts; not `~`,
-  not the repository) holds your brain and state: `AGENTS.md`, `TASK.md`,
-  `instance.json` and your role's working state. **ALWAYS run `oats` and your
-  capabilities' commands from your home**: they resolve their scope from where
-  you run them. For another scope on purpose: `oats <cmd> --dir <path>`.
+**Your home is where this session starts** (`$OATS_INSTANCE_HOME`). It is not
+your user home (`~`), not the repository root, and not the work tree.
 
-**`./work` is your repository or workspace view**, as your work mode grants it.
+- It holds your brain and state: `AGENTS.md`, `TASK.md`, `instance.json` and
+  your role's working state. Never put them in `./work`.
+- **ALWAYS run OATS commands, and commands from active capabilities, from
+  instance home** (for example, when the aweb messaging capability is active,
+  `aw` too): they resolve their scope from where you run them. For another
+  scope on purpose: `oats <cmd> --dir <path>`.
+
+**`<instance-home>/work` is your repository or workspace view**, as your work
+mode grants it.
 
 - **Repository work happens there, or in the extra trees your mode block
   grants, and nowhere else**: reading, editing, building, testing, git and
   commits, on repository content. Never from the main checkout or from your
   home root, beyond what your mode block names.
-- **Your mode block, below, is the authority on what you may do there.**
-- When your task is to change soul content in the repository, that is ordinary
-  repository work; your own learnings reach your soul only through your
-  knowledge capability, if you have one.
+- **What your mode permits is the mode block's call**: your mode block, below,
+  is the authority.
+- If your TASK is to change soul content that lives in this repository, that is
+  ordinary repository work. How your own learnings reach your soul is your
+  knowledge capability's business.
 - Reports and scratch files go where your task and tooling direct.
 <!-- /oats:kernel:instance-boundary -->
 
@@ -40,7 +46,7 @@ test and commit there.
 - **NEVER work in a shared checkout** (the main checkout, or a clone others
   use). Touch a clone only through `oats worktree add`/`remove`. If unsure, `pwd`.
 - Every repository change, **your own soul included**, is a change on your
-  branch, reviewed and merged like code. Leave your branch and worktree list
+  branch or an extra tree's, reviewed and merged like code. Leave your branch and worktree list
   clean at the end.
 
 ### Extra trees
@@ -57,5 +63,6 @@ to start from, or the one you rework):
 - Push with `git push origin HEAD:<remote-branch>` (`<base>` when reworking).
 - Before you finish, merge each tree into your PR branch, or push it and name
   it in your hand-back; then `oats worktree remove --purpose <purpose>`.
+  Retirement may keep a tree with uncommitted work; don't rely on it.
   Details: `oats worktree --help`, and `/oats-operate` if you have it.
 <!-- /oats:work-mode:worktree -->

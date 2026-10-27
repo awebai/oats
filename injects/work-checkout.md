@@ -22,4 +22,5 @@ to start from, or the one you rework):
 - Push with `git push origin HEAD:<remote-branch>` (`<base>` when reworking).
 - Before you finish, merge each tree into your PR branch, or push it and name
   it in your hand-back; then `oats worktree remove --purpose <purpose>`.
+  Retirement may keep a tree with uncommitted work; don't rely on it.
   Details: `oats worktree --help`, and `/oats-operate` if you have it.
