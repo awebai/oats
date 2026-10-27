@@ -14,7 +14,8 @@
   "inject": "injects/oats.md",
   "hooks": {
     "spawn": "bin/oats-core.mjs spawn",
-    "launch": "bin/oats-core.mjs launch"
+    "launch": "bin/oats-core.mjs launch",
+    "upgrade": "bin/oats-core.mjs upgrade"
   },
   "launchPreview": true
 }

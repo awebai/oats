@@ -1164,7 +1164,8 @@ clears it.
   in the home (`.oats/modules/oats.core`), which a start does not refresh. A
   home spawned with an oats.core that does not read the variable therefore
   writes its hook's own node path at every start: a restart repairs its
-  hooks after each Node upgrade, and a respawn gives it the lasting path. A
+  hooks after each Node upgrade, and a respawn, or an upgrade of its
+  oats.core (below), gives it the lasting path. A
   launch preview writes nothing. Every pass answers `{}`: no launch arguments and no env. Codex
   and pi homes get nothing.
 - **It never hurts the session.** Claude Code reads a hook's stdout and exit
@@ -1237,6 +1238,21 @@ clears it.
   exactly `.claude/settings.json`. oats.core writes it at spawn before the
   retirement baseline is taken, and again at every start.
 
+**Across `oats instance upgrade`.** oats.core 2.8.0 declares an `upgrade`
+hook ([the upgrade event](#the-upgrade-event)), not required, so a stopped
+home whose oats.core moves to it is upgraded rather than respawned. The
+hook that runs is the destination's, so this covers homes spawned on any
+earlier oats.core, with or without the emitter. oats.core records no
+capability metadata, and its settings entries name the module copy's path,
+`.oats/modules/oats.core`, which an upgrade keeps; the next start's launch
+hook rewrites them. So `plan` adopts a home whose recorded
+`capabilityMeta["oats.core"]` is absent or `{}`, and refuses any other value
+as state it cannot vouch for, with the remedy `respawn the instance: oats
+retire <instance>, then oats spawn`. `apply` returns `{"meta":{}}`, which the
+kernel records as `capabilityMeta["oats.core"]`, and exits 1 with a JSON
+`warning` on any other metadata. Neither phase reads the home or calls the
+host.
+
 **Why the project settings file, not `--settings`.** On Claude Code
 2.1.288, Claude honours only the last `--settings` flag on a command line:
 that file replaces earlier ones wholesale, even one with no hooks. The
@@ -1302,7 +1318,9 @@ again" permission rules there.
   so its `Stop` and `SessionEnd` clears can erase the home's own live
   `oats.core` claim ([#557](https://github.com/awebai/oats/issues/557)).
 - A Claude instance spawned before the upgrade gets the emitter only when
-  it is respawned. Its launch hook comes from its recorded module copy.
+  it is respawned, or when `oats instance upgrade` moves its oats.core to
+  2.8.0 or later and it starts again. Its launch hook comes from its
+  recorded module copy.
 
 ## Operations a capability declares
 

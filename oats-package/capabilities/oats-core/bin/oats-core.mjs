@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * oats-core: the oats.core capability's lifecycle hook (spawn and launch).
+ * oats-core: the oats.core capability's lifecycle hook (spawn, launch and upgrade).
  *
  * For a Claude Code instance it manages oats.core's own entries in the
  * instance's project settings, <home>/.claude/settings.json: Claude Code hooks
@@ -22,13 +22,18 @@
  * OATS_LAUNCH_PREVIEW=1. The manifest declares `launchPreview:
  * true`: a preview writes nothing, and every pass answers the same contribution
  * (`{}`, never launch args or env), apart from a warning. The hooks are
- * advisory (string form): this script never throws and always exits 0 with a
- * JSON last line.
+ * advisory (string form): this script never throws and ends with a JSON last
+ * line, exiting 0 for spawn and launch; upgrade() says when upgrade exits 1.
  *
  * The spawn hook writes the file for `oats spawn` (which runs no launch hook);
  * the launch hook rewrites it at every `oats session start|restart`, so the
  * baked node and CLI paths follow the kernel the home now runs with. The hook
  * that runs is this module copy in the home, whatever oats.core is current.
+ *
+ * The upgrade hook (`oats instance upgrade`, a stopped home) adopts a home whose
+ * oats.core moves: spawn and launch answer no meta, so the only state oats.core
+ * keeps is those settings entries, which name the module copy's fixed path and
+ * which the next launch rewrites. It reads nothing and calls no host; see upgrade().
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -249,9 +254,35 @@ export function runHook(event, env = process.env) {
   return warning ? { warning } : {};
 }
 
+/** The upgrade hook's answer for its phase (OATS_UPGRADE_PHASE) and the exit status it
+ *  ends with. oats.core records no meta, so a home whose recorded meta (OATS_META) is the
+ *  empty object is adopted and carried unchanged; any other recorded meta is state this
+ *  hook cannot vouch for, so plan refuses it with the respawn remedy and apply fails. An
+ *  unknown phase fails. Unlike spawn and launch, a failure exits 1: the kernel reads a
+ *  failed apply as refused, and its JSON warning as the diagnosis. */
+export function upgrade(env = process.env) {
+  let meta, problem = null;
+  try { meta = JSON.parse(env.OATS_META ?? ""); } catch { problem = "OATS_META is not valid JSON"; }
+  if (!problem && !isObject(meta)) problem = `OATS_META is ${JSON.stringify(meta).slice(0, 100)}, not the empty object oats.core records`;
+  else if (!problem && Object.keys(meta).length) problem = `OATS_META holds keys oats.core never records (${Object.keys(meta).join(", ").slice(0, 200)})`;
+  const phase = env.OATS_UPGRADE_PHASE;
+  if (phase === "plan") {
+    return { status: 0, answer: problem ? { adopt: false, reason: `oats.core: ${problem}`, remedy: `respawn the instance: oats retire ${env.OATS_INSTANCE}, then oats spawn` } : { adopt: true } };
+  }
+  if (phase !== "apply") return { status: 1, answer: { warning: "oats.core: OATS_UPGRADE_PHASE must be plan or apply" } };
+  if (problem) return { status: 1, answer: { warning: `oats.core: ${problem}` } };
+  return { status: 0, answer: { meta } };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
-  let answer;
-  try { answer = runHook(process.argv[2]); } catch (e) { answer = { warning: `oats.core: ${process.argv[2]} hook failed: ${String(e?.message || e).slice(0, 200)}` }; }
-  process.stdout.write(`${JSON.stringify(answer)}\n`);
-  process.exitCode = 0;
+  if (process.argv[2] === "upgrade") {
+    const { status, answer } = upgrade();
+    process.stdout.write(`${JSON.stringify(answer)}\n`);
+    process.exitCode = status;
+  } else {
+    let answer;
+    try { answer = runHook(process.argv[2]); } catch (e) { answer = { warning: `oats.core: ${process.argv[2]} hook failed: ${String(e?.message || e).slice(0, 200)}` }; }
+    process.stdout.write(`${JSON.stringify(answer)}\n`);
+    process.exitCode = 0;
+  }
 }
