@@ -172,6 +172,9 @@ export function deploymentHead(doc, { deployment, rows, open = false, onToggle }
     if (deployment.short) line.append(el(doc, 'span', deployment.short, 'cct hier-dshort'));
   }
   head.append(line);
+  // What the tree under it is (the Machines tab, 2026-10-26): the instances on that machine, said under its name.
+  const here = !(typeof deployment?.machine === 'string' && deployment.machine);
+  head.append(el(doc, 'div', here ? 'Instances on this machine' : `Instances on ${parts.machine}`, 'hier-dsub'));
   // With steps to follow, the steps are the explanation (the short reason above already names the
   // cause; the full sentence would repeat step 1): only a remembered deployment's "Last report" lead
   // stays. Without steps, the full sentence says what happens.

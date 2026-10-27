@@ -9,6 +9,7 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createTerminalSettings } from "../renderer/settings-terminal.mjs";
 import { createConnections } from "../renderer/connections.mjs";
+import { SETTINGS_ITEMS } from "../renderer/sidebar-settings.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const themeSource = read("theme.mjs"), shell = read("shell.mjs");
@@ -123,7 +124,7 @@ test("the section is labelled and keyboard-operable, built from the Settings com
     "the shipped default store is the composition the tests use");
 });
 
-test("Settings mounts Terminal after Connections, traps Tab through its field, and disposes it on close; the button is titled Settings", async t => {
+test("Settings mounts Terminal after Connections, traps Tab through its field, and disposes it on close; it opens from the palette and its action", async t => {
   const dom = new JSDOM('<!doctype html><body><button id="opener">Settings</button></body>', { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document;
@@ -151,7 +152,15 @@ test("Settings mounts Terminal after Connections, traps Tab through its field, a
   assert.equal(disposed, 1, "closing Settings drops the section's subscription");
   assert.equal(doc.querySelector('[role="dialog"]'), null);
   const html = read("index.html");
-  assert.match(html, /id="sidebar-settings"[^>]*\n?\s*title="Settings" aria-label="Settings"/);
+  // The sidebar layout (2026-10-23): Connections lives in the palette (Settings: Connections…) and the registry
+  // (app.connections), both opening this dialog. The sidebar has no button for it, and the settings cog's menu
+  // (Theme…, Keyboard shortcuts…) leaves it out.
+  assert.doesNotMatch(html, /data-action="app\.connections"/);
+  assert.match(html, /<button id="sidebar-settings" class="side-icon-button sidebar-settings icon-button" type="button" aria-label="Settings" title="Settings"><\/button>/,
+    "the cog carries no action of its own: its menu does");
+  assert.equal(SETTINGS_ITEMS.some(({ action }) => action === "app.connections"), false, "not in the cog's menu");
+  assert.match(shell, /\{ label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: \(\) => openConnections\(\) \}/);
+  assert.match(shell, /registerAction\(\{ id: "app\.connections", label: "Settings: Connections…", context: "global", run: \(\) => openConnections\(\) \}\);/);
   assert.match(shell, /sections: \[\(\) => createTerminalSettings\(\{ doc: document, chords: \{/);
   assert.match(shell, /connectionsCSS \+ settingsTerminalCSS/);
 });

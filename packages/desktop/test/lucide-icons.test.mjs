@@ -53,3 +53,20 @@ test('renderer chrome uses icons, not the replaced text glyphs', () => {
     }
   }
 });
+
+// The needs-input mark (2026-10-23) is drawn here, not Lucide's: OWN_ICONS, outside ICONS, so the inventory above stays
+// Lucide's alone. A full disc, then the "!" as a bar and a separate dot, with room between them at 10–14px.
+test('the attention mark: a disc and a bold "!", by class, with safe attributes only', () => {
+  const dom = new JSDOM('<!doctype html><body></body>');
+  assert.equal(Object.hasOwn(ICONS, 'attention'), false, 'not a Lucide name');
+  const el = iconElement(dom.window.document, 'attention', { size: 10, className: 'attn-mark' });
+  assert.equal(el.getAttribute('class'), 'attn-mark'); assert.equal(el.getAttribute('viewBox'), '0 0 24 24');
+  assert.deepEqual([...el.children].map(c => [c.localName, c.getAttribute('class')]), [['circle', 'attn-disc'], ['rect', 'attn-glyph'], ['circle', 'attn-glyph']]);
+  const [disc, bar, dot] = el.children;
+  assert.deepEqual(['cx', 'cy', 'r'].map(k => disc.getAttribute(k)), ['12', '12', '12'], 'the full 24-unit disc');
+  const barEnd = Number(bar.getAttribute('y')) + Number(bar.getAttribute('height')), dotTop = Number(dot.getAttribute('cy')) - Number(dot.getAttribute('r'));
+  assert.ok(dotTop - barEnd >= 1.9, `the bar and the dot stay apart (${(dotTop - barEnd).toFixed(1)} units, 0.83px at 10px)`);
+  assert.ok(Number(bar.getAttribute('width')) >= 3, 'a bold bar');
+  assert.doesNotMatch(icon('attention'), /on[a-z]+=|javascript:|<script|foreignObject/i);
+  dom.window.close();
+});

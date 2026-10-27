@@ -440,7 +440,7 @@ test("a run says it is reading, draws the instances when the reader answers (the
   assert.match(textOf(r.stdout.take()), /^ {2}deploy +│.*Instances +1 │ +Reading the deployment\..*Souls +2 │ Capabilities +3 │.*Ctrl\+\\ +commands.*\? +help.*q +quit/s);
   r.reader.answer(ENTRY);
   const answered = textOf(r.stdout.take());
-  assert.match(answered, /^ {2}acme-platform +│.*● acme-expert-tui.*○ acme-maintainer-ops/s);
+  assert.match(answered, /^ {2}acme-platform +│.*● Acme expert tui.*○ Acme maintainer ops/s);
   assert.doesNotMatch(answered, /\d+ (running|stopped)/, "no counts: the header that held them is gone");
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
@@ -555,12 +555,12 @@ test("a resize redraws in full; below 60x15 the screen is the too-small line, an
   r.stdout.resize(60, 15);
   let out = r.stdout.take();
   assert.equal(out.startsWith("\x1b[?2026h\x1b[0m\x1b[2J"), true, "a resize clears first, inside the frame's synchronized update");
-  assert.match(textOf(out), /^ {2}acme-platform.*acme-maintainer-ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +w +workspaces +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
+  assert.match(textOf(out), /^ {2}acme-platform.*Acme maintainer ops.*Ctrl\+\\ +commands +Ctrl\+K +palette +n +spawn +w +workspaces +\? +help +q +quit$/s, "at 15 rows the small cheat sheet gives up nothing");
   r.stdout.resize(59, 14);
   out = r.stdout.take();
   assert.equal(textOf(out), "Terminal too small: 59x14, oats tui needs 60x15.");
   r.stdout.resize(80, 24);
-  assert.match(textOf(r.stdout.take()), /acme-maintainer-ops +│ +soul +acme-maintainer\b.*> ○ acme-maintainer-ops/s, "the selection is where it was, its detail beside the list");
+  assert.match(textOf(r.stdout.take()), /acme-maintainer-ops +│ +soul +acme-maintainer\b.*> ○ Acme maintainer ops/s, "the selection is where it was, its detail beside the list");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -819,11 +819,11 @@ test("an add the kernel refuses is said once, under the sidebar's list of worksp
   const said = sidebarOf(r);
   // Under the list of workspaces, the open one's row (this computer's listed deployments are the switcher's).
   assert.match(said, /^acme-platform This deployment was not added to this computer's list: This computer's list of deployments is busy; try again\. /, said);
-  assert.match(said, /acme-expert-tui.*acme-maintainer-ops/s, "the deployment is read and drawn all the same");
+  assert.match(said, /Acme expert tui.*Acme maintainer ops/s, "the deployment is read and drawn all the same");
   r.stdin.type("j");
   const after = screenOf(r);
   assert.doesNotMatch(after, /not added/, "said once: the next key puts it away");
-  assert.match(after, /acme-expert-tui.*acme-maintainer-ops/s);
+  assert.match(after, /Acme expert tui.*Acme maintainer ops/s);
   r.reader.answer(ENTRY);
   r.stdin.type("w"); r.stdin.type("w"); await settle();
   assert.match(screenOf(r), /On this machine, not opened.*acme-ledger/s, "the list is read as ever");
@@ -998,7 +998,7 @@ test("Enter on a row of this computer's list that is no deployment any more: its
   r.stdin.type("\x1b");
   r.tick(50);
   r.timers.fire();
-  assert.match(screenOf(r), /^ {2}acme-platform.*acme-expert-tui.*acme-maintainer-ops/s);
+  assert.match(screenOf(r), /^ {2}acme-platform.*Acme expert tui.*Acme maintainer ops/s);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1212,7 +1212,7 @@ test("the roster of other machines: a read that began changes nothing on the scr
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
   assert.notEqual(r.stdout.take(), "", "the answer is drawn when it arrives");
   const two = screenOf(r);
-  assert.match(two, /^ {2}acme-platform\s+│.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-held  not reachable on g…/s, "the name before its word: the word is cut to what the name leaves");
+  assert.match(two, /^ {2}acme-platform\s+│.*This machine.*Acme expert tui.*Acme maintainer ops.*garnet\s+read 10:00:45.*● Dev far.*○ Dev held  not reachable on g…/s, "the name before its word: the word is cut to what the name leaves");
   assert.doesNotMatch(two, /\d+ (running|stopped)/, "no counts on the screen");
   // What the loop holds is what the shared rule made of the answer, and the reader is told it.
   const now = r.reader.options.getRoster(), made = rosterEvent(held, { envelope: rosterAnswer([garnet()]) }, "2026-10-11T10:00:45.000Z").roster;
@@ -1224,7 +1224,7 @@ test("the roster of other machines: a read that began changes nothing on the scr
   r.reader.collecting();
   r.reader.roster({ thrown: "spawn EMFILE" });
   const lost = screenOf(r);
-  assert.match(lost, /This machine.*garnet\s+remembered\s+Not reached.*\? dev-far\s+garnet not reached.*\? dev-held\s+garnet not reached/s);
+  assert.match(lost, /This machine.*garnet\s+remembered\s+Not reached.*\? Dev far\s+garnet not reached.*\? Dev held\s+garnet not reached/s);
   assert.doesNotMatch(lost, /\d+ (running|stopped|unknown)/, "no counts on the screen");
   assert.doesNotMatch(lost, /garnet\s+read /, "a heading that is not live carries no time");
   r.stdin.type("q");
@@ -1246,7 +1246,7 @@ test("Ctrl+Z with a roster read in flight: every read is made void before the pr
   r.stdout.take();
   r.reader.collecting();
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
-  assert.match(screenOf(r), /garnet\s+read 10:00:30.*dev-far/s);
+  assert.match(screenOf(r), /garnet\s+read 10:00:30.*Dev far/s);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -2190,8 +2190,8 @@ async function elsewhere(options = {}) {
   const r = await started({ kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG, ...options });
   r.reader.answer(HOME_ENTRY);
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
-  for (let i = 0; i < 6 && !/> +\S+ dev-far/.test(screenOf(r)); i++) r.stdin.type("j");
-  assert.match(screenOf(r), /> +\S+ dev-far/, "garnet's running row is selected");
+  for (let i = 0; i < 6 && !/> +\S+ Dev far/.test(screenOf(r)); i++) r.stdin.type("j");
+  assert.match(screenOf(r), /> +\S+ Dev far/, "garnet's running row is selected");
   r.stdout.take();
   r.log.length = 0;
   return r;

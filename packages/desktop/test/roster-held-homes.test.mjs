@@ -59,7 +59,7 @@ function fixture(t, rows, extra = {}) {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge,
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
-    contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
+    contextRosterEl: doc.querySelector("#instance-roster"), contextWorkspace: "A",
     rosterState: { hasData: true, state: "ready" }, rosterStale: false, contextDeploymentNote: null, ...viewContext(),
     currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     rosterTip: { bind(row, facts) { tips.set(row.dataset.treeInstance, facts); }, hide() {}, sync() {} }, rosterTipFacts,
@@ -78,7 +78,7 @@ function fixture(t, rows, extra = {}) {
   const paint = runInNewContext(`${source}\nrenderContextRoster`, context);
   const render = instances => { painted = instances; paint(instances); };
   const list = doc.querySelector(".ctx-list");
-  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.textContent === name);
+  const row = name => [...list.querySelectorAll(".ctx-inst")].find(b => b.querySelector(".ctx-name")?.dataset.name === name);
   const wrap = name => row(name).closest(".ctx-tree-row");
   const status = name => tips.get(row(name).dataset.treeInstance)?.().rows.find(([key]) => key === "Status")?.[1];
   const menu = name => [...wrap(name).querySelectorAll("[role=menuitem]")].map(item => item.dataset.action);
@@ -386,5 +386,7 @@ test("the same row reads every state of its retire in turn, and back to an ordin
   assert.deepEqual(read(retire("interrupted")), ["Retire didn't finish", "Retire didn't finish"]);
   const [meta, status] = read({});
   assert.equal(status, "running"); assert.doesNotMatch(meta, /Retir/);
+  assert.equal(u.row("dev-r").querySelector(".ctx-meta").className, "ctx-meta ctx-soul-repo", "its own meta line again: the soul and the repository");
+  assert.equal(meta, "devdesktop-repo");
   assert.deepEqual(u.menu("dev-r"), ["open-split", "open-pr", "inspect", "restart", "stop", "retire"]);
 });

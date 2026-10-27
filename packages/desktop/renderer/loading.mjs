@@ -499,7 +499,9 @@ export function createDataState({ doc, noun, region, skeletonHost = region, fail
       if (!keepSkeleton) { pendingTimer = clearTimer(pendingTimer); removeSkeleton(); }
       removeIndicator(); removeFailed();
       busy = false; user = false;
-      if (state !== 'pending') { state = 'pending'; if (keepSkeleton && !skeletonEl && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS); }
+      state = 'pending';
+      // Also when already pending: an unobserved deployment's defer() (no skeleton) followed by "still reading".
+      if (keepSkeleton && !skeletonEl && pendingTimer === null) pendingTimer = schedule(showSkeleton, PENDING_DELAY_MS);
       setRegionBusy(true); say(wording.loading(noun));
       setBusyControls(); syncQuiet();
     },

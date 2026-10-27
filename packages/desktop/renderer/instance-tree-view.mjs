@@ -1,15 +1,34 @@
 /** The Desktop's own half of the roster tree: the connectors it draws, its terminal tabs' keys, the
- * focus and scroll it keeps across a rebuild, the roster's count line and loading state. The tree
+ * focus and scroll it keeps across a rebuild, the roster's count line and loading state, and each row's name. The tree
  * itself (identity, relations, groups, order, visibility) is the shared packages/client/instance-tree.mjs. */
 import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
 import { instanceId, resolveLinkId, findRosterInstance } from '../../client/instance-tree.mjs';
+import { instanceDisplayName } from '../../client/instance-display-name.mjs';
 
-/** Agent-group boundary for the instances sidebar (Workspace v4): groups
- * read from spacing alone — a 14px gap, no title — and the boundary is still
- * exposed to assistive technology (role=separator with the group's name and
+/** An instance row's name (0.68.1, the product owner): the words shown (instanceDisplayName: "Oats expert maintainer
+ * lanes"), the real name kept where it identifies the instance. The words are hidden from assistive tech and a visually
+ * hidden copy of the real name is read in their place, so the row's accessible name is the name a search, a copy and
+ * the CLI use; the real name is also the element's data-name. The title, the hover card, Quick Open and tabs keep it. */
+export function rosterName(doc, instanceName) {
+  const name = doc.createElement("span");
+  name.className = "ctx-name";
+  name.dataset.name = instanceName;
+  const shown = doc.createElement("span");
+  shown.setAttribute("aria-hidden", "true");
+  shown.textContent = instanceDisplayName(instanceName) || instanceName;
+  const real = doc.createElement("span");
+  real.className = "sr-only";
+  real.textContent = instanceName;
+  name.append(shown, real);
+  return name;
+}
+
+/** Agent-group boundary for the instances sidebar (Workspace v4): no title,
+ * a 6px gap (2026-10-23; was 14px), with the cluster's indent and its root,
+ * and the boundary is still exposed to assistive technology (role=separator with the group's name and
  * the number of rows shown under it). The group is the relation cluster
- * (never the repo), decided on the full roster, so a filter or a collapse
- * never moves a row to another group; unrelated instances share one
+ * (never the repo), decided on the full roster, so a collapse never moves
+ * a row to another group; unrelated instances share one
  * "independent" group. Importable so the regression exercises the exact
  * builder the shell uses. */
 export function clusterSeparator(doc, { label, count } = {}) {
@@ -229,14 +248,21 @@ export const staleBlocked = control => control?.getAttribute?.("aria-disabled") 
 /** The pending skeleton: five roster rows, the height of the real ones. */
 export const ROSTER_SKELETON_ROWS = 5;
 
+/** The sidebar foot's Spawn instance while it can take focus, else null. */
+function spawnAction(rosterEl) {
+  const spawn = rosterEl.ownerDocument.getElementById("sidebar-spawn");
+  return spawn && !spawn.disabled && !spawn.closest("[hidden]") ? spawn : null;
+}
+
 /** The sidebar roster's data-state controller (renderer/loading.mjs), wired
  * to the shipped chrome of `#instance-roster`:
  *   region / skeletonHost   .ctx-list  (aria-busy while pending; the skeleton or the failed block live here)
  *   indicatorHost           .ctx-head  ("Refreshing…" after the count)
- *   noticeHost              .ctx-status, created between the filter field and the list (the stale line + Retry)
+ *   noticeHost              .ctx-status, created between the head and the list (the stale line + Retry)
  *   status                  a visually hidden role="status" line appended to the roster (the sidebar shows none)
- *   focusFallback           the filter input, when a focused Retry has to go
- * Test DOMs may lack the head or the filter field: the controller then has
+ *   focusFallback           the roster's current row, else the foot's Spawn instance (an empty roster), else the
+ *                           workspace list's stop or its Add, when a focused Retry has to go
+ * Test DOMs may lack the head: the controller then has
  * no indicator host and the status host sits right before the list.
  * `now` / `setTimeout` / `clearTimeout` are the primitive's injectable clock. */
 export function createRosterLoading(doc, rosterEl, { onRetry = null, now, setTimeout, clearTimeout } = {}) {
@@ -254,7 +280,9 @@ export function createRosterLoading(doc, rosterEl, { onRetry = null, now, setTim
     doc, noun: "instances", region: listEl, skeletonHost: listEl,
     skeleton: () => skeletonBlock(doc, "roster-row", { count: ROSTER_SKELETON_ROWS }),
     status, indicatorHost: rosterEl.querySelector(".ctx-head"), noticeHost, onRetry,
-    focusFallback: () => rosterEl.querySelector(".ctx-filter"),
+    // As the shell's rosterEntry: an empty roster's way in is its one action, the foot's Spawn instance.
+    focusFallback: () => rosterEl.querySelector('.ctx-list .ctx-inst[tabindex="0"]') || rosterEl.querySelector(".ctx-list .ctx-inst")
+      || spawnAction(rosterEl) || doc.querySelector('#ws-options [tabindex="0"]') || doc.getElementById("ws-add-open"),
     now, setTimeout, clearTimeout,
   });
 }
