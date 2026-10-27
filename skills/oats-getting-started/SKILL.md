@@ -351,7 +351,7 @@ members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
   oats.framework: v1.14.1             # the installed CLI's catalog versions (below)
-  oats.aweb: v1.31.0                  # messaging, and tasks: agent identities, mail, chat and tasks
+  oats.aweb: v1.32.0                  # messaging, and tasks: agent identities, mail, chat and tasks
   oats.machine: v0.1.1                # on a machine found-list only: the machine's steward
 defaults:
   capabilities:
