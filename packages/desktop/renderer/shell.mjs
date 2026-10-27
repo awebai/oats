@@ -71,7 +71,6 @@ import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, NAV_TABS, navTab, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons, iconElement } from "./shell-icons.mjs";
 import { createSettingsMenu } from "./sidebar-settings.mjs";
-import { createResumeNotice } from "./resume-notice.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
@@ -3429,9 +3428,3 @@ import("./views/cli-status.mjs").then(({ refreshCli, reprobeCli }) => {
 
 // Home surface: the Workspace page (Workspace overview), on Souls, when no instance is open (the product owner, 2026-10-23).
 showStage("spawn");
-
-// Lost sessions resumed (resume-notice.mjs): each summary main holds is taken now and on each ready event, and posted
-// as the app's own sticky entry. Declared last: nothing above calls it before the module has run.
-const resumeNotices = createResumeNotice({ desk, notify: notifications.notify });
-resumeNotices.start();
-window.addEventListener("pagehide", () => resumeNotices.dispose(), { once: true });

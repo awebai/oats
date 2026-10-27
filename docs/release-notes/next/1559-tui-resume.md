@@ -5,10 +5,11 @@
   reboot or a crash, `oats tui` asks OATS to resume every instance whose
   session was lost, on every deployment on this computer, without holding up
   its first screen. It asks again whenever a read shows a session lost while
-  it is open, at most every 30 seconds. When an instance was resumed, started
-  fresh, is waiting for you or could not be resumed, the line under the list
-  of workspaces says so once, in the Desktop's words, and the list is read
-  again. Quitting while the sessions are being resumed does not cut that
+  it is open, at most every 30 seconds. `oats tui` says nothing about a
+  resume: the list is read again after each one, so a resumed instance shows
+  running. `oats session resume --plan --json` shows what a resume would do,
+  and `oats session resume` run by hand says why an instance could not be
+  resumed. Quitting while the sessions are being resumed does not cut that
   short. There is no setting: stop an instance with OATS to keep it down.
   `S` and `R` are unchanged and never resume a conversation. See
   [Resuming lost sessions](../tui.md#resuming-lost-sessions).

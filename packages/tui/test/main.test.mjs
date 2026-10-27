@@ -5,7 +5,7 @@ import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
 import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, createResumeTrigger, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
-import { LIST_WORDS, RESUME_WORDS } from "../lib/model.mjs";
+import { LIST_WORDS } from "../lib/model.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
 import { ENTER, LEAVE, POP, PUSH, QUERY } from "../lib/term/tty.mjs";
 import { CLI, DEPLOYMENT, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
@@ -894,7 +894,7 @@ test("with a kernel that has the sweep, a run started in a deployment resumes lo
   const [sweep, ...more] = sweepsOf(r);
   assert.deepEqual(more, [], "one sweep");
   assert.deepEqual(sweep.argv, ["session", "resume", "--json"]);
-  assert.deepEqual(sweep.options.label, { verb: "resume", launch: true }, "the launch sweep's own label: let go in silence on the way out");
+  assert.deepEqual(sweep.options.label, { verb: "resume" }, "the sweep's label: a change, let go in silence on the way out");
   assert.equal(sweep.options.cwd, "/");
   assert.equal(sweep.options.env.OATS_HOME_DIR, "/scratch/oats-home", "the run's environment, as the other kernel calls have it");
   const at = (what, which) => r.log.findIndex(([w, x]) => w === what && (which === undefined || x === which));
@@ -932,7 +932,7 @@ test("with a kernel without the sweep nothing is run: not at the start, not when
   assert.equal(await r.status, 0);
 });
 
-test("what the sweep did is said under the sidebar's title and the rows are read live; a read showing a lost session sweeps again, never while one is in flight nor within the floor", async () => {
+test("what the sweep did is not said, and the rows are read live; a read showing a lost session sweeps again, never while one is in flight nor within the floor", async () => {
   const r = await started({ columns: 120, kernel: { ok: true, cli: RESUME_CLI } });
   await settle();
   r.reader.answer(ENTRY);
@@ -945,7 +945,7 @@ test("what the sweep did is said under the sidebar's title and the rows are read
   sweepsOf(r)[0].callback(null, resumedAnswer("acme-expert-tui"), "");
   await settle();
   assert.deepEqual(readerDid(r).filter(([what]) => what === "request"), [["request", { live: true }]], "a live read, so the resumed row reads running");
-  assert.match(sidebarOf(r), /OATS resumed 1 instance whose session was lost\. acme-expert-tui: resumed in its own conversation\./);
+  assert.doesNotMatch(sidebarOf(r), /resum|lost/i, "nothing said of the sweep");
   // Within the floor a lost session read starts none; once it has passed, the next does.
   r.reader.read(lostEntry("acme-expert-ops"));
   r.tick(29_000);
@@ -969,6 +969,27 @@ test("what the sweep did is said under the sidebar's title and the rows are read
 
 /** The kernel's answer to a sweep that found nothing to do. */
 const QUIET_ANSWER = JSON.stringify({ schemaVersion: 1, ok: true, result: { schemaVersion: 1, plan: false, deployments: [], rows: [] } });
+
+test("a sweep that failed, or found the machine's sweep busy, says nothing and asks for no read", async () => {
+  const refusals = [
+    ["failed", JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_RESUME_STATE", message: "the resume state could not be read" } })],
+    ["unreadable", "not json"],
+    ["busy", JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_RESUME_BUSY", message: "another sweep holds this computer" } })],
+  ];
+  for (const [what, stdout] of refusals) {
+    const r = await started({ columns: 120, kernel: { ok: true, cli: RESUME_CLI } });
+    await settle();
+    r.reader.answer(ENTRY);
+    r.log.length = 0;
+    sweepsOf(r)[0].callback(Object.assign(new Error("exit 1"), { code: 1 }), stdout, "");
+    await settle();
+    assert.deepEqual(readerDid(r).filter(([did]) => did === "request"), [], `${what}: no read`);
+    assert.doesNotMatch(sidebarOf(r), /resum|lost|E_RESUME|E_CLI/i, `${what}: nothing said`);
+    r.stdin.type("q");
+    assert.equal(await r.status, 0);
+    assert.deepEqual(r.errors, [], what);
+  }
+});
 
 test("a lost row of another machine's deployment in the open view sweeps nothing: the trigger is given the view's rows with only this machine's deployments as local", async () => {
   const r = await started({ columns: 120, kernel: { ok: true, cli: { ...REMOTE_CLI, features: [...REMOTE_CLI.features, "session-resume"] } } });
@@ -1011,8 +1032,9 @@ test("a lost row of this machine sweeps once; once that sweep has completed the 
   assert.equal(await r.status, 0);
 });
 
-test("the sweep is a change the run never signals: quitting before its answer lets it go and its late answer is not shown; the launch sweep is let go in silence, and one a lost row started is named after the screen is left", async () => {
+test("the sweep is a change the run never signals, and none is named after the screen is left: not the launch sweep, not one a lost row started; quitting before its answer lets it go and its late answer is not shown", async () => {
   for (const tell of [true, false]) {
+    // The launch sweep in flight.
     const r = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
     await settle();
     const [launch] = sweepsOf(r);
@@ -1020,32 +1042,30 @@ test("the sweep is a change the run never signals: quitting before its answer le
     r.stdin.type("q");
     assert.equal(await r.status, 0, String(tell));
     assert.deepEqual(r.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
-    assert.deepEqual(r.errors, [], `the launch sweep is not named (${tell}): it runs at every open and usually finds nothing`);
+    assert.deepEqual(r.errors, [], `the launch sweep is not named (${tell})`);
     r.stdout.take();
     launch.callback(null, resumedAnswer("acme-expert-tui"), "");
     await settle();
     assert.equal(r.stdout.take(), "", "the late answer draws nothing");
+
+    // A sweep a lost row started in flight, with the launch sweep, beside an act of the person's.
+    const o = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
+    await settle();
+    sweepsOf(o)[0].callback(null, QUIET_ANSWER, "");
+    await settle();
+    o.tick(30_000);
+    o.reader.read(lostEntry("acme-expert-tui"));
+    await settle();
+    const [first, observed] = sweepsOf(o);
+    assert.deepEqual([first.options.label, observed.options.label], [{ verb: "resume" }, { verb: "resume" }], "every sweep has the sweep's one label");
+    const act = { verb: "stop", name: "acme-expert-ops" };
+    o.reader.running = [{ pid: 4001, label: first.options.label }, { pid: 4002, label: observed.options.label }, { pid: 4003, label: act }];
+    o.stdin.type("q");
+    assert.equal(await o.status, 0, String(tell));
+    assert.deepEqual(o.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
+    assert.deepEqual(o.errors, tell ? ["oats: the stop of acme-expert-ops is still running; `oats status` shows its result.\n"] : [], `no sweep is named, and the act still is (${tell})`);
   }
-  for (const [tell, lines] of [[true, [`${RESUME_WORDS.leaving}\n`]], [false, []]]) {
-    const r = await started({ kernel: { ok: true, cli: RESUME_CLI }, tellable: () => tell });
-    await settle();
-    sweepsOf(r)[0].callback(null, QUIET_ANSWER, "");
-    await settle();
-    r.tick(30_000);
-    r.reader.read(lostEntry("acme-expert-tui"));
-    await settle();
-    const [, observed] = sweepsOf(r);
-    assert.deepEqual(observed.options.label, { verb: "resume" }, "a sweep a lost row started: its own label");
-    r.reader.running = [{ pid: 4001, label: launchLabel(r) }, { pid: 4002, label: observed.options.label }];
-    r.stdin.type("q");
-    assert.equal(await r.status, 0, String(tell));
-    assert.deepEqual(r.log.filter(([what]) => what === "kill"), [], "nothing is signalled");
-    assert.deepEqual(r.errors, lines, `one line, for the sweep that is starting sessions, and none for the launch sweep (${tell})`);
-  }
-  assert.equal(RESUME_WORDS.leaving, "oats: the resume of lost sessions is still running; `oats status` shows the instances.");
 });
-/** The label the run gave its launch sweep. */
-const launchLabel = (r) => sweepsOf(r)[0].options.label;
 
 test("w opens the switcher: this computer's list of deployments is read through the reader's exec, and its rows this run does not serve are listed under the workspaces; r there reads it again and asks for a live read; one read runs at a time, and a read asked for while one is on its way is one more after it, whose answer is the one taken", async () => {
   // The list holds the deployment the run serves too: it is not offered.
