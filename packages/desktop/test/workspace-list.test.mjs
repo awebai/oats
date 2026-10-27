@@ -259,14 +259,32 @@ test("step: the next row as drawn, onto a row another window shows, then into th
   assert.equal(s.calls.selected.at(-1), HELD.id, "up");
 });
 
-test("step: no wrap; false at either end, nothing selected", async (t) => {
+test("step wraps: up from the first row the last, down from the last the first; with no other row, false and nothing selected", async (t) => {
   const s = setup(t);
   s.controller.begin()(A, [A, LOOSE]); await tick();
-  assert.equal(s.controller.step(-1), false, "the first row: nothing above");
-  s.controller.begin()(LOOSE, [A, LOOSE]);
-  assert.equal(s.controller.step(1), false, "the last row: nothing below");
-  assert.deepEqual(s.calls.selected, []); assert.deepEqual(s.calls.tabs, []);
-  assert.equal(s.controller.step(-1), true); assert.deepEqual(s.calls.selected, [A.id]);
+  assert.equal(s.controller.step(-1), true, "the first row: up to the last");
+  assert.deepEqual(s.calls.selected, [LOOSE.id]);
+  s.controller.reset(LOOSE.id); s.controller.begin()(LOOSE, [A, LOOSE]);
+  assert.equal(s.controller.step(1), true, "the last row: down to the first");
+  assert.deepEqual(s.calls.selected, [LOOSE.id, A.id]);
+  const alone = setup(t);
+  alone.controller.begin()(A, [A]); await tick();
+  assert.equal(alone.controller.step(1), false, "one row, the current one: no other to show");
+  assert.equal(alone.controller.step(-1), false);
+  assert.deepEqual(alone.calls.selected, []); assert.deepEqual(alone.calls.tabs, []);
+});
+
+test("step hands the shell's options to its switch (a step from the list places no focus); a click hands none", async (t) => {
+  const asked = [];
+  // Each switch is refused, so A stays current and the next one starts from it again.
+  const s = setup(t, { selectWorkspace: (...args) => { asked.push(args); return { ok: false }; } });
+  s.controller.begin()(A, [A, B]); await tick();
+  const how = { focusPlace: false };
+  assert.equal(s.controller.step(1), true); await tick();
+  assert.equal(s.controller.step(1, how), true); await tick();
+  s.rows().find((row) => row.dataset.workspaceId === B.id).click();
+  assert.deepEqual(asked, [[B.id, undefined], [B.id, how], [B.id, undefined]]);
+  assert.equal(asked[1][1], how, "as it is");
 });
 
 test("step with nothing current: the first row going down, the last going up (an unattached one included)", async (t) => {
@@ -443,9 +461,10 @@ test("moves faster than a switch go on from the pick on its way, not from what i
   s.controller.begin()(A, [A, B, C]); await tick();
   assert.equal(s.controller.step(1), true); assert.equal(s.controller.step(1), true);
   assert.deepEqual(s.calls.selected, [B.id, C.id], "two presses, two moves");
-  assert.equal(s.controller.step(1), false, "C is the last");
-  assert.equal(s.controller.step(-1), true);
-  assert.deepEqual(s.calls.selected, [B.id, C.id, B.id]);
+  assert.equal(s.controller.step(1), true, "from C, the pick on its way, past the last row: the first (from A, what is shown, it would be B)");
+  assert.deepEqual(s.calls.selected, [B.id, C.id, A.id]);
+  assert.equal(s.controller.step(-1), true, "from A, the pick on its way, before the first row: the last");
+  assert.deepEqual(s.calls.selected, [B.id, C.id, A.id, C.id]);
 });
 
 test("the latest pick wins: the current row picked while another pick is on its way supersedes it; a refused pick leaves none", async (t) => {
@@ -592,4 +611,7 @@ test("on, step still moves to the next or previous workspace, hidden as it was, 
   land(B); await tick();
   assert.deepEqual(s.rows().filter((b) => !b.hidden).map(s.keyOf), [B.id], "now it alone shows");
   assert.equal(s.controller.step(-1), true); assert.equal(s.calls.selected.at(-1), A.id);
+  // The moves wrap over the full list as drawn, the hidden rows included.
+  land(A); await tick();
+  assert.equal(s.controller.step(-1), true); assert.equal(s.calls.selected.at(-1), C.id, "up from the first: the last, hidden");
 });

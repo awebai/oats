@@ -87,12 +87,15 @@ test("rehomeActiveTerminals and rehomeCollapsed: memories move, the view's own n
 test("workspace tab memory: a layout remembered under a deployment id is recalled under its view", () => {
   const memory = createWorkspaceTabMemory();
   const tabs = new Map([[7, { kind: "terminal", workspace: PATH }]]);
-  memory.remember(PATH, { split: null, activeTab: 7, sidebarMode: "instances", tabLayerVisible: true });
+  // The focus place (focus-place.mjs) the workspace was left with moves with its layout.
+  const place = { kind: "tab", tab: 7, content: true, handle: null };
+  memory.remember(PATH, { split: null, activeTab: 7, sidebarMode: "instances", tabLayerVisible: true, place });
   memory.remember(VIEW, { split: null, activeTab: null, sidebarMode: "overview", tabLayerVisible: false });
   memory.remember(REMOTE, { split: null, activeTab: 9, sidebarMode: "instances", tabLayerVisible: true });
   memory.rehome(new Map([[PATH, OTHER], [REMOTE, VIEW]]));
   tabs.get(7).workspace = OTHER;
-  assert.deepEqual(memory.recall(OTHER, tabs), { split: null, activeTab: 7, sidebarMode: "instances", tabLayerVisible: true });
+  assert.deepEqual(memory.recall(OTHER, tabs), { split: null, activeTab: 7, sidebarMode: "instances", tabLayerVisible: true, place });
+  assert.equal(memory.recall(VIEW, tabs).place, null, "the view's own memory keeps its own place (none)");
   assert.equal(memory.recall(VIEW, tabs).sidebarMode, "overview", "the view's own memory is kept");
   assert.equal(memory.recall(PATH, tabs).activeTab, null, "nothing left under the old id");
 });
@@ -234,7 +237,7 @@ test("shell: a selected view that is no longer served follows its deployments to
   u.requests[1].resolve({ workspace: { id: VIEW, name: "oats" }, workspaces: [view(VIEW, [PATH, REMOTE])], instances: [] });
   await reading;
   assert.deepEqual(u.switched, [VIEW], "the window follows its deployments");
-  assert.deepEqual({ ...u.c.switchOptions }, { focus: false }, "through main, focusing nothing (#481)");
+  assert.deepEqual({ ...u.c.switchOptions }, { focus: false, focusPlace: false }, "through main, focusing nothing (#481), the keyboard left where it is");
   assert.deepEqual([tabs.get(1).workspace, tabs.get(1).key], [VIEW, terminalKey(VIEW, "/h/far")]);
   assert.equal(u.c.tabWorkspace, VIEW, "the live layout is remembered under the view it moved to");
 });
@@ -273,7 +276,7 @@ for (const [label, claim] of [["the destination is free", { ok: true, workspace:
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(main.fetched, [], "main refused the read: nothing about another workspace was fetched");
     assert.deepEqual(u.switched, [VIEW], "the window claims the view that holds its deployment, from the refusal's choices");
-    assert.deepEqual({ ...u.c.switchOptions }, { focus: false });
+    assert.deepEqual({ ...u.c.switchOptions }, { focus: false, focusPlace: false });
     if (claim.ok) assert.equal(tabs.get(1).workspace, VIEW, "its tabs move with it");
     else { assert.ok(u.c.chose, "open elsewhere: this window chooses"); assert.equal(tabs.size, 1, "its tab stays here"); }
   });

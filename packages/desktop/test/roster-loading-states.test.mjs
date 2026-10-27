@@ -416,6 +416,29 @@ test('a workspace switch clears the rows into pending (pill, then skeletons), ne
   assert.deepEqual(s.names(), ['b-one']); assert.equal(s.count().textContent, '1 running'); assert.equal(s.list().querySelector('[data-skeleton]'), null);
 });
 
+// A switch's roster focus place (shell.mjs focusArrival) waits for the arriving workspace's first paint of rows (or of
+// the empty copy, or of a failed read's Retry): every such paint calls applyRosterPlace; a pending one does not.
+test('the roster paints that apply a waiting focus place: rows, the empty copy, a failed read; never a pending paint', async t => {
+  const s = shell(t);
+  const painted = [];
+  s.context.applyRosterPlace = () => painted.push(s.context.rosterState.state);
+  await s.reply(0, panelOf('A', roster));
+  assert.deepEqual(painted, ['ready'], 'the rows');
+  s.switchTo('B');
+  assert.deepEqual(painted, ['ready'], "the switch's own paint: pending, no rows yet");
+  await s.reply(1, panelOf('B', []));
+  assert.deepEqual(painted, ['ready', 'empty'], 'the empty copy');
+  s.switchTo('A');
+  await s.fail(2, new Error('boom'));
+  assert.deepEqual(painted, ['ready', 'empty', 'failed'], "a failed first read: its Retry");
+  s.switchTo('B');
+  await s.reply(3, panelOf('B', [], { deployment: { status: 'pending' } }));
+  assert.deepEqual(painted, ['ready', 'empty', 'failed'], 'a deployment not observed yet: its note, no rows');
+  s.switchTo('A');
+  await s.reply(4, panelOf('A', [], { error: 'Server is unreachable' }));
+  assert.deepEqual(painted, ['ready', 'empty', 'failed', 'failed'], 'a panel that reports an error with no instances: its Retry');
+});
+
 test('a switch away from a stale roster forgets the stale mark and the stale line; a superseded failure paints nothing', async t => {
   const s = shell(t);
   await s.reply(0, panelOf('A', roster));
