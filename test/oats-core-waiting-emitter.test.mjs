@@ -11,7 +11,9 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { liveWaiting } from "../lib/instance-events.mjs";
+import { liveWaiting, validWaitingMessage } from "../lib/instance-events.mjs";
+import { REFUSED_TEXT } from "../lib/refused-text.mjs";
+import { MESSAGE_REFUSED, waitingMessageOf } from "../oats-package/capabilities/oats-core/bin/claude-waiting-message.mjs";
 import { claudeWaitingSettings, markerDir, markerDirPath, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -30,7 +32,10 @@ const appliedOf = (h, tmp = TMP) => { try { return readFileSync(`${markerOf(h, t
 // Wait for a condition (an event under way), never for a fixed time.
 const until = async (cond, ms = 15000) => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error("timed out waiting for the race to be set up"); await new Promise((r) => setTimeout(r, 10)); } };
 const held = (h, tmp = TMP) => existsSync(`${markerOf(h, tmp)}.lock`);
-const intentOf = (h, tmp = TMP) => { try { return readFileSync(markerOf(h, tmp), "utf8").trim(); } catch { return null; } };
+// The intent's reason (its first line): a set's second line is its event id.
+const intentOf = (h, tmp = TMP) => { try { return readFileSync(markerOf(h, tmp), "utf8").split("\n")[0]; } catch { return null; } };
+// The text of the intent's set: the file named for its event id, or null.
+const intentTextOf = (h, tmp = TMP) => { try { const event = readFileSync(markerOf(h, tmp), "utf8").split("\n")[1]; return event ? readFileSync(`${markerOf(h, tmp)}.text-${event}`, "utf8").replace(/\n$/, "") : null; } catch { return null; } };
 const markerOf = (h, tmp = TMP) => join(tmp, WDIR, `${createHash("sha256").update(h).digest("hex").slice(0, 16)}.claude`);
 let n = 0;
 /** A fresh instance home: a directory with an instance.json. */
@@ -417,14 +422,14 @@ test("an open question is not relabelled by its own permission prompt: the marke
   const log = join(base, `argv-question-${n}.log`);
   const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   runScript(["set", "question", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
-  assert.equal(readFileSync(markerOf(h), "utf8"), "question\n", "the marker holds the intent");
+  assert.equal(intentOf(h), "question", "the marker holds the intent");
   const r = runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.equal(r.status, 0); assert.equal(r.stdout, "");
   assert.deepEqual(calls().map((c) => c[6]), ["question"], "the permission prompt of an open question starts no CLI");
   runScript(["clear", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   runScript(["set", "permission", node, FAKE_CLI], { OATS_INSTANCE_HOME: h, FAKE_LOG: log });
   assert.deepEqual(calls().map((c) => c[2] === "clear" ? "clear" : c[6]), ["question", "clear", "permission"], "after a clear, a permission prompt sets permission");
-  assert.equal(readFileSync(markerOf(h), "utf8"), "permission\n");
+  assert.equal(intentOf(h), "permission");
 });
 
 test("an unusable marker means no debounce, never a skipped claim: a symlinked marker directory or a marker path that is not a regular file is not followed, and set and clear always call the CLI", () => {
@@ -671,8 +676,11 @@ test("a lock whose holder is gone (pid dead, or taken over 5 s ago) is broken; a
   assert.equal(appliedOf(h), "clear"); assert.ok(!held(h));
   // The launch hook starts a new session with no marker state.
   lockAs(process.pid, 1000); mkdirSync(`${lock}.reap`); writeFileSync(join(`${lock}.reap`, "pid"), "1 1000\n"); writeFileSync(`${markerOf(h)}.force`, "");
+  for (const event of ["123-1000", "456-2000"]) writeFileSync(`${markerOf(h)}.text-${event}`, "an earlier session's text\n");
+  const other = `${markerOf(home())}.text-123-1000`; writeFileSync(other, "another home's\n");
   runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS });
-  for (const f of [markerOf(h), `${markerOf(h)}.applied`, `${markerOf(h)}.force`, lock, `${lock}.reap`]) assert.ok(!existsSync(f), `${f} reset at launch`);
+  for (const f of [markerOf(h), `${markerOf(h)}.applied`, `${markerOf(h)}.force`, lock, `${lock}.reap`, `${markerOf(h)}.text-123-1000`, `${markerOf(h)}.text-456-2000`]) assert.ok(!existsSync(f), `${f} reset at launch`);
+  assert.ok(existsSync(other), "another home's text is not this launch's");
 });
 
 test("a call that wrote the claim and then failed (or died) leaves applied unknown: the next event calls the CLI, even one whose intent matches what was recorded before", { timeout: 60000 }, async () => {
@@ -909,20 +917,35 @@ test("no watchdog sleep outlives the script: every sleep it starts is gone when 
     const child = spawn("/bin/sh", [SCRIPT, ...withMarker([...args, node, FAKE_CLI], env)], { stdio: [stdin, "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
     return { child, exit: new Promise((done) => child.on("exit", done)) };
   };
-  const set = start(["set", "permission"], "ignore");
-  await until(() => existsSync(join(gate, "started.1")) && logged().length >= 1);
+  // Each input is held open until its read's watchdog has logged, so every watchdog is counted.
+  const set = start(["set", "permission"], "pipe");
+  await until(() => logged().length >= 1); // the set's input read
+  set.child.stdin.end(""); // no text: no reader of it
+  await until(() => existsSync(join(gate, "started.1")) && logged().length >= 2);
   writeFileSync(join(gate, "go.1"), "");
   assert.equal(await set.exit, 0);
   const clear = start(["clear-tool"], "pipe");
-  await until(() => logged().length >= 2); // the input read's watchdog
+  await until(() => logged().length >= 3); // the clear's input read
   clear.child.stdin.end(`{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t"}`);
-  await until(() => existsSync(join(gate, "started.2")) && logged().length >= 3);
+  await until(() => existsSync(join(gate, "started.2")) && logged().length >= 4);
   writeFileSync(join(gate, "go.2"), "");
   assert.equal(await clear.exit, 0);
   assert.equal(appliedOf(h), "clear");
   const pids = logged();
-  assert.equal(pids.length, 3, "a watchdog under the set's CLI, the input read and the clear's CLI");
+  assert.equal(pids.length, 4, "a watchdog under the set's input read and CLI, and under the clear's input read and CLI");
   await until(() => !pids.some(alive), 10000);
+  // A set whose input has text also runs the text reader under a watchdog: none outlives it either.
+  const texted = start(["set", "question"], "pipe");
+  await until(() => logged().length >= 5);
+  texted.child.stdin.end(`{"session_id":"s","hook_event_name":"Notification","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt"}`);
+  // The CLI is held until its watchdog has logged; the text reader's may log before it or not at
+  // all (a reader that ends first has its watchdog stopped before it sleeps).
+  await until(() => existsSync(join(gate, "started.3")) && logged().length >= 6);
+  writeFileSync(join(gate, "go.3"), "");
+  assert.equal(await texted.exit, 0);
+  assert.equal(intentTextOf(h), "Claude needs your permission to use Bash");
+  const all = logged();
+  await until(() => !all.some(alive), 10000);
 });
 
 test("a temp file an interrupted write left in .claude is removed by the next pass (even an unchanged one); a live writer's, and anything else, is left alone", () => {
@@ -969,9 +992,9 @@ function realHomes() {
   };
   const clock = join(dep, "clock"); writeFileSync(clock, "1000\n");
   /** Run the command home `h`'s settings hold for a Claude Code event, in a session carrying `env`. */
-  const fire = (h, event, index, env) => {
+  const fire = (h, event, index, env, input = '{"session_id":"s","hook_event_name":"x"}') => {
     const command = readJson(settingsOf(h)).hooks[event][index].hooks[0].command;
-    const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", timeout: 60000, input: '{"session_id":"s","hook_event_name":"x"}', cwd: base,
+    const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", timeout: 60000, input, cwd: base,
       env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, FAKE_CLOCK: clock, PATH: `${SHIMS}:${process.env.PATH}`, OATS_INSTANCE: undefined, OATS_HOME: undefined, OATS_ROOT: undefined, PI_AGENTS_ROOT: undefined, TMUX: undefined, ...env }) });
     assert.equal(r.status, 0, `${event}[${index}]: ${r.stderr}`); assert.equal(r.stdout, "", `${event}[${index}]`);
   };
@@ -1048,8 +1071,109 @@ test("real script, real CLI: the home through a symlink spelling is the same hom
   assert.match(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: join(dep, "agents", "dev", "instances", "dev-none"), OATS_CLI_BIN: REAL_CLI }).warning, /OATS_INSTANCE_HOME .*cannot be resolved/);
 });
 
-test("packaging: the capability ships bin/oats-core.mjs and bin/claude-waiting.sh as regular files, wired as spawn and launch hooks", () => {
-  for (const f of ["bin/oats-core.mjs", "bin/claude-waiting.sh"]) assert.ok(lstatSync(join(CAP, f)).isFile(), f);
+// ---- the claim's text (awebai/oats#1502): what Claude Code's hook input says the session waits on,
+// as Claude Code 2.1.300 sends it: a Notification's `message`, an AskUserQuestion's questions.
+const notification = (type, message) => JSON.stringify({ session_id: "s", transcript_path: "/t.jsonl", cwd: "/c", hook_event_name: "Notification", message, notification_type: type });
+const askUser = (...questions) => JSON.stringify({ session_id: "s", hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: questions.map((question) => ({ question, header: "H", options: [{ label: "a", description: "" }, { label: "b", description: "" }], multiSelect: false })) }, tool_use_id: "toolu_1" });
+
+test("the claim's text: an AskUserQuestion's first question (and how many more), else a Notification's message; one line, the kernel's refused characters replaced, at most 200 code points; nothing for anything else", () => {
+  assert.equal(waitingMessageOf(notification("permission_prompt", "Claude needs your permission to use Bash")), "Claude needs your permission to use Bash");
+  assert.equal(waitingMessageOf(notification("elicitation_dialog", "Claude Code needs your input")), "Claude Code needs your input");
+  assert.equal(waitingMessageOf(askUser("Bump Claude Code to 2.1.309?")), "Bump Claude Code to 2.1.309?");
+  assert.equal(waitingMessageOf(askUser("Bump Claude Code?", "Remove the old mise installs?", "Restart?")), "Bump Claude Code? (+2 more)");
+  assert.equal(waitingMessageOf(askUser("  Which\n\tbranch?  ")), "Which branch?", "whitespace, line breaks and tabs are one space; the ends are trimmed");
+  assert.equal(waitingMessageOf(notification("permission_prompt", "pay \u202eexe.txt \u001b[2J now")), "pay \ufffdexe.txt \ufffd[2J now", "a refused character is U+FFFD");
+  const long = "é".repeat(300);
+  assert.equal(waitingMessageOf(notification("permission_prompt", long)), `${"é".repeat(199)}…`, "cut to 200 code points, ending in …");
+  assert.equal([...waitingMessageOf(askUser("👍".repeat(250), "more"))].length, 200, "code points, not UTF-16 units");
+  for (const [what, input] of [["not JSON", "{"], ["empty", ""], ["an array", "[]"], ["no message", JSON.stringify({ hook_event_name: "Notification" })], ["a blank message", notification("permission_prompt", " \n ")],
+    ["a message that is no string", notification("permission_prompt", 42)], ["AskUserQuestion with no questions", JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: {} })],
+    ["another tool", JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } })]]) {
+    assert.equal(waitingMessageOf(input), "", what);
+  }
+  // A question that is no string is passed over for the Notification rule, which a PreToolUse lacks.
+  assert.equal(waitingMessageOf(JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: [{ question: 7 }] } })), "");
+  for (const text of ["x".repeat(500), "a\u2028b", "zw\u200cnj", "\u{E0041}", "\u0000"]) assert.ok(validWaitingMessage(waitingMessageOf(notification("permission_prompt", text))), `${JSON.stringify(text)}: the kernel accepts what it makes`);
+});
+
+test("the capability's copy of the kernel's refused set is the kernel's set", () => {
+  assert.equal(MESSAGE_REFUSED.source, REFUSED_TEXT.source);
+  assert.equal(MESSAGE_REFUSED.flags, REFUSED_TEXT.flags);
+});
+
+test("set carries the hook input's text: `--message=<text>` after the reason; the marker holds it under the reason; the same claim again starts no CLI, a new text does; input with no text sets the claim without one", () => {
+  const h = home(), node = process.execPath;
+  const log = join(base, `argv-text-${n}.log`);
+  const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const set = (reason, input) => {
+    const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(["set", reason, node, FAKE_CLI], { OATS_INSTANCE_HOME: h })], { input, encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
+    assert.equal(r.status, 0); assert.equal(r.stdout, ""); assert.equal(r.stderr, "");
+  };
+  const bash = "Claude needs your permission to use Bash";
+  set("permission", notification("permission_prompt", bash));
+  assert.deepEqual(calls(), [["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", `--message=${bash}`, "--home", h, "--json"]]);
+  assert.equal(intentOf(h), "permission"); assert.equal(intentTextOf(h), bash, "the intent's text, in the file of its event");
+  assert.equal(readFileSync(`${markerOf(h)}.applied`, "utf8"), `permission\n${bash}\n`, "what the CLI recorded");
+  set("permission", notification("permission_prompt", bash));
+  assert.equal(calls().length, 1, "the same claim again is debounced");
+  set("permission", notification("permission_prompt", "Claude needs your permission to use Edit"));
+  assert.equal(calls()[1][7], "--message=Claude needs your permission to use Edit", "a new text is a change");
+  set("permission", "{");
+  assert.deepEqual(calls()[2], ["instance", "waiting", "set", "--producer", "oats.core", "--reason", "permission", "--home", h, "--json"], "no text: the claim without one");
+  assert.equal(intentOf(h), "permission"); assert.equal(intentTextOf(h), null);
+  set("question", askUser("--rm the old installs?"));
+  assert.equal(calls()[3][7], "--message=--rm the old installs?", "a text that starts with -- is still the message's value");
+  // An open question keeps its text through its own permission prompt.
+  set("permission", notification("permission_prompt", "Claude needs your permission"));
+  assert.equal(calls().length, 4);
+  assert.equal(intentOf(h), "question"); assert.equal(intentTextOf(h), "--rm the old installs?");
+});
+
+test("reading a set's text never reorders events: a clear or a question that comes while an earlier set is still reading its text stands, and the earlier text is never applied over it", { timeout: 60000 }, async () => {
+  // A node in front of the real one that holds the text reader of a hook run with FAKE_TEXT_GATE
+  // until the test creates go there; every other run (the CLI) is the real node at once.
+  const node = join(base, "node-held-text");
+  writeFileSync(node, `#!/bin/sh\ncase "$1" in */claude-waiting-message.mjs) if [ -n "$FAKE_TEXT_GATE" ]; then : > "$FAKE_TEXT_GATE/started"; while [ ! -e "$FAKE_TEXT_GATE/go" ]; do /bin/sleep 0.01; done; fi ;; esac\nexec ${shq(process.execPath)} "$@"\n`, { mode: 0o755 });
+  for (const later of ["clear", "question"]) {
+    const h = home(), gate = mkdtempSync(join(base, "text-gate-")), log = join(base, `argv-held-${n}.log`), state = join(base, `state-held-${n}.log`);
+    const env = { OATS_INSTANCE_HOME: h, FAKE_LOG: log, FAKE_STATE: state };
+    const first = spawn("/bin/sh", [SCRIPT, ...withMarker(["set", "permission", node, FAKE_CLI], env)], { env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env, FAKE_TEXT_GATE: gate }), stdio: ["pipe", "ignore", "ignore"] });
+    kids.add(first);
+    const ended = new Promise((done) => first.on("exit", (code) => { kids.delete(first); done(code); }));
+    first.stdin.end(notification("permission_prompt", "Claude needs your permission to use Bash"));
+    await until(() => existsSync(join(gate, "started")));
+    const args = later === "clear" ? ["clear", node, FAKE_CLI] : ["set", "question", node, FAKE_CLI];
+    const r = spawnSync("/bin/sh", [SCRIPT, ...withMarker(args, env)], { input: later === "clear" ? "" : askUser("Upgrade Claude Code?"), encoding: "utf8", timeout: 15000, env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+    assert.equal(r.status, 0);
+    writeFileSync(join(gate, "go"), "");
+    assert.equal(await ended, 0);
+    const states = readFileSync(state, "utf8").trim().split("\n");
+    const calls = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    if (later === "clear") {
+      assert.equal(states.at(-1), "clear", `${later}: the claim the CLI was left with (${states})`);
+      assert.equal(intentOf(h), "clear"); assert.equal(appliedOf(h), "clear");
+    } else {
+      assert.equal(states.at(-1), "set question", `${later}: the claim the CLI was left with (${states})`);
+      assert.equal(calls.at(-1)[7], "--message=Upgrade Claude Code?", "with the question's own text");
+      assert.equal(intentOf(h), "question"); assert.equal(intentTextOf(h), "Upgrade Claude Code?");
+      assert.equal(readFileSync(`${markerOf(h)}.applied`, "utf8"), "question\nUpgrade Claude Code?\n");
+    }
+    assert.ok(!calls.some((c) => c.includes("--message=Claude needs your permission to use Bash")) || states.at(-1) !== "set permission", "the earlier set's text never lands last");
+  }
+});
+
+test("real script, real CLI: the text of the prompt reaches waitingOnYou, the question's own words for an AskUserQuestion", { timeout: 120000 }, () => {
+  const { a, fire } = realHomes();
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a }, notification("permission_prompt", "Claude needs your permission to use Bash"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
+  fire(a, "PreToolUse", 0, { OATS_INSTANCE_HOME: a }, askUser("Upgrade Claude Code and Codex, and remove the old mise installs?"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "Upgrade Claude Code and Codex, and remove the old mise installs?" });
+  fire(a, "Stop", 0, { OATS_INSTANCE_HOME: a });
+  assert.equal(claimOf(a), null);
+});
+
+test("packaging: the capability ships bin/oats-core.mjs, bin/claude-waiting.sh and bin/claude-waiting-message.mjs as regular files, wired as spawn and launch hooks", () => {
+  for (const f of ["bin/oats-core.mjs", "bin/claude-waiting.sh", "bin/claude-waiting-message.mjs"]) assert.ok(lstatSync(join(CAP, f)).isFile(), f);
   const manifest = readJson(join(CAP, "oats.json"));
   assert.deepEqual(manifest.hooks, { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" });
   assert.equal(manifest.launchPreview, true);

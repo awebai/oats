@@ -817,6 +817,27 @@ A remote instance's tabs close only when its server answers without it
 (retired there, or gone from it), never because the server can't be reached
 or its roster read is out of date.
 
+## When an agent waits on you
+
+While an instance waits on you (its `waitingOnYou` claim), the sidebar marks
+its row **Needs input**, and each terminal tab that shows it carries a row
+over its terminal:
+
+- **Needs input**, then how long it has waited (`· 12 min`), on one line.
+- Under it, the agent's question as it wrote it, shown as plain text. When
+  the agent left no text, the row says why in words, for example "Waiting for
+  a tool approval".
+- The question wraps to at most three lines, and the row never takes more
+  than a quarter of the pane; a longer question ends with "…". The tab's
+  tooltip and the sidebar's card have the whole of it. A pane too short
+  for even the first line shows no row: the tab's mark still says the
+  instance needs input.
+
+The terminal gives up exactly the row's height. It resizes only when the wait
+starts, ends or its text changes, never as the age ticks over. In a split,
+each group's row follows its own tab. The row goes as soon as the wait ends,
+and it never shows for a stopped instance or a roster that is out of date.
+
 ## Copy from a terminal
 
 Drag over an agent's output to select it, as in any terminal. The selection
