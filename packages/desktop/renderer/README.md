@@ -2174,7 +2174,8 @@ and `forget` cover it. `focusArrival` applies the arriving one's place at the en
 `selectTab(…, { focusContent: true })` (never `term.focus()`; a terminal that can't take
 its input focus now, attaching or ended, has its tab trigger focused meanwhile), a tab
 control through its handle, else the region's landing (`focusRegion`), never `<body>`.
-A landing on the page (or the views, the panel, the foot) waits for `watchPage`: the
+A landing on the page (or the views, the panel, the foot), and the no-place rule (keep a
+focus still shown, else main), wait for `watchPage`: the
 mounted views repaint in their own workspace listeners, which run after the shell's, so
 it lands in a microtask, and again at each repaint of `#stagehost` while it has not
 landed or the focus fell to `<body>`, until the operator acts or the ticket goes. A page

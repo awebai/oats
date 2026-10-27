@@ -2875,10 +2875,9 @@ function focusArrival(place) {
     tabOpenIntents.applyFocus(() => (!place.content && (place.handle.restoreExact() || focusOn(t?.triggerEl ?? tabhost.querySelector(".focused-group > .split-empty")))) || main());
     return;
   }
-  if (!place) {
-    const at = document.activeElement;
-    if (at && at !== document.body && isShown(at)) return; // where the switch found it, still shown
-  }
+  // No place: the focus stays where the switch found it while that is still shown once the page has repainted (a
+  // pick keeps its row of the list), else lands on main.
+  if (!place) { watchPage(owns, () => !focusLost() || main()); return; }
   // The rest lands on the page, the views, the instance panel or the foot: by identity, or a control near it in its
   // own region (never a transit surface, never another region), else that region's landing.
   watchPage(owns, () => {
@@ -2887,6 +2886,12 @@ function focusArrival(place) {
     if (target && !isTransit(target) && focusOn(target) && focusRegions.regionOfFocus() === place.region) return true;
     return (!!place.region && focusRegions.focusRegion(place.region)) || main();
   });
+}
+
+/** The focus is nowhere: on <body>, or on a control no longer shown (a page repaint removed it). */
+function focusLost() {
+  const at = document.activeElement;
+  return !at || at === document.body || !isShown(at);
 }
 
 /** A landing on the page (focusArrival): the mounted views repaint for the workspace in their own listeners, which run
@@ -2898,14 +2903,13 @@ let pageWatch = null;
 function watchPage(owns, land) {
   const input = operator.input(), pointer = operator.pointer();
   const quiet = () => owns() && !modalOpen() && operator.input() === input && operator.pointer() === pointer;
-  const lost = () => !document.activeElement || document.activeElement === document.body || !isShown(document.activeElement);
   queueMicrotask(() => {
     if (!quiet()) return;
     let landed = tabOpenIntents.applyFocus(land);
     if (typeof MutationObserver !== "function") return;
     const watch = pageWatch = new MutationObserver(() => {
       if (!quiet()) { watch.disconnect(); if (pageWatch === watch) pageWatch = null; return; }
-      if (!landed || lost()) landed = tabOpenIntents.applyFocus(land);
+      if (!landed || focusLost()) landed = tabOpenIntents.applyFocus(land);
     });
     watch.observe(stageHost, { childList: true, subtree: true });
   });

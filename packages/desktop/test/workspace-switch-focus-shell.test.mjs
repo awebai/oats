@@ -144,7 +144,7 @@ function shell(t) {
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal", "syncTabNeedsInput", "focusGroup",
     "releaseTakenWorkspace", "closeWorkspaceTabs", "restoreHandedLayout", "rosterEntry", "setRovingRow",
-    "focusMainContent", "focusOn", "focusArrival", "applyRosterPlace", "watchPage"];
+    "focusMainContent", "focusOn", "focusArrival", "applyRosterPlace", "watchPage", "focusLost"];
   const functions = names.map(name => {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -504,6 +504,26 @@ test("a page place on a mounted page that rebuilds for the workspace in its own 
   assert.notEqual(s.active(), s.document.body, "never <body>");
   assert.ok(s.document.getElementById("stagehost").contains(s.active()), "the page's control (else its first one)");
   assert.equal(s.active().textContent, refresh().textContent, "its Refresh, drawn again for A");
+});
+
+test("no place (a first visit) from a control of a page that rebuilds for the workspace: main's landing, never <body>; a pick keeps its row", async t => {
+  const s = shell(t);
+  setWorkspace("A");
+  const off = onWorkspaceChange(ws => { s.c.workspace = ws; s.c.generation++; s.restoreWorkspaceTabs(); });
+  t.after(off);
+  s.document.getElementById("stagehost").replaceChildren();
+  const page = mountAutomationsPage(s.document.getElementById("stagehost"), { api: async () => ({ status: "ok", result: { triggers: [], schedules: [] } }) },
+    "trigger", undefined, { cli: () => ({ ok: true, features: ["automations"], automationsApi: 1 }), subscribeCli: () => () => {} });
+  t.after(() => page.dispose());
+  await settle();
+  const before = s.document.querySelector(".auto-header button");
+  before.focus();
+  setWorkspace("B"); await settle(); // workspace.next from the page: B was never shown here
+  assert.equal(before.isConnected, false, "the page rebuilt itself for B");
+  assert.notEqual(s.active(), s.document.body, "never <body>");
+  assert.ok(s.document.getElementById("stagehost").contains(s.active()), "main's landing: the page's first control");
+  s.row("C").focus(); setWorkspace("C"); await settle(); // a pick of a first visit
+  assert.equal(s.active(), s.row("C"), "the list row it was picked from, still shown");
 });
 
 test("a page landing is applied again when a later repaint of the page drops the focus, until the operator acts", async t => {
