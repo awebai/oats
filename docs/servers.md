@@ -266,7 +266,7 @@ sent as text or on stdin, never as paths.
 
 | Command | Where it runs | The server must advertise |
 |---|---|---|
-| `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-name` for `--name`; `spawn-preview-2` for `--preview`; `spawn-suggest-name` for `--suggest-name` on a preview, `spawn-apply-suggest-name` on an apply; `instance-background` for `--background` or `--no-background` |
+| `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-name` for `--name`; `spawn-preview-2` for `--preview`; `spawn-suggest-name` for `--suggest-name` on a preview, `spawn-apply-suggest-name` on an apply; `instance-background` for `--background` or `--no-background`; `instance-same-work` for `--same-work` |
 | `status` | registered workspace | |
 | `retire` | the instance's home | `retire-home` to retire by exact home |
 | `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key`; `session-attach-no-status-line` for `attach --no-status-line`, which a host without it ignores |
@@ -282,6 +282,7 @@ sent as text or on stdin, never as paths.
 | `instance stop --plan\|--apply`, `retire --plan`, `retire --plan-revision … --idempotency-key …` | the instance's home | `lifecycle-plans` (`lifecycleApi: 1`) |
 | `instance color` | the instance's home | `instance-color` |
 | `instance background` | the instance's home | `instance-background` |
+| `instance same-work` | the instance's home | `instance-same-work` |
 
 `instance suggest-name` and `instance upgrade` are never routed: `--server` is
 `E_BAD_ARGS`. `instance suggest-name` names a spawn on the machine that asks,
@@ -406,7 +407,10 @@ carries `waitingOnYou` (needs input) when the host's kernel reports it, and
 only then: an older host's row has no such key. `retire` (0.59.0, a retire
 of the home running, unknown, failed or interrupted) is relayed the same
 way, through the kernel's own read of it, and a value that read refuses is
-dropped ([`retire`](desktop-cli-api.md#row-retire)). A removed or edited registration keeps
+dropped ([`retire`](desktop-cli-api.md#row-retire)). `sameWork` (feature
+`instance-same-work`, the instance does the same work as its parent) is
+relayed only when the host's row has `sameWork: true`, and is absent
+otherwise ([`sameWork`](desktop-cli-api.md#row-same-work)). A removed or edited registration keeps
 its group from the saved routes. State is pulled on every call, from every
 group at once: each probe has its own deadline, `--per-target` (default 20 s)
 capped by `--budget` (default 45 s, the deadline of the whole answer), and a

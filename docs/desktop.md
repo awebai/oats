@@ -915,6 +915,22 @@ right of its parent, and related instances are grouped together. Siblings are
 joined by a dotted line through their dots. A parent's line to its children
 runs just to the right of the dotted line, so the two never merge.
 
+A parent's line joins only the children that do its work. When the instances'
+OATS has the `instance-same-work` feature, a child the kernel reports as doing
+its parent's work (`sameWork: true` in its row, set with `oats spawn …
+--same-work` or `oats instance same-work <instance> on`) is joined to its
+parent, and any other child keeps its place and its indent with no line to its
+parent. Under one parent the joined children are listed first, then the others,
+each part in name order, so the parent's line ends at its last joined child and
+never passes one it doesn't join. Nothing else marks the flag: no label, no
+tag, and nothing for a screen reader, which still hears each child "under" its
+parent in the command palette. The command palette draws the same lines, in
+its own recency order inside each part. For another machine's instances, its
+host must report the feature too, through an installed OATS with
+`server-probe-features`. A host without the feature, or one whose features are
+not known (its last read failed), keeps a line to every child. A spawn from the
+Desktop never sets the flag.
+
 A row shows the instance's name as words: each `-` is a space, and the first
 letter is a capital, so `oats-expert-maintainer-lanes` reads "Oats expert
 maintainer lanes". Only the row's label changes. The hover card, the command
