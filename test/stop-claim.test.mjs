@@ -277,12 +277,15 @@ test("a stop beside a retire held at each of its phases is refused E_INSTANCE_RE
         assert.notEqual(early.planRevision, shown.planRevision, "the plan made before the retire is stale by now");
         // The retire is held at one call: nothing but the stop could change the home meanwhile, so
         // the whole home is compared, byte for byte, at every phase.
-        const before = { home: listing(i.home), events: i.events(), claim: readFileSync(i.lock, "utf8"), recoveries: i.recoveries() };
+        const before = { home: listing(i.home), events: i.events(), claim: readFileSync(i.lock, "utf8"), recoveries: i.recoveries(), stopFiles: stopFiles(i.home) };
+        // A retire records the stop of the session it ends before it ends it (#1559): once it has
+        // stopped the session, that record is the retire's, there before the stop arrives.
+        assert.deepEqual(before.stopFiles, phase.key === "b" ? [".oats-stop.json"] : [], "fixture premise: the stop files in the home are the retire's own");
         // The holder is answered before the revision is compared: never E_PLAN_STALE.
         for (const [what, revision, key] of [["with the revision of the plan read while the retire is held", shown.planRevision, "s1"], ["with the revision of a plan made before the retire began", early.planRevision, "s2"]]) {
           refusedByHolder(d.apply(i.name, revision, key), { target: i, action: "retire", pid: run.child.pid }, what);
           assert.deepEqual(listing(i.home), before.home, `${what}: the stop wrote nothing into the home, and changed nothing of it`);
-          assert.deepEqual(stopFiles(i.home), [], `${what}: no stop marker, no stop record, no receipt and no private file of a write`);
+          assert.deepEqual(stopFiles(i.home), before.stopFiles, `${what}: no stop marker, no stop record, no receipt and no private file of a write`);
           assert.equal(i.events(), before.events, `${what}: the stop appended no event`);
           assert.deepEqual([readFileSync(i.lock, "utf8"), i.recoveries()], [before.claim, before.recoveries], `${what}: the claim is the retire's, as it was, and its recovery is untouched`);
           if (phase.key === "a") assert.equal(alive(i.pid), true, `${what}: nothing was stopped`);
