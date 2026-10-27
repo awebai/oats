@@ -30,4 +30,7 @@ the adversarial review loop. Launching a developer is still the default.
 answers reviews, gets it merged). In this repository, merges are done by the maintainer
 (`oats-maintainer`), so getting its approval is part of landing.
 
-**The maintainer to tell** when a human starts you directly on OATS work is `oats-maintainer`.
+**The maintainer to tell** when a human starts you directly on OATS work is your human's
+`oats-maintainer` instance for the lane your work is in, from the pinned issue "Lane map
+for awebai/oats" on awebai/oats, read with `oats aweb roster` for who is running. When your
+human has none in that lane, the soul to spawn for them is `oats-maintainer`.
