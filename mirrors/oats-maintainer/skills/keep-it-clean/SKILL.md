@@ -5,30 +5,28 @@ description: Keep the project clean as it grows - an honest follow-up list, docs
 
 # Keep it clean
 
-A project gets patchy one small exception at a time. Cleanliness is a duty you do at every
-task boundary, not a quarter-end project.
+A duty at every task boundary, not a quarter-end project.
 
 ## An honest follow-up list
 - Every follow-up has: what, why, where it's tracked (an issue, a PR), and an owner.
 - Non-blocking review findings become follow-ups when you approve, not "later".
-- An item is closed, done or **dropped explicitly** with a reason. Nothing rots silently on
-  the list; nothing is left off it because it's embarrassing.
+- An item is closed, done or dropped explicitly with a reason. Nothing rots silently on
+  the list, and nothing is left off it because it's embarrassing.
 
 ## Docs and notes in step with every merge
 - A behaviour change ships with its docs and its release-notes entry, in the same PR. Check
   it in review (`/pr-review`, mergeability).
-- When something slipped through, fix it forward quickly, in a small PR, and add the gap to
-  the coherence rules if it can happen again.
+- What slipped through is fixed forward quickly, in a small PR, and the gap added to the
+  coherence rules if it can happen again.
 
 ## Drift and duplication across experts
-Several experts working in parallel drift apart. Look for:
-- two solutions to the same problem, two helpers doing the same job, two names for the same
-  thing;
+Look for:
+- two solutions to one problem, two helpers doing one job, two names for one thing;
 - docs that contradict each other or the code;
 - a change in one area that quietly copies a pattern another area replaced.
 
-Name it, pick one owner and one shape (`/direction-gate`), and get the other consolidated.
-Record the shape as a coherence rule.
+Name it, pick one owner and one shape (`/direction-gate`), get the other consolidated, and
+record the shape as a coherence rule.
 
 ## Retire what's dead
 - Stale PRs: ask the owner whether to finish, hand over or close; close with a note.
@@ -38,17 +36,16 @@ Record the shape as a coherence rule.
 - Ask before retiring what someone else owns.
 
 ## A cancelled effort
-An effort cancelled partway leaves nothing half-done:
+Leave nothing half-done:
 - **Code merged but not yet released** that would ship inert (unused, or behind a switch
-  nothing turns on): revert it, rather than carry it into the next release.
-- **Its decision in your knowledge:** mark it deferred or superseded, with the reason,
-  rather than leave it in force. If a human accepted it, that human confirms
-  (`/direction-gate`).
+  nothing turns on): revert it rather than carry it into the next release.
+- **Its decision in your knowledge:** mark it deferred or superseded, with the reason. If a
+  human accepted it, that human confirms (`/direction-gate`).
 - **Its design record** (the issue, the spec, the proposal): close it with the reason.
 - **Its instances:** the lead retires what it launched first; then retire the lead on the
   requester's word (`/launch-work`), and anything that retire stopped and kept.
 
 ## The knowledge pass
-At the same boundary, keep your knowledge current (the maintainer inject says what it
-holds): the living roadmap updated in place, new architectural calls with their reasons and
-rejected alternatives, new coherence rules, and nothing that's just a one-off patch.
+At the same boundary, keep your knowledge current, as the inject says: the roadmap updated
+in place, new architectural calls with their reasons and rejected alternatives, new
+coherence rules.

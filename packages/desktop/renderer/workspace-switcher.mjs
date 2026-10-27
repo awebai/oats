@@ -18,7 +18,7 @@ import { isLocalPath, workspaceChoiceRows } from "../../client/workspace-choices
    A list of buttons, not a listbox (the sidebar's plain keys stay live on it): one tab stop (the current row,
    else the row last focused), Up/Down/Home/End move, Enter opens. ⌘Enter / Ctrl+Enter opens a row in a new
    window, and so does its context menu (a right-click, Shift+F10 or the Menu key): no button is drawn for it.
-   `step(±1)` (the leader's ↑/↓) selects the previous / next row, as a click does.
+   `step(±1)` (the leader's ↑/↓) selects the previous / next row, as a click does, wrapping at the ends.
 
    This computer's deployments not opened are not rows: Add local workspace… offers them, each one a button that
    adds it and opens it here (#518), and after them the rows of this computer's list that can't be opened, each
@@ -90,6 +90,9 @@ export function createWorkspaceSwitcher({
   openInNewWindow = null, mac = false,
   // Where "Show only the current workspace" is remembered (a Storage: localStorage), else not at all.
   storage = null,
+  // The shell's guard for a focus it restores (selection-ownership.mjs applyFocus): a repaint keeping the focus on
+  // the row that had it is no new intent of the operator's.
+  applyFocus = (fn) => fn(),
 }) {
   const q = (id) => document.getElementById(id);
   const section = q("ws-list"), options = q("ws-options"), addOpen = q("ws-add-open");
@@ -174,16 +177,16 @@ export function createWorkspaceSwitcher({
   /** Where focus goes in the list: its tab stop, else the current row, else the first row. */
   const focusTarget = () => rowOf(stopKey) || rowOf(activeId) || menuItems()[0] || addOpen;
   const openInWindow = (id) => { openInNewWindow(id); };
-  /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`). It is the pending pick until the
-   * switch lands here (reset) or is refused. */
+  /** Pick `id` (selectWorkspace: the shell's switch, which may answer `{ ok }`; `how` goes to it as it is).
+   * It is the pending pick until the switch lands here (reset) or is refused. */
   let pickToken = 0;
-  const pick = (id) => {
+  const pick = (id, how) => {
     // Each pick owns its own answer: a refused or superseded older pick never clears a newer one, even of the same id.
     const mine = ++pickToken;
     pickedId = id;
     const done = () => { if (pickToken === mine) pickedId = ""; };
     let answer;
-    try { answer = selectWorkspace(id); } catch { answer = { ok: false }; }
+    try { answer = selectWorkspace(id, how); } catch { answer = { ok: false }; }
     Promise.resolve(answer).then((r) => { if (r?.ok === false) done(); }, done);
   };
   /** The rows as drawn, for the moves: `{ key, openable, open() }`, in order. Every row can be opened (a row
@@ -222,10 +225,10 @@ export function createWorkspaceSwitcher({
       // The whole name, for a name cut off: never a path or a machine.
       button.title = tooltip;
       if (openInNewWindow) button.setAttribute("aria-describedby", hint.id);
-      const choose = () => {
+      const choose = (how) => {
         // Picked unless it is already what this window shows or is about to show: the current row while another
         // pick is on its way supersedes that pick (the latest pick wins).
-        if (workspace.id !== (pickedId || activeId)) pick(workspace.id);
+        if (workspace.id !== (pickedId || activeId)) pick(workspace.id, how);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
         if (row.deployment) requestDeploymentTab(workspace.id, row.deployment);
@@ -245,8 +248,7 @@ export function createWorkspaceSwitcher({
     if (!rowOf(stopKey)) stopKey = "";
     const stop = focusTarget();
     if (stop?.classList?.contains("ws-option")) stop.tabIndex = 0;
-    if (focusedKey) (rowOf(focusedKey) || focusTarget()).focus();
-    else if (focused) focusTarget().focus();
+    if (focused) applyFocus(() => (focusedKey ? rowOf(focusedKey) || focusTarget() : focusTarget()).focus());
     // A context menu whose row is gone closes; focus that was in it goes to the list's stop (the current row), never
     // <body> (review: Show only the current workspace's chord from another row's menu).
     if (menuFor && !rowOf(menuFor)) { closeRowMenu(false); if (menuFocusKey) focusTarget().focus(); }
@@ -794,13 +796,15 @@ export function createWorkspaceSwitcher({
     /** Focus the list's current row, else its tab stop (the `w` key, the leader's `o`, app.workspaces). */
     focusList() { const target = rowOf(activeId) || focusTarget(); target?.focus(); revealInScrollport(options, target); noteMore(); return !!target; },
     /** The leader's ↑/↓ (`step` -1 / 1): select the previous / next row, as a click does (a row another window
-     * shows is taken over). False at an end. */
-    step(delta) {
+     * shows is taken over), going on from the other end past the last / first; `how` goes to selectWorkspace.
+     * False when no other row can be shown. */
+    step(delta, how) {
       // From the pick still on its way, else the current row: presses faster than a switch make as many moves.
-      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), pickedId || activeId || null, delta);
-      const row = key === null ? null : drawn.find((entry) => entry.key === key);
+      const from = pickedId || activeId || null;
+      const key = workspaceStep(drawn.map(({ key, openable }) => ({ key, openable })), from, delta, { wrap: true });
+      const row = key === null || key === from ? null : drawn.find((entry) => entry.key === key);
       if (!row) return false;
-      row.open();
+      row.open(how);
       return true;
     },
     /** Open the Add dialog (the chooser's button, a window with nothing to show); `opener` gets focus back. */

@@ -7,6 +7,7 @@
 // shared home's rule for a kept failure (deployment-facts.mjs keptFailure), are pure and shared the same way.
 // #1247: the window's retires in flight. A suite about other behaviour holds none: rows are drawn as the roster
 // says (`shownRows` the identity) and a read lets nothing go; a suite about them passes the shipped ones.
+// A workspace switch's focus place (focus-place.mjs) is inert the same way.
 import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "../../renderer/desktop-terms.mjs";
 import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
@@ -36,4 +37,7 @@ export const viewContext = () => ({
   // #1237: a terminal tab's incarnation (retired-tabs.mjs) and the retired-tab rule's module state. A roster read
   // runs the rule; a suite about other behaviour gets this no-op, and retired-tabs-shell extracts the shipped one.
   retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin, panelReads: 0, judgedAnswer: null, closeRetiredTabs() {},
+  // A switch puts the keyboard back where it was (focus-place.mjs): a suite about other behaviour remembers no place
+  // and applies none; workspace-switch-focus-shell extracts the shipped focusArrival and applyRosterPlace.
+  focusPlaces: { take: () => null, note() {}, forget() {}, rehome() {} }, focusArrival() {}, applyRosterPlace() {},
 });

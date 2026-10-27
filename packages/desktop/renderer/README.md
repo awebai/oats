@@ -601,9 +601,10 @@ split into sections) is `packages/client/roster-sections.mjs`.
     main's native Copy/Paste menu never shows for a row. Esc or Tab close it, back on the row.
     No IPC of its own: the item calls `openInNewWindow`, as ⌘Enter does.
   - `step(±1)` is the leader's ↑ / ↓ (`workspace-previous` / `workspace-next`,
-    leader-dispatch.mjs, which says `NO_WORKSPACE_ABOVE` / `NO_WORKSPACE_BELOW` at an end):
-    `packages/client/workspace-step.mjs` over the rows as drawn (`drawn`, every one openable);
-    it opens the row as a click does.
+    leader-dispatch.mjs, which says `NO_OTHER_WORKSPACE` when it is false):
+    `packages/client/workspace-step.mjs` with `wrap` over the rows as drawn (`drawn`, every
+    one openable, the hidden ones of Show only the current workspace included); it opens
+    the row as a click does, and is false when no row but the current one can be shown.
   - A pick (click, Enter, `step`) calls `selectWorkspace`, which the shell runs as
     `switchWorkspace(id, { takeOver: true })` (see common.mjs above).
   - **Show only the current workspace** (2026-10-23): `#ws-current-only`, a `.side-icon-button` toggle before
@@ -1740,6 +1741,11 @@ section is the module map.
 - **surface-return.mjs** — "back to where you were" after a flow that moved
   the main surface (Quick Open's spawn dialog): the same tab or stage and
   control, unless the operator moved on.
+- **focus-place.mjs** — where the keyboard was in a workspace, so a switch back puts it there (a tab's
+  content or control, a roster row, anything else with its F6 region), each with a `captureFocusReturn`
+  handle. The list of workspaces, the palette, dialogs, menus and listboxes are transit surfaces, never a
+  place: the shell keeps the last focus outside them per workspace (a `focusin` tracker), so a pick from
+  the list remembers what was focused before. See "Workspace-local tab memory".
 - **overlay-picker.mjs** — the shared overlay + fuzzy machinery behind the
   command palette and Quick Open: one input over a listbox
   (arrows/Enter/Esc, aria option pattern) and the stale-load generation guard.
@@ -2160,6 +2166,31 @@ falls back to the stage. Restart restoration of tab layouts is not implemented y
 Memory is keyed by the view id; `rehome(map)` moves a deployment id's memory to its view
 (see "Workspace views"). A workspace another window takes over is forgotten here
 (`forget(workspace)`, from shell.mjs `closeWorkspaceTabs`), its tabs closed first.
+
+The memory also holds the workspace's focus place (`focus-place.mjs`), taken by
+`restoreWorkspaceTabs` as the workspace is left, before its panes hide, so `rehome`
+and `forget` cover it. `focusArrival` applies the arriving one's place at the end of
+`restoreWorkspaceTabs` under one `tabOpenIntents` ticket: a tab's content through
+`selectTab(…, { focusContent: true })` (never `term.focus()`; a terminal that can't take
+its input focus now, attaching or ended, has its tab trigger focused meanwhile), a tab
+control through its handle, else the region's landing (`focusRegion`), never `<body>`.
+A landing on the page (or the views, the panel, the foot), and the no-place rule (keep a
+focus still shown, else main), wait for `watchPage`: the
+mounted views repaint in their own workspace listeners, which run after the shell's, so
+it lands in a microtask, and again at each repaint of `#stagehost` while it has not
+landed or the focus fell to `<body>`, until the operator acts or the ticket goes. A page
+handle is accepted only in its own region and off the transit surfaces (its ancestor
+fallback can reach any control of the window). The list of workspaces repaints through
+the shell's `applyFocus` (workspace-switcher.mjs `applyFocus`), so keeping its focused
+row is no new intent for the sidebar's focusin.
+A roster place waits for the roster: `applyRosterPlace` runs at the end of every roster
+paint of rows, of the empty copy or of a failed read (not a pending one), and applies it
+once, unless the ticket is gone or the operator pressed a key, or clicked and moved the
+focus (`watchOperator`), since the switch. `views/common.mjs` `landsFocusPlace(ws)` says
+whether a landing places at all: `switchWorkspace(…, { focusPlace: false })` (handOff,
+followView, a step made from the list of workspaces) and a take-over that brought a
+layout (`restoreHandedLayout` owns the focus) do not. Nothing is applied under a modal or
+the palette. Tests: `test/workspace-switch-focus-shell.test.mjs`.
 
 All artifact tabs (terminal, brain, file) are workspace-scoped, including their
 activation boundary and deduplication keys. A retained brain tab has a pinned

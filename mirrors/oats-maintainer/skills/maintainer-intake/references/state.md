@@ -3,12 +3,8 @@
 One file, rewritten on every full sweep and updated row by row between sweeps, in this
 order. Keep it where your working state lives (your instance home, or wherever your soul
 says), not in the repository. Empty sections stay, with "none", so a reader can tell
-"nothing" from "not checked".
-
-It holds **your lane only**: in a lane you share, the efforts you launched and the PRs
-handed to you. Another lane's PRs, verdicts and holds are on the forge: read them there when
-you need them, and never copy them here. The release lane's maintainer also lists the PRs
-handed to it for the final review and the sign-offs asked of it, under "Waiting on me".
+"nothing" from "not checked". The release lane's maintainer also lists the PRs handed to it
+for the final review and the sign-offs asked of it, under "Waiting on me".
 
 ```markdown
 # Maintainer state: <repositories>, lane <lane> (swept <date and time>)
@@ -47,8 +43,8 @@ Merged (with SHAs), released, retired, decided, recorded in knowledge.
 Rules:
 - Exact references only: `repo#PR @ <sha>`, message ids, issue numbers, tags. Never "the
   latest".
-- A hold names its scope (which PR, which action) and who can lift it. GO lifts only the
-  scope it names. The hold itself is the label on the forge (`/cross-review-peer`); this
-  file only says what you wait for because of it.
+- A hold names its scope (which PR, which action) and who can lift it. The hold itself is
+  the label on the forge (`/cross-review-peer`); this file only says what you wait for
+  because of it.
 - What you merged or released appears once under "Since the last sweep", with the
   observed result (merge commit, CI on it, the published version), not the intent.

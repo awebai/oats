@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   leaderApplies, leaderLabel, keyIdCaps, rowKeysText, supportedLeaderRows, LEADER_ACTIONS, LEADER_LABELS,
 } from "../renderer/leader-keys.mjs";
-import { createLeaderDispatch, rosterStep, actAvailability, NO_TARGET, NO_WORKSPACE_ABOVE, NO_WORKSPACE_BELOW } from "../renderer/leader-dispatch.mjs";
+import { createLeaderDispatch, rosterStep, actAvailability, NO_TARGET, NO_OTHER_WORKSPACE } from "../renderer/leader-dispatch.mjs";
 import { LEADER_TABLE, CHORDS } from "../../client/keymap.mjs";
 import { createLeader } from "../renderer/leader.mjs";
 import { readFileSync } from "node:fs";
@@ -140,7 +140,7 @@ test("dispatch: Up/Down open the neighbour's terminal; acts open the menu's dial
   assert.ok(d.supports("refresh"), "the sidebar's r");
 });
 
-test("dispatch: the leader's ↑ / ↓ move between workspaces (workspaceStep ∓1), never over the roster; at an end one line says so", () => {
+test("dispatch: the leader's ↑ / ↓ move between workspaces (workspaceStep ∓1, wrapping), never over the roster; with no other workspace one line says so", () => {
   const ends = { [-1]: true, [1]: true };
   const { d, calls } = dispatchRig({ instances: [inst("a"), inst("b")], rows: [{ id: "a", openable: true }, { id: "b", openable: true }],
     workspaceStep: delta => ends[delta] });
@@ -152,9 +152,9 @@ test("dispatch: the leader's ↑ / ↓ move between workspaces (workspaceStep �
   ends[-1] = false; ends[1] = false;
   d.run("workspace-previous", { targetId: "a" });
   d.run("workspace-next", { targetId: "a" });
-  assert.deepEqual(calls, [["workspace-step", -1], ["say", NO_WORKSPACE_ABOVE], ["workspace-step", 1], ["say", NO_WORKSPACE_BELOW]]);
-  assert.equal(NO_WORKSPACE_ABOVE, "No workspace above this one.");
-  assert.equal(NO_WORKSPACE_BELOW, "No workspace below this one.");
+  assert.deepEqual(calls, [["workspace-step", -1], ["say", NO_OTHER_WORKSPACE], ["workspace-step", 1], ["say", NO_OTHER_WORKSPACE]],
+    "the same line either way: the moves wrap, so only the absence of another workspace stops them");
+  assert.equal(NO_OTHER_WORKSPACE, "No other workspace to show.");
   // The chords' previous / next still step the roster, and touch no workspace.
   calls.length = 0;
   d.run("next", { targetId: "a" });
@@ -259,7 +259,7 @@ test("roster.openPrevious, roster.openNext, workspace.previous, workspace.next a
   assert.deepEqual(both("next", { instance: "c" }), [["say", "No instance below this one has a terminal to open."]]);
   assert.deepEqual(both("zoom", { instance: "a" }), [["zoom"]]);
   assert.deepEqual(both("workspace-previous", { instance: "a" }), [["workspace", -1]]);
-  assert.deepEqual(both("workspace-next", null), [["workspace", 1], ["say", "No workspace below this one."]], "the last workspace: the line says so");
+  assert.deepEqual(both("workspace-next", null), [["workspace", 1], ["say", "No other workspace to show."]], "no other workspace: the line says so");
   opening = "a";
   assert.deepEqual(both("next", { instance: "c" }), [["open", "c"]], "an open of a in flight: the step is from a");
   opening = null;
