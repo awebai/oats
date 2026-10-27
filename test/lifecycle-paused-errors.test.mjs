@@ -111,10 +111,20 @@ function assertInspectionFailed(error, w, statement) {
   assert.ok(error.message.endsWith(statement), `the message ends with what the retire had done: ${error.message}`);
 }
 /** The home is what `listed` holds, but for the file the test removed. */
-function assertHomeKept(w, listed, what) {
+/** `stopRecorded`: the retire ended the session, and recorded that stop first (`.oats-stop.json`,
+ *  naming the home's start, so the kept home reads `stopped` and no resume brings it back, #1559):
+ *  that one file is new, and is what it must be. */
+function assertHomeKept(w, listed, what, { stopRecorded = false } = {}) {
   const expected = { ...listed };
   delete expected["notes/gone.md"];
-  assert.deepEqual(listing(w.home), expected, `the home is byte-identical to what it was ${what}, apart from the file the test removed`);
+  const actual = listing(w.home);
+  if (stopRecorded) {
+    assert.equal(expected[".oats-stop.json"], undefined, "fixture premise: no stop record before the retire");
+    const record = JSON.parse(readFileSync(join(w.home, ".oats-stop.json"), "utf8"));
+    assert.deepEqual({ ...record, at: typeof record.at }, { instance: w.name, at: "string", stop: null, retained: ["home", "work", "transcript", "launch"], startId: JSON.parse(readFileSync(join(w.home, "instance.json"), "utf8")).startId ?? null }, "the retire recorded the stop of the start it ended");
+    delete actual[".oats-stop.json"];
+  }
+  assert.deepEqual(actual, expected, `the home is byte-identical to what it was ${what}, apart from the file the test removed${stopRecorded ? " and the stop the retire recorded" : ""}`);
 }
 
 test("an entry that vanishes under the retire's first inspection is answered E_WORK_INSPECTION_FAILED: nothing was stopped, run or removed, and the next retire succeeds", async (t) => {
@@ -189,7 +199,7 @@ test("an entry that vanishes under the inspection before the hooks of a launched
     assertInspectionFailed(error, w, `No retire hook has run and nothing was deleted: ${w.name} is not retired and its home and work are kept; its session has been stopped.`);
     assert.deepEqual(error.details.reached, { phase: "before-hooks", sessionStopAttempted: true, hooksStarted: false, home: "kept", recovery: null });
     assert.deepEqual(windows(socket), ["keeper"], "the instance's window is gone, and only that one");
-    assertHomeKept(w, atStart, "before the retire");
+    assertHomeKept(w, atStart, "before the retire", { stopRecorded: true });
     assert.equal(w.hookRuns(), 0, "no retire hook ran");
     assert.deepEqual(w.recoveries(), [], "no recovery was written");
     assert.deepEqual(w.staging(), [], "no staging directory is left");

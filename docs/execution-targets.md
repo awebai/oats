@@ -1173,6 +1173,18 @@ stopped with OATS, or whose harness ended by itself, stay stopped. Stopping an
 instance with OATS is the only way to keep it down: nothing opts a deployment
 or an instance out of the sweep.
 
+**A home OATS is stopping, upgrading or retiring, or whose retire did not
+finish, is never resumed** (OATS 0.69.2). A resume holds the home's lifecycle
+claim for its whole start, the claim a retire, a stop and an upgrade hold, so
+it never runs beside one of them, and it reads under that claim whether the
+home owes a retire and whether its session is still lost. The sweep reports
+such a home `skipped`, `lifecycle-busy`, and starts nothing; what OATS was
+doing decides what the home is next. A retire records the stop of the session
+it ends, before it ends it, so a home it was retiring reads `stopped`, never
+`lost`, even when the retire fails afterwards. The one exception is when the
+stop record itself cannot be written (a full disk) and the retire then fails
+as well: that home reads `lost`, as it did before 0.69.2.
+
 #### How a session's end is read
 
 A launched home that does not run reads one of three ends, `sessionEnd` on
@@ -1188,7 +1200,8 @@ for its current start (`startId` in `instance.json`):
 
 The window a spawn or a start makes writes the exit marker,
 `.oats-start-exited`, when the harness exits; `oats instance stop` writes its
-record, `.oats-stop.json`. Both are kernel-private files of the home, not a
+record, `.oats-stop.json`, and so does a retire, before it ends the window
+(0.69.2). Both are kernel-private files of the home, not a
 contract: read `sessionEnd`. A shutdown kills the window's shell with the
 harness, so a lost session leaves no marker. A home spawned before 0.69 and
 never restarted since names no start: it reads `stopped` only after a stop,
@@ -1289,7 +1302,9 @@ tui` reading it, and the sweep's own read). All four must hold:
 1. OATS saw the home running for its current start.
 2. No earlier sweep answered this loss. A sweep answers each lost home once,
    whatever it did with it (resumed, started fresh, blocked, refused or
-   skipped). A status read never uses a loss up, and `--plan` answers none.
+   skipped), except a home it skipped because OATS was stopping, upgrading
+   or retiring it. A status read never uses a loss up, and `--plan` answers
+   none.
 3. OATS first saw it not running less than 24 hours ago.
 4. Within one boot, OATS first saw it not running less than 24 hours after it
    last saw it running. Across a reboot this one does not apply.
@@ -1343,8 +1358,14 @@ kernel (`lib/session-seen.mjs`).
 writes it, and skips a deployment `oats deployments remove` took out of it;
 `--deployment <dir>` sweeps one directory, listed or not. It starts each lost
 home it can vouch for with `--resume` in that home's own deployment scope, at
-most 4 at once. What it answers a lost home, the first that applies: not
-seen recently; refused this boot; keeps getting lost; started.
+most 4 at once. What it answers a lost home, the first that applies: OATS
+is stopping, upgrading or retiring it, or its retire is owed
+(`lifecycle-busy`); not seen recently; refused this boot; keeps getting lost;
+started. The first is read from the home's status row, and the start's own
+claim decides when the row read missed it: a start that meets a retire, a
+stop, an upgrade or another resume is reported `lifecycle-busy` too, never
+refused. A home removed between the read and its start is reported
+`not-lost`.
 `--plan` says what it would do and starts nothing. Its answer is in
 [desktop-cli-api.md](desktop-cli-api.md#the-machine-sweep-oats-session-resume).
 
@@ -1352,7 +1373,8 @@ seen recently; refused this boot; keeps getting lost; started.
   left by a process that is gone, or by another boot, is taken over.
 - A loss is answered once: whatever a sweep did with it (resumed, refused,
   skipped or blocked), no later sweep starts it again, in this boot or after
-  a reboot; a later sweep reports it `not-seen-recently`. A refused resume is
+  a reboot; a later sweep reports it `not-seen-recently`. A `lifecycle-busy`
+  skip is the one that answers nothing: the next sweep reads the home again. A refused resume is
   never retried automatically: it is also noted for the boot, and reported
   `refused-this-boot` should that answer be lost.
 - A home is started by sweeps at most 3 times in a boot. A home lost again

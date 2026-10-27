@@ -277,12 +277,15 @@ test("a stop beside a retire held at each of its phases is refused E_INSTANCE_RE
         assert.notEqual(early.planRevision, shown.planRevision, "the plan made before the retire is stale by now");
         // The retire is held at one call: nothing but the stop could change the home meanwhile, so
         // the whole home is compared, byte for byte, at every phase.
-        const before = { home: listing(i.home), events: i.events(), claim: readFileSync(i.lock, "utf8"), recoveries: i.recoveries() };
+        const before = { home: listing(i.home), events: i.events(), claim: readFileSync(i.lock, "utf8"), recoveries: i.recoveries(), stopFiles: stopFiles(i.home) };
+        // A retire records the stop of the session it ends before it ends it (#1559): once it has
+        // stopped the session, that record is the retire's, there before the stop arrives.
+        assert.deepEqual(before.stopFiles, phase.key === "b" ? [".oats-stop.json"] : [], "fixture premise: the stop files in the home are the retire's own");
         // The holder is answered before the revision is compared: never E_PLAN_STALE.
         for (const [what, revision, key] of [["with the revision of the plan read while the retire is held", shown.planRevision, "s1"], ["with the revision of a plan made before the retire began", early.planRevision, "s2"]]) {
           refusedByHolder(d.apply(i.name, revision, key), { target: i, action: "retire", pid: run.child.pid }, what);
           assert.deepEqual(listing(i.home), before.home, `${what}: the stop wrote nothing into the home, and changed nothing of it`);
-          assert.deepEqual(stopFiles(i.home), [], `${what}: no stop marker, no stop record, no receipt and no private file of a write`);
+          assert.deepEqual(stopFiles(i.home), before.stopFiles, `${what}: no stop marker, no stop record, no receipt and no private file of a write`);
           assert.equal(i.events(), before.events, `${what}: the stop appended no event`);
           assert.deepEqual([readFileSync(i.lock, "utf8"), i.recoveries()], [before.claim, before.recoveries], `${what}: the claim is the retire's, as it was, and its recovery is untouched`);
           if (phase.key === "a") assert.equal(alive(i.pid), true, `${what}: nothing was stopped`);
@@ -766,7 +769,7 @@ test("a stop plan's retiring and stopPending are read from the claim: the holder
   const garbage = refusal(d.apply(i.name, revision, "k-garbage"), "E_LIFECYCLE_BUSY", "a file that is no claim");
   const { plan: garbagePlan, ...garbageDetails } = garbage.details;
   assert.deepEqual(garbageDetails, { instance: i.name, home: i.home, lock: i.lock, holder: "unknown" });
-  assert.equal(garbage.message, `${i.lock} is not a readable claim; nothing was stopped — inspect it and remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`);
+  assert.equal(garbage.message, `${i.lock} is not a readable claim; nothing was stopped — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`);
   assert.deepEqual([garbagePlan.instance, readFileSync(i.lock, "utf8"), claimFiles(i.home), stopFiles(i.home)], [i.name, "{not json", [`${i.name}.lock`], []], "the file is as it was, and nothing was written");
   // A holder that is gone (a file a killed command left), of either verb: nobody is shown, and the apply takes it over.
   for (const action of ["retire", "stop"]) {
@@ -796,7 +799,7 @@ test("the two refusals of a stop in which nobody is running say so (holder: \"no
   const left = readFileSync(i.lock, "utf8");
   assert.deepEqual(flags(d.plan(i.name)), [idle(i)], "its holder is gone: the plan shows nobody");
   assert.equal(nobody(d.apply(i.name, shown.planRevision, "k1"), { pid, since: AT, action: "stop" }, "a claim that cannot be taken over"),
-    `the process that held ${i.lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was stopped — inspect ${i.lock} and remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`);
+    `the process that held ${i.lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was stopped — inspect ${i.lock} and remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`);
   assert.equal(readFileSync(i.lock, "utf8"), left, "the file is as it was");
   rmSync(i.lock);
   // A host that does not say when this process started: the stop could not hold its claim verifiably.

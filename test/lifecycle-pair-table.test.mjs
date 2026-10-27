@@ -1,5 +1,5 @@
-// The pair table, walked (awebai/oats#866, feature `lifecycle-claim-stop`). A retire and a stop
-// apply hold the home's claim, and `oats worktree add` reads it; a stop apply that cannot WRITE
+// The pair table, walked (awebai/oats#866, feature `lifecycle-claim-stop`). A retire, a stop
+// apply and a `session start --resume` (#1559) hold the home's claim, and `oats worktree add` reads it; a stop apply that cannot WRITE
 // its claim reads it too (awebai/oats#946), and has a column of its own. What each of them answers
 // when it ARRIVES on a home that another command is on is one table, docs/desktop-cli-api.md
 // "Commands that meet on one home" (anchor `lifecycle-pairs`), which the kernel builds from one
@@ -287,6 +287,20 @@ const ROWS = {
         if (i.harness) await waitUntil(() => !alive(i.harness), `the harness of ${i.name} to be gone: that stop stopped it`);
       } };
     } },
+  "a resume is running": { key: "resuming", holder: "running", action: "resume", plan: { retiring: false, stopPending: false },
+    // `session start --resume` holds the claim for the whole start (#1559). Let go on a home whose
+    // session runs, it starts nothing (a home that is not launched has no session to resume either).
+    setup: async (f, i) => {
+      const held = await heldOnClaim(f, i, ["session", "start", "--resume", "--home", i.home, "--json"], "resume");
+      return { ...held, complete: async () => {
+        held.run.release("claimed");
+        const r = await held.run.done;
+        assert.equal(r.timedOut.length, 0, r.stdout + r.stderr);
+        assert.equal(JSON.parse(r.stdout).error?.code, i.harness ? "E_SESSION_RUNNING" : "E_RESUME_NOT_LOST", `the resume that was on the home ends once it is let go, starting nothing: ${r.stdout}${r.stderr}`);
+        assert.deepEqual(f.claimFiles(i), [], "and released its claim");
+        if (i.harness) assert.equal(alive(i.harness), true, "the session it found runs as before");
+      } };
+    } },
   "a retire whose liveness cannot be read holds the claim": { key: "retire-unread", holder: "unknown", action: "retire", plan: { retiring: true, stopPending: false },
     // A live pid with no recorded start: whether it is that retire cannot be compared. A record
     // without a verb is a retire's (a kernel before the feature wrote none): one of each.
@@ -294,6 +308,8 @@ const ROWS = {
     setup: (f, i, variant) => writtenClaim(f, i, { ...variant.record, pid: f.bystander }) },
   "a stop whose liveness cannot be read holds the claim": { key: "stop-unread", holder: "unknown", action: "stop", plan: { retiring: false, stopPending: true },
     setup: (f, i) => writtenClaim(f, i, { action: "stop", pid: f.bystander }) },
+  "a resume whose liveness cannot be read holds the claim": { key: "resume-unread", holder: "unknown", action: "resume", plan: { retiring: false, stopPending: false },
+    setup: (f, i) => writtenClaim(f, i, { action: "resume", pid: f.bystander }) },
   "the claim file is no readable claim": { key: "garbage", holder: "unknown", action: undefined, plan: { retiring: false, stopPending: false },
     setup: (f, i) => writtenClaim(f, i, null, "{not json") },
   "the holder of the claim is gone": { key: "gone", plan: { retiring: false, stopPending: false },
@@ -439,6 +455,7 @@ test("the pair table of docs/desktop-cli-api.md (\"Commands that meet on one hom
   // The note on the stop that cannot write its claim: it is answered as the stop that can, cell for cell.
   assert.deepEqual(rows.map((row) => row.cells["oats instance stop --apply that cannot write its claim"]), rows.map((row) => row.cells["oats instance stop --apply"]), "a stop apply that cannot write its claim is answered as the stop that can, in every state");
   assert.deepEqual([cell("a stop apply is running", "oats worktree add"), cell("a stop whose liveness cannot be read holds the claim", "oats worktree add")], [null, null], "a stop does not refuse a worktree add");
+  assert.deepEqual([cell("a resume is running", "oats worktree add"), cell("a resume whose liveness cannot be read holds the claim", "oats worktree add")], [null, null], "nor does a resume");
 });
 
 test("every cell of the pair table, through the real CLI in JSON mode: the arriving command is answered with the cell's code and nothing happened (the deployment is byte for byte what it was, the session runs, the command already on the home completes), or it is not refused and does what it does", async (t) => {

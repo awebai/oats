@@ -3714,8 +3714,10 @@ async function sessionCmd() {
         const chosen = ["--launch-config", "--harness", "--model", "--yolo", "--no-yolo", "--reselect-launch"].filter((f) => args.some((a) => a === f || a.startsWith(`${f}=`)));
         if (chosen.length) bad(`--resume runs the launch this home recorded; it cannot be combined with ${chosen.join(", ")}; nothing was read or started`);
       }
-      // Refuse before launch selection or live-team discovery can prepare this home.
-      assertNoPartialUpgrade(home);
+      // Refuse before launch selection or live-team discovery can prepare this home. A resume is
+      // refused under the home's lifecycle claim instead (lib/core.mjs startInstanceSession): beside
+      // an upgrade that runs, it is busy, not a partial upgrade.
+      if (!resume) assertNoPartialUpgrade(home);
       const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), ...(reselectLaunch ? { reselectLaunch: true, launchOffered: await homeLaunchOffered(home, { named: harness !== undefined }) } : {}), ...(resume ? { resume: true } : {}), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");

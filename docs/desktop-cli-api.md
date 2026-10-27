@@ -4688,8 +4688,10 @@ in flight.
 ### Commands that meet on one home
 
 Feature `lifecycle-claim-stop`, OATS 0.52.0 (#866). A retire and a stop apply
-hold the home's claim for their whole run, and `oats worktree add` reads it.
-This table covers those three commands; the upgrade pairs follow separately.
+hold the home's claim for their whole run, and `oats worktree add` reads it;
+from OATS 0.69.2 a `session start --resume` holds it too (its rows below).
+This table covers the commands that arrive on a home; the upgrade pairs and
+the resume pairs follow separately.
 Each cell is the answer of the command that **arrives**. It is given at once
 and before any effect: that command stopped, ran, copied, made and removed
 nothing, and the command already on the home is not disturbed.
@@ -4699,8 +4701,10 @@ nothing, and the command already on the home is not disturbed.
 | a retire is running | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
 | a self-retire is scheduled | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
 | a stop apply is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| a resume is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
 | a retire whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
 | a stop whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| a resume whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
 | the claim file is no readable claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
 | the holder of the claim is gone | not refused | not refused | not refused | not refused |
 
@@ -4711,13 +4715,30 @@ The `instance-upgrade` pairs use the same home's lifecycle claim:
 |---|---|---|
 | a retire is running | `oats instance upgrade` apply | `E_INSTANCE_RETIRING` |
 | a self-retire is scheduled | `oats instance upgrade` apply | `E_INSTANCE_RETIRING` |
-| a stop or upgrade apply is running | `oats instance upgrade` apply | `E_LIFECYCLE_BUSY` |
+| a stop or upgrade apply, or a `session start --resume`, is running | `oats instance upgrade` apply | `E_LIFECYCLE_BUSY` |
 | a holder's verb is unknown, its liveness cannot be read, or the claim is unreadable | `oats instance upgrade` apply | `E_LIFECYCLE_BUSY` |
 | the holder of the claim is gone | `oats instance upgrade` apply | not refused after claim takeover checks |
 | an upgrade apply is running | `oats retire` or `oats instance stop --apply` | `E_LIFECYCLE_BUSY` |
 | an upgrade apply is running | `oats worktree add` | not refused |
 
-Upgrade requires a stopped session. Start and restart do not take or read the
+<a id="resume-lifecycle-pairs"></a>
+`oats session start --resume` (OATS 0.69.2, #1559) holds the same claim for
+the whole start. What it answers when it arrives:
+
+| On the home | Answer of `oats session start --resume` |
+|---|---|
+| a retire is running | `E_INSTANCE_RETIRING` |
+| a self-retire is scheduled, or a retire is owed (the row's [`retire`](#row-retire)) | `E_INSTANCE_RETIRING` |
+| a stop, an upgrade or another resume is running | `E_LIFECYCLE_BUSY` |
+| a holder's liveness cannot be read, or the claim is unreadable | `E_LIFECYCLE_BUSY` |
+| the holder of the claim is gone | not refused after claim takeover checks |
+
+The sweep reports each of these `skipped`, `lifecycle-busy`
+([the sweep's rows](#the-machine-sweep-oats-session-resume)). An upgrade
+apply refuses a home that is not stopped, so it stops nothing: beside a
+resume that is still starting, it meets the claim.
+
+Upgrade requires a stopped session. An ordinary start and restart do not take or read the
 lifecycle claim: upgrade instead holds their existing `.oats-start.lock`
 mutex until its final invocation receipt is persisted. A start blocked by an
 upgrade mutex names the same-key retry. A partial receipt refuses starts through the remaining
@@ -4798,7 +4819,8 @@ since, action}`, with `holder` on `E_LIFECYCLE_BUSY`:
   stop this may be a child of the instance asked for.**
 - `lock`: the file that names the holder. `pid` and `since`: the holder's
   pid and when it took the claim.
-- **`action`: the holder's verb**, `"retire"`, `"stop"` or `"upgrade"`. A claim written
+- **`action`: the holder's verb**, `"retire"`, `"stop"`, `"upgrade"` or
+  `"resume"` (a `session start --resume`, OATS 0.69.2). A claim written
   by a kernel before this feature has no verb and reads as `"retire"`. A
   reader treats a value it does not know as busy.
 - <a id="claim-file-text"></a>**Text of a claim file is never part of an
@@ -5637,7 +5659,7 @@ line and says that nothing was done:
   second for a retire, which does not wait).
   `details` is `{instance, home, lock, holder: "unknown"}`; the message is
   `<lock> is not a readable claim; nothing was done — inspect it and remove
-  it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry`.
+  it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`.
 - A claim whose holder is gone and that this kernel cannot take over is
   never removed either: its `nonce` is not the 32 hexadecimal digits a claim
   carries (a file written or damaged by hand); or it is the claim of a
@@ -5649,7 +5671,7 @@ line and says that nothing was done:
   The message is `the
   process that held <lock> (pid <pid>) is gone, and this file is not a claim
   this kernel can take over (<why>); nothing was done — inspect <lock> and
-  remove it if no oats retire, oats instance stop or oats instance upgrade holds it, then retry` (0.52.0, #874; before,
+  remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry` (0.52.0, #874; before,
   the first was answered as a live holder, to wait for, and the second as
   `E_LIFECYCLE_FAILED` with the system's `ENAMETOOLONG` about a file that
   does not exist). Removing that one file lets the next retire take the
@@ -6242,9 +6264,21 @@ answer is the ordinary start answer plus one object:
 - Refused before anything is read, `E_BAD_ARGS`: `--resume` with
   `--launch-config`, `--harness`, `--model`, `--yolo`, `--no-yolo` or
   `--reselect-launch`; `--resume` on `session restart`; `--server`.
+- It holds the home's lifecycle claim for the whole start (OATS 0.69.2), the
+  claim a retire, a stop apply and an upgrade apply hold, so it never runs
+  beside one of them: beside a retire it is refused `E_INSTANCE_RETIRING`,
+  beside a stop, an upgrade or another resume `E_LIFECYCLE_BUSY`, before
+  anything is read or started, and one of them that arrives while it holds
+  the claim is refused `E_LIFECYCLE_BUSY` with `details.action: "resume"`
+  ([Commands that meet on one home](#lifecycle-pairs)). A home that is not
+  there takes no claim. An ordinary start or restart takes none.
+- Refused `E_INSTANCE_RETIRING` when the home is owed a retire: its status
+  row's [`retire`](#row-retire) has a value (a retire runs, cannot be told,
+  failed or was interrupted) or a self-retire is scheduled, read under the
+  claim; nothing was started.
 - Refused `E_RESUME_NOT_LOST` when the home did not lose its session
-  (`stopped`, `exited`, never launched), read under the start lock before
-  any launch hook runs; nothing was started.
+  (`stopped`, `exited`, never launched), read under the claim and the start
+  lock before any launch hook runs; nothing was started.
 - Refused `E_LAUNCH_ENV_CHANGED` when a `{fromEnv}` value differs from the
   one the start it brings back ran with (checked after `E_LAUNCH_ENV_MISSING`):
   the message names the variables, sorted, never a value; nothing was
@@ -6314,7 +6348,7 @@ whatever the rows say:
   | `resumed` | none |
   | `fresh` | `no-conversation`, `no-receipts`, `resume-unproven` |
   | `already-running` | none |
-  | `skipped` | `not-seen-recently` (the sweep cannot vouch for this loss: OATS never saw the home running for its current start, an earlier sweep already answered the loss, the loss was first seen 24 hours ago or more, or, within one boot, it was first seen 24 hours or more after the last running look; with a `message` that says which, nothing started: [Which losses come back](execution-targets.md#which-losses-come-back)), `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`: it stopped or started between the read and the start) |
+  | `skipped` | `not-seen-recently` (the sweep cannot vouch for this loss: OATS never saw the home running for its current start, an earlier sweep already answered the loss, the loss was first seen 24 hours ago or more, or, within one boot, it was first seen 24 hours or more after the last running look; with a `message` that says which, nothing started: [Which losses come back](execution-targets.md#which-losses-come-back)), `unknown` (running reads `null`, or the start could not establish it: `code` `E_SESSION_UNKNOWN`), `start-busy` (`E_SESSION_START_BUSY`: a concurrent start), `not-lost` (`E_RESUME_NOT_LOST` or `E_SESSION_RUNNING`, or any refusal of a home that is gone: it stopped, started or was removed between the read and the start), `lifecycle-busy` (OATS 0.69.2: OATS is stopping, upgrading or retiring the home, or its retire is owed; read from its row, with a `message`, or answered by its start, with the start's `code`, `E_INSTANCE_RETIRING` or `E_LIFECYCLE_BUSY`, and `message`; nothing started) |
   | `blocked` | `resume-confirmation` (Claude's resume-cost dialog: the session runs and waits for its human), `launch-prompt` (`code` `E_SPAWN_INCOMPLETE`, with `launchPrompts`: the session is kept) |
   | `refused` | `start-refused` (`code` and `message`: the start's own refusal), `refused-this-boot` (an earlier sweep in this boot was refused for this home and start, and its answer to the loss was lost: reported again with that `code` and `message`, nothing started; a refused loss is never retried automatically, after a reboot either), `keeps-getting-lost` (sweeps started this home 3 times in this boot and it was lost again each time: nothing started, no `code`, a `message` that says so; no sweep starts this loss again, after a reboot either: a person starts it by hand) |
 
@@ -6328,10 +6362,15 @@ whatever the rows say:
   it, verbatim. Today that is only the agent-scope warning (the harness
   runs in the OATS tmux server's cgroup, not a scope of its own, and why).
   Each start still records it in its own home's events. `--plan` has none.
-- A lost home is answered with the first that applies: `not-seen-recently`,
-  `refused-this-boot`, `keeps-getting-lost`, then its start. A sweep that is
-  not a plan answers each lost home once: a later sweep answers that loss
-  `not-seen-recently`.
+- A lost home is answered with the first that applies: `lifecycle-busy`,
+  `not-seen-recently`, `refused-this-boot`, `keeps-getting-lost`, then its
+  start. A sweep that is not a plan answers each lost home once: a later
+  sweep answers that loss `not-seen-recently`. A `lifecycle-busy` row does
+  not answer it: whatever OATS was doing to the home decides what it is
+  next, and a later sweep reads it again.
+- A home whose self-retire is scheduled or owed reads no `sessionEnd`; a
+  launched one that does not run is listed `skipped`, `lifecycle-busy`, as
+  a lost one is.
 - `--plan`: the same shape with `"plan": true`; nothing is started, no lock
   taken, no note written, no loss answered (its own status read records what
   it sees, as any local status read does). A lost home's outcome is the prediction: `resumed`
