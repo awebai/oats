@@ -57,16 +57,16 @@
   ],
   "instructions": [
     {
+      "source": "capability:golden.knowledge",
+      "file": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+    },
+    {
       "source": "kernel:instance-boundary",
       "file": "<kernel>/injects/instance-boundary.md"
     },
     {
       "source": "work-mode:attached",
       "file": "<kernel>/injects/work-attached.md"
-    },
-    {
-      "source": "capability:golden.knowledge",
-      "file": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
     }
   ],
   "composition": {
@@ -89,6 +89,12 @@
       },
       {
         "type": "instruction-block",
+        "source": "capability:golden.knowledge",
+        "declared": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
+        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+      },
+      {
+        "type": "instruction-block",
         "source": "kernel:instance-boundary",
         "declared": "<kernel>/injects/instance-boundary.md",
         "resolved": "<kernel>/injects/instance-boundary.md"
@@ -98,12 +104,6 @@
         "source": "work-mode:attached",
         "declared": "<kernel>/injects/work-attached.md",
         "resolved": "<kernel>/injects/work-attached.md"
-      },
-      {
-        "type": "instruction-block",
-        "source": "capability:golden.knowledge",
-        "declared": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md",
-        "resolved": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
       }
     ],
     "materialized": {
@@ -116,16 +116,16 @@
       ],
       "instructions": [
         {
+          "source": "capability:golden.knowledge",
+          "file": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
+        },
+        {
           "source": "kernel:instance-boundary",
           "file": "<kernel>/injects/instance-boundary.md"
         },
         {
           "source": "work-mode:attached",
           "file": "<kernel>/injects/work-attached.md"
-        },
-        {
-          "source": "capability:golden.knowledge",
-          "file": "<base>/deployment/agents/dev/instances/dev-pi-attached-kstub-mnone/.oats/modules/golden.knowledge/inject.md"
         }
       ],
       "harnessPackages": [],

@@ -136,6 +136,32 @@ test("package upgrade acceptance: read-only plan; whole-module apply, replay and
   assert.equal(contentDigest(join(home, ".agents/skills")), oldSkillBytes, "undo restores the previous skill copies");
 });
 
+test("package upgrade acceptance: the recomposed AGENTS.md keeps the home's recorded capability order and puts the kernel's blocks last", async t => {
+  // The soul lists acme.two before acme.one; name order is the reverse.
+  const f = await fixture(t, { names: ["acme.two", "acme.one"] }); const { fx, home } = f;
+  const markers = h => [...readFileSync(join(h, "AGENTS.md"), "utf8").matchAll(/^<!-- oats:(\S+) src=/gm)].map(m => m[1]);
+  const kernel = ["kernel:instance-boundary", "work-mode:directory"];
+  assert.deepEqual(markers(home), ["capability:acme.two", "capability:acme.one", ...kernel], "spawn: the soul's order, kernel last");
+  // A home spawned before this order: its record (and file) put the kernel's blocks first and the capabilities by name.
+  const meta = json(join(home, "instance.json"));
+  const byName = ["capability:acme.one", "capability:acme.two"].map(source => meta.instructions.find(b => b.source === source));
+  const kernelRows = meta.instructions.filter(b => kernel.includes(b.source));
+  meta.instructions = [...kernelRows, ...byName];
+  writeFileSync(join(home, "instance.json"), JSON.stringify(meta, null, 2) + "\n");
+  const plan = await f.plan();
+  assert.equal((await f.apply({ planRevision: plan.planRevision, idempotencyKey: "order" })).status, "complete");
+  const order = ["capability:acme.one", "capability:acme.two", ...kernel];
+  assert.deepEqual(markers(home), order, "the recorded capability order, not the soul's; the kernel's blocks last");
+  const after = json(join(home, "instance.json"));
+  assert.deepEqual(after.instructions.map(b => b.source), order, "instance.json instructions");
+  assert.deepEqual(after.composition.materialized.instructions.map(b => b.source), order);
+  assert.deepEqual(after.composition.expected.filter(r => r.type === "instruction-block").map(r => r.source), order, "composition.expected");
+  assert.deepEqual(Object.keys(after.modules), ["acme.one", "acme.two"], "modules keep name order");
+  // A fresh spawn at the lock composes in the soul's order.
+  const fresh = await fx.spawn("dev", { name: "fresh", noLaunch: true });
+  assert.deepEqual(markers(fresh.home), ["capability:acme.two", "capability:acme.one", ...kernel]);
+});
+
 test("package upgrade acceptance: refusal and stale plans leave composed bytes alone", async t => {
   const f = await fixture(t); const { fx, home } = f;
   const plan = await f.plan(), before = composed(home);

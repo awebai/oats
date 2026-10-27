@@ -127,10 +127,11 @@ test("inspect --soul --instructions is what spawn writes (member soul, directory
   const { result, ci } = inspectComposed(fx, "dev");
   assertTiling(ci, { bodyFile: body });
   assert.deepEqual(ci.sources.map((s) => [s.source, s.file]), [
-    ["kernel:instance-boundary", null], ["work-mode:directory", null], ["capability:acme.ops", ".oats/modules/acme.ops/inject.md"]]);
+    ["capability:acme.ops", ".oats/modules/acme.ops/inject.md"], ["kernel:instance-boundary", null], ["work-mode:directory", null]]);
   assert.ok(ci.text.includes("Café — 日本語 🎉 naïve ✓"));
-  const opsPart = ci.sources[2];
-  assert.equal(ci.text.slice(opsPart.start, opsPart.end), "<!-- oats:capability:acme.ops src=.oats/modules/acme.ops/inject.md -->\n## Ops instructions\n\nRun the ops.\n<!-- /oats:capability:acme.ops -->\n");
+  const opsPart = ci.sources[0];
+  // Not the last part: it runs through the blank separator line before the kernel's first block.
+  assert.equal(ci.text.slice(opsPart.start, opsPart.end), "<!-- oats:capability:acme.ops src=.oats/modules/acme.ops/inject.md -->\n## Ops instructions\n\nRun the ops.\n<!-- /oats:capability:acme.ops -->\n\n");
   // The rest of the soul row is what plain inspect reports.
   const { composedInstructions: _, ...row } = result.souls[0];
   assert.deepEqual(row, plain.souls[0]);
@@ -163,12 +164,35 @@ test("every work mode composes its own work-mode block, as its spawn does", (t) 
   for (const mode of modes) {
     const { ci } = inspectComposed(fx, `s-${mode}`);
     assertTiling(ci, { bodyFile: `# s-${mode}\n` });
-    assert.deepEqual(ci.sources.map((s) => s.source), ["kernel:instance-boundary", `work-mode:${mode}`, "capability:acme.ops"]);
+    assert.deepEqual(ci.sources.map((s) => s.source), ["capability:acme.ops", "kernel:instance-boundary", `work-mode:${mode}`]);
     const s = spawned(fx, `s-${mode}`, "eq");
     assert.equal(s.meta.work, mode);
     assert.equal(ci.text, s.text, `work: ${mode}`);
     assert.equal(ci.resolution, s.meta.workspace.resolution);
   }
+});
+
+test("composition order: the soul's capabilities in its listing order (a re-listed workspace default at the soul's place), then the defaults in the workspace's order, then the kernel's blocks; spawn, its record and inspect --soul agree", (t) => {
+  const inject = (name) => ({ manifest: { inject: "inject.md" }, files: { "inject.md": `## ${name} instructions\n` } });
+  const caps = Object.fromEntries(["acme.zeta", "acme.alpha", "acme.mid", "acme.dflt-b", "acme.dflt-a", "acme.quiet"].map((n) => [n, n === "acme.quiet" ? { manifest: {} } : inject(n)]));
+  // Name order would be alpha, dflt-a, dflt-b, mid, zeta.
+  const fx = v2Deployment({ souls: { dev: { soul: { capabilities: { "acme.zeta": { from: "here" }, "acme.mid": { from: "here" }, "acme.alpha": { from: "here" } } } } }, capabilities: caps });
+  t.after(fx.cleanup);
+  fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "fixture", members: [fx.ref], teams: { global: { description: "Fixture team" } },
+    defaults: { knowledge: "none", messaging: "none", capabilities: { "acme.dflt-b": { from: fx.key }, "acme.quiet": { from: fx.key }, "acme.mid": { from: fx.key }, "acme.dflt-a": { from: fx.key } }, tasks: "none" } } } }, "defaults");
+  const order = ["capability:acme.zeta", "capability:acme.mid", "capability:acme.alpha", "capability:acme.dflt-b", "capability:acme.dflt-a", "kernel:instance-boundary", "work-mode:directory"];
+
+  const { ci } = inspectComposed(fx, "dev");
+  assertTiling(ci);
+  assert.deepEqual(ci.sources.map((s) => s.source), order, "inspect --soul");
+  const s = spawned(fx, "dev", "order");
+  assert.equal(ci.text, s.text, "inspect --soul is what the spawn wrote");
+  assert.deepEqual([...s.raw.matchAll(/^<!-- oats:(\S+) src=/gm)].map((m) => m[1]), order, "the written AGENTS.md");
+  assert.deepEqual(s.meta.instructions.map((b) => b.source), order, "instance.json instructions");
+  assert.deepEqual(s.meta.composition.materialized.instructions.map((b) => b.source), order);
+  assert.deepEqual(s.meta.composition.expected.filter((r) => r.type === "instruction-block").map((r) => r.source), order, "composition.expected");
+  assert.deepEqual(Object.keys(s.meta.modules), ["acme.alpha", "acme.dflt-a", "acme.dflt-b", "acme.mid", "acme.quiet", "acme.zeta"], "modules keep name order");
+  assert.deepEqual(s.meta.capabilities.map((c) => c.id), ["acme.alpha", "acme.dflt-a", "acme.dflt-b", "acme.mid", "acme.quiet", "acme.zeta"], "capability rows keep name order");
 });
 
 test("a soul with no capability inject has only kernel blocks; a body with no trailing newline or several is normalized as spawn normalizes it", (t) => {
@@ -201,7 +225,7 @@ test("a package soul (<package>/<soul>) composes as its spawn does, its capabili
   assert.equal(result.souls[0].name, "keeper");
   assertTiling(ci, { bodyFile: "# keeper (package)\n\nKeeps — 保管.\n" });
   assert.deepEqual(ci.sources.map((s) => [s.source, s.file]), [
-    ["kernel:instance-boundary", null], ["work-mode:directory", null], ["capability:pkg-ops", ".oats/modules/pkg-ops/docs/inject.md"]]);
+    ["capability:pkg-ops", ".oats/modules/pkg-ops/docs/inject.md"], ["kernel:instance-boundary", null], ["work-mode:directory", null]]);
   const s = spawned(fx, "acme.pkg/keeper", "eq");
   assert.equal(ci.text, s.text);
   assert.equal(ci.resolution, s.meta.workspace.resolution);
@@ -374,10 +398,11 @@ test("composeSoulInstructions refuses a materialize that wrote something other t
   await assert.rejects(run(async (p, home) => {
     const block = { source: "capability:acme.ops", file: join(fx.base, "elsewhere.md"), content: "x" };
     const { renderInstructionText } = await import("../lib/instruction-composition.mjs");
-    const kernel = p.soulAgentsMd;
-    writeFileSync(join(home, "AGENTS.md"), renderInstructionText(kernel, [block]));
-    return { blocks: [block] };
-  }), (e) => e.code === "E_COMPOSITION_INCOMPLETE");
+    // Written as materialize writes it (the capability block, then the kernel's), so only containment refuses it.
+    const blocks = [block, ...p.blocks];
+    writeFileSync(join(home, "AGENTS.md"), renderInstructionText(p.soulAgentsMd, blocks));
+    return { blocks };
+  }), (e) => e.code === "E_COMPOSITION_INCOMPLETE" && /is not inside the composed home/.test(e.message));
   // materialize's own refusal passes through unchanged.
   await assert.rejects(run(async () => { throw Object.assign(new Error("boom"), { code: "E_MATERIALIZE_SOURCE" }); }), (e) => e.code === "E_MATERIALIZE_SOURCE");
   assert.deepEqual(scratchHomes(tmp), []);
