@@ -24,7 +24,7 @@ labels), `renderer/leader-dispatch.mjs` (what each key does),
 `test/palette-recency.test.mjs` (its recency order, first-row opening and focus record), `test/tab-strip-reveal.test.mjs`,
 `test/roster-scrollport.test.mjs` (a focused roster row is revealed inside the list),
 `test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
-`test/theme-picker.test.mjs` (the theme picker's keys), `test/sidebar-settings.test.mjs` (the settings
+`test/theme-picker.test.mjs` (the theme picker's keys), `test/font-picker.test.mjs` (the font picker's), `test/sidebar-settings.test.mjs` (the settings
 cog's menu and its keys), `test/shell-design.test.mjs` (Show sidebar,
 Show instance panel and the closed sidebar and panel).
 
@@ -338,11 +338,12 @@ The three Linux / Windows columns are [the chord families](#the-chord-families):
 | An instance's name and colour, for the leader's target (`instance.edit`; also **Instance: name and colour…**; no leader key) | ⌥⌘R | Alt+R | Ctrl+Alt+R | Ctrl+Alt+R | yes |
 | Instance panel (`panel.toggle`; also Show instance panel while it is closed, and the panel's own close button) | ⌘I | Ctrl+Shift+I | the same | the same | yes (plain Ctrl+I, the Tab byte, stays the program's) |
 | Theme picker (`app.themePicker`; also the settings cog's **Theme…** and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | the same | the same | yes |
+| Font picker: Omarchy's font or System font (`app.fontPicker`; also the settings cog's **Font…** and **Font: choose…**) | none | none | none | none | – (the cog and the palette keep it) |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | the same | the same | yes |
 | The leader, then one key (`app.leader`; see "The leader") | ⌃X | Ctrl+X | the same | the same | yes (a named exception, principle 2: it sends 0x18, which the leader pressed twice gives the program; on macOS by principle 3's exception; not in a text field on Linux/Windows, where Ctrl+X is Cut) |
 | Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | the same | the same | yes |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | the same | yes |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on the default, 13px on Omarchy and 15px elsewhere) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | the same | the same | yes |
 | Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | the same | the same | no (Ctrl+O is a byte programs read) |
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | none | none | – |
 | Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | none | none | – |
@@ -471,7 +472,14 @@ Desktop's picker as well. A held chord does not open and close the picker over
 and over. The settings cog's **Theme…** opens the picker too; the theme cycle
 stays in the palette.
 
-Inside the theme picker: ↑/↓ move between the themes (wrapping), Home/End go to
+The font picker has no default chord: the settings cog's **Font…** and the
+palette's **Font: choose…** open it, and a chord given in the shortcuts editor
+works as the explicit themes' do (in a terminal, only a macOS chord with ⌘).
+On macOS ⌥ with Space types a no-break space, so the engine reads Space from
+the physical key, and a ⌥ chord with Space can be given.
+
+Inside the theme picker (and the font picker, which is the same picker over the
+two fonts): ↑/↓ move between the themes (wrapping), Home/End go to
 the first and last, Enter, Space or a click chooses (nothing applies before
 that), Escape, the close button or the backdrop closes with nothing changed,
 and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
@@ -493,7 +501,8 @@ Actions without a default (bind them in the shortcuts editor): New window
 (Linux/Windows), Settings (**Settings: Connections…**, as the palette names
 it), focus mode, focus the active terminal, return to terminal groups,
 explicit themes (`app.theme.light`, `app.theme.solarized`,
-`app.theme.dark`, and `app.theme.host` for This computer), and the instance menu's Open in split / Open
+`app.theme.dark`, and `app.theme.host` for This computer), the font picker
+(`app.fontPicker`), and the instance menu's Open in split / Open
 pull request.
 
 Rebinding applies everywhere a chord is shown: tooltips (the sidebar's Spawn
@@ -1133,7 +1142,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
 | Sidebar toggle (**Hide the sidebar**, in the foot's bar right after the OATS mark; `aria-expanded`) | Tab, after the roster | Enter/Space: `sidebar.toggle`, focus to Show sidebar |
 | Spawn instance (words alone at the right of the sidebar's foot, a bar named "Sidebar tools", before the cog; its chord in its tooltip) | Tab, after the sidebar toggle; on an empty roster, its one way in: F6, ⌘F / Alt+F (`sidebar.focusFilter`) and the sidebar's `/` land on it (a failed read's Retry first) | Enter/Space run `app.quickOpenSouls` (Quick Open), as its chord does |
-| Settings (the cog at the right end of the sidebar foot's bar; a menu button, `aria-haspopup="menu"`) | Tab, after Spawn instance | Enter/Space or a click open its menu on the first item, ↓ / ↑ on the first / last; in the menu (`role="menu"`: **Theme…**, **Keyboard shortcuts…**, each with its chord), placed with its right edge on the cog's, above it when there is no room below, ↑/↓ move and wrap, Home/End, Enter/Space run the item after the menu has closed with focus back on the cog, Esc closes back on the cog, Tab closes |
+| Settings (the cog at the right end of the sidebar foot's bar; a menu button, `aria-haspopup="menu"`) | Tab, after Spawn instance | Enter/Space or a click open its menu on the first item, ↓ / ↑ on the first / last; in the menu (`role="menu"`: **Theme…**, **Font…**, **Keyboard shortcuts…**, each with its chord, when it has one), placed with its right edge on the cog's, above it when there is no room below, ↑/↓ move and wrap, Home/End, Enter/Space run the item after the menu has closed with focus back on the cog, Esc closes back on the cog, Tab closes |
 | Sidebar width (the handle on the sidebar's right edge: a vertical `separator` labelled "Sidebar width", `aria-valuenow`, `-valuemin` and `-valuemax` in px; the split separator's resizer, its hover and focus the accent fill) | Tab, after the settings cog (the last stop of the sidebar); F6 from it goes on to Main, Shift+F6 back to the roster | ←/→ narrow and widen it by 8px, Shift+←/→ by 32px; Home and End go to 240px and to the most the window allows (480px, or 45% of a narrower window); Enter or a double-click go back to 288px, as **Sidebar: reset width** does; a drag with the pointer. The width is remembered on this computer and kept while the sidebar is hidden |
 | Show sidebar (start of the main area's top bar, while the sidebar is hidden or in focus mode) | Tab, first in the Main region; hiding the sidebar moves focus to it | Enter/Space: `sidebar.toggle` (leaves focus mode too), focus back on the sidebar toggle |
 | Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Alt+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab, Alt+→/← (⌥⌘→/←) and go-to-tab (each tab shows its number) from anywhere in the tab layer, a terminal included, **keeping focus in the content (fixed: fell to `<body>`)** |

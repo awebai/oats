@@ -15,7 +15,7 @@ export const rosterPrCSS = `
 .ctx-meta-pr .ctx-meta-lead { flex:none; }
 .ctx-meta-pr .ctx-meta-tail { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ctx-meta-pr .ctx-pr { height:14px; padding:0 4px; }
-.ctx-pr { display:inline-flex; align-items:center; gap:3px; flex:none; height:16px; padding:0 5px; box-sizing:border-box; border:1px solid transparent; border-radius:4px; background:var(--tag-bg); color:var(--fg); font:600 10.5px/1 ui-monospace, Menlo, monospace; white-space:nowrap; }
+.ctx-pr { display:inline-flex; align-items:center; gap:3px; flex:none; height:16px; padding:0 5px; box-sizing:border-box; border:1px solid transparent; border-radius:4px; background:var(--tag-bg); color:var(--fg); font-weight:600; font-size:10.5px; line-height:1; font-family:var(--ui-font, ui-monospace, Menlo, monospace); white-space:nowrap; }
 .ctx-pr .shell-icon { flex:none; }
 .ctx-pr[data-pr-state=draft] { background:transparent; border:1px dashed var(--border); color:var(--muted); }
 .ctx-pr[data-pr-state=merged] .shell-icon { color:var(--accent); } /* accent text on tag-bg is not AA in every theme */

@@ -34,7 +34,7 @@ ${capabilityWarningsCSS}
 #context-panel .context-panel-soul-body:empty { display:none; }
 #context-panel .soul-tab-notice:empty { display:none; }
 #context-panel .soul-tab-notice .loading-notice { margin:0; }
-#context-panel .soul-tab-meta { color:var(--muted); font:11.5px ui-monospace, Menlo, monospace; overflow-wrap:anywhere; }
+#context-panel .soul-tab-meta { color:var(--muted); font-weight:normal; font-size:11.5px; line-height:normal; font-family:var(--ui-font, ui-monospace, Menlo, monospace); overflow-wrap:anywhere; }
 /* Pending: the sections' shapes, wearing the real row classes (their heights are the rules above). */
 #context-panel .soul-tab-skeleton .context-panel-label.skeleton { height:10px; width:38%; }
 #context-panel .soul-tab-skeleton .soul-tab-slot.skeleton { height:12px; width:70%; }
@@ -48,7 +48,7 @@ ${capabilityWarningsCSS}
 #context-panel .soul-tab-core-row + .soul-tab-core-row { border-top:1px solid var(--border); }
 #context-panel .soul-tab-slot { color:var(--fg); font-size:12.5px; font-weight:650; }
 #context-panel .soul-tab-provider { display:flex; flex-direction:column; gap:2px; min-width:0; }
-#context-panel .soul-tab-source { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font:12px ui-monospace, Menlo, monospace; }
+#context-panel .soul-tab-source { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); font-weight:normal; font-size:12px; line-height:normal; font-family:var(--ui-font, ui-monospace, Menlo, monospace); }
 #context-panel .soul-tab-source .shell-icon { flex:none; color:var(--muted); }
 #context-panel .soul-tab-source > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #context-panel .soul-tab-version { flex:none; color:var(--muted); }
@@ -58,7 +58,7 @@ ${capabilityWarningsCSS}
 #context-panel .soul-tab-cap { display:flex; flex-direction:column; gap:3px; padding:9px 0; border-top:1px solid var(--tag-bg); min-width:0; }
 #context-panel .soul-tab-cap:first-child { border-top:0; padding-top:2px; }
 #context-panel .soul-tab-cap-head { display:flex; align-items:center; gap:8px; min-width:0; }
-#context-panel .soul-tab-cap-name { min-width:0; color:var(--fg); font:650 12.5px ui-monospace, Menlo, monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .soul-tab-cap-name { min-width:0; color:var(--fg); font-weight:650; font-size:12.5px; line-height:normal; font-family:var(--ui-font, ui-monospace, Menlo, monospace); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #context-panel .soul-tab-cap .soul-tab-source { color:var(--muted); font-size:11.5px; }
 #context-panel .soul-tab-cap .soul-tab-source .soul-tab-version { color:var(--muted); }
 #context-panel .soul-tab-cap.off .soul-tab-cap-name { color:var(--muted); text-decoration:line-through; }

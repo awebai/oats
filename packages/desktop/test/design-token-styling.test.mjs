@@ -158,7 +158,7 @@ test("visual shell geometry: a 288px sidebar by default, aligned 48px bars, the 
   assert.deepEqual([name.flexGrow, name.flexShrink, name.minWidth, name.overflow], ["0", "1", "0px", "hidden"]);
   // The names inherit the sidebar's 13px at the row's weight again (no size or weight of their own), the current one at 650.
   assert.deepEqual([u.rule(".ws-option-name").fontSize, u.rule(".ws-option-name").fontWeight], ["", ""], "no size or weight of its own");
-  assert.match(shell, /^body \{[^}]*font: 13px\/1\.45 /m, "the 13px they inherit");
+  assert.match(shell, /^body \{[^}]*font-size: 13px; line-height: 1\.45; /m, "the 13px they inherit");
   assert.equal(u.style('.ws-option[aria-current="true"] .ws-option-name').fontWeight, "650");
   assert.notEqual(u.style('.ws-option:not([aria-current]) .ws-option-name').fontWeight, "650", "another row's name is not bold");
   assert.equal(shell.match(/\.ws-option-(?:meta|line|copy|section)\b|\.ws-check\b|\.ws-open-window\b|\.ws-option \.workspace-avatar/), null, "no mark, machine line, check or button rules");

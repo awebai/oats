@@ -213,8 +213,8 @@ foot, one bar: the OATS mark and the sidebar toggle (**Hide the sidebar**)
 after it, and at the bar's right **Spawn instance**, its words alone (a ground
 only on hover), which
 opens Quick Open (⌘P / Alt+P, named in its tooltip) to pick a soul and then
-the spawn dialog, and the settings cog, whose menu holds **Theme…** and **Keyboard
-shortcuts…**, each with its shortcut. A window opens on the **Workspace
+the spawn dialog, and the settings cog, whose menu holds **Theme…**, **Font…** and
+**Keyboard shortcuts…**, each with its shortcut when it has one. A window opens on the **Workspace
 overview** page, on its **Souls** tab: at launch, and after you choose a
 workspace for it. Connections is in the command palette
 (**Settings: Connections…**), and the palette opens with its shortcut or
@@ -235,6 +235,47 @@ The width is remembered on this computer, and kept while the sidebar is
 hidden; a window too narrow for it shows it narrower, and gives it back when
 the window grows again. The terminals refit as it moves, and their programs
 hear the new size once, when you let go.
+
+**Theme and font.** The settings cog's **Theme…**, the palette's **Theme: choose…** and
+⇧⌘Space / Ctrl+Shift+Space open the theme picker (White, Solarized, Dark, or
+This computer, which follows the computer's own theme). The font has a picker
+of its own, the settings cog's **Font…** or **Font: choose…** in the palette (no
+shortcut unless you give it one in the shortcuts editor), with two choices:
+
+- **Omarchy's font**, the default on a computer that runs Omarchy. On Linux the whole window and its
+  terminals use the computer's monospace font, the one `omarchy font current`
+  names and `omarchy font set` changes (fontconfig's `monospace`, on any
+  Linux). A font changed that way shows when Desktop next starts, at the
+  latest. On Windows it is the system's monospace font, for the window and the
+  terminals. On macOS the choice is named **JetBrains Mono**, Omarchy's default
+  face: the window uses it (or the system's monospace font where it is not
+  installed), and the terminals keep Inconsolata. On every platform, instance
+  names in the sidebar and on tabs are a little smaller in it (12px, from
+  12.5px), since a monospace face runs wider.
+- **System font**, the faces Desktop had before: the system's interface font
+  for the window and Inconsolata in the terminals. It is the default on every
+  computer that doesn't run Omarchy (other Linux, macOS and Windows).
+
+Desktop knows a computer runs Omarchy when Omarchy's theme directory
+(`~/.local/state/omarchy/current`) is there, the same one the **This computer**
+theme reads. A font you chose always wins over the default. On Omarchy the
+terminal's default size is also smaller, 13px (JetBrains Mono, Omarchy's
+default face, at 13px), where it is 15px elsewhere. A size you set wins, and
+resetting the size or the zoom goes back to the computer's default.
+
+The computer's monospace font is used only once it draws at a fixed width.
+Desktop checks it at start and on each choice in the picker. Where the
+computer has no monospace font, or `monospace` names a bitmap font (which the
+window cannot draw), **Omarchy's font** shows System font's faces, and its row
+in the picker says **No monospace font on this computer: showing System
+font**. The choice stays Omarchy's font, so the computer's font is used once
+it draws.
+
+The choice is kept on this computer, like the theme, and applies at once:
+open terminals switch font in place and keep what they show. The terminal's
+font size, Settings → Terminal and the zoom keys are not changed by it, and a
+terminal font family set with the palette's **Terminal: set font family…**
+still wins until **Terminal: reset typography**.
 
 The list of workspaces is always shown. Its heading holds **Add local
 workspace…** (the **+**). The list has one row per workspace this window can show, whatever

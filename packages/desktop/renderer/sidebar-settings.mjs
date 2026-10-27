@@ -1,5 +1,5 @@
 // The sidebar's settings menu (2026-10-23): the cog at the right end of the sidebar's bottom bar, after the sidebar
-// toggle. It holds the theme and the keyboard shortcuts, each an action of the keymap's registry (Connections
+// toggle. It holds the theme, the font and the keyboard shortcuts, each an action of the keymap's registry (Connections
 // stays in the palette, Settings: Connections…; Spawn instance is the bar's own button, before the cog). The menu is the
 // instance actions' pattern (instance-actions.mjs): a native popover with role="menu", the trigger its invoker (a
 // second click closes it), placed as that menu is (its right edge on the cog's, above it when there is no room
@@ -13,6 +13,7 @@ export const SETTINGS_LABEL = "Settings";
 /** The menu's items, in order: what each says, the action it runs and its icon. */
 export const SETTINGS_ITEMS = Object.freeze([
   { action: "app.themePicker", label: "Theme…", icon: "theme" },
+  { action: "app.fontPicker", label: "Font…", icon: "font" },
   { action: "app.shortcuts", label: "Keyboard shortcuts…", icon: "shortcuts" },
 ]);
 

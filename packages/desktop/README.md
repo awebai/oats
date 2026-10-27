@@ -77,10 +77,17 @@ The shell has three navigation contexts:
   tie. What the programs it
   starts receive is [below](#the-environment-of-the-programs-desktop-starts).
 - `preload.cjs` — contextBridge surface (`window.oatsDesktop`); renderer runs
-  with contextIsolation on, nodeIntegration off.
+  with contextIsolation on, nodeIntegration off. Its one constant, `isOmarchy`,
+  is a boolean read once from main's window argument `--oats-host-omarchy`
+  (`host-theme.mjs` `OMARCHY_ARG`, `omarchyHost`); nothing sends it, and it
+  picks only the font's and the terminal size's defaults (`renderer/theme.mjs`
+  `initFont`).
 - `host-theme.mjs` — the theme of the computer that runs Desktop, for the
   "This computer" theme choice: reads and follows Omarchy's `colors.toml`, else
   the system's light or dark appearance, and sends plain state to the windows.
+  `omarchyHost` is the same marker as one yes or no (Linux, and Omarchy's
+  `current/` is a directory; any error is no), read once by main for the
+  windows' `isOmarchy`.
 - `chord-family.mjs` — keys.json, the chord family both clients bind on
   Linux/Windows (Alt, the default, Ctrl+Alt or Ctrl+Shift; `packages/client/keys-file.mjs` says
   what its text means): reads it when a window asks and at app focus, writes it

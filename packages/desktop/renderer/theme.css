@@ -17,6 +17,10 @@
   font-weight: 200 900; font-stretch: 50% 200%; font-style: normal; font-display: block;
 }
 :root { --mono: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+/* --ui-font, the UI's face, is set only by the font choice (theme.mjs fontStacks: Omarchy's font, the
+   default), inline on the root with --mono and, on Linux and Windows, --term-font-family. Every UI
+   font rule reads it as var(--ui-font, <its own stack>), so System font, which sets none of them, is
+   each rule's own stack exactly as before. */
 
 :root, [data-theme="dark"] {
   color-scheme: dark;     /* native lists, scrollbars and pickers follow the theme */
@@ -46,7 +50,7 @@
   --term-sel-fg: #f5f9ff;
   /* xterm typography: the bundled Inconsolata, then the OS monospace stack; user overrides persist via theme.mjs */
   --term-font-family: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --term-font-size: 15px; /* Inconsolata at 15px: the operator's default (2026-10-02); every reset lands here */
+  --term-font-size: 15px; /* Inconsolata at 15px: the operator's default (2026-10-02), off Omarchy; initFont sets 13px inline on Omarchy, and every reset lands on theme.mjs terminalDefaultSize() */
   --term-font-weight: 400; /* light on dark already matches a native macOS terminal's smoothed stroke (Ghostty font-thicken); xterm's normal */
   --shadow: 0 1px 3px rgb(0 0 0 / .4);
   --shadow-popover: 0 12px 32px rgb(0 0 0 / .35);
@@ -222,7 +226,7 @@ input:is([type="checkbox"], [type="radio"]):focus-visible { outline-offset: 1px;
 
 /* ── shared primitives ── */
 .oats-view { display: flex; min-height: 0; height: 100%; background: var(--bg); color: var(--fg);
-            font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+            font-weight: normal; font-size: 13px; line-height: 1.45; font-family: var(--ui-font, -apple-system, "Segoe UI", system-ui, sans-serif);
             -webkit-font-smoothing: antialiased; }
 .oats-view * { box-sizing: border-box; }
 .oats-view .chip { background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; font-size: 10.5px;
