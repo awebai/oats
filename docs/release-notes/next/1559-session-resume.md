@@ -28,8 +28,9 @@
   every start opened a new one.
 - The window a spawn makes now records how its harness ended, as a start's
   window does, and a spawn records its launch's `startId`; `oats instance
-  stop` records the start it ended. These files are kernel-private: read
-  `sessionEnd`. Stop an instance with OATS to keep it stopped: a tmux window
+  stop` records the start it ended, and records a stop of an instance that
+  already reads `lost` too, signalling nothing. These files are
+  kernel-private: read `sessionEnd`. Stop an instance with OATS to keep it stopped: a tmux window
   killed by hand reads as lost and comes back.
 
 ## Upgrade

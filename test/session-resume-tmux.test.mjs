@@ -14,7 +14,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { RESUME_NOTICE, stopInstanceSession } from "../lib/core.mjs";
 import { readStartExited } from "../lib/session-end.mjs";
@@ -83,10 +83,13 @@ if (hasTmux) {
     deployments: Object.values(deployments).map((fx) => ({ path: fx.dep, addedAt: "2026-10-27T00:00:00.000Z", via: "cli" })) }, null, 2) + "\n");
 }
 
+/** Deployments a test makes for itself: their homes run on the one server, so they are removed with
+ *  the others, once it is gone. */
+const later = [];
 test.after(() => {
   try { if (hasTmux) execFileSync("tmux", ["-u", "-S", socket, "kill-server"], { stdio: "ignore" }); } catch { /* gone */ }
   restoreEnvironment();
-  for (const fx of Object.values(deployments)) fx.cleanup();
+  for (const fx of [...Object.values(deployments), ...later]) fx.cleanup();
 });
 
 /** The stand-in's records of `instance`, oldest first. */
@@ -247,6 +250,7 @@ test("after the tmux server dies, the sweep resumes the lost homes in their own 
   const failure = busy.json();
   assert.deepEqual([failure.schemaVersion, failure.ok, failure.error.code], [1, false, "E_RESUME_BUSY"]);
   assert.equal(typeof failure.error.message, "string");
+  rmSync(lock, { recursive: true });
 });
 
 test("a home launched by spawn whose harness exits on its own retires without a recovery copy caused by its exit marker", TMUX, async () => {
@@ -265,4 +269,61 @@ test("a home launched by spawn whose harness exits on its own retires without a 
   assert.equal(existsSync(home), false, "the home is gone");
   const recovery = join(dirname(home), ".oats-retirement", "recovery");
   assert.deepEqual(existsSync(recovery) ? readdirSync(recovery).filter((e) => e.includes("r1-")) : [], [], "no recovery copy");
+});
+
+test("`session resume --deployment <dir>` sweeps that deployment alone, registered or not; a deployment removed from the registry is not swept; a stop of a lost home, and of an exited home from before 0.69, records the stop and keeps it stopped", TMUX, async () => {
+  const D = v2Deployment({ name: "d", local: { "launch-configs": { "claude-d": config("claude", "dep-d"), "exit-d": config("claude", "dep-d", { env: { EXIT_NOW: "1", NO_TRANSCRIPT: "1" } }) } } });
+  later.push(D);
+  const homes = {};
+  for (const name of ["d1", "d2"]) { homes[name] = await spawnHome(D, name, "claude-d"); await startHome(D, homes[name], name); }
+  // d1 and d2 lose their windows (killed by hand: no marker, no stop).
+  for (const name of ["d1", "d2"]) {
+    const { tmux } = readJson(join(homes[name], "instance.json"));
+    execFileSync("tmux", ["-u", tmux.socket.includes("/") ? "-S" : "-L", tmux.socket, "kill-window", "-t", `${tmux.session}:${tmux.window}`], { stdio: "ignore" });
+  }
+  // d3: launched by spawn, its harness ended by itself; then made a home from before 0.69, which
+  // records no start id and whose window wrote no marker.
+  homes.d3 = ok(cli(D, ["spawn", "dev", "--name", "d3", "--launch-config", "exit-d", "--json"]), "spawn d3").home;
+  await waitUntil(() => readStartExited(homes.d3) !== null, "d3's exit marker");
+  rmSync(join(homes.d3, ".oats-start-exited"));
+  const legacy = readJson(join(homes.d3, "instance.json"));
+  delete legacy.startId;
+  writeFileSync(join(homes.d3, "instance.json"), JSON.stringify(legacy, null, 2) + "\n");
+  await waitUntil(() => { const r = statusRows(D); return ["d1", "d2", "d3"].every((n) => r[n].sessionEnd === "lost"); }, "d1, d2 and d3 to read lost");
+
+  // The explicit form, on a deployment the registry does not list; its refusals.
+  const plan = ok(cli(D, ["session", "resume", "--deployment", D.dep, "--plan", "--json"]), "plan --deployment");
+  assert.deepEqual(plan.deployments, [{ deployment: D.dep, state: "ok", swept: true }]);
+  assert.deepEqual(plan.rows.map((r) => r.instance), ["d1", "d2", "d3"]);
+  for (const [args, code] of [[["--deployment"], "E_BAD_ARGS"], [["--deployment", join(D.base, "nowhere")], "E_BAD_ARGS"]]) {
+    const r = cli(D, ["session", "resume", ...args, "--plan", "--json"]);
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(r.json().error.code, code, `${args.join(" ")}: ${r.stdout}`);
+  }
+  const captured = cli(D, ["status", "--deployment", D.dep, "--json"]);
+  assert.equal(captured.json().error.code, "E_UNSUPPORTED_MODE", "--deployment stays a refused captured selector for other commands");
+
+  // Registered, then removed: its tombstone is not swept, and nothing of it starts.
+  ok(cli(D, ["deployments", "add", D.dep, "--json"]), "deployments add");
+  assert.ok(ok(cli(D, ["session", "resume", "--plan", "--json"]), "registered plan").deployments.some((d) => d.deployment === D.dep), "fixture premise: a registered deployment is swept");
+  ok(cli(D, ["deployments", "remove", D.dep, "--json"]), "deployments remove");
+  const counts = Object.fromEntries(["d1", "d2", "d3"].map((n) => [n, launches(n).length]));
+  const sweep = ok(cli(D, ["session", "resume", "--json"]), "registry sweep");
+  assert.equal(sweep.deployments.some((d) => d.deployment === D.dep), false, "the removed deployment is not listed");
+  assert.equal(sweep.rows.some((r) => r.deployment === D.dep), false, "nor are its homes");
+  assert.deepEqual(Object.fromEntries(["d1", "d2", "d3"].map((n) => [n, launches(n).length])), counts, "nothing of it was started");
+
+  // Stopped with OATS while lost: nothing to signal, the stop recorded; both stay stopped.
+  for (const name of ["d1", "d3"]) {
+    const s = await D.inEnv(() => stopInstanceSession(homes[name], { graceMs: 5000 }));
+    assert.deepEqual([s.stopped, s.alreadyIdle], [false, true], name);
+    const receipt = readJson(join(homes[name], ".oats-stop.json"));
+    assert.deepEqual([receipt.stop, receipt.startId], [null, readJson(join(homes[name], "instance.json")).startId ?? null], name);
+  }
+  const rows = statusRows(D);
+  assert.deepEqual(["d1", "d2", "d3"].map((n) => rows[n].sessionEnd), ["stopped", "lost", "stopped"]);
+  const swept = ok(cli(D, ["session", "resume", "--deployment", D.dep, "--json"]), "sweep --deployment");
+  assert.deepEqual(swept.rows.map((r) => [r.instance, r.outcome]), [["d2", "resumed"]]);
+  await waitUntil(() => launches("d2").length === counts.d2 + 1, "d2's stand-in to run again");
+  assert.deepEqual([launches("d1").length, launches("d3").length], [counts.d1, counts.d3], "the stopped homes were not started");
 });

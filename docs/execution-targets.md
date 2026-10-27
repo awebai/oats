@@ -1098,9 +1098,11 @@ meets another stop `E_LIFECYCLE_BUSY`, before anything is stopped
 
 **Stop an instance with OATS to keep it stopped** (Desktop's Stop, `oats
 instance stop`): the stop's record names the start it ended, and a resume
-never brings that start back. A tmux window killed by hand, or a harness
-killed by a signal, leaves no such record and reads as lost
-([Resume after a shutdown](#resume-after-a-shutdown)).
+never brings that start back. A stop of an instance that already reads
+`lost` signals nothing and records the stop all the same, so the instance
+stays stopped (on a full disk it cannot, and it stays `lost`). A tmux window
+killed by hand, or a harness killed by a signal, leaves no such record and
+reads as lost ([Resume after a shutdown](#resume-after-a-shutdown)).
 
 ### Resume after a shutdown
 
@@ -1183,7 +1185,8 @@ A resume answers no prompt that an ordinary start does not:
 #### The sweep
 
 `oats session resume` reads this computer's list of deployments and never
-writes it; `--deployment <dir>` sweeps one directory. Per deployment it skips
+writes it, and skips a deployment `oats deployments remove` took out of it;
+`--deployment <dir>` sweeps one directory, listed or not. Per deployment it skips
 one whose `oats-local.yaml` says `session.resume: off`
 ([configuration](configuration.md#the-file)), then starts each lost home with
 `--resume` in that home's own deployment scope, at most 4 at once. `--plan`

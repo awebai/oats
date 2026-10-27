@@ -4839,7 +4839,10 @@ try {
   const kernelArgv = (KERNEL_COMMANDS.has(cmd) && !OWN_ARGV_COMMANDS.has(cmd)) || (ROUTED_COMMANDS.has(cmd) && flag("server") !== undefined);
   if (argvProblem && kernelArgv) cmdFail("E_BAD_ARGS", argvProblem);
   const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-  const selector = head.find((a) => /^--(deployment|resolution|artifact-set)$/.test(a));
+  // `session resume --deployment <dir>` (feature session-resume) reuses the name for a deployment
+  // the sweep is limited to, not a captured selector.
+  const resumeSweep = cmd === "session" && args[1] === "resume";
+  const selector = head.find((a) => /^--(deployment|resolution|artifact-set)$/.test(a) && !(resumeSweep && a === "--deployment"));
   const refuse = (message, details) => { if (JSON_MODE) jsonFail("E_UNSUPPORTED_MODE", message, details); die(message); };
   if (selector) refuse(`${selector}: a captured selector is refused (the captured/portable path was removed in 0.26); run the command in its workspace deployment or instance home instead`, { selector });
   // --max-age (feature observe-max-age): ONE allow-list for every kernel command, here — never a

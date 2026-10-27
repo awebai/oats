@@ -6049,7 +6049,8 @@ answer is the ordinary start answer plus one object:
 `session-resume`, OATS 0.69) starts with `--resume` every home of this
 machine's deployments whose session was lost. A client runs it once when it
 opens. It reads this computer's list of deployments without writing it
-([This computer's deployments](#this-computers-deployments-oats-deployments));
+([This computer's deployments](#this-computers-deployments-oats-deployments)),
+and never sweeps one `oats deployments remove` took out;
 `--deployment <dir>` sweeps that one directory instead, listed or not. Each
 home starts as a child process of the kernel, in its own deployment's scope,
 at most 4 at once.
