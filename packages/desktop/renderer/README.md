@@ -162,14 +162,16 @@ also carries `.theme-picker-overlay` or `.font-picker-overlay`.
   theme's marker, Omarchy's `current/` directory; any error is false) and adds
   `--oats-host-omarchy` to each window's `additionalArguments`, which preload
   reads. No IPC channel carries it. It picks `defaultFont()` (Omarchy's font,
-  else System font) and `terminalDefaultSize()` (below), nothing else.
+  else System font), nothing else: the terminal's size follows the face
+  (`terminalFace()`, below), not the host.
 - **Terminals** switch in place: `applyFont` notifies the terminal typography
-  listeners, and each open terminal sets xterm's `fontFamily` and refits
+  listeners, and each open terminal sets xterm's `fontFamily` and `fontSize`
+  (the new face's size) and refits
   (`fitTerminal`; the PTY follows the grid). The GitHub sign-in terminal
   (Settings: Connections…) keeps its box when the font changes, so its adapter
   (shell.mjs `terminalFactory`) tells its resize listeners itself: Connections
   refits it and sends the new grid to the sign-in PTY (`forgeAuthResize`). A stored terminal family
-  (`oats.desktop.terminal.fontFamily`) still wins, and the size is untouched.
+  (`oats.desktop.terminal.fontFamily`) still wins, and the size is the face's.
 - **The fallback.** Omarchy's font is used only once its stack draws at a fixed
   width: `fontDraws(stack)` measures ten i's and ten M's on a canvas, wider than
   nothing and equal within 1%, at start and on each choice (whichever is
@@ -296,14 +298,24 @@ either font, is **Inconsolata**, bundled (`fonts/`, SIL OFL 1.1;
 source, version and checksum in `fonts/README.md`) so it is the same on every
 machine. `theme.css` declares it with `@font-face` (`font-display: block`) and puts
 it first in `--term-font-family` (the terminal) and `--mono` (the UI's code, paths
-and chord hints), ahead of the OS monospace stack. The terminal's default size is
-`terminalDefaultSize()`: 15px (the operator's decision), and 13px on an Omarchy computer, whose
-terminals are in its font, JetBrains Mono by default (the product owner, 2026-10-26). theme.css seeds
-`--term-font-size: 15px`, and on Omarchy `initFont` sets it inline on the root to 13px. A terminal
-font or size the operator stored (`oats.desktop.terminal.fontFamily`, `…fontSize`)
-still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets both, and Settings →
-Terminal's "Reset to default" forgets the size, so the defaults apply again. Every
-size control clamps to 9–28 (`clampTerminalFontSize`).
+and chord hints), ahead of the OS monospace stack. A terminal size belongs to its face
+(#1571; JetBrains Mono's advance is 0.6em, Inconsolata's 0.5em). `terminalFace()` is
+`"omarchy"` when the applied font stacks set `--term-font-family` (Omarchy's font on Linux or
+Windows, drawing at a fixed width), else `"bundled"` (System font, macOS, the fallback); a family
+stored with "Terminal: set font family…" does not change it. `TERMINAL_FACES` in `theme.mjs` is
+the one face→key and face→default map: the bundled face keeps `oats.desktop.terminal.fontSize`
+(every size stored before Omarchy's font reached the terminals is an Inconsolata size) at 15px
+(the operator's decision), Omarchy's face `oats.desktop.terminal.fontSize.omarchy` at 13px (the
+product owner, 2026-10-26), on every host. `terminalTypography`, `setTerminalFontSize`,
+`clampTerminalFontSize`'s fallback, both resets and Settings → Terminal go through it, for the
+face in effect only. theme.css's `--term-font-size: 15px` is the bundled face's default, and
+`applyFont` sets it inline to 13px while the face is Omarchy's, so the token names the default in
+effect; `terminalTypography` reads the map, not the token. A stored terminal family (`oats.desktop.terminal.fontFamily`)
+or a size stored for the face still wins. Reset typography (⌘0 / Ctrl+0, the palette) forgets the
+family and the face's size, and Settings → Terminal's "Reset to default" the face's size, so the
+defaults apply again; the other face's size stays. A font change notifies the typography
+listeners, so open terminals take the new face's size with its family. Every size control clamps
+to 9–28 (`clampTerminalFontSize`).
 
 The terminal's text weight belongs to the theme, not to typography: each palette sets
 `--term-font-weight` (White 475, Solarized 450, Dark 400; This computer has its base's,
@@ -1779,7 +1791,8 @@ section is the module map.
   ⌘K cycles while open (Shift: up) and follows a rebind. The palette opens on
   its first selectable row, the top of the list (#1391).
 - **settings-terminal.mjs** — Settings → Terminal: the font size stepper
-  (− / typed value / +, 9–28, "Reset to default (15)"), mounted by
+  (− / typed value / +, 9–28, "Reset to default (N)", the default of the
+  terminals' face, updated on every typography change), mounted by
   `connections.mjs` through its `sections` option after Connections and disposed
   on close. It reads and writes the same store as ⌘= / ⌘- / ⌘0 and the palette
   (`theme.mjs`: `setTerminalFontSize`, `resetTerminalFontSize`,
