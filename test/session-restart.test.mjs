@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { restartInstanceSession, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { readStartExited } from "../lib/session-end.mjs";
+import { readInstanceBackground, writeInstanceBackground } from "../lib/instance-background.mjs";
 import { soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
@@ -117,6 +118,8 @@ test("restart: every preflight before the stop; a polite harness ends on SIGTERM
   const name = "dev-polite";
   const { home } = await makeHome(name, { command: renderFor(homeOf(name), name, join(binDir, "polite")), launch: recipeFor(homeOf(name), name, { executable: join(binDir, "polite") }) });
   tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", home);
+  // Feature instance-background: the home's record outlives every start and restart below, which rewrite instance.json.
+  writeInstanceBackground(home, true);
   const first = startInstanceSession(home, { env: env() });
   assert.equal(first.reused, "new");
   assert.ok(await waitFor(() => runningPid(home) !== null), "the first harness is up");
@@ -153,6 +156,7 @@ test("restart: every preflight before the stop; a polite harness ends on SIGTERM
   assert.ok(await waitFor(() => runningPid(home) !== null));
   assert.equal(Object.fromEntries(readFileSync(join(home, "env.txt"), "utf8").split("\n").filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)])).KEY, "again");
   assert.equal(readJson(join(home, "instance.json")).launch.model, "claude-sonnet-5", "the recipe follows the model-only start");
+  assert.equal(readInstanceBackground(home), true, "a start, a restart and a start after exit keep the background record");
 });
 
 test("restart: a harness that ignores SIGTERM is reported still running after the bounded wait; nothing is escalated or launched; a neighbour window is untouched", async () => {
@@ -623,6 +627,7 @@ test("K3 stop: plan reports real session/work facts and recorded children deepes
   const root = fx.root;
   const mk = (name, extraMeta = {}) => makeHome(name, { command: renderFor(join(root, "dev", "instances", name), name, join(binDir, "polite")), launch: recipeFor(join(root, "dev", "instances", name), name, { executable: join(binDir, "polite") }), ...extraMeta });
   const parent = await mk("k3-parent"), child = await mk("k3-child"), grandchild = await mk("k3-grandchild");
+  writeInstanceBackground(parent.home, true);
   for (const [h, p] of [[child.home, "k3-parent"], [grandchild.home, "k3-child"]]) { const m = readJson(join(h, "instance.json")); m.parentInstance = p; write(join(h, "instance.json"), JSON.stringify(m, null, 2)); }
   for (const h of [parent.home, child.home, grandchild.home]) { startInstanceSession(h, { env: env() }); assert.ok(await waitFor(() => runningPid(h) !== null)); }
   const kids = descendantsOf(root, "k3-parent");
@@ -668,6 +673,7 @@ test("K3 stop: plan reports real session/work facts and recorded children deepes
   // Restart still works from the retained launch configuration.
   const again = startInstanceSession(parent.home, { env: env() }); assert.ok(again.reused); assert.ok(await waitFor(() => runningPid(parent.home) !== null));
   const one = stopInstanceSession(parent.home, { graceMs: 5000 }); assert.equal(one.stopped, true);
+  assert.equal(readInstanceBackground(parent.home), true, "stop and start keep the background record");
   assert.deepEqual(stopInstanceSession(parent.home), { home: parent.home, backend: "tmux", stopped: false, alreadyIdle: true, state: stopInstanceSession(parent.home).state, receipt: null }, "stopping an idle instance is a no-op that says so");
 });
 
