@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
   registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts, setChordFamily, activeChordFamily, runAction, listActions,
+  matchEvent, setActiveContexts,
 } from "../renderer/keybindings.mjs";
 import { createKeybindingsEditor, groupActions, shortcutMatches, CHORD_FAMILY_WORDS } from "../renderer/keybindings-editor.mjs";
 import { createChordFamily } from "../renderer/chord-family.mjs";
@@ -1188,12 +1189,32 @@ const scrollRow = (f) => f.rowFor("Scroll back in a terminal");
 const scrollUseful = (f) => usefulShown(f.doc).find(([name]) => name === "Scroll back in a terminal")?.[1];
 
 // A shortcut that fires while a terminal has focus takes its key before tmux: the scroll rows leave that key
-// out, and the Tabs row's tooltip says which shortcut holds it. Only such a shortcut: on Linux/Windows one on
-// TERMINAL_ALLOWLIST, on macOS one with ⌘ (so ⌃B and ⇧PgUp are never taken there).
-test("a shortcut that takes Ctrl+B in a terminal: the scroll rows leave Ctrl+B [ out, and the tooltip names it", (t) => {
+// out, and the Tabs row's tooltip says which shortcut holds it. The rows ask the dispatcher's own rule, so they
+// say what a keydown in a terminal does: matchEvent from xterm's helper textarea, with the tabs context active.
+const terminalKeydown = (f, k, mods) => {
+  const xterm = f.doc.createElement("div");
+  xterm.className = "xterm";
+  const textarea = f.doc.createElement("textarea");
+  xterm.append(textarea);
+  f.doc.body.append(xterm);
+  const e = key(f.doc, k, mods);
+  textarea.dispatchEvent(e);
+  xterm.remove();
+  return e;
+};
+const firesInATerminal = (f, k, mods) => {
+  setActiveContexts(new Set(["tabs"]));
+  try { return matchEvent(terminalKeydown(f, k, mods), { isMac: false }); } finally { setActiveContexts(new Set()); }
+};
+
+test("Ctrl+B recorded in the editor for a shortcut that works in a terminal: the scroll rows leave Ctrl+B [ out, and the tooltip names it", (t) => {
   const f = setupLinux(t, { extra: [LEADER_EXTRA[0]] });
   f.editor.open();
-  setBinding("tabs.next", "Ctrl+B");
+  // Recorded as a person does (the recorder stores Ctrl+B as Mod+B on Linux/Windows).
+  f.doc.querySelector('button.kb-chord[data-action-id="tabs.next"]').click();
+  f.doc.dispatchEvent(key(f.doc, "b", { ctrlKey: true }));
+  assert.equal(getBinding("tabs.next", false), "Mod+B");
+  assert.equal(firesInATerminal(f, "b", { ctrlKey: true }), "tabs.next", "the dispatcher takes Ctrl+B in a terminal");
   const row = scrollRow(f);
   assert.equal(row.querySelector(".kb-keys").textContent, "Wheel uporShift+PgUp");
   assert.equal(row.querySelector(".kb-chord .sr-only").textContent, "Wheel up or Shift+PgUp, fixed");
@@ -1202,23 +1223,27 @@ test("a shortcut that takes Ctrl+B in a terminal: the scroll rows leave Ctrl+B [
   f.type("ctrl+b [");
   assert.ok(!f.shown().includes("Scroll back in a terminal"), "a key it leaves out does not find it");
   f.type("");
+  // The leader on Ctrl+B takes it as well, and the tooltip names the leader.
   setBinding("tabs.next", null);
-  assert.equal(scrollRow(f).querySelector(".kb-keys").textContent, "Wheel up,Shift+PgUporCtrl+Bthen[", "freed, it is back");
+  setBinding("app.leader", "Ctrl+B");
+  assert.equal(firesInATerminal(f, "b", { ctrlKey: true }), "app.leader");
+  assert.equal(scrollRow(f).title, "On another computer, Shift+PgUp needs OATS 0.69.0 or later there. Ctrl+B is bound to “Leader: the commands that follow one key”, which takes it before the terminal.");
+  // Reset: Ctrl+B is tmux's again, and both rows name it.
+  f.doc.querySelector(".kb-reset-all").click();
+  assert.equal(firesInATerminal(f, "b", { ctrlKey: true }), null);
+  assert.equal(scrollRow(f).querySelector(".kb-keys").textContent, "Wheel up,Shift+PgUporCtrl+Bthen[");
   assert.equal(scrollRow(f).title, `${TMUX_SENTENCE} ${REMOTE_SENTENCE}`);
+  assert.equal(scrollUseful(f), "Wheel up, Shift+PgUp or Ctrl+B then [");
 });
 
-test("a shortcut that takes Shift+PgUp in a terminal, or both keys taken: only what reaches tmux is named", (t) => {
+test("Shift+PgUp bound to a shortcut that works in a terminal never fires there (a plain chord stays the terminal's), so the scroll rows keep it", (t) => {
   const f = setupLinux(t, { extra: [LEADER_EXTRA[0]] });
   f.editor.open();
   setBinding("tabs.next", "Shift+PageUp");
-  assert.equal(scrollRow(f).querySelector(".kb-keys").textContent, "Wheel uporCtrl+Bthen[");
-  assert.equal(scrollRow(f).title, `${TMUX_SENTENCE} On another computer, Ctrl+B [ needs OATS 0.69.0 or later there. Shift+PgUp is bound to “Next tab”, which takes it before the terminal.`);
-  assert.equal(scrollUseful(f), "Wheel up or Ctrl+B then [");
-  setBinding("app.leader", "Ctrl+B");
-  assert.equal(scrollRow(f).querySelector(".kb-keys").textContent, "Wheel up");
-  assert.equal(scrollRow(f).querySelector(".kb-chord .sr-only").textContent, "Wheel up, fixed");
-  assert.equal(scrollRow(f).title, `Shift+PgUp is bound to “Next tab”, which takes it before the terminal. Ctrl+B is bound to “Leader: the commands that follow one key”, which takes it before the terminal.`);
-  assert.equal(scrollUseful(f), "Wheel up");
+  assert.equal(firesInATerminal(f, "PageUp", { shiftKey: true }), null, "the dispatcher leaves it to the terminal");
+  assert.equal(scrollRow(f).querySelector(".kb-keys").textContent, "Wheel up,Shift+PgUporCtrl+Bthen[");
+  assert.equal(scrollRow(f).title, `${TMUX_SENTENCE} ${REMOTE_SENTENCE}`);
+  assert.equal(scrollUseful(f), "Wheel up, Shift+PgUp or Ctrl+B then [");
 });
 
 // Linux/Windows: app.focusMode and focus.nextRegion are not on TERMINAL_ALLOWLIST. macOS: tabs.next and tabs.close are,

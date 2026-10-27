@@ -155,7 +155,7 @@ export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);
   if (suppress) return { handled: true, byte };
   if (interceptKey && interceptKey(ev)) return { handled: true, byte: null };
-  // After the keymap: a chord the person bound to Shift+PgUp or Shift+PgDn stays theirs.
+  // After the keymap, which never takes a plain chord such as Shift+PgUp in a terminal (matchEvent).
   const page = shiftPageAction(ev);
   if (page.suppress) return { handled: true, byte: page.byte };
   return { handled: false, byte: null };

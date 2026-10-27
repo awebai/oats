@@ -472,8 +472,9 @@ names the same keys (`--no-status-line`, asked only of a CLI that lists
 - **Shift+PgUp and Shift+PgDn reach tmux.** xterm.js would keep them to scroll
   its own viewport, which is empty while tmux draws on the alternate screen.
   The terminal's key path sends them on instead (CSI 5;2 ~ and CSI 6;2 ~,
-  `shiftPageAction` in `renderer/terminal-tab.mjs`), after the keymap, so a
-  chord you bind to either stays yours. tmux binds Shift+PgUp to scroll back a
+  `shiftPageAction` in `renderer/terminal-tab.mjs`). No shortcut takes them
+  first: a chord with no modifier but Shift never fires from a terminal's
+  input, even when you bind it. tmux binds Shift+PgUp to scroll back a
   page; Shift+PgDn reaches the program as a native terminal sends it.
 - **Ctrl+B [ is the one Ctrl+B key the viewer takes.** Ctrl+B then any other
   key reaches the agent as both keys, as typed, with no timeout. So C-b n,
@@ -484,12 +485,13 @@ names the same keys (`--no-status-line`, asked only of a CLI that lists
   every client's key table when any terminal opens on the same tmux server, so
   a Ctrl+B still waiting for its next key at that instant is dropped. Press it
   again.
-- **A shortcut can take a key before tmux.** On Linux/Windows, a shortcut on
-  `TERMINAL_ALLOWLIST` (the ones marked as working in a terminal) bound to
-  Ctrl+B or Shift+PgUp fires instead, so that key never reaches the pane.
-  The two scroll rows then leave it out, and the Tabs row's tooltip names the
-  shortcut that holds it. On macOS only a chord with ⌘ fires in a terminal,
-  so neither key is ever taken.
+- **A shortcut can take Ctrl+B before tmux.** On Linux/Windows, a shortcut
+  on `TERMINAL_ALLOWLIST` (the ones marked as working in a terminal) bound to
+  Ctrl+B fires instead, so Ctrl+B never reaches the pane. The two scroll rows
+  then leave Ctrl+B [ out, and the Tabs row's tooltip names the shortcut that
+  holds it (`terminalTaker` in `renderer/keybindings.mjs`, the dispatcher's
+  own rule). On macOS only a chord with ⌘ fires in a terminal, so Ctrl+B is
+  never taken there.
 - **A scrolling viewer pauses the pane for everyone.** Copy mode is the pane's
   own, so while one viewer of a shared pane scrolls back, the others see the
   same paused view until it leaves copy mode. The wheel has always done this.

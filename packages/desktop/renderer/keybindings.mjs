@@ -800,6 +800,21 @@ export function terminalAllows(actionId, chord, isMac = defaultIsMac()) {
   return macStructuralChord(actionId, c) || (c.mod && !c.ctrl);
 }
 
+/** The action that takes `chord` while a terminal has focus, or null, as matchEvent decides it for a
+ * keydown in xterm's helper textarea: one of `contexts` whose binding presses the chord (Mod is Ctrl off
+ * macOS) and that terminalAllows. A plain chord (Shift+PgUp among them) never fires from that textarea,
+ * so nothing takes it. Its `when` is not asked: the shortcuts editor names what a binding may take. */
+export function terminalTaker(chord, contexts, isMac = defaultIsMac()) {
+  const c = typeof chord === "string" ? parseChord(chord) : chord;
+  if (!c || isPlainChord(c)) return null;
+  for (const action of actions.values()) {
+    if (!contexts.has(action.context)) continue;
+    const bound = parseChord(getBinding(action.id, isMac) || "");
+    if (bound && chordMatches(bound, c, isMac) && terminalAllows(action.id, c, isMac)) return action;
+  }
+  return null;
+}
+
 /** Match a keydown to an eligible action id, or null. Honors context scoping
  * and the terminal policy. `opts` is for tests: { isMac, insideTerminal,
  * editableTarget } — each defaults from the environment/event. */

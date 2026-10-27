@@ -30,7 +30,7 @@
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
   onKeymapChange, findConflict, keymapConflicts, formatChord, chordFromEvent, chordToString,
-  isPlainChord, defaultBinding, chordKeys, terminalAllows, CHORDS_READ, parseChord,
+  isPlainChord, defaultBinding, chordKeys, terminalAllows, terminalTaker, CHORDS_READ,
 } from "./keybindings.mjs";
 import { supportedLeaderRows, leaderLabel, keyIdCaps, rowKeysText } from "./leader-keys.mjs";
 import { CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
@@ -58,8 +58,6 @@ const CONTEXT_LABELS = {
 // (shell.mjs, updateActiveContexts): global and tabs actions are the ones that can
 // fire while a terminal has focus. Whether one does is the engine's terminalAllows.
 const TERMINAL_LAYER_CONTEXTS = new Set(["global", "tabs"]);
-/** Whether `action`, bound to `chord`, fires while a terminal has focus (the list's terminal mark). */
-const firesInTerminal = (action, chord, isMac) => !!chord && TERMINAL_LAYER_CONTEXTS.has(action.context) && terminalAllows(action.id, chord, isMac);
 
 /** The group an action is listed in: its context's, except the leader's own, which leads. */
 const groupOf = (action) => (action.id === "app.leader" ? "leader" : action.context);
@@ -198,19 +196,12 @@ export function usefulRows(isMac) {
 // The wheel, Shift+PgUp, or Ctrl+B then [, which the Desktop's own viewer and the kernel's take alike.
 // Ctrl+B [ needs tmux 3.3 or later where the agent runs (the viewer binds it only there); a terminal on
 // another computer runs that computer's viewer, which has the two keys from OATS 0.69.0. A key that a
-// shortcut takes while a terminal has focus (firesInTerminal) never reaches tmux: it is left out, and
-// the tooltip names the shortcut that holds it.
+// shortcut takes while a terminal has focus (terminalTaker, the dispatcher's rule) never reaches tmux:
+// it is left out, and the tooltip names the shortcut that holds it.
 const SCROLL_KEYS = Object.freeze([
   Object.freeze({ chord: "Shift+PageUp", name: "Shift+PgUp", then: null }),
   Object.freeze({ chord: "Ctrl+B", name: "Ctrl+B", then: "[" }),
 ]);
-const takesInTerminal = (chord, isMac) => {
-  const want = chordToString(parseChord(chord));
-  return listActions().find((action) => {
-    const bound = getBinding(action.id, isMac);
-    return firesInTerminal(action, bound, isMac) && chordToString(parseChord(bound)) === want;
-  }) ?? null;
-};
 
 /** The scroll keys as they reach a terminal now: `parts` ({ cap } or { word }, "Wheel up, Shift+PgUp
  * or Ctrl+B then ["), `keys` (each chord's keys, for the search), `said` (the parts as one sentence)
@@ -218,7 +209,7 @@ const takesInTerminal = (chord, isMac) => {
 export function scrollBackKeys(isMac) {
   const reach = [], taken = [];
   for (const key of SCROLL_KEYS) {
-    const taker = takesInTerminal(key.chord, isMac);
+    const taker = terminalTaker(key.chord, TERMINAL_LAYER_CONTEXTS, isMac);
     if (taker) taken.push(`${key.name} is bound to “${taker.label}”, which takes it before the terminal.`);
     else reach.push(key);
   }
@@ -536,7 +527,7 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
       const isDefault = chordStr === defaultChord;
       const chordText = chordStr ? formatChord(chordStr, isMac) : "unbound";
       // What matchEvent would allow from a focused terminal: by id on Linux/Windows, by chord on macOS.
-      const inTerminal = firesInTerminal(action, chordStr, isMac);
+      const inTerminal = !!chordStr && TERMINAL_LAYER_CONTEXTS.has(action.context) && terminalAllows(action.id, chordStr, isMac);
       el.dataset.label = action.label;
       if (chordStr) el.dataset.chord = chordStr;
       el.innerHTML = `
