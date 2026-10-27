@@ -1059,7 +1059,10 @@ question, a decision, an approval, a credential, any input it waits on), it runs
 `oats instance attention --message "<one line>"` from its home and ends its
 turn. Once it has the answer, it runs `oats instance attention --clear`. The
 claim belongs to producer `agent`. Only `--clear` or the next session start,
-restart or stop clears it. The message is one line of at most 200
+restart or stop clears it. An instance whose human talks to its parent rather
+than to it sends the question to its parent instead; the parent sets its own
+claim naming the child and relays the answer. A claim is never set for
+another home. The message is one line of at most 200
 characters; control characters, the Unicode line and paragraph separators,
 bidi controls (U+202A–202E, U+2066–2069), U+200B, U+2060, U+FEFF and tag
 characters (U+E0000–E007F) are refused, and everything else (emoji ZWJ

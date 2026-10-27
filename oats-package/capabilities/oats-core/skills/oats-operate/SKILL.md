@@ -291,10 +291,11 @@ terminal); when `oats version --json` lists `session-attach-detach-key`, add
 
 
 These act on **other** instances — typically children you spawned — and only
-when your task or your human says so. Retirement runs every module's retire
-hook (identities, scheduled jobs) and retains a worktree with work in it
-unless told to discard. An extra tree in the home is removed when it is
-clean and retained when it holds work; discarding does not apply to it.
+when your task, your human or your soul's capabilities say so. Retirement
+runs every module's retire hook (identities, scheduled jobs) and retains a
+worktree with work in it unless told to discard. An extra tree in the home is
+removed when it is clean and retained when it holds work; discarding does not
+apply to it.
 From OATS 0.48.0, retiring an instance stops its recorded children first and keeps them; if one
 will not stop, retire refuses with `E_CHILDREN_RUNNING` and retires nothing
 (`--force` does not bypass it), including your own `--self` retirement.
@@ -332,6 +333,14 @@ oats instance attention --clear                                  # once you have
   Clear it yourself first thing when the answer arrives.
 - Only for input you wait on. Never for FYIs, progress or "done" reports:
   those go through your task's usual channel.
+- **The human talks to your parent, not to you** (you are another instance's
+  recorded child and your human has not addressed you directly): send the
+  question to your parent through your messaging layer, then end your turn. If
+  you cannot reach it (no messaging, or it is stopped), set your own claim. A
+  parent that receives a child's question for the human sets needs-input
+  itself, naming the child (`<child> asks: …`), and relays the answer back.
+  Clear it once relayed. Each instance's claim is its own: never set one for
+  another home.
 
 The Claude Code emitter is separate and automatic. In a Claude instance,
 oats.core's hooks report a pending permission prompt or question themselves
