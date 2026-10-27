@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SAME_WORK_FEATURE, sameWorkDeclared, withSameWorkGate, withParentGate, drawsParentLine } from "../packages/client/same-work.mjs";
 import { clusterInstances, recencyOrder, rosterGroups, groupRosterFamilies, instanceId } from "../packages/client/instance-tree.mjs";
-import { deploymentStatusData } from "../packages/client/deployment-data.mjs";
+import { deploymentStatusData, SESSION_ENDS } from "../packages/client/deployment-data.mjs";
 import { rosterRows, panelInstances, observedEntry } from "../packages/client/deployment-panel.mjs";
 import { remotePanel, remoteWorkspace } from "../packages/client/remote-roster.mjs";
 import { deploymentPanel } from "../packages/client/panel-views.mjs";
@@ -115,6 +115,11 @@ test("deploymentPanel stamps the gate's answer on every row it serves, local and
   assert.deepEqual(stamps(deploymentPanel(held, remote(declaring))), { "r-lead": [false, true], "r-a": [true, true] });
   assert.deepEqual(stamps(deploymentPanel(held, remote(silent))), { "s-lead": [false, false], "s-a": [true, false] });
   assert.deepEqual(stamps(deploymentPanel(held, remote(failed))), { "f-lead": [false, false], "f-a": [true, false] });
+
+  // Session resume's row field (#1564) travels beside the flag and its stamp: neither reader drops the other.
+  held = heldOf(cliWith(SAME_WORK_FEATURE), [["lead", {}], ["dev-a", { parentInstance: "lead", sameWork: true, sessionEnd: SESSION_ENDS.lost }]]);
+  const both = deploymentPanel(held, LOCAL_WS).instances.find((row) => row.instance === "dev-a");
+  assert.deepEqual([both.sameWork, both.sameWorkKnown, both.sessionEnd], [true, true, SESSION_ENDS.lost]);
 
   // The CLI with it but not relaying the hosts' features: local rows follow the flag, no remote row does.
   held = heldOf(cliWith(SAME_WORK_FEATURE), local, [declaring]);
