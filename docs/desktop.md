@@ -851,8 +851,12 @@ terminals do.
 A drag selects what is on the screen. To select older output, scroll back
 first, then select. Wheel up, or press **Shift+PgUp**, or **Ctrl+B** then `[`:
 the pane scrolls back through tmux's history, and `q` returns to the bottom.
-Ctrl+B `[` needs tmux 3.3 or later on the computer the agent runs on. Ctrl+B
-followed by any other key still reaches the agent. The pane is shared: while
+Ctrl+B `[` needs tmux 3.3 or later on the computer the agent runs on. On
+another computer, Shift+PgUp and Ctrl+B `[` need OATS 0.69.0 or later there;
+with an older OATS, scroll back with the wheel. Ctrl+B followed by any other
+key still reaches the agent. On Linux and Windows, a shortcut you bind to
+Ctrl+B in the shortcuts window takes Ctrl+B first, if it is one that works in
+a terminal. The pane is shared: while
 you scroll back, anyone else viewing the same agent sees the same paused view
 until you return to the bottom, as with the wheel. The wheel scrolls
 as before, and a program that uses the mouse itself still receives the wheel.

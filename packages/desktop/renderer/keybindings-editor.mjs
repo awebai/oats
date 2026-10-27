@@ -30,7 +30,7 @@
 import {
   listActions, getBinding, setBinding, resetBinding, resetAllBindings,
   onKeymapChange, findConflict, keymapConflicts, formatChord, chordFromEvent, chordToString,
-  isPlainChord, defaultBinding, chordKeys, terminalAllows, CHORDS_READ,
+  isPlainChord, defaultBinding, chordKeys, terminalAllows, terminalTaker, CHORDS_READ,
 } from "./keybindings.mjs";
 import { supportedLeaderRows, leaderLabel, keyIdCaps, rowKeysText } from "./leader-keys.mjs";
 import { CHORD_FAMILIES, CHORD_FAMILY_LABELS, DEFAULT_CHORD_FAMILY } from "../../client/keymap.mjs";
@@ -138,7 +138,8 @@ export const CHORD_FAMILY_WORDS = Object.freeze({
 // (none in the active family, or unbound in the list below) the leader's key for the same `does`
 // stands in ("Ctrl+X then ↑ / ↓": the workspace moves in the Ctrl+Alt and Ctrl+Shift families). A pair
 // is one row, "A / B"; the tab keys one row, "first to last", while the nine follow one pattern. The
-// help row is the leader's `?`. The roster's filter is gone, so no row teaches `sidebar.focusFilter`.
+// help row is the leader's `?`. The scroll row is tmux's keys, no action's: scrollBackKeys has them.
+// The roster's filter is gone, so no row teaches `sidebar.focusFilter`.
 const USEFUL = Object.freeze([
   { name: "Command palette", does: ["palette"] },
   { name: "Quick open a soul to spawn", does: ["spawn"] },
@@ -149,8 +150,9 @@ const USEFUL = Object.freeze([
   { name: "Previous / next split pane", does: ["group-previous", "group-next"] },
   { name: "Close tab", does: ["close-terminal"] },
   { name: "Focus mode", does: ["zoom"] },
+  { name: "Scroll back in a terminal", scrollBack: true },
   { name: "The leader, then ? for everything", does: ["help"], leaderOnly: true },
-].map((row) => Object.freeze({ ...row, does: Object.freeze(row.does) })));
+].map((row) => Object.freeze({ ...row, does: Object.freeze(row.does ?? []) })));
 
 /** The Most useful rows as the keymap binds them now: each `{ name, keys }`, `keys` a list of pieces,
  * `{ cap }` a keycap (a chord as one, "⌘K", "Ctrl+Alt+K") or `{ word }` ("then", "/", "to", "unbound"). */
@@ -167,7 +169,8 @@ export function usefulRows(isMac) {
     const keys = leaderKeys(does);
     return keys && leaderChord ? { leader: caps(keys[0]) } : { unbound: true };
   };
-  return USEFUL.map(({ name, does, range, leaderOnly }) => {
+  return USEFUL.map(({ name, does, range, leaderOnly, scrollBack }) => {
+    if (scrollBack) return { name, keys: scrollBackKeys(isMac).parts };
     const parts = does.map((each) => part(each, leaderOnly));
     const keys = [];
     const piece = (p) => {
@@ -187,6 +190,44 @@ export function usefulRows(isMac) {
     } else parts.forEach((p, i) => { if (i) keys.push({ word: "/" }); piece(p); });
     return { name, keys };
   });
+}
+
+// ── Scroll back in a terminal (#1502): Most useful's row and the Tabs group's read-only row ──────
+// The wheel, Shift+PgUp, or Ctrl+B then [, which the Desktop's own viewer and the kernel's take alike.
+// Ctrl+B [ needs tmux 3.3 or later where the agent runs (the viewer binds it only there); a terminal on
+// another computer runs that computer's viewer, which has the two keys from OATS 0.69.0. A key that a
+// shortcut takes while a terminal has focus (terminalTaker, the dispatcher's rule) never reaches tmux:
+// it is left out, and the tooltip names the shortcut that holds it.
+const SCROLL_KEYS = Object.freeze([
+  Object.freeze({ chord: "Shift+PageUp", name: "Shift+PgUp", then: null }),
+  Object.freeze({ chord: "Ctrl+B", name: "Ctrl+B", then: "[" }),
+]);
+
+/** The scroll keys as they reach a terminal now: `parts` ({ cap } or { word }, "Wheel up, Shift+PgUp
+ * or Ctrl+B then ["), `keys` (each chord's keys, for the search), `said` (the parts as one sentence)
+ * and `title` (the conditions, and each shortcut that takes one of the keys). */
+export function scrollBackKeys(isMac) {
+  const reach = [], taken = [];
+  for (const key of SCROLL_KEYS) {
+    const taker = terminalTaker(key.chord, TERMINAL_LAYER_CONTEXTS, isMac);
+    if (taker) taken.push(`${key.name} is bound to “${taker.label}”, which takes it before the terminal.`);
+    else reach.push(key);
+  }
+  const parts = [{ word: reach.length > 1 ? "Wheel up," : "Wheel up" }];
+  const keys = [["Wheel", "up"]];
+  reach.forEach((key, i) => {
+    if (i === reach.length - 1) parts.push({ word: "or" });
+    parts.push({ cap: formatChord(key.chord, isMac) });
+    if (key.then) parts.push({ word: "then" }, { cap: key.then });
+    keys.push(key.then ? [...chordKeys(key.chord, isMac), key.then] : chordKeys(key.chord, isMac));
+  });
+  const named = reach.map((key) => (key.then ? `${key.name} ${key.then}` : key.name));
+  const title = [
+    ...(reach.some((key) => key.then) ? ["Ctrl+B [ needs tmux 3.3 or later on the computer the agent runs on."] : []),
+    ...(named.length ? [`On another computer, ${named.join(" and ")} ${named.length > 1 ? "need" : "needs"} OATS 0.69.0 or later there.`] : []),
+    ...taken,
+  ].join(" ");
+  return { parts, keys, said: parts.map((part) => part.cap ?? part.word).join(" "), title };
 }
 
 /** The Most useful section's own rules (injected once per document with the editor): a two-column
@@ -603,17 +644,11 @@ export function createKeybindingsEditor({ doc = document, isMac, chordFamily = n
       });
     };
 
-    // How to scroll back in a terminal (#1502), the same in every pane: the wheel, Shift+PgUp, or
-    // Ctrl+B then [, which needs tmux 3.3 or later where the agent runs (the viewer binds it only there).
+    // How to scroll back in a terminal (#1502): the keys that reach it now, and their conditions in the
+    // tooltip (scrollBackKeys).
     const scrollBackRow = () => {
-      const shiftPgUp = chordKeys("Shift+PageUp", isMac), ctrlB = chordKeys("Ctrl+B", isMac);
-      return fixedRow({
-        id: "terminal:scrollBack", label: "Scroll back in a terminal",
-        parts: [{ word: "Wheel up," }, { cap: capText(shiftPgUp) }, { word: "or" }, { cap: capText(ctrlB) }, { word: "then" }, { cap: "[" }],
-        keys: [["Wheel", "up"], shiftPgUp, [...ctrlB, "["]],
-        said: `Wheel up, ${capText(shiftPgUp)} or ${capText(ctrlB)} then [, fixed`,
-        title: "Ctrl+B [ needs tmux 3.3 or later on the computer the agent runs on",
-      });
+      const { parts, keys, said, title } = scrollBackKeys(isMac);
+      return fixedRow({ id: "terminal:scrollBack", label: "Scroll back in a terminal", parts, keys, said: `${said}, fixed`, title });
     };
 
     const startRecording = (action, btn, conflictEl) => {
