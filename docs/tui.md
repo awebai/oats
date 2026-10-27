@@ -132,7 +132,7 @@ while a terminal is open); under 80 columns it has the whole width.
   `since …` and its reason on rows of its own; the note of a view of one
   deployment; and the line that says what happened after an open, an act or
   a spawn. Then an empty row. A line that goes at the next key and fits one
-  row (`No workspace above this one.`) stands in that empty row instead, so
+  row (`No other workspace to show.`) stands in that empty row instead, so
   nothing under it moves.
 - **The views** follow as an accordion, always in this order: `Instances`,
   `Souls`, `Capabilities`, each with its key dim at the right edge. The open
@@ -993,10 +993,12 @@ workspace the list is its row.
 - **The leader then `Up` or `Down`**, or the [chords](#chords) `Alt+Up` and
   `Alt+Down` (in the Alt family and on macOS; the Ctrl+Alt and Ctrl+Shift
   families leave them to the programs, and the leader does it), opens the
-  workspace before or after the open one, as the list draws them. It does not wrap: at an end nothing
-  moves, and the line under the list says `No workspace above this one.` or
-  `No workspace below this one.` until the next key, of any kind (one typed
-  to an agent too), or a resize. The line stands in the empty row under the
+  workspace before or after the open one, as the list draws them. It wraps,
+  as the [OATS Desktop](desktop.md#workspaces)'s do: `Down` on the last row
+  opens the first, and `Up` on the first opens the last. With no other row
+  to open, nothing moves, and the line under the list says `No other
+  workspace to show.` until the next key, of any kind (one typed to an agent
+  too), or a resize. The line stands in the empty row under the
   list, so the list of instances does not move while it shows; only when
   that list fills the sidebar, which then has no such row, does the line
   take a row, the list giving up its last. With the list's focus (`w`) the
@@ -1016,7 +1018,8 @@ workspace the list is its row.
   workspace's name is underlined until `Enter` opens another; the list of
   instances keeps its selection in reverse video, without its `>`. `Up`/`k`,
   `Down`/`j`, `g`/`Home` and `G`/`End` move the cursor over the rows that
-  open; `Enter` opens its row and gives the list of instances the focus;
+  open, and stop at the list's ends (they do not wrap, as the Desktop
+  list's own do not); `Enter` opens its row and gives the list of instances the focus;
   `Esc` gives that focus back with nothing opened; `w` again opens the
   switcher, for what the list does not hold. Any other key gives the list
   of instances the focus, then does what it does there. The cheat sheet
@@ -1680,7 +1683,7 @@ which edits the command line in your editor, is `Ctrl+X` twice, then
 |---|---|
 | `k` or `Space` | opens [the palette](#the-palette) |
 | `1`, `2`, `3` | the Instances, Souls and Capabilities views |
-| `Up`, `Down` | opens the workspace before or after the open one, in [the list of workspaces](#the-list-of-workspaces) as it is drawn (the chords `Alt+Up`, `Alt+Down`). Every row opens, and the list does not wrap. The terminal of the instance before or after is `Alt+Shift+Up`, `Alt+Shift+Down` ([Chords](#chords)) |
+| `Up`, `Down` | opens the workspace before or after the open one, in [the list of workspaces](#the-list-of-workspaces) as it is drawn (the chords `Alt+Up`, `Alt+Down`). Every row opens, and the moves wrap: past the last row, the first, and before the first, the last. The terminal of the instance before or after is `Alt+Shift+Up`, `Alt+Shift+Down` ([Chords](#chords)) |
 | `Left`, `Right` | shows the tab before or after the shown one; the tab bar does not wrap, and the focus stays where it was |
 | `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole screen |
 | `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
