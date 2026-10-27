@@ -256,7 +256,8 @@ export function runHook(event, env = process.env) {
 
 /** The upgrade hook's answer for its phase (OATS_UPGRADE_PHASE) and the exit status it
  *  ends with. oats.core records no meta, so a home whose recorded meta (OATS_META) is the
- *  empty object is adopted and carried unchanged; any other recorded meta is state this
+ *  empty object is adopted and carried unchanged (the kernel passes a recorded falsy value,
+ *  or none, as `{}`, so those are adopted too); any other recorded meta is state this
  *  hook cannot vouch for, so plan refuses it with the respawn remedy and apply fails. An
  *  unknown phase fails. Unlike spawn and launch, a failure exits 1: the kernel reads a
  *  failed apply as refused, and its JSON warning as the diagnosis. */

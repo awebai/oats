@@ -1246,12 +1246,13 @@ earlier oats.core, with or without the emitter. oats.core records no
 capability metadata, and its settings entries name the module copy's path,
 `.oats/modules/oats.core`, which an upgrade keeps; the next start's launch
 hook rewrites them. So `plan` adopts a home whose recorded
-`capabilityMeta["oats.core"]` is absent or `{}`, and refuses any other value
-as state it cannot vouch for, with the remedy `respawn the instance: oats
-retire <instance>, then oats spawn`. `apply` returns `{"meta":{}}`, which the
-kernel records as `capabilityMeta["oats.core"]`, and exits 1 with a JSON
-`warning` on any other metadata. Neither phase reads the home or calls the
-host.
+`capabilityMeta["oats.core"]` is absent or `{}`, or a falsy value (`null`,
+`false`, `0`, `""`), which the kernel passes in `OATS_META` as `{}`. It
+refuses any other value as state it cannot vouch for, with the remedy
+`respawn the instance: oats retire <instance>, then oats spawn`. `apply`
+returns `{"meta":{}}`, which the kernel records as
+`capabilityMeta["oats.core"]`, and exits 1 with a JSON `warning` on any other
+metadata. Neither phase reads the home or calls the host.
 
 **Why the project settings file, not `--settings`.** On Claude Code
 2.1.288, Claude honours only the last `--settings` flag on a command line:

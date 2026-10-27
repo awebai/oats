@@ -8,9 +8,10 @@
   - **oats.core 2.8.0 declares a non-required `upgrade` hook.** The hook that
     runs is the destination's, so homes spawned on any earlier oats.core are
     covered, including framework 1.4.1, 1.8.0 and 1.14.1 homes.
-  - `plan` adopts when the home records no oats.core metadata, which no
-    oats.core ever wrote. Any other recorded value is refused with the remedy
-    `respawn the instance: oats retire <instance>, then oats spawn`.
+  - `plan` adopts when the home records no oats.core metadata (no oats.core
+    ever wrote any), `{}`, or a falsy value (`null`, `false`, `0`, `""`),
+    which the kernel passes as `{}`. Any other recorded value is refused with
+    the remedy `respawn the instance: oats retire <instance>, then oats spawn`.
   - `apply` carries the empty metadata unchanged. Neither phase reads the home
     or calls the host. The next start's launch hook rewrites the Claude Code
     waiting hooks for the moved module copy.

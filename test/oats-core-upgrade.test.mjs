@@ -122,6 +122,17 @@ for (const [label, recorded] of [["a non-empty object", { team: "t:example" }], 
   });
 }
 
+test("oats.core upgrade: recorded oats.core meta that is null reaches the hook as {} (the kernel's OATS_META), so it adopts and becomes {}", { timeout: 240_000 }, async t => {
+  const { home, plan, apply } = await releasedHome(t, "oats-framework/v1.14.1");
+  const file = join(home, "instance.json"), meta = json(file);
+  meta.capabilityMeta = { ...(meta.capabilityMeta || {}), "oats.core": null };
+  writeFileSync(file, JSON.stringify(meta, null, 2) + "\n");
+  const shown = await plan();
+  assert.equal(coreRow(shown).provider.decision, "adopt", JSON.stringify(coreRow(shown).provider));
+  assert.equal((await apply({ planRevision: shown.planRevision, idempotencyKey: "null-meta" })).status, "complete");
+  assert.deepEqual(json(file).capabilityMeta["oats.core"], {});
+});
+
 /** The hook as the kernel runs it for an upgrade phase. */
 function upgradeHook(env) {
   const r = spawnSync(process.execPath, [HOOK, "upgrade"], { env: { PATH: process.env.PATH, OATS_EVENT: "upgrade", OATS_INSTANCE: "seat", ...env }, encoding: "utf8" });
