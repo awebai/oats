@@ -267,8 +267,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: action butto
 
 // `app: true` (session resume at launch): the app's own notice, bound to no workspace or connection. Valid only
 // sticky and with no descriptor, activate or buttons. A workspace switch (its listener and the stale-scope clear in
-// notify) and a connection change keep it, and its Details keeps toggling there; it goes on its ×, its handle,
-// dispose() and the public clear(). Every other entry behaves as before.
+// notify) and a connection change keep it, and its Details keeps toggling there; it goes only on its × and dispose():
+// the public clear() keeps it and its handle's dismiss() does nothing. Every other entry behaves as before.
 test('app: refused unless sticky and free of descriptor, activate and buttons; posted like any sticky entry', t => {
   const u = setup(t);
   for (const bad of [{ app: true }, { app: true, sticky: false }, { app: true, sticky: true, descriptor: null }, { app: true, sticky: true, activate: () => {} },
@@ -313,12 +313,13 @@ test('app: survives a workspace switch (listener and stale scope) and a connecti
   assert.equal(doc.activeElement, doc.querySelector('#fallback'), 'focus inside it moves on');
 });
 
-test('app: dispose() and the public clear() remove it; onDismiss runs only on its ×', t => {
+test('app: only its × and dispose() remove it (not the public clear(), not its handle); onDismiss runs only on its ×', t => {
   const u = setup(t), seen = [];
   const a = u.center.notify('A', { sticky: true, app: true, onDismiss: () => seen.push('A') });
-  u.center.clear(); assert.equal(a.shown, false, "the public clear is a caller's full reset");
-  const b = u.center.notify('B', { sticky: true, app: true, onDismiss: () => seen.push('B') });
-  u.visit(); assert.equal(b.shown, true);
-  u.cards()[0].querySelector('.app-toast-dismiss').click(); assert.deepEqual(seen, ['B']); assert.equal(b.shown, false);
+  const other = u.center.notify('other', { sticky: true });
+  u.center.clear(); assert.equal(a.shown, true, 'the public clear keeps the app entry'); assert.equal(other.shown, false, 'and clears the rest');
+  a.dismiss(); assert.equal(a.shown, true, 'its handle does not withdraw it'); assert.deepEqual(u.texts(), ['A']);
+  u.visit(); assert.equal(a.shown, true);
+  u.cards()[0].querySelector('.app-toast-dismiss').click(); assert.deepEqual(seen, ['A']); assert.equal(a.shown, false);
   const c = u.center.notify('C', { sticky: true, app: true }); u.center.dispose(); assert.equal(c.shown, false);
 });

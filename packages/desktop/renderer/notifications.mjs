@@ -9,8 +9,8 @@
  *   sticky   never evicted by capacity (the 3-entry bound holds non-sticky entries only);
  *   app      (with sticky, never with descriptor, activate or buttons: anything else is refused) the app's own
  *            notice, bound to no workspace or connection: a workspace switch and a connection change keep it, and
- *            its Details keeps working there. It goes on its × (or its handle) and on dispose(), and on the
- *            public clear() (a caller's own reset, which no workspace path calls: they use the scoped clear);
+ *            its Details keeps working there. It goes only on its × and on dispose(): clear() keeps it and
+ *            its handle's dismiss() does nothing;
  *   onDismiss  called once when the operator dismisses it with its × (never on clear, eviction or dispose);
  *   group + groupLabel(n)  more than 3 sticky entries of one group collapse into one grouped entry
  *            that expands to its members, so the center stays bounded. */
@@ -66,7 +66,8 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
     try { applyFocus(() => el.focus({ preventScroll: true })); } finally { projecting = false; }
     revealInScrollport(root, el);
   };
-  /** Revoke every entry, or, for a workspace or connection change (`keepApp`), every entry but the app's own. */
+  /** Revoke every entry, or (`keepApp`: a workspace or connection change, or a caller's clear()) every entry but the
+   * app's own. Only dispose() revokes those all. */
   function clear(keepApp = false) {
     actionSerial++;
     const kept = keepApp ? entries.filter(entry => entry.app) : [];
@@ -238,11 +239,12 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
       // Arrival can change stack geometry, but never the focused element.
       revealInScrollport(root, doc.activeElement);
       return {
-        dismiss() { if (alive) withdraw(record); },
+        // An app entry is the operator's to dismiss (its ×) or the center's to dispose of: its handle never withdraws it.
+        dismiss() { if (alive && !record.app) withdraw(record); },
         get shown() { return alive && !record.gone && entries.includes(record); },
       };
     },
-    clear() { if (alive) clear(); },
+    clear() { if (alive) clear(true); },
     dispose() {
       if (!alive) return; alive = false; unsubscribe?.(); offConnection?.(); clear(); root.remove();
       root.removeEventListener('pointerdown', entryIntent); root.removeEventListener('focusin', entryIntent);

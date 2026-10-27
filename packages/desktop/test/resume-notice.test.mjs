@@ -6,10 +6,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { createResumeNotice, createResumePreference, RESUME_PREFERENCE_FAILED, RESUME_PREFERENCE_LABEL, RESUME_PREFERENCE_ACTION }
+import { createResumeNotice, createResumePreference, resumePaletteCommand, RESUME_PREFERENCE_FAILED, RESUME_PREFERENCE_LABEL, RESUME_PREFERENCE_ACTION }
   from "../renderer/resume-notice.mjs";
 import { createNotificationCenter } from "../renderer/notifications.mjs";
 import { readResumeSweep } from "../../client/session-resume.mjs";
+import { createPalette } from "../renderer/palette.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function deferred() { let resolve, reject; const promise = new Promise((y, n) => { resolve = y; reject = n; }); return { promise, resolve, reject }; }
@@ -161,16 +162,42 @@ test("the palette's detail: On / Off as read when it opens, '' until it lands or
   assert.equal(pref.detail(), "Off", "the palette read sent before the write landed does not paint over it");
 });
 
+test("the real palette: a detail that lands after the instances is shown; the entry returns focus where the palette opened", async (t) => {
+  const dom = new JSDOM('<!doctype html><body><button id="origin">Origin</button></body>'); t.after(() => dom.window.close());
+  const doc = dom.window.document, notices = [];
+  const reads = [], desk = preferenceBridge({ stored: true, read: () => { const d = deferred(); reads.push(d); return d.promise; },
+    write: (bridge, value) => (value === "fail" ? Promise.reject(new Error("x")) : (bridge.stored = value, Promise.resolve({ ok: !bridge.failWrite, resumeAtLaunch: value }))) });
+  const pref = createResumePreference({ desk, notify: (text) => notices.push(text) });
+  // The shell's shapes: the instances answer at once (a window choosing a workspace), the preference later.
+  const palette = createPalette({ doc, loadInstances: () => pref.alongside(async () => ({ instances: [], deployments: [] })),
+    commands: [resumePaletteCommand({ doc, preference: () => pref, run: () => pref.toggle() })] });
+  const detail = () => doc.querySelector(".pdetail")?.textContent;
+  const origin = doc.getElementById("origin");
+  for (const [stored, shown, failWrite] of [[true, "On", false], [false, "Off", true]]) {
+    desk.stored = stored; desk.failWrite = failWrite; notices.length = 0;
+    origin.focus();
+    const opened = palette.open(); await tick();
+    reads.at(-1).resolve({ resumeAtLaunch: stored }); await opened; await tick();
+    assert.equal(detail(), shown, "the read landed after the instances, and the palette shows it");
+    doc.querySelector(".palette-item").click(); await tick();
+    assert.equal(doc.activeElement, origin, "focus is back where the palette was opened");
+    reads.at(-1).resolve({ resumeAtLaunch: stored }); await tick(); await tick();
+    assert.equal(doc.activeElement, origin, "and stays there once the write has answered");
+    assert.deepEqual(notices, failWrite ? [RESUME_PREFERENCE_FAILED] : [], failWrite ? "a failed write says so" : "a saved write says nothing");
+  }
+  assert.deepEqual(desk.writes, [false, true]);
+});
+
 test("shell.mjs wires both: the notice at start with its pagehide, the action, the menu's read, the palette entry and its read at open", () => {
   const shell = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
-  assert.match(shell, /^import \{ createResumeNotice, createResumePreference \} from "\.\/resume-notice\.mjs";$/m);
+  assert.match(shell, /^import \{ createResumeNotice, createResumePreference, resumePaletteCommand \} from "\.\/resume-notice\.mjs";$/m);
   assert.match(shell, /^const resumePreference = createResumePreference\(\{ desk, notify: \(text\) => notifications\.notify\(text\) \}\);$/m);
   assert.match(shell, /^const resumeLaunchNotice = createResumeNotice\(\{ desk, notify: notifications\.notify \}\);\nresumeLaunchNotice\.start\(\);\nwindow\.addEventListener\("pagehide", \(\) => resumeLaunchNotice\.dispose\(\), \{ once: true \}\);$/m);
   assert.match(shell, /^registerAction\(\{ id: "app\.resumeAtLaunch", label: "Resume lost sessions when Desktop opens", context: "global", run: \(\) => resumePreference\.toggle\(\) \}\);$/m);
   assert.match(shell, /readChecked: \(id\) => \(id === "app\.resumeAtLaunch" \? resumePreference\.read\(\) : null\),/);
-  assert.match(shell, /\{ label: "Settings: Resume lost sessions when Desktop opens", detail: \(\) => resumePreference\.detail\(\), run: \(\) => runAction\("app\.resumeAtLaunch"\) \},/);
-  // The read starts as the palette opens, before (and without awaiting) its instance load.
-  assert.match(shell, /loadInstances: async \(\) => \{\n    resumePreference\.refresh\(\);[^\n]*\n    if \(windowState\(\) === "choosing"\)/);
+  assert.match(shell, /^    resumePaletteCommand\(\{ doc: document, preference: \(\) => resumePreference, run: \(\) => runAction\("app\.resumeAtLaunch"\) \}\),$/m);
+  // The read starts as the palette opens, beside its instance load, and the load ends when both have.
+  assert.match(shell, /^  loadInstances: \(\) => resumePreference\.alongside\(async \(\) => \{\n    if \(windowState\(\) === "choosing"\)/m);
   // Declared after every top-level await, so nothing calls them before they exist.
   assert.ok(shell.indexOf("const resumePreference =") > shell.lastIndexOf("\nawait "), "after the shell's top-level awaits");
 });

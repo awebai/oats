@@ -71,7 +71,7 @@ import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, NAV_TABS, navTab, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons, iconElement } from "./shell-icons.mjs";
 import { createSettingsMenu } from "./sidebar-settings.mjs";
-import { createResumeNotice, createResumePreference } from "./resume-notice.mjs";
+import { createResumeNotice, createResumePreference, resumePaletteCommand } from "./resume-notice.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
@@ -2371,8 +2371,8 @@ const chordDetail = (id) => () => {
   return b ? formatChord(b, isMac) : "";
 };
 const palette = createPalette({
-  loadInstances: async () => {
-    resumePreference.refresh(); // its On/Off detail, read as the palette opens, beside (never before) the instances
+  // With the resume preference's read beside it (its On/Off detail), the load ending when both have.
+  loadInstances: () => resumePreference.alongside(async () => {
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
     // The last-focus record as the palette opens: its order (#1383).
@@ -2380,7 +2380,7 @@ const palette = createPalette({
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
     return { instances: p.instances || [], deployments: panelDeployments(p), recent };
-  },
+  }),
   // A held home (spawning, retiring, left half cleaned) opens nothing from here either, as its roster row does not:
   // the row as this window reads it (its own retires in flight held), said as the row says it.
   openTerminal: (name) => openTerminalTab(name, { refuse: (inst) => { const held = heldHome(shownRows([inst])[0]); return held ? heldLine(held) : null; } }),
@@ -2403,7 +2403,8 @@ const palette = createPalette({
     { label: "Font: choose…", detail: chordDetail("app.fontPicker"), run: () => runAction("app.fontPicker") },
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
-    { label: "Settings: Resume lost sessions when Desktop opens", detail: () => resumePreference.detail(), run: () => runAction("app.resumeAtLaunch") },
+    // A toggle that opens nothing: focus goes back where the palette was opened, as for the toggle below.
+    resumePaletteCommand({ doc: document, preference: () => resumePreference, run: () => runAction("app.resumeAtLaunch") }),
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => focusWorkspaceList() },
     // The palette hands focus to its command: back where it was opened first (a row the toggle hides then passes it to
     // the current row; a terminal keeps it), then the toggle, as its chord does from there.

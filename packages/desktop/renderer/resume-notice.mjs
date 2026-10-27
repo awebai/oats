@@ -18,6 +18,7 @@
 // value it wrote.
 import { resumeSummaryFact, resumeNotice } from "../../client/session-resume.mjs";
 import { shortPath } from "../../client/deployment-label.mjs";
+import { takePickerFocusReturn } from "./overlay-picker.mjs";
 
 export const RESUME_PREFERENCE_ACTION = "app.resumeAtLaunch";
 export const RESUME_PREFERENCE_LABEL = "Resume lost sessions when Desktop opens";
@@ -53,7 +54,8 @@ export function createResumeNotice({ desk, notify, label = (path) => shortPath(p
 }
 
 /** The preference through main. read() → Promise<boolean|null> (null: not readable), never rejecting; toggle()
- * → Promise<void>; refresh() starts the palette's read; detail() → "On" | "Off" | "". */
+ * → Promise<void>; refresh() starts the palette's read and → a Promise<void> that never rejects, settled once the
+ * read has landed; alongside(load) is the palette's load with that read joined; detail() → "On" | "Off" | "". */
 export function createResumePreference({ desk, notify }) {
   let value = null, serial = 0, chain = Promise.resolve();
   async function read() {
@@ -82,8 +84,22 @@ export function createResumePreference({ desk, notify }) {
     toggle() { chain = chain.then(flip, flip); return chain; },
     refresh() {
       const token = ++serial; value = null;
-      void read().then((on) => { if (token === serial) value = on; });
+      return read().then((on) => { if (token === serial) value = on; });
+    },
+    /** The palette's load: `load()` and this preference's read, started together; it settles once both have, as
+     * `load` settled. The palette paints when its load completes, so a detail that landed later would not show. */
+    async alongside(load) {
+      const read = this.refresh();
+      try { return await load(); } finally { await read; }
     },
     detail: () => (value === true ? "On" : value === false ? "Off" : ""),
   };
+}
+
+/** The palette's entry: its label, the On/Off `detail` read as it opened, and `run`, which first gives focus back
+ * where the palette was opened (a toggle opens nothing to take it), then runs the action. `preference` is a getter
+ * (the shell declares the preference after the palette). */
+export function resumePaletteCommand({ doc, preference, run }) {
+  return { label: `Settings: ${RESUME_PREFERENCE_LABEL}`, detail: () => preference().detail(),
+    run: () => { takePickerFocusReturn(doc)?.restore(); return run(); } };
 }
