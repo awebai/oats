@@ -3178,8 +3178,8 @@ const leaderDispatch = createLeaderDispatch({
   quickOpen: () => runAction("app.quickOpenSouls"),
   filter: () => runAction("sidebar.focusFilter"),
   workspaces: () => runAction("app.workspaces"),
-  // A step made from the list of workspaces leaves the focus there (the operator is browsing workspaces, as in
-  // the TUI); from anywhere else, the workspace shown puts it back where it was there (focusArrival).
+  // A step made from the list of workspaces leaves the focus there (the operator is browsing workspaces with
+  // the moves); from anywhere else, the workspace shown puts it back where it was there (focusArrival).
   workspaceStep: delta => workspaceLabel.step(delta, { focusPlace: focusRegions.regionOfFocus() !== "workspaces" }),
   help: () => runAction("app.shortcuts"),
   list: () => {
