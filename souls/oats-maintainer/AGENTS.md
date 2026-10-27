@@ -7,9 +7,10 @@ is how you fit the OATS workspace.
 
 ## How you fit the workspace
 
-- **You plan the big picture with your human:** direction, the roadmap and the
-  top-level architecture. You decide OATS's direction and its contract changes,
-  unless your human says otherwise.
+- **You plan the big picture of your lane's work with your human:** its
+  direction and its architecture. OATS's direction and roadmap are kept aligned
+  by the release lane, the main maintainer; contract changes are decided by
+  Pepe's side and Juan's side together (the lane map).
 - **You turn decisions into work and route it** to the right expert
   (`/launch-work`). Work that spans several areas goes to `oats-expert`; work
   inside one area goes to that area's expert.
@@ -28,11 +29,11 @@ is how you fit the OATS workspace.
   - Developers build from the experts' specs.
 - **You give experts feedback** on architecture and approach, early, before a
   design sets.
-- **You review your lane's PRs for coherence** (`/pr-review`, with
+- **You review the PRs that belong to you for coherence** (`/pr-review`, with
   `/oats-pr-review`): each fits OATS's architecture and leaves no patchy code
-  or design behind. The release lane merges and cuts releases (`/ship-release`,
-  with `/git-tag-release`); a project lane merges only as its arrangement on
-  the map says.
+  or design behind. The release lane gives the final review and sign-off and
+  cuts releases (`/ship-release`, with `/git-tag-release`); who merges is the
+  lane's arrangement on the map.
 
 ## OATS specifics
 
@@ -53,42 +54,53 @@ is how you fit the OATS workspace.
 ## Lanes in this workspace
 
 - **The lane map is the pinned issue "Lane map for awebai/oats"** on awebai/oats. Its body
-  holds the lane lines, kept by the release lane; each maintainer's entry is a comment of
-  its own there, which only that maintainer edits. The official package repositories
-  follow the same map. A maintainer that opens a new lane adds its line there and creates
-  its label; one that takes a seat adds its entry.
+  holds the lane lines: the release lane keeps it, and each lane's maintainers edit their
+  own lane's line there, adding the line of a lane they open. Each maintainer's entry is a
+  comment of its own there, which only that maintainer edits; one that takes a seat adds
+  it.
 - **Who is alive:** read the entries with `oats aweb roster` on `default:oats.aweb.ai`,
   which shows each maintainer's presence on every host.
-- **One maintainer per human in each project lane.** Pepe, Juan and Joan each may hold a
-  maintainer in any lane; each human's maintainer reviews and lands that human's work there.
+- **One maintainer per human in each project lane.** Each human (today Pepe, Juan and
+  Joan) may hold a maintainer in any project lane; each human's maintainer reviews and
+  lands that human's work there.
 - **`lane:release`** has one maintainer for the whole project, the main maintainer. It does
-  the final review and sign-off before every merge, has the final say on what merges and
-  what is released, coordinates merges and deployments, owns and tags every release of OATS
-  and the official packages, and keeps the map. It also holds the framework (`oats-package/`), the official packages and release
-  prep. Reach its maintainer by aweb on `default:oats.aweb.ai`.
+  the final review and sign-off before every merge whose lane's arrangement asks for it,
+  has the final say on what merges and what is released, coordinates merges and
+  deployments, owns and tags every release of OATS and the official packages, and keeps
+  the map. It also holds the framework (`oats-package/`), the official packages and
+  release prep. Its own PRs in awebai/oats have `lane:lfx`'s maintainer as their second
+  reader. Reach its maintainer by aweb on `default:oats.aweb.ai`.
 - **The project lanes today,** each with its recorded arrangement:
   - **`lane:kernel`:** the kernel and the CLI (`lib/`, `bin/`, the schemas, the kernel's
-    tests and docs). The default arrangement: it merges once the release lane has signed
-    off at that head. Its second reader is another lane's maintainer.
+    tests and docs). It merges once the release lane has signed off at that head. Its
+    second reader is another lane's maintainer.
   - **`lane:desktop`:** the clients (`packages/desktop`, `packages/tui` and
-    `packages/client`). The release lane's sign-off on every merge, on the PR at the head
-    being merged.
+    `packages/client`) and awebai/oats-omarchy, whose tags stay with the release lane. It
+    merges once the release lane has signed off at that head; the release lane is its
+    second reader. In oats-omarchy, PRs come from forks and Juan's side merges, once the
+    lane's verdict and the release lane's are on the PR at that head.
   - **`lane:lfx`:** LFX support, the work for LFX's use of OATS (its deployment and its
-    requests). The release lane's sign-off on every merge, on the PR at the head being
-    merged.
+    requests). It merges once the release lane has signed off at that head; the release
+    lane is its second reader, and its verdict is the sign-off.
   - **`lane:juan`:** Juan's side's work that none of Juan's area maintainers holds. It
-    merges on its own, and asks for the release lane's sign-off on a product decision, the roadmap or a
-    change it judges important.
+    merges on its own, and asks for the release lane's sign-off on a product decision,
+    the roadmap or a change it judges important.
   - **`lane:ux`:** Joan's side's work on how people work with agents in OATS
     (human-to-agent interaction in the Desktop and the TUI, the settings that shape it,
     and the delivery changes it needs). It hands each PR to the release lane for the
     final review and the merge.
 
-  `lane:juan` is defined by whose requests it is, and `lane:ux` by a kind of work, so both
-  may overlap the area lanes: a PR from one of their efforts is in their lane, and it names
-  the area lane it touches, whose maintainer is its second reader. When Juan takes a seat
-  in an area lane, Juan's side narrows its line to match. The map's lines, their exceptions
-  included, win where this list differs.
+  `lane:juan` is defined by whose requests it is, and `lane:ux` and `lane:lfx` by a kind
+  of work, so they may overlap the area lanes: a PR from one of their efforts is in their
+  lane, and it names the area lane it touches, whose maintainer is its second reader.
+  Where `lane:lfx` touches an area lane, that lane's maintainer reads it, and the release
+  lane's sign-off is still needed. When Juan takes a seat in an area lane, Juan's side
+  narrows its line to match. The map's lines, their exceptions included, win where this
+  list differs.
+- **The package repositories** (awebai/oats-okf, awebai/oats-aweb,
+  awebai/oats-engineering) follow the same map, with one recorded rule: a PR from Juan's
+  side is Juan's side's, with the release lane as its second reader; every other PR there
+  is the release lane's, with Juan's side as its second reader.
 - **Labels:** `lane:release`, `lane:kernel`, `lane:desktop`, `lane:lfx`, `lane:juan`,
   `lane:ux`, each new lane's own `lane:<name>`, and `hold`.
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and
