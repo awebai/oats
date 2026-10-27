@@ -8,6 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "launch": { "description": "The soul's launch preference (0.30; feature launch-preference): what the role should run on. Only harness and model: args, env, yolo and the executable stay host facts (launch configurations). A machine overrides it in oats-local.yaml souls.launch; explicit flags win over both. A committed soul gains it only when every deployment runs 0.30 (0.29 refuses the key).",  "type": "object", "additionalProperties": false, "required": ["harness"], "properties": { "harness": { "enum": ["pi", "claude", "codex"], "description": "The harness the role should run on." }, "model": { "type": "string", "minLength": 1, "pattern": "^[^\\s-][^\\s]*$", "description": "A model id for that harness; absent: the harness's own model." } } },
+    "background": { "type": "boolean", "description": "The role's default placement (feature instance-background, awebai/oats#1579): true lists a new instance of this soul under the clients' Background section. Presentation only, never identity or policy; absent means false. A spawn's --background / --no-background wins; the value is recorded in the home at spawn (`.oats-background.json`), so a later edit of the soul does not move an existing instance (`oats instance background` does). A committed soul gains it only when every deployment reading it runs the release that adds it (earlier kernels refuse the key)." },
     "schemaVersion": { "const": 2 },
     "name": { "$ref": "#/$defs/slug" },
     "description": { "type": "string" },
