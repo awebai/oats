@@ -6,7 +6,7 @@ import { LUCIDE_ICONS } from "./lucide-icons.mjs";
 /** App icon name → Lucide icon. The shell's semantic names stay stable. */
 export const ICONS = Object.freeze({
   overview: "circle-dot", workspace: "house", schedules: "clock", plus: "plus", sidebar: "panel-left", panel: "panel-right",
-  theme: "contrast", shortcuts: "keyboard", palette: "terminal", settings: "sliders-horizontal",
+  theme: "contrast", shortcuts: "keyboard", palette: "terminal", settings: "sliders-horizontal", cog: "settings",
   chevron: "chevron-down", chevronDown: "chevron-down", chevronRight: "chevron-right", chevronLeft: "chevron-left",
   splitRight: "columns-2", splitDown: "rows-2",
   search: "search", more: "ellipsis", close: "x", check: "check", refresh: "refresh-cw", reset: "rotate-ccw",
@@ -19,9 +19,20 @@ export const ICONS = Object.freeze({
   folder: "folder", link: "link", layers: "layers", copy: "copy", circle: "circle",
   // Setup's "For developers" drawing: the host lists a member, the member names the workspace back.
   arrowRight: "arrow-right", arrowLeft: "arrow-left",
+  // The list of workspaces' "Show only the current workspace" toggle.
+  collapse: "chevrons-down-up",
+});
+/** Marks drawn here, not Lucide's, on the same 24-unit grid. `attention`, the needs-input mark (2026-10-23): a full
+ * disc with a rounded bar and a separate dot, the "!" of Lucide's circle-alert made bold enough to read as one at
+ * 12–14px (its 2-unit strokes leave half a pixel between bar and dot there). Colours are shell.css's (.attn-mark). */
+export const OWN_ICONS = Object.freeze({
+  attention: [["circle", [["class", "attn-disc"], ["cx", "12"], ["cy", "12"], ["r", "12"]]],
+    ["rect", [["class", "attn-glyph"], ["x", "10.3"], ["y", "5"], ["width", "3.4"], ["height", "9.4"], ["rx", "1.7"]]],
+    ["circle", [["class", "attn-glyph"], ["cx", "12"], ["cy", "18.4"], ["r", "2"]]]],
 });
 const ATTR = /^[-0-9a-zA-Z .,]*$/;
 function iconNodes(name) {
+  if (Object.hasOwn(OWN_ICONS, name)) return OWN_ICONS[name];
   if (!Object.hasOwn(ICONS, name)) throw new TypeError("Unknown shell icon");
   return LUCIDE_ICONS[ICONS[name]];
 }

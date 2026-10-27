@@ -83,9 +83,17 @@ test("the viewer's locked table lets a drag start a tmux copy selection (#520), 
   const io = fixture();
   prepareSessionViewer(target, io);
   const binds = io.calls.filter((c) => c[0] === "bind-key" && c[2] === "oatsview-locked").map((c) => c[3]);
-  assert.deepEqual(binds, ["WheelUpPane", "MouseDrag1Pane"]);
+  assert.deepEqual(binds, ["WheelUpPane", "MouseDrag1Pane", "S-PageUp"]);
   assert.deepEqual(io.calls.find((c) => c[0] === "bind-key" && c[3] === "MouseDrag1Pane"),
     ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"]);
+});
+test("every viewer's table binds S-PageUp to copy mode, scrolled up a page, whatever the app does with the mouse (#1476)", () => {
+  for (const detachKey of [undefined, "F12"]) {
+    const io = fixture();
+    prepareSessionViewer(target, { ...io, detachKey });
+    const table = io.calls.find((c) => c[0] === "set-option" && c[3] === "key-table")[4];
+    assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[3] === "S-PageUp"), [["bind-key", "-T", table, "S-PageUp", "copy-mode -u"]], String(detachKey));
+  }
 });
 
 // ---- a detach key (awebai/oats#856) --------------------------------------------------------------
@@ -110,6 +118,7 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["unbind-key", "-a", "-q", "-T", "oatsview-locked"],
     ["bind-key", "-T", "oatsview-locked", "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
     ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
+    ["bind-key", "-T", "oatsview-locked", "S-PageUp", "copy-mode -u"],
     ["set-option", "-t", name, "mouse", "on"],
     ["-V"],
   ];
@@ -148,6 +157,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["unbind-key", "-a", "-q", "-T", name],
       ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
       ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
+      ["bind-key", "-T", name, "S-PageUp", "copy-mode -u"],
       ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; set-hook -u client-detached ; detach-client"],
       ["set-hook", "-g", "session-closed[900]", VIEWER_CLOSED_HOOK],
       ["set-option", "-t", name, "mouse", "on"],
@@ -155,7 +165,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
     ], key);
     // The hook unbinds the table itself: a session its kill-session ends runs no other hook.
     assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`, ";", "set-hook", "-t", `=${name}:`, "client-detached", `if-shell -F '#{==:#{session_attached},0}' 'unbind-key -a -q -T ${name} ; kill-session -t =${name}'`], key);
-    assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]), ["WheelUpPane", "MouseDrag1Pane", key]);
+    assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]), ["WheelUpPane", "MouseDrag1Pane", "S-PageUp", key]);
     assert.equal(io.calls.some((c) => c.some((a) => a.includes("oatsview-locked"))), false, "no call names the locked table");
     const before = io.calls.length;
     viewer.cleanup();

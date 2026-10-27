@@ -24,7 +24,7 @@ const ROW = 48, TOP = 60, HEIGHT = 120; // the list's top edge and its 120px scr
  * button sits inside it, 2px from each edge (the row's transparent borders), its tools on the right. */
 function fixture(t) {
   const rows = Array.from({ length: 6 }, (_, i) => `<div class="ctx-tree-row"><button class="ctx-inst" type="button" tabindex="${i ? -1 : 0}" data-tree-instance="i${i}" data-tree-control="terminal">i${i}</button><span class="ctx-row-tools"><button class="ctx-start" type="button">Start…</button></span></div>`).join("");
-  const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"><nav id="nav"><button>Deployments</button></nav><section id="instance-roster"><input class="ctx-filter"><div class="ctx-list">${rows}</div></section></aside><main id="main"><div id="stagehost"><button>Stage</button></div></main><aside id="context-panel" hidden></aside></div></body>`);
+  const dom = new JSDOM(`<!doctype html><body><div id="app"><aside id="sidebar"><nav id="nav"><button>Workspace overview</button></nav><section id="instance-roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list">${rows}</div></section></aside><main id="main"><div id="stagehost"><button>Stage</button></div></main><aside id="context-panel" hidden></aside></div></body>`);
   t.after(() => dom.window.close());
   const doc = dom.window.document, list = doc.querySelector(".ctx-list"), sidebar = doc.getElementById("sidebar");
   // Only the list's scrollTop may move: never the sidebar, the page or the window.
@@ -46,11 +46,12 @@ function fixture(t) {
     document: doc, contextRosterEl: doc.getElementById("instance-roster"), contextInstances: [], contextWorkspace: "A",
     currentWorkspace: () => "A", collapsedInstances: new Set(), collapseKey: () => "", rosterParentId: () => null,
     renderContextRoster() {}, tabOpenIntents: { invalidate() {} }, rosterKeyAction, moveTarget, revealInScrollport,
+    contextPanel: { setFocusMode() {} }, setSidebarHidden() {},
   };
-  const s = runInNewContext(`${fn("onRosterRowKey")}\n${fn("setRovingRow")}\n({ onRosterRowKey, setRovingRow });`, context);
+  const s = runInNewContext(`${fn("onRosterRowKey")}\n${fn("setRovingRow")}\n${fn("rosterEntry")}\n${fn("focusRoster")}\n({ onRosterRowKey, setRovingRow, focusRoster });`, context);
   for (const box of boxes) box.querySelector(".ctx-inst").addEventListener("keydown", s.onRosterRowKey);
   const key = (el, k) => el.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
-  return { dom, doc, list, sidebar, boxes, row, fully, key, s };
+  return { dom, doc, list, sidebar, boxes, row, fully, key, s, stage: doc.querySelector("#stagehost button") };
 }
 
 test("the roster list scrolls with no scrollbar on every platform, like the tab strips", () => {
@@ -81,11 +82,16 @@ test("End and Down reveal the focused last row of an overflowing list inside the
   assert.equal(u.sidebar.scrollTop, 5, "no ancestor scrolled");
 });
 
-test("every explicit roster focus (the filter's Down, Show in roster, a spawn's row) goes through the same reveal", t => {
+test("every explicit roster focus (Focus the instance roster, Show in roster, a spawn's row) goes through the same reveal", t => {
   const u = fixture(t);
   u.s.setRovingRow(u.list, u.row(4));
   assert.equal(u.doc.activeElement, u.row(4)); assert.ok(u.fully(u.boxes[4]));
-  for (const caller of ["initContextRoster", "showInRoster", "showPendingSpawn"]) {
+  // sidebar.focusFilter (the roster has no filter now): the shipped focusRoster lands on the roving stop, revealed.
+  u.row(5).tabIndex = 0; u.row(4).tabIndex = -1; u.list.scrollTop = 0; u.stage.focus();
+  u.s.focusRoster();
+  assert.equal(u.doc.activeElement, u.row(5), "the roster's current row");
+  assert.ok(u.fully(u.boxes[5]), "revealed inside the list"); assert.equal(u.sidebar.scrollTop, 5, "no ancestor scrolled");
+  for (const caller of ["focusRoster", "showInRoster", "showPendingSpawn"]) {
     assert.match(fn(caller), /setRovingRow\(/, `${caller} focuses a row through setRovingRow`);
   }
 });

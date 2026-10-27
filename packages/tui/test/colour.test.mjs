@@ -7,15 +7,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { instanceColor } from "../lib/client.mjs";
 import { style } from "../lib/term/style.mjs";
-import { LOOK, MARKS, markLook } from "../lib/views/instances.mjs";
+import { DEFAULT_FG, LOOK, MARKS, colourLook, markLook } from "../lib/views/instances.mjs";
 import { SOUL_COLOURS } from "../lib/views/souls.mjs";
-import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
+import { draw, drawnName, instanceRow, observed, stateOf } from "./helpers.mjs";
 
-/** The style of the state mark on the list row that names `name` (its mark, a space, the name). */
+/** The style of the state mark on the list row that names `name` (its mark, a space, the name as words). */
 function markStyle(d, name) {
-  const row = d.lines.findIndex((line) => new RegExp(`[●○◌?◆] ${name}(\\s|$)`, "u").test(line));
+  const words = drawnName(name);
+  const row = d.lines.findIndex((line) => new RegExp(`[●○◌?◆] ${words}(\\s|$)`, "u").test(line));
   assert.ok(row >= 0, `${name} is drawn in the list`);
-  const col = d.lines[row].indexOf(` ${name}`) - 1;
+  const col = d.lines[row].indexOf(` ${words}`) - 1;
   return { mark: d.lines[row][col], style: d.cells[row][col].style };
 }
 
@@ -25,6 +26,8 @@ test("instanceColor: a palette name exactly, else null", () => {
   assert.equal(instanceColor(null), null);
   assert.equal(instanceColor(undefined), null);
   assert.deepEqual(Object.keys(SOUL_COLOURS), ["sand", "sage", "slate", "mauve", "clay", "olive"], "every palette name has a terminal colour");
+  for (const [name, colour] of Object.entries(SOUL_COLOURS)) assert.equal(colour === "yellow" || colour === "brightYellow", false, `${name}: yellow says needs input, and only that`);
+  assert.equal(SOUL_COLOURS.sand, DEFAULT_FG, "sand is the terminal's own foreground: seen on a light theme as on a dark one");
 });
 
 test("markLook: running, stopped and shell take the colour (the last two dim); unknown and held keep their own; no colour is LOOK", () => {
@@ -34,6 +37,22 @@ test("markLook: running, stopped and shell take the colour (the last two dim); u
   assert.deepEqual(markLook("unknown", "blue"), LOOK.unknown);
   assert.deepEqual(markLook("held", "blue"), LOOK.held);
   for (const mark of Object.keys(LOOK)) assert.deepEqual(markLook(mark, null), LOOK[mark], mark);
+});
+
+test("the terminal's own foreground as a colour (sand's): no `fg` at all, running plain and stopped and shell dim; unknown and held keep their own", () => {
+  assert.deepEqual(markLook("running", DEFAULT_FG), style());
+  assert.notDeepEqual(markLook("running", DEFAULT_FG), LOOK.running, "not an uncoloured running mark's green");
+  assert.deepEqual(markLook("stopped", DEFAULT_FG), style({ dim: true }));
+  assert.deepEqual(markLook("shell", DEFAULT_FG), style({ dim: true }));
+  assert.deepEqual(markLook("unknown", DEFAULT_FG), LOOK.unknown);
+  assert.deepEqual(markLook("held", DEFAULT_FG), LOOK.held);
+  assert.deepEqual([colourLook(DEFAULT_FG), colourLook(DEFAULT_FG, { dim: true })], [style(), style({ dim: true })]);
+  for (const colour of [null, undefined, "", "teal", "Default", 3]) assert.equal(colourLook(colour), null, String(colour));
+});
+
+test("no state mark is yellow, which says needs input and only that: unknown is dim in the default foreground, its shape saying it", () => {
+  assert.deepEqual(LOOK.unknown, style({ dim: true }));
+  for (const [mark, look] of Object.entries(LOOK)) assert.equal(look.fg === "yellow" || look.fg === "brightYellow", false, mark);
 });
 
 test("the Instances list draws each row's mark in its colour, its shape still saying its state", () => {

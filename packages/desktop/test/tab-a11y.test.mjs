@@ -44,16 +44,24 @@ test("tab keyboard policy wraps arrows, supports Home/End, and closes", () => {
 test("closing the last terminal/artifact moves focus to a stable logical entry", () => {
   const dom = new JSDOM(`<!doctype html><body>
     <button id="removed">tab being closed</button>
-    <input id="instances" aria-label="Filter instances">
+    <div class="ctx-list"><div class="ctx-tree-row"><button id="instances" class="ctx-inst" tabindex="0">dev-1</button></div></div>
     <button id="stage">Soul roster</button>
+    <div id="nav-foot"><div id="sidebar-bar" role="group" aria-label="Sidebar tools"><span class="sidebar-brand" aria-hidden="true"></span><button id="sidebar-spawn" type="button" data-action="app.quickOpenSouls">Spawn instance</button></div></div>
   </body>`);
   const doc = dom.window.document;
   const removed = doc.getElementById("removed");
   removed.focus();
   removed.remove();
   assert.equal(doc.activeElement, doc.body, "browser loses focus when selected tab is removed");
+  // The shell's entry for a terminal: the roster's current row (rosterEntry).
   assert.equal(focusAfterLastTab("terminal", { instancesEntry: doc.getElementById("instances") }), true);
   assert.equal(doc.activeElement.id, "instances");
+  assert.equal(focusAfterLastTab("terminal", { instancesEntry: null }), false, "no entry: nothing moves");
+  // An empty roster's entry is its one action, the foot's Spawn instance (rosterEntry, the product owner, 2026-10-26).
+  doc.activeElement.blur();
+  assert.equal(focusAfterLastTab("terminal", { instancesEntry: doc.getElementById("sidebar-spawn") }), true);
+  assert.equal(doc.activeElement.id, "sidebar-spawn");
+  doc.getElementById("instances").focus();
 
   doc.activeElement.remove();
   assert.equal(focusAfterLastTab("artifact", { stageEntry: doc.getElementById("stage") }), true);

@@ -59,18 +59,18 @@ export function validHostState(value) {
 }
 
 /** `start`, or the first colour on the way from it to white or black (2% steps)
- * that is at least `ratio` against every surface; null when neither direction
- * gets there. It moves away from the surfaces first: towards white when it is
+ * that holds every `[surface, ratio]` need; null when neither direction gets
+ * there. It moves away from the surfaces first: towards white when it is
  * lighter than their mean luminance, else towards black. */
-function ensure(start, surfaces, ratio) {
-  const worst = hex => Math.min(...surfaces.map(surface => contrast(channels(hex), surface)));
-  if (!surfaces.length || worst(start) >= ratio) return start;
-  const mean = surfaces.reduce((total, surface) => total + luminance(surface), 0) / surfaces.length;
+function ensure(start, needs) {
+  const holds = hex => needs.every(([surface, ratio]) => contrast(channels(hex), surface) >= ratio);
+  if (!needs.length || holds(start)) return start;
+  const mean = needs.reduce((total, [surface]) => total + luminance(surface), 0) / needs.length;
   const targets = luminance(channels(start)) >= mean ? ["#ffffff", "#000000"] : ["#000000", "#ffffff"];
   for (const target of targets) {
     for (let step = 1; step <= 50; step++) {
       const moved = mixHex(start, target, step / 50);
-      if (worst(moved) >= ratio) return moved;
+      if (holds(moved)) return moved;
     }
   }
   return null;
@@ -110,10 +110,13 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
     const alpha = parseInt(value.slice(7), 16) / 255;
     return channels(value.slice(0, 7)).map((channel, i) => channel * alpha + backdrop[i] * (1 - alpha));
   };
-  /** `token` = `start`, moved until it holds `ratio` on every surface the inventory pairs it with. */
-  const hold = (token, start, pairs, ratio) => {
-    const surfaces = pairs.filter(([fg]) => fg === token).map(([, bg]) => painted(bg));
-    const value = surfaces.includes(null) ? null : ensure(start, surfaces, ratio);
+  /** `token` = `start`, moved until it holds on every surface the inventory pairs it with: 4.5:1 where it is text
+   * (TEXT_PAIRS), 3:1 where it is a graphic (GRAPHIC_PAIRS), together, so a colour that is both (--danger: words,
+   * and the problem dots on --sel) never trades one for the other. */
+  const hold = (token, start) => {
+    const needs = [[TEXT_PAIRS, TEXT_CONTRAST], [GRAPHIC_PAIRS, GRAPHIC_CONTRAST]]
+      .flatMap(([pairs, ratio]) => pairs.filter(([fg]) => fg === token).map(([, bg]) => [painted(bg), ratio]));
+    const value = needs.some(([surface]) => !surface) ? null : ensure(start, needs);
     if (value) tokens[token] = value;
     return Boolean(value);
   };
@@ -121,7 +124,7 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
   // background (GRAPHIC_PAIRS) and its text 4.5:1 on the fill. The host's selection colour, moved until it
   // does (Omarchy's are about 1.3:1). Moving all the way to white or black is at least 4.58:1 on any colour,
   // so both always get there.
-  if (!hold("term-sel", selection, GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+  if (!hold("term-sel", selection)) return null;
   const secondary = mixHex(foreground, background, 0.3);
   // --primary-fg and --primary-bg are each other's surface (toast buttons invert on focus):
   // the first starts as the host's background, and is held to the final --primary-bg below.
@@ -133,15 +136,15 @@ export function deriveHostTokens(colors, mode, base = () => undefined) {
     ["accent", accent], ["ok", green], ["warn", yellow], ["danger", red], ["violet", magenta],
     ["term-sel-fg", brightForeground],
   ];
-  for (const [token, start] of text) if (!hold(token, start, TEXT_PAIRS, TEXT_CONTRAST)) return null;
-  if (!hold("graph-edge", mixHex(background, foreground, 0.4), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+  for (const [token, start] of text) if (!hold(token, start)) return null;
+  if (!hold("graph-edge", mixHex(background, foreground, 0.4))) return null;
   // The sidebar's dotted sibling link is the only mark on its column (#1312): a meaningful graphic too.
-  if (!hold("tree-link", mixHex(background, foreground, 0.4), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+  if (!hold("tree-link", mixHex(background, foreground, 0.4))) return null;
   // An instance's colour on its dot (#1421): the base theme's (its soul's -fg), moved until it holds on every fill a
   // dot is drawn on. The soul pairs themselves stay calibrated. Without a base value (no stylesheet) it is left alone.
   for (const tone of SOUL_TONES) {
     const start = base(`instance-${tone}`);
-    if (typeof start === "string" && CSS_OPAQUE.test(start) && !hold(`instance-${tone}`, start.toLowerCase(), GRAPHIC_PAIRS, GRAPHIC_CONTRAST)) return null;
+    if (typeof start === "string" && CSS_OPAQUE.test(start) && !hold(`instance-${tone}`, start.toLowerCase())) return null;
   }
   // The running dot and the lit graph path are the accent, as in the built-in themes.
   tokens.live = tokens["graph-edge-coord"] = tokens.accent;

@@ -24,6 +24,17 @@ repositories belong to an organisation and which packages it trusts. A
 work, in its own home and terminal. Each workspace has a setup expert soul,
 `<workspace>-oats-setup-expert`, which holds the `oats.setup` capability.
 
+**A machine found-list.** Your prompt may hand you a found-list, a JSON file
+whose `machine.platform` is set (oats-omarchy's installer writes one). Then
+the workspace you make is this machine's own workspace. Its setup soul is
+the machine's steward, `oats.machine/steward`, in place of a setup expert
+soul of its own, and the steward gets a global aweb address. Steps 1, 5, 6
+and 7 say what changes. When the found-list lists a deployment whose
+`steward` is `true`, this machine already has its workspace and steward:
+tell the person so, and stop. Wherever a later step says to ask the
+person, on a machine found-list you tell them what happened, as it is, and
+stop instead: the person answers nothing after step 1.
+
 **How to work.**
 - **Ask first, then run.** Ask everything in one round (step 1), then run the
   steps yourself and read back what each did.
@@ -68,6 +79,8 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
 
 ## 1. Ask, in one round
 
+On a machine found-list, ask the machine's round below instead of this list.
+
 - **The use case:** what they want agents to do.
 - **Their repositories and project:** which repositories agents should work
   in, where they are cloned on this machine, and which are private.
@@ -102,6 +115,32 @@ work, in its own home and terminal. Each workspace has a setup expert soul,
   which the shell does not expand inside quotes.
 - **OATS Desktop:** installed and started unless they decline. **The TUI**
   (`oats tui`, a terminal client, preview): opened for them or not.
+
+**The machine's round.** Read the found-list, then ask only these choices,
+together, each with its default and one line on what it is. Enter, or
+"yes", accepts every default. Nothing is asked after this round, and never
+a key. The use case, repositories and knowledge tools are not asked: the
+steward takes them up with the person later.
+- **The workspace:** a new one, the machine's own. Its name defaults to the
+  hostname, lowercased, with every character outside `[a-z0-9-]` turned
+  into `-` (`Ada's-Laptop` gives `ada-s-laptop`). Its repository defaults to
+  `<github.login>/<workspace>-oats`, private. Or an existing workspace's
+  reference.
+- **The namespace `N`:** the part of every agent's address before the `/`,
+  which other people's agents use to reach this machine's agents. Default:
+  the hostname, normalised as above, so the namespace is the machine's own. Messaging is
+  on, and the root's name `A` is `<workspace>-root`.
+- **The steward's name:** lowercase letters and digits, words joined by
+  single `-`. Default: `steward`. It gives `R`, the steward's instance name
+  here and the name in its address, `N.aweb.ai/R`. `R` is the chosen name,
+  or `<hostname>-<chosen name>` (the hostname normalised as above) when the
+  person says `N` is a namespace another machine already uses, so that this
+  machine never adopts the other machine's resident.
+- **The deployment directory `D`:** default `<home>/Agents/<workspace>`,
+  with the home folder spelled out.
+- **OATS Desktop:** installed and started by default; the TUI not opened.
+- **The harness:** the found-list's `harness`. Ask only when it names none,
+  with the one you are as the default.
 
 ## 2. Check, and install what is missing
 
@@ -311,8 +350,9 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host is a member too
 packages:
-  oats.framework: v1.13.5             # the installed CLI's catalog versions (below)
+  oats.framework: v1.14.1             # the installed CLI's catalog versions (below)
   oats.aweb: v1.31.0                  # messaging, and tasks: agent identities, mail, chat and tasks
+  oats.machine: v0.1.1                # on a machine found-list only: the machine's steward
 defaults:
   capabilities:
     oats.core: { from: package }
@@ -325,11 +365,15 @@ defaultTeam: acme                     # every soul starts in this team
 
 - **The versions** are the installed CLI's catalog's:
   `"$(oats root)/package-catalog.json"`, `packages."oats.framework".ref`
-  (for example `oats-framework/v1.13.5`: write the part after the `/`) and
+  (for example `oats-framework/v1.14.1`: write the part after the `/`) and
   `packages."oats.aweb".ref`, but never below `v1.31.0`: that release
   carries `oats.aweb-tasks`, and a bare version resolves through the
   catalog's tag convention even when the installed catalog names an older
   one.
+- **On a machine found-list only,** keep the `oats.machine` line, at the
+  catalog's `packages."oats.machine".ref`, and write none of the
+  `souls/<workspace>-oats-setup-expert` files below: the steward is the
+  workspace's setup soul. Elsewhere, leave the line out.
 - **The team** is `default:N.aweb.ai`, with `N` the username from step 1;
   its label (here `acme`) is the workspace name.
 - **Tasks** use aweb, the same identities as messaging: agents assign,
@@ -454,6 +498,9 @@ oats onboard D --workspace W
 - **Before 0.61.0,** read `oats souls --dir D --json`: the soul named
   `<workspace>-oats-setup-expert`, else one whose definition declares
   `oats.setup`.
+- **On a machine found-list,** `S` is `oats.machine/steward`. An existing
+  workspace that doesn't offer it: stop, and say that its owner adds
+  `oats.machine` to its `packages:`.
 - **An existing workspace with no such soul:** stop. Show the person the soul
   files from step 5 and say that the workspace's owner adds them by pull
   request to its host repository. Once that is merged, run
@@ -463,6 +510,15 @@ oats onboard D --workspace W
 at `D/<repo name>`. A new workspace already has it (step 5). For an existing
 one, clone the repository that holds `S` with the `git clone` line
 `oats onboard` printed for it, if that line says it is missing.
+
+**On a machine found-list, record the steward's harness** on this machine
+first. Its soul names none, and without this every later check (readiness,
+harness trust) and the spawn would use the default, pi:
+
+```bash
+oats soul launch set S --harness <harness> --dir D --plan
+oats soul launch set S --harness <harness> --dir D
+```
 
 ## 7. Hand over to the setup expert
 
@@ -497,6 +553,8 @@ can't spawn on this machine until it has messaging too. Set it up now:
    `D/<repo>` change the team id in `oats-workspace.yaml` to
    `default:N.aweb.ai`, commit and push it, run `oats sync --dir D`, and run
    both lines again. Then skip items 3 and 4 and go to the check (item 5).
+   On a machine found-list, ask nothing: tell the person that the run
+   failed, most likely because `N` is taken, and stop.
 3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
    `oats aweb invite --soul <their soul> --label L --json` in their own
    deployment and passes the token to the person privately, never by
@@ -521,6 +579,48 @@ can't spawn on this machine until it has messaging too. Set it up now:
 The setup expert does the rest of this machine's messaging
 (`/oats-host-delivery`).
 
+**The steward's global address (machine found-list only).** The steward
+gets a global, contacts-only aweb address, `<namespace>/R`, made by the
+team root you just signed up, with no API key and nothing for the person to
+type. `R` is the steward's name from step 1, for the resident and the
+instance alike.
+
+Without messaging there is no address to make: skip this. Otherwise it
+needs every one of these, and when one fails, take the fallback below:
+- a new workspace: a root that joined by invite (items 3 and 4) does not own
+  the namespace, so aweb would refuse the create;
+- `oats.aweb` 1.33.0 or later: the `oats.aweb` row of the
+  `oats inspect` you read above, `result.capabilities[].version`;
+- aw 1.36.48 or later: `aw.version` in the check (item 5).
+
+Plan, then create, both from `D` and with no `AWEB_API_KEY`:
+
+```bash
+cd "D" && env -u AWEB_API_KEY oats aweb resident create R --team-label L --plan --json
+cd "D" && env -u AWEB_API_KEY oats aweb resident create R --team-label L --json
+```
+
+- **The plan** changes nothing. Run the create only when the plan's `ok` is
+  true and either `result.init.route` is `root` (a new resident) or
+  `result.init` is `null` (`R` already holds it; the create adopts it and
+  never makes a second one). Anything else, a refusal included (no team
+  root, say), is the fallback.
+- **`--team-label L`** puts the resident in the team that is already the
+  default, so the run maps nothing new and prints the spawn line as its one
+  step (`result.steps`). If it prints another step first, stop and tell the
+  person what it says: that step is theirs.
+- **Success** prints `PASS resident <address> …`, and `result.address` is
+  the steward's address. Spawn with the grant-seat options below.
+- **A failure** is reported to the person as it is, and you spawn nothing.
+  If the create was interrupted (killed, or timed out with no answer), run
+  the same line again, unchanged, and nothing else. Never empty
+  `D/.aweb-residents/R`: the identity may already exist.
+- **The fallback:** spawn the steward without the grant-seat options. It gets
+  a local team identity, as every instance does. Tell the person in one line,
+  without asking anything: the steward has a local team identity and no
+  global address because of <the reason>, and the GLOBAL residents and grant
+  seats section of `/oats-aweb` moves it to one later. Never ask for a key.
+
 **Write the hand-over** to `D/.oats-handover.md`. It holds no secret.
 
 ```markdown
@@ -528,6 +628,8 @@ The setup expert does the rest of this machine's messaging
 
 - Workspace: <workspace> (W), new | existing; deployment directory: D
 - Setup expert: S, harness <harness>
+- Machine found-list only: steward R, address N.aweb.ai/R | local team
+  identity (<the fallback's reason>)
 
 ## The person's answers
 <step 1's answers, in their words: use case, repositories and where they
@@ -567,6 +669,16 @@ oats spawn S --dir D --task-file D/.oats-handover.md --preview
 oats spawn S --dir D --task-file D/.oats-handover.md
 ```
 
+**On a machine found-list,** name the steward `R` (its harness was recorded
+in step 6). With its global address:
+
+```bash
+oats spawn S --dir D --task-file D/.oats-handover.md --name R --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R --preview
+oats spawn S --dir D --task-file D/.oats-handover.md --name R --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=R
+```
+
+In the fallback, or without messaging, leave out both `--provider` options.
+
 - **The preview** shows what the spawn would create. If it reports a
   problem, stop and tell the person what it says.
 - **The spawn** prints the instance's home `H`. Then delete the hand-over
@@ -600,7 +712,8 @@ oats spawn S --dir D --task-file D/.oats-handover.md
 their own terminal, as "How to work" says, with the command
 `oats tui --dir "D"`.
 
-**Tell the person where the setup expert is**, and that it continues from
+**Tell the person where the setup expert is** (on a machine found-list, the
+steward, and its address), and that it continues from
 here: in the Desktop or the TUI you started. Without either, they reach it
 with `oats session attach --home H` in a terminal.
 

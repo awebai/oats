@@ -1,6 +1,6 @@
-/** The Workspace tabs' "i": a 28px round icon button that opens an explanation in a modal dialog.
- * Workspace › Capabilities ("About capabilities") and Workspace › Souls ("About souls") are its callers;
- * each builds its button once and keeps it across repaints (like the search field beside it).
+/** The Desktop's "i": a 28px round icon button that opens an explanation in a modal dialog.
+ * Workspace › Capabilities ("About capabilities") and Workspace › Souls ("About souls") are its callers; each
+ * builds its button once and keeps it across repaints (like the search field beside it).
  *
  * The dialog is the Stop/Retire/Forget frame (lifecycle-dialog.mjs lifecycleCSS: `palette-overlay
  * lifecycle-overlay` > `section.lifecycle-dialog`), widened by `.about-dialog`, with one Close button.

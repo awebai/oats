@@ -30,7 +30,10 @@ import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/inst
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
-import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
+import { tabShowsRow } from "../renderer/retired-tabs.mjs";
+import { instanceId, rosterParentId } from "../../client/instance-tree.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -45,7 +48,7 @@ const instance = name => ({ instance: name, running: true, home: `/synthetic/${n
 function shell(t, shellSource = source) {
   const dom = new JSDOM(`<div id="app"><aside id="context-panel"></aside><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
     <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button></div>
-    </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
+    </div></div><div id="tabhost"></div><aside id="roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></aside>
     <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
@@ -64,13 +67,14 @@ function shell(t, shellSource = source) {
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // roster loading state (renderContextRoster is stubbed)
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"), contextRosterEl: document.getElementById("roster"),
-    stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" }, navEl: document.getElementById("nav"),
-    NAV: [{ name: "hierarchy" }], stageSidebarMode: () => "overview",
+    stageHost: document.getElementById("stagehost"), stage: { name: "automations" }, navEl: document.getElementById("nav"),
+    NAV: [{ name: "automations" }], navTab, stageSidebarMode: () => "overview", // the shipped tab-route lookup (automations is a page of its own, 2026-10-26; hierarchy is Workspace › Machines)
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(), workspaceLabel: { reset() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
     refreshContextRoster() {}, renderContextRoster() {}, setNavActive() {},
-    focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
+    focusRoster() { c.tabOpenIntents.invalidate(); c.rosterEntry()?.focus(); },
+    tabShowsRow, instanceId, rosterParentId, revealInScrollport, // the shipped revealActiveRosterRow's
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
     resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
@@ -103,7 +107,7 @@ function shell(t, shellSource = source) {
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
-    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "focusGroup"];
+    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "focusGroup", "rosterEntry"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -227,7 +231,11 @@ test("multiple empty cells are independently focusable, resizable and controllab
   s.actions.get("split.horizontal")();
   assert.equal(s.c.split.orientation, "col"); assert.equal(s.c.split.groups[0].weight, 1.1);
   assert.deepEqual(s.cells(), cells); assert.deepEqual(cells.map(cell => cell.querySelector(".split-empty")), empties);
+  // The roster as renderContextRoster paints it: one roving stop.
+  s.c.contextRosterEl.querySelector(".ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="-1" data-tree-instance="a">a</button></div><div class="ctx-tree-row"><button class="ctx-inst" tabindex="0" data-tree-instance="b">b</button></div>`;
   s.actions.get("split.close")();
+  assert.equal(s.document.activeElement, s.c.contextRosterEl.querySelector('.ctx-inst[tabindex="0"]'),
+    "no terminal left: focus goes to the roster's current row (it has no filter)");
   assert.equal(s.c.split, null); assert.equal(s.c.tabLayerVisible, false);
   assert.equal(s.c.tabActionsEl.parentElement.id, "tabbar-row"); assert.equal(s.c.tabActionsEl.hidden, true);
   assert.equal(s.cells().length, 0); assert.equal(s.document.querySelector(".split-empty"), null);
@@ -305,7 +313,8 @@ test("empty layout survives stage and workspace round-trip; old-cell callbacks c
   left.getBoundingClientRect = right.getBoundingClientRect = () => ({ width: 400, height: 200 });
   s.event(left.querySelector(".split-resizer"), "keydown", { key: "ArrowRight" });
   const saved = structuredClone(s.c.split), oldCell = right, oldEmpty = s.empty(2), oldCallbacks = s.projections.at(-1);
-  await s.showStage("hierarchy");
+  assert.equal(navTab("automations"), null, "a page of its own: showStage mounts it, no Workspace tab route");
+  await s.showStage("automations");
   const stageIntent = s.c.tabOpenIntents.begin(); s.event(oldEmpty, "pointerdown");
   assert.equal(stageIntent(), true); assert.equal(s.c.tabLayerVisible, false);
   s.actions.get("split.restore")();
@@ -427,6 +436,20 @@ test('actual shell retains a close-pending terminal and destination; retry remov
   s.c.desk.termClose = async h => confirmed(h);
   await s.closeTab(terminal.id, true);
   assert.equal(s.c.tabs.has(terminal.id), false); assert.equal(terminal.term.disposed, 1); assert.equal(s.cells().length, 2);
+});
+
+test('closing the last terminal returns focus to the roster: its current row, else its first row', async t => {
+  const s = shell(t), list = s.c.contextRosterEl.querySelector('.ctx-list');
+  const paint = stop => { list.innerHTML = ['a', 'b'].map((id, i) => `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="${i === stop ? 0 : -1}" data-tree-instance="${id}">${id}</button></div>`).join(''); return [...list.querySelectorAll('.ctx-inst')]; };
+  let rows = paint(1);
+  const one = await s.open('last-one'); s.c.tabs.get(one.id).triggerEl.focus();
+  await s.closeTab(one.id, true);
+  assert.equal(s.c.tabs.size, 0); assert.equal(s.document.activeElement, rows[1], 'the roving stop');
+  rows = paint(-1);
+  const two = await s.open('last-two'); s.c.tabs.get(two.id).triggerEl.focus();
+  await s.closeTab(two.id, true);
+  assert.equal(s.document.activeElement, rows[0], 'no stop: the first row');
+  assert.equal(s.c.contextRosterEl.querySelector('input, .ctx-filter'), null);
 });
 
 for (const outcome of ['resolve', 'reject']) test(`close ${outcome} after workspace/selection change never steals newer foreground`, async t => {

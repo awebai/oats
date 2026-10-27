@@ -241,7 +241,7 @@ test("the bodies of the catalog's states read as the Souls view's, with the noun
   const detail = detailLines(d, S120);
   assert.match(detail[1], /^ {3}Couldn't read this workspace's capabilities/);
   const r = rowWith(d, S120, "Couldn't read this workspace's capabilities", detailAt(S120));
-  assert.deepEqual(d.cells[r][cellIndexOf(d, r, "Couldn't", detailAt(S120))].style, style({ bold: true, fg: "yellow" }));
+  assert.deepEqual(d.cells[r][cellIndexOf(d, r, "Couldn't", detailAt(S120))].style, style({ bold: true, fg: "red" }));
 });
 
 test("the list's window: the rows the model hands, and on the last row what is cut off above and below", () => {
@@ -287,7 +287,7 @@ test("Used by: each soul its colour mark, its name, a dim count of the instances
   assert.deepEqual(d.cells[dev][mark].style, style({ fg: "green" }), "dev's colour on its mark");
   assert.deepEqual(d.cells[dev][cellIndexOf(d, dev, "·2", detailAt(S120))].style, style({ dim: true }));
   const behind = cellIndexOf(d, dev, CAPABILITY_COPY.behind(1), detailAt(S120));
-  assert.deepEqual(d.cells[dev][behind].style, style({ bold: true, fg: "yellow" }));
+  assert.deepEqual(d.cells[dev][behind].style, style({ bold: true, fg: "red" }));
   const reviewer = rowWith(d, S120, "■ reviewer", detailAt(S120));
   assert.equal(cellText(d, reviewer, detailAt(S120)).trim(), "■ reviewer ·0", "uncoloured, and its count even at 0");
   assert.equal(d.cells[reviewer][cellIndexOf(d, reviewer, "■", detailAt(S120))].style.fg ?? null, null);
@@ -300,7 +300,7 @@ test("Used by: each soul its colour mark, its name, a dim count of the instances
   assert.equal(reading.some((line) => line.trim() === CAPABILITIES_TEXT.readingSouls), true);
   const failed = drawModel(capsModel({ detail: { ...DETAIL(), used: { state: "failed", failure: "Couldn't read this workspace's souls: no.", count: null, empty: null, more: 0, shown: [] } } }), S120);
   const r = rowWith(failed, S120, "Couldn't read this workspace's souls", detailAt(S120));
-  assert.deepEqual(failed.cells[r][cellIndexOf(failed, r, "Couldn't", detailAt(S120))].style, style({ bold: true, fg: "yellow" }));
+  assert.deepEqual(failed.cells[r][cellIndexOf(failed, r, "Couldn't", detailAt(S120))].style, style({ bold: true, fg: "red" }));
 });
 
 test("the marked soul of Used by carries `>` and reverse video; the detail is drawn from the least top that shows it, and the frame hands that top to the loop", () => {

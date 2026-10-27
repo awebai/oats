@@ -1,6 +1,8 @@
-// Automations (human 2026-09-28): ONE nav item, with Schedules | Triggers as subtabs in the
+// Automations (human 2026-09-28): ONE destination, with Schedules | Triggers as subtabs in the
 // Workspace's tab style — the bar holds (no title) the two tabs (each with its row count), then
-// the shown page's own tools. On the captured kernel lists (test/fixtures/automations/kernel).
+// the shown page's own tools. A page of its own again since 2026-10-26 (from 2026-10-23 it was the Workspace
+// page's Automations tab; workspace-v2-view.test.mjs pins that the Workspace page has no such tab now).
+// On the captured kernel lists (test/fixtures/automations/kernel).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -73,4 +75,27 @@ test("a soul's Schedule… opens Automations on Schedules; an older OATS gets ea
   assert.deepEqual(old.bodies.filter(([p]) => p === '/api/automations'), [], 'nothing read from an older OATS, not even a count');
   old.tab('trigger').click(); await settle();
   assert.match(old.el.textContent, /Triggers need OATS 0\.29 or later/);
+});
+
+// The Automations page is reached while its stage may already be on screen: a preselect (a soul's
+// Schedule…, the palette's View: Automations after a Triggers visit) switches the live stage at once, and a
+// disposed stage is no longer reached, so it reads nothing.
+test('preselectAutomationsTab switches a stage already on screen; a disposed one is not reached and reads nothing', async t => {
+  preselectAutomationsTab('schedule'); t.after(() => preselectAutomationsTab('schedule'));
+  const u = await mount(t);
+  assert.equal(u.stage.kind, 'schedule');
+  const before = u.bodies.length;
+  preselectAutomationsTab('trigger'); await settle();
+  assert.equal(u.stage.kind, 'trigger');
+  assert.equal(u.tab('trigger').getAttribute('aria-selected'), 'true');
+  assert.equal(u.el.querySelector('.automations').dataset.kind, 'trigger');
+  assert.deepEqual(u.bodies.slice(before).map(([, b]) => [b.kind, b.action]), [['trigger', 'list']], 'the live stage reads the page it now shows');
+  preselectAutomationsTab('nonsense'); await settle();
+  assert.equal(u.stage.kind, 'trigger', 'an unknown subtab changes nothing');
+  u.stage.dispose();
+  assert.equal(u.el.querySelector('.automations-host'), null, 'the stage leaves its host');
+  const after = u.bodies.length;
+  preselectAutomationsTab('schedule'); await settle();
+  assert.equal(u.bodies.length, after, 'no /api/automations request from a disposed stage');
+  assert.equal(u.el.childElementCount, 0, 'nothing repainted into the host');
 });

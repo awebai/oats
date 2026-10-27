@@ -30,8 +30,11 @@ import { sameInstanceActionTarget } from '../renderer/instance-action-target.mjs
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
-import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
+import { tabShowsRow } from "../renderer/retired-tabs.mjs";
+import { instanceId, rosterParentId } from "../../client/instance-tree.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
+import { navTab } from "../renderer/shell-nav.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const tick = () => new Promise(setImmediate);
@@ -46,7 +49,7 @@ const instance = name => ({ instance: name, running: true, home: `/synthetic/${n
 function shell(t, shellSource = source) {
   const dom = new JSDOM(`<div id="app"><aside id="context-panel"></aside><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
     <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button></div>
-    </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
+    </div></div><div id="tabhost"></div><aside id="roster"><div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div><div class="ctx-list"></div></aside>
     <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
@@ -65,13 +68,14 @@ function shell(t, shellSource = source) {
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // roster loading state (renderContextRoster is stubbed)
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"), contextRosterEl: document.getElementById("roster"),
-    stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" }, navEl: document.getElementById("nav"),
-    NAV: [{ name: "hierarchy" }], stageSidebarMode: () => "overview",
+    stageHost: document.getElementById("stagehost"), stage: { name: "automations" }, navEl: document.getElementById("nav"),
+    NAV: [{ name: "automations" }], navTab /* the shipped NAV_TABS lookup: showStage reads it first (hierarchy is Workspace › Machines; automations a page of its own) */, stageSidebarMode: () => "overview",
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(), workspaceLabel: { reset() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
     refreshContextRoster() {}, renderContextRoster() {}, setNavActive() {},
-    focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
+    focusRoster() { c.tabOpenIntents.invalidate(); c.rosterEntry()?.focus(); },
+    tabShowsRow, instanceId, rosterParentId, revealInScrollport, // the shipped revealActiveRosterRow's
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
     resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart, setTabTitle,
@@ -104,7 +108,7 @@ function shell(t, shellSource = source) {
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "closeStage", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "walkedTabs", "visibleTabEntries", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal",
-    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "closeRetiredTabs", "focusGroup"];
+    "syncContextPanel", "refreshPanelInstance", "syncTabNeedsInput", "closeRetiredTabs", "focusGroup", "rosterEntry"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
@@ -178,11 +182,13 @@ test("retired in two groups: both close, each group's successor is active, and f
 
 test("a background close never takes focus from where the operator is", async t => {
   const { s, p, a, q } = await twoGroups(t);
-  const filter = s.c.contextRosterEl.querySelector("input"); filter.focus();
+  // The operator is on a roster row (as renderContextRoster paints it).
+  s.c.contextRosterEl.querySelector(".ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="0" data-tree-instance="/synthetic/q">q</button></div>`;
+  const rosterRow = s.c.contextRosterEl.querySelector(".ctx-inst"); rosterRow.focus();
   await land(s, answer([row("p"), row("q")]));
   assert.deepEqual(ids(s), [[p.id], [q.id]]); assert.equal(s.c.activeTab, p.id);
   assert.equal(s.c.tabs.has(a.id), false);
-  assert.equal(s.document.activeElement, filter, "the roster filter keeps focus");
+  assert.equal(s.document.activeElement, rosterRow, "the roster row keeps focus");
 });
 
 test("focus that left the closing tab while its teardown ran stays where it went", async t => {
@@ -334,9 +340,10 @@ for (const order of [["a", "b"], ["b", "a"]]) test(`a batch retiring the whole g
 test("a batch never pulls focus the operator moved elsewhere", async t => {
   const { s, opened, release } = await batch(t, ["a", "b", "c"]);
   s.closeRetiredTabs(answer([row("c")]), ++s.c.panelReads); await tick();
-  const filter = s.c.contextRosterEl.querySelector("input"); filter.focus();
+  s.c.contextRosterEl.querySelector(".ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="0" data-tree-instance="/synthetic/c">c</button></div>`;
+  const rosterRow = s.c.contextRosterEl.querySelector(".ctx-inst"); rosterRow.focus();
   await release("a"); await release("b");
-  assert.equal(s.c.activeTab, opened.c.id); assert.equal(s.document.activeElement, filter);
+  assert.equal(s.c.activeTab, opened.c.id); assert.equal(s.document.activeElement, rosterRow, "the roster row the operator moved to");
 });
 
 test("away and back: a remote tab is kept when its server's held rows say another incarnation or gone", async t => {

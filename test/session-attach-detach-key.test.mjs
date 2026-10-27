@@ -48,10 +48,12 @@ function keyTables(socket = AGENTS) {
   for (const keys of Object.values(tables)) keys.sort();
   return tables;
 }
-/** The keys a viewer's table holds: the two mouse bindings, and its detach key when it has one. */
-const bindings = (...keys) => ["MouseDrag1Pane", "WheelUpPane", ...keys].sort();
+/** The keys every viewer's table holds: the two mouse bindings and the scrollback key, which tmux
+ *  lists as `S-PPage` (bound as `S-PageUp`). */
+const VIEWER_KEYS = ["MouseDrag1Pane", "S-PPage", "WheelUpPane"];
+/** The keys a viewer's table holds: the viewer's own, and its detach key when it has one. */
+const bindings = (...keys) => [...VIEWER_KEYS, ...keys].sort();
 const LOCKED = "oatsview-locked";
-const MOUSE_KEYS = ["MouseDrag1Pane", "WheelUpPane"];
 /** After a test, whatever it left: a failed test must not fail the ones after it. Killing a viewer
  *  session ends its client, and so its command. */
 function sweep() {
@@ -216,7 +218,7 @@ test("the kernel's own viewer, prepared with a key: its table holds the two mous
       assert.equal(viewer.session, session);
       assert.deepEqual(keyTables()[session], bindings(key), key);
       assert.equal(tmuxOn(AGENTS, "show-options", "-v", "-t", session, "key-table"), session);
-      const binding = lines(tmuxOn(AGENTS, "list-keys")).find((line) => line.includes(`-T ${session} `) && !MOUSE_KEYS.some((m) => line.includes(m)));
+      const binding = lines(tmuxOn(AGENTS, "list-keys")).find((line) => line.includes(`-T ${session} `) && !VIEWER_KEYS.some((k) => line.includes(k)));
       assert.match(binding, /\sset-option @oats-detached 1 \\; set-hook -u client-detached \\; detach-client$/, "one binding of three commands");
       assert.equal(viewer.detached(), false, "prepared, never left");
       assert.equal(LOCKED in keyTables(), false, "a keyed viewer makes no locked table");
