@@ -179,7 +179,7 @@ test('reader: at most RESUME_SUMMARY_ROWS rows in the answer\'s order, with the 
   assert.deepEqual(s.totals, totals(38, 38, 37, 37));
   assert.equal(s.omitted, 50);
   const n = resumeNotice(s, { label });
-  assert.equal(n.headline, 'OATS resumed 113 instances whose sessions were lost. 38 of them started fresh from their briefing. 37 of them are waiting for you: open their terminal. 37 could not be resumed.');
+  assert.equal(n.headline, 'OATS resumed 113 instances whose sessions were lost. 38 of them started fresh from their briefing. 37 of them are waiting for you: open their terminals. 37 could not be resumed.');
   assert.equal(lines(n).at(-1), '50 more not shown.');
   assert.deepEqual(resumeSummaryFact(s), s);
 });
@@ -293,11 +293,11 @@ test('notice: every headline sentence, singular and plural', () => {
   assert.equal(head([...r(2, 'resumed'), ...r(1, 'fresh')]), 'OATS resumed 3 instances whose sessions were lost. 1 of them started fresh from its briefing.');
   assert.equal(head(r(1, 'blocked')), 'OATS resumed 1 instance whose session was lost. It is waiting for you: open its terminal.');
   assert.equal(head([...r(1, 'resumed'), ...r(1, 'blocked')]), 'OATS resumed 2 instances whose sessions were lost. 1 of them is waiting for you: open its terminal.');
-  assert.equal(head(r(2, 'blocked')), 'OATS resumed 2 instances whose sessions were lost. 2 of them are waiting for you: open their terminal.');
+  assert.equal(head(r(2, 'blocked')), 'OATS resumed 2 instances whose sessions were lost. 2 of them are waiting for you: open their terminals.');
   assert.equal(head([...r(1, 'resumed'), ...r(1, 'fresh'), ...r(1, 'blocked')]),
     'OATS resumed 3 instances whose sessions were lost. 1 of them started fresh from its briefing. 1 of them is waiting for you: open its terminal.');
   assert.equal(head([...r(1, 'resumed'), ...r(2, 'fresh'), ...r(2, 'blocked'), ...r(2, 'refused')]),
-    'OATS resumed 5 instances whose sessions were lost. 2 of them started fresh from their briefing. 2 of them are waiting for you: open their terminal. 2 could not be resumed.');
+    'OATS resumed 5 instances whose sessions were lost. 2 of them started fresh from their briefing. 2 of them are waiting for you: open their terminals. 2 could not be resumed.');
   assert.equal(head([...r(1, 'resumed'), ...r(1, 'refused')]), 'OATS resumed 1 instance whose session was lost. 1 could not be resumed.');
   assert.equal(head(r(1, 'refused')), 'OATS could not resume 1 lost session.');
   assert.equal(head(r(3, 'refused')), 'OATS could not resume 3 lost sessions.');

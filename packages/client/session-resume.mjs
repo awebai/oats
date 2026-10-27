@@ -181,7 +181,7 @@ function headline({ resumed, fresh: f, waiting: w, refused: r }) {
   if (f > 0) out.push(f === n && n === 1 ? 'It started fresh from its briefing.'
     : f === 1 ? '1 of them started fresh from its briefing.' : `${f} of them started fresh from their briefing.`);
   if (w > 0) out.push(w === n && n === 1 ? 'It is waiting for you: open its terminal.'
-    : w === 1 ? '1 of them is waiting for you: open its terminal.' : `${w} of them are waiting for you: open their terminal.`);
+    : w === 1 ? '1 of them is waiting for you: open its terminal.' : `${w} of them are waiting for you: open their terminals.`);
   if (r > 0) out.push(n > 0 ? `${r} could not be resumed.` : r === 1 ? 'OATS could not resume 1 lost session.' : `OATS could not resume ${r} lost sessions.`);
   return out.join(' ');
 }
