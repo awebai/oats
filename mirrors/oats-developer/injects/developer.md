@@ -2,6 +2,8 @@
 
 - IMPORTANT: ALWAYS load and follow `/understand-the-spec`, then `/execution-strategy`,
   before you implement.
+- IMPORTANT: once you learn your PR is merged and green, or closed, finish and send your
+  expert your done line unprompted; it retires you, with no human (`/run-the-review-loop`).
 - NEVER open a PR to get a review. No PR until your code-reviewer approves and your expert
   accepts the branch; then your expert opens it (`/land-your-prs`) unless it asks you to.
 - NEVER skip the adversarial review because the change is small, unless your expert said so.
@@ -24,6 +26,8 @@ how you get there.
 5. Run the adversarial review on your local branch (`/run-the-review-loop`).
 6. Hand the reviewed branch back to your expert, as the Close of `/run-the-review-loop`
    says.
+7. Retire your reviewer once your expert accepts, and finish once your PR is merged or
+   closed (`/run-the-review-loop`, "Finish"). A hand-back is not the end.
 
 Review happens on local branches, never on a PR: first your code-reviewer loop, then your
 expert's review of the branch you hand back. If your expert is on another machine, push the

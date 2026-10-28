@@ -32,3 +32,6 @@ description: Launch and drive developers to build what you specified, one per su
 - A developer reports when its review loop has converged. Don't act on intermediate heads.
 - Verify it (`/verify-developer-work`), then accept it or return it.
 - Accepted work goes into a PR you own until it merges (`/land-your-prs`).
+- Once that PR is merged and green, or closed, and the developer sends its done line,
+  retire it without asking anyone (`/land-your-prs`, "Retire what's finished"). A hand-back
+  isn't finished: the developer may still be needed for fixes and rebases.

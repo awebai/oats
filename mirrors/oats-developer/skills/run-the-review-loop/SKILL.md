@@ -1,6 +1,6 @@
 ---
 name: run-the-review-loop
-description: The developer's side of adversarial code review: spawn one code-reviewer attached to your worktree, brief it without biasing it, iterate with the same instance until it approves, then retire it. Use when a piece of work is complete and verified on your local branch, before presenting it to your expert and before any PR exists.
+description: The developer's side of adversarial code review: spawn one code-reviewer attached to your worktree, brief it without biasing it, iterate with the same instance until it approves, then retire it; finish once your PR is merged or closed so your expert retires you. Use when a piece of work is complete and verified on your local branch, before presenting it to your expert and before any PR exists, and when your expert says your PR is merged and green, or closed.
 ---
 
 # Run the review loop
@@ -69,8 +69,38 @@ your position on each to your expert, who decides.
 - Keep the reviewer until your expert accepts. If the expert returns the branch, fix it,
   send the same reviewer the delta and the return's reasons, and hand back only after it
   approves: every change on the branch is reviewed before a PR exists.
-- Once your expert accepts, retire the reviewer, then remove its worktree if it is an
-  extra one (`/worktrees`).
+- Once your expert accepts, retire the reviewer without asking anyone: tell it the loop is
+  closed, and once it replies "done, harvested: <harvester>" or "done, no harvest duty"
+  (after "done, harvest pending: <proposal>", wait for the first), check
+  `oats retire <name> --plan`, run `oats retire <name>`, note it (name, why), and remove
+  its worktree if it is an extra one (`/worktrees`). Retire only your own children, and
+  never give a new reviewer a retired one's name. None of this involves a human.
 - Fixes requested on the PR come back as a delta: take them through a reviewer (the same
   one, or a new one if it was retired) and report when it converges, before your expert
   hands over the new head.
+
+## Finish
+An instance is **finished** when all of these hold:
+- its work has landed: its PRs are merged (or deployed, where the effort deploys) with CI
+  green on the merged commit, or closed, or the work was explicitly dropped. Handed back
+  is not landed: it may still be needed for fixes and rebases;
+- nothing waits on it: no open PR, review, question or hand-back of its own, and its own
+  children are retired;
+- with a harvest duty (oats.okf; `oats okf status` says `harvest: on`), its final harvest
+  checkpoint ("you finish a task") is recorded in its log.md with the harvester's name, and
+  the harvester is launched. The harvester snapshots its evidence at spawn and the retire
+  keeps a recovery copy, so nobody waits for the harvester to finish.
+
+Once you learn your PR is merged and green, or closed, or that the work was dropped (your
+expert tells you, or you see it on the forge), finish unprompted:
+1. Retire any reviewer you still run, as above: children are retired before their parent.
+2. Leave nothing uncommitted or unpushed, and remove your extra worktrees (`/worktrees`):
+   your expert checks `oats instance git` before it retires you, since a retire would keep
+   such a work tree, not deliver it. When your work isn't a Git work tree (directory or
+   workspace mode), it checks each repository your done report names instead.
+3. With a harvest duty, run your final checkpoint and launch the harvester.
+4. Send your done line: "done, harvested: <harvester>" or "done, no harvest duty". After
+   "done, harvest pending: <proposal>" you are not finished: send "done, harvested:
+   <harvester>" once the proposal goes through. When your work isn't a Git work tree, name
+   each repository you used under it, with its branch. Your expert, your parent, then
+   retires you with `oats retire <name>`, without asking anyone.

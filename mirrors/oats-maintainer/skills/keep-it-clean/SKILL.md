@@ -30,10 +30,11 @@ record the shape as a coherence rule.
 
 ## Retire what's dead
 - Stale PRs: ask the owner whether to finish, hand over or close; close with a note.
-- Merged or abandoned branches, idle instances you launched, obsolete docs and skills,
-  issues nobody will do: close or retire them with a one-line reason. A lead you launched
-  for a requester is retired on the requester's word (`/launch-work`).
-- Ask before retiring what someone else owns.
+- Merged or abandoned branches, finished instances you spawned, obsolete docs and skills,
+  issues nobody will do: close or retire them with a one-line reason. A finished lead is
+  retired without asking anyone (`/launch-work`, "Retire what's finished").
+- Never retire what someone else owns: tell its parent instead (with none, the maintainer
+  it reports to).
 
 ## A cancelled effort
 Leave nothing half-done:
@@ -42,8 +43,9 @@ Leave nothing half-done:
 - **Its decision in your knowledge:** mark it deferred or superseded, with the reason. If a
   human accepted it, that human confirms (`/direction-gate`).
 - **Its design record** (the issue, the spec, the proposal): close it with the reason.
-- **Its instances:** the lead retires what it launched first; then retire the lead on the
-  requester's word (`/launch-work`), and anything that retire stopped and kept.
+- **Its instances:** the lead retires what it launched first and sends its done line; then retire
+  the lead (`/launch-work`, "Retire what's finished"), and anything that retire stopped and
+  kept.
 
 ## The knowledge pass
 At the same boundary, keep your knowledge current, as the inject says: the roadmap updated

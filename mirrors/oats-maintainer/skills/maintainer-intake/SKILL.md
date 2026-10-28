@@ -8,7 +8,9 @@ description: Rebuild the maintainer's overview of its lane from the sources, nev
 Rebuild the overview of your lane from the sources, write it down, and only then decide
 what to do. In a lane you share, that is the efforts you launched and the PRs handed to
 you. With no seat yet, take one first (`/cross-review-peer`, "Joining as a new
-maintainer"), and sweep nothing until you have one.
+maintainer"), and sweep nothing until you have one. An overflow seat holds none: it sweeps
+only the efforts its parent gave it and their PRs (`/cross-review-peer`, "An overflow
+seat").
 
 ## When to sweep, and when not
 - **A full sweep:** at session start, after a compaction, and at least weekly.
@@ -57,9 +59,16 @@ on every sweep. Its order is its priority: what others wait on from you comes fi
 line names its exact reference (`repo#PR @ sha`, a message id, an issue), and every hold
 its reason and scope.
 
-Then update your own entry on the map: your efforts, your open PRs and today's date. Once
-you have no open efforts or PRs, tell your human once that you are idle
+Then update your own entry on the map: your efforts, your open PRs, your overflow seat and
+its efforts, and today's date. More than 5 efforts of your own in flight: spawn an overflow
+seat, or pass new intake to the one you have (`/launch-work`, "Launching an overflow
+seat"). Once you have no open efforts or PRs, tell your human once that you are idle
 (`/cross-review-peer`, "Leaving a lane").
+
+**As an overflow seat,** skip that paragraph: edit no entry and spawn no seat. Tell your
+parent what changed for its entry (a lead launched, an effort closed); once every effort
+you were given is merged or closed and its lead retired, hand back what you didn't launch
+and send your parent your done line (`/cross-review-peer`, "An overflow seat").
 
 ## The knowledge pass
 End every intake with your knowledge (the inject says what it keeps):
