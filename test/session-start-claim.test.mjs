@@ -247,7 +247,13 @@ test("a scheduled start refused at the home's claim is a skip: its reason names 
   rmSync(i.lock);
   const sameMinute = (await tick("2026-10-28T12:00:30Z")).find((r) => r.id === "wake-w1");
   assert.equal(sameMinute.action, "skipped", "not retried before the next due minute");
-  const next = (await tick("2026-10-28T12:01:00Z")).find((r) => r.id === "wake-w1");
+  // A claim file that is no claim: the reason says what was established, never that an act runs.
+  writeFileSync(i.lock, "{not json");
+  const unreadable = (await tick("2026-10-28T12:01:00Z")).find((r) => r.id === "wake-w1");
+  assert.match(unreadable.reason, /^start refused before any effect: the home's lifecycle claim cannot be read \(E_LIFECYCLE_BUSY\); /, JSON.stringify(unreadable));
+  assert.equal(await f.fx.inEnv(() => jobLockInfo(ws, "wake-w1")), null);
+  rmSync(i.lock);
+  const next = (await tick("2026-10-28T12:02:00Z")).find((r) => r.id === "wake-w1");
   assert.equal(next.action, "started", JSON.stringify(next));
   await waitUntil(() => f.launches(i.name).length === 2, "the scheduled start's harness to run", 30000);
 });
