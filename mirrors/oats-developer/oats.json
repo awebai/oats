@@ -1,6 +1,6 @@
 {
   "capability": "oats.developer",
-  "version": "1.16.0",
+  "version": "1.17.2",
   "compatibility": {
     "oats": ">=0.30.0"
   },

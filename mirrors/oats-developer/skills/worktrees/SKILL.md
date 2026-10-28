@@ -34,3 +34,5 @@ becomes the PR:
   attached (usually the reviewer) stays until that instance is retired after your expert
   accepts (Close of `/run-the-review-loop`). In the end the worktree list shows only your
   main tree.
+- Before you report done (Finish of `/run-the-review-loop`), the same holds for any
+  worktree a later fix made: a retire keeps a worktree that holds work.
