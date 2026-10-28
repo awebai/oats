@@ -1185,6 +1185,16 @@ it ends, before it ends it, so a home it was retiring reads `stopped`, never
 stop record itself cannot be written (a full disk) and the retire then fails
 as well: that home reads `lost`, as it did before 0.69.2.
 
+`oats session restart` records the stop of the session it replaces the same
+way, before it asks the harness to end (#1601): a restart whose relaunch
+fails, or that dies between the stop and the relaunch, leaves a home that
+reads `stopped`, so no resume starts again the launch it was replacing. The
+relaunch records a new start, which that record does not name. A restart
+whose stop is refused (`E_SESSION_STOP_FAILED`, the harness still there after
+the grace) keeps its record: should that harness die later, the home reads
+`stopped`, not `lost`. A restart of a home that does not run stops nothing and
+records nothing, so it keeps its reading.
+
 #### How a session's end is read
 
 A launched home that does not run reads one of three ends, `sessionEnd` on
@@ -1200,8 +1210,8 @@ for its current start (`startId` in `instance.json`):
 
 The window a spawn or a start makes writes the exit marker,
 `.oats-start-exited`, when the harness exits; `oats instance stop` writes its
-record, `.oats-stop.json`, and so does a retire, before it ends the window
-(0.69.2). Both are kernel-private files of the home, not a
+record, `.oats-stop.json`, and so do a retire, before it ends the window
+(0.69.2), and `oats session restart`, before it stops the harness (#1601). Both are kernel-private files of the home, not a
 contract: read `sessionEnd`. A shutdown kills the window's shell with the
 harness, so a lost session leaves no marker. A home spawned before 0.69 and
 never restarted since names no start: it reads `stopped` only after a stop,

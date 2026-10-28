@@ -177,6 +177,9 @@ test("restart: a harness that ignores SIGTERM is reported still running after th
   assert.equal(readFileSync(join(home, ".oats-start-pending.json"), "utf8"), receiptBefore, "no launch receipt was written: the completed start's is kept, unchanged");
   const receipt = readJson(join(home, ".oats-restart.json"));
   assert.equal(receipt.stop.exited, false); assert.deepEqual(receipt.stop.stillRunning, [pid]);
+  // The stop was recorded before the harness was asked to end (#1601), and stays: should this
+  // harness die later, the home reads `stopped`, not `lost` (the accepted cost of recording first).
+  assert.deepEqual([readJson(join(home, ".oats-stop.json")).startId, readJson(join(home, ".oats-stop.json")).stop], [JSON.parse(before).startId, null]);
   assert.ok(windows().includes("neighbour") && windows().filter((w) => w === name).length === 1);
   process.kill(pid, "SIGKILL"); // test cleanup only
 });

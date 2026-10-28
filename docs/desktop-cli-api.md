@@ -3332,7 +3332,8 @@ its absence.
   `lost` (the host went down, its tmux server died, or the harness was killed
   by a signal: the sweep brings it back when it can vouch for the loss,
   [Which losses come back](execution-targets.md#which-losses-come-back)), `stopped` (stopped with OATS:
-  `oats instance stop`, Desktop's Stop) or `exited` (the harness ended by
+  `oats instance stop`, Desktop's Stop, or an `oats session restart` whose
+  relaunch did not happen) or `exited` (the harness ended by
   itself: `/exit`, its own error). Present only on a row that reads
   `running: false` and records `launched: true`, a row at its fallback shell
   (`runtimeState: "shell"`) included; absent while it runs or reads unknown
