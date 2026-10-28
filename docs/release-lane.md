@@ -170,21 +170,26 @@ by a full commit id, with the exact version in a comment beside it:
 
 A tag is the action owner's to move, and a commit is not: the code that runs
 with the publishing rights is the code that was read. `build-installers.yml`
-runs the same installer steps, so it names the same commits. Every other
+runs the same installer steps, so it names the same commits. So does
+`tui-macos.yml`, the TUI's tests on macOS at pull-request time, by the release
+lane's call of 2026-10-27: it runs a branch's code on the release's own
+actions, and its run is that pull request's macOS evidence, so it names them
+at the commits that were read
+([Implementation](implementation.md#the-tuis-tests-on-macos)). Every other
 workflow keeps tags (`actions/checkout@v4`): nothing is published from them.
 
 `test/workflow-no-cache.test.mjs` holds this. Its table of the actions that
-were read has a row for each action: `action`, `id`, `version`. In the two files
-every `uses:` is a row's id, the same action is the same id in both, and the
-comment beside an id is the row's version. In every other workflow a `uses:`
-is the major of a row's version.
+were read has a row for each action: `action`, `id`, `version`. In the three
+files every `uses:` is a row's id, the same action is the same id in all of
+them, and the comment beside an id is the row's version. In every other
+workflow a `uses:` is the major of a row's version.
 
 **An id is moved by a pull request, reviewed like any change to that
-workflow.** It changes these together, and nothing else in the two workflow
+workflow.** It changes these together, and nothing else in the three workflow
 files:
 
 - the id and the version comment, on every `uses:` line of that action in
-  `release.yml` and `build-installers.yml`;
+  `release.yml`, `build-installers.yml` and `tui-macos.yml`;
 - the action's row in the table.
 
 **The id is read from an exact version tag of the action's own repository**
@@ -216,21 +221,23 @@ and packages it depends on, and what its entry points call of a cache.
   needs `package-manager-cache: false` on every step. The test takes the
   version of an id from the row, so it refuses a step without it.
 
-**The two files name their runners by version too** (`ubuntu-24.04`, as they
-name `macos-14`), never by a label that GitHub moves to another system by
-itself (`ubuntu-latest`). The Linux installers are built on that runner, and
-what they need of a system follows the system that built them.
+**`release.yml` and `build-installers.yml` name their runners by version
+too** (`ubuntu-24.04`, as they name `macos-14`), never by a label that GitHub
+moves to another system by itself (`ubuntu-latest`). The Linux installers are
+built on that runner, and what they need of a system follows the system that
+built them.
 `pull-request.yml` keeps `ubuntu-latest` on purpose: when the label moves, a
 break on the new system shows in pull-request CI first and not at a release.
 
-The labels the two files may name are a list beside the table of actions in
-`test/workflow-no-cache.test.mjs`: `ubuntu-24.04` and `macos-14`. Every job
-of the two files runs on a label of that list, and both files build on the
-same Linux. A label is added to the list by whoever decides the runner, as an
-action's row is by whoever read it.
+The labels `release.yml` and `build-installers.yml` may name are a list beside
+the table of actions in `test/workflow-no-cache.test.mjs`: `ubuntu-24.04` and
+`macos-14`. Every job of the two runs on a label of that list, and both build
+on the same Linux. A label is added to the list by whoever decides the runner,
+as an action's row is by whoever read it.
 
-**Moving the runner is a pull request** that changes the label in the two
-files and in the list together, and says what the installers then need.
+**Moving the runner is a pull request** that changes the label in
+`release.yml`, `build-installers.yml` and the list together, and says what the
+installers then need.
 
 **What the Linux installer needs today**, to compare with at the next move.
 Read from `oats-desktop-0.52.0-linux-amd64.deb`, built on `ubuntu-24.04`
