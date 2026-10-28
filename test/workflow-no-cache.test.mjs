@@ -10,10 +10,11 @@
 //
 // The same table holds the release workflow to the code that was read. release.yml publishes, so
 // it names every action by the full commit id of a row, and so does build-installers.yml, whose
-// installer steps are release.yml's. Every other workflow names the major of a row by its tag.
+// installer steps are release.yml's, and tui-macos.yml, by the release lane's call. Every other
+// workflow names the major of a row by its tag.
 //
-// The system those two files run on is the same question one layer down, and the same two files
-// answer it the same way: every job of theirs runs on a runner of the list below.
+// The system release.yml and build-installers.yml run on is the same question one layer down, and
+// those two answer it the same way: every job of theirs runs on a runner of the list below.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -33,8 +34,8 @@ const SETUP_NODE_WITHOUT_AUTOMATIC_CACHE = /^v[1-4](\.\d+){0,2}$/;
  *  the action saves or restores a cache by itself, with the exact version whose tag pointed at
  *  that commit. Both rules of this file read it, and there is no other list.
  *
- *  A row gives a workflow two refs and no other. Its `id` is the ref of the two files that name
- *  actions by commit. The major of its `version` (`v4` of `v4.4.0`) is the ref of every other
+ *  A row gives a workflow two refs and no other. Its `id` is the ref of the files that name actions
+ *  by commit (BY_ID). The major of its `version` (`v4` of `v4.4.0`) is the ref of every other
  *  workflow, by its tag. A later major is another program until it is read; a minor or patch
  *  tag, a branch and a commit that is not a row are not in the table either.
  *
@@ -50,10 +51,17 @@ const ACTIONS_READ = [
   { action: "actions/download-artifact", id: "d3f86a106a0bac45b974a628896c90dbdf5c8093", version: "v4.3.0" },
   { action: "actions/attest-build-provenance", id: "ef244123eb79f2f7a7e75d99086184180e6d0018", version: "v1.4.4" },
 ];
-/** The two files that name every action by a row's commit id. The workflows outside them keep
- *  tags, and that is the decision, not an oversight: nothing is published from them, and an id
- *  there is upkeep nobody decided to take on. `usesUnreadAction` holds both halves. */
-const BY_ID = ["release.yml", "build-installers.yml"];
+/** The two files that publish: release.yml and build-installers.yml, whose installer steps are
+ *  release.yml's. They run on the runners of the list below. */
+const RELEASE_FILES = ["release.yml", "build-installers.yml"];
+/** The files that name every action by a row's commit id: the two that publish, and
+ *  tui-macos.yml, the TUI's tests on macOS at pull-request time, by the release lane's call
+ *  (2026-10-27). The workflows outside them keep tags, and that is the decision, not an
+ *  oversight: nothing is published from them, and an id there is upkeep nobody decided to take
+ *  on. `usesUnreadAction` holds both halves. */
+const BY_ID = [...RELEASE_FILES, "tui-macos.yml"];
+/** Names said as a person lists them: `a and b`, `a, b and c`. */
+const listed = (names) => (names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 const FULL_ID = /^[0-9a-f]{40}$/;
 const HOW_TO_ADD = "A row is added to the table of actions that were read by whoever has read that commit for whether the action saves or restores a cache by itself: its action.yml, the actions and packages it depends on, and what its entry points call of a cache. Its id is the commit that an exact version tag of the action's own repository points at (docs/release-lane.md, \"The workflow's actions are named by commit\").";
 
@@ -71,7 +79,7 @@ function parseUses(uses) {
 /** Why `step` uses an action, or a ref of one, nobody has read for this rule; null when the
  *  table holds it, or the step uses no action. The name must be a row's exactly: a path under a
  *  listed action (`actions/cache/save`) is another action. So must the ref. With `byId` (a step
- *  of the two files) it is a row's id, 40 lower-case hexadecimal characters; otherwise it is the
+ *  of the files of BY_ID) it is a row's id, 40 lower-case hexadecimal characters; otherwise it is the
  *  major of a row's version: `v4`, and not `v4.1.0`, `V4`, `main` or an id. */
 function usesUnreadAction(step, { byId = false, table = ACTIONS_READ } = {}) {
   if (step?.uses === undefined) return null;
@@ -82,12 +90,12 @@ function usesUnreadAction(step, { byId = false, table = ACTIONS_READ } = {}) {
   if (!rows.length) return `it uses ${step.uses}, which is not in the table of actions that were read (${[...new Set(table.map((row) => row.action))].join(", ")}). ${HOW_TO_ADD}`;
   if (byId) {
     if (rows.some((row) => row.id === ref)) return null;
-    if (!FULL_ID.test(ref)) return `it uses ${step.uses}: ${BY_ID.join(" and ")} name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds ${action} at ${held(rows)}`;
+    if (!FULL_ID.test(ref)) return `it uses ${step.uses}: ${listed(BY_ID)} name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds ${action} at ${held(rows)}`;
     return `it uses ${step.uses}, a commit that is not in the table of actions that were read, which holds ${action} at ${held(rows)}. ${HOW_TO_ADD}`;
   }
   const majors = majorsOf(rows);
   if (majors.includes(ref)) return null;
-  if (/^[0-9a-f]{40}$/i.test(ref)) return `it uses ${step.uses}: only ${BY_ID.join(" and ")} name an action by commit id, and every other workflow keeps the tag of a major that was read (${majors.map((major) => `${action}@${major}`).join(", ")})`;
+  if (/^[0-9a-f]{40}$/i.test(ref)) return `it uses ${step.uses}: only ${listed(BY_ID)} name an action by commit id, and every other workflow keeps the tag of a major that was read (${majors.map((major) => `${action}@${major}`).join(", ")})`;
   return `it uses ${step.uses}, and the table of actions that were read holds ${action} at ${majors.join(", ")}: a ref is the major of a version that was read exactly, not a later major, a minor or patch tag, or a branch. ${HOW_TO_ADD}`;
 }
 /** Why a job is refused as a whole; null when its steps are its own. A job that calls a reusable
@@ -137,8 +145,9 @@ function runsOnUnlistedRunner(definition, runners = RELEASE_RUNNERS) {
   return unlisted.length ? `it runs on ${unlisted.join(", ")}, not on the list of runners (${runners.join(", ")}): the release and its installers are built on a system somebody decided. A label is added to the list by whoever decides the runner, in a pull request that says what the installers then need (docs/release-lane.md, "The workflow's actions are named by commit")` : null;
 }
 
-/** The actions that `steps` name by more than one ref, as `action: ref, ref`. The two files are
- *  one release's steps: the same action is one commit in both, whatever the table holds. */
+/** The actions that `steps` name by more than one ref, as `action: ref, ref`. The files of BY_ID
+ *  name one commit an action, whatever the table holds: the two that publish are one release's
+ *  steps, and tui-macos.yml names release.yml's. */
 function namedBySeveralRefs(steps) {
   const refs = new Map();
   for (const step of steps) {
@@ -216,8 +225,8 @@ test("no workflow under .github/workflows/ restores an Actions cache, and no set
 
 test("a workflow uses only what the table of actions that were read holds: no other action or ref, no local action, no reusable workflow", () => {
   const { files, jobs, steps } = workflowSteps();
-  for (const file of BY_ID) assert.ok(files.includes(file), `${file} is one of the two files that name actions by commit id`);
-  // The two files by a row's commit id; every other workflow by the tag of a row's major.
+  for (const file of BY_ID) assert.ok(files.includes(file), `${file} is one of the files that name actions by commit id`);
+  // Those files by a row's commit id; every other workflow by the tag of a row's major.
   const refused = steps.map(({ file, job, step }) => ({ file, job, why: usesUnreadAction(step, { byId: BY_ID.includes(file) }) })).filter(({ why }) => why);
   assert.deepEqual(refused.map(({ file, job, why }) => `${file}, job ${job}: ${why}`), [], `${WHY} ${HOW_TO_ADD}`);
   const called = jobs.map(({ file, job, definition }) => ({ file, job, why: callsWorkflow(definition) })).filter(({ why }) => why);
@@ -226,16 +235,16 @@ test("a workflow uses only what the table of actions that were read holds: no ot
   assert.ok(steps.some(({ file, step }) => !BY_ID.includes(file) && step.uses !== undefined), "and against a workflow that keeps tags");
 });
 
-test("release.yml and build-installers.yml name every action by a full commit id of the table, one id an action, its version beside it", () => {
+test("release.yml, build-installers.yml and tui-macos.yml name every action by a full commit id of the table, one id an action, its version beside it", () => {
   const { steps } = workflowSteps();
   const pair = steps.filter(({ file, step }) => BY_ID.includes(file) && step.uses !== undefined);
-  // Every `uses:` of the two files is a row's id: 40 lower-case hexadecimal characters, read.
+  // Every `uses:` of those files is a row's id: 40 lower-case hexadecimal characters, read.
   for (const { file, job, step } of pair) {
     assert.match(parseUses(String(step.uses)).ref, FULL_ID, `${file}, job ${job}: ${step.uses} is not named by a full commit id`);
     assert.equal(usesUnreadAction(step, { byId: true }), null, `${file}, job ${job}`);
   }
-  // The same action is the same commit in both files, and in every step of each.
-  assert.deepEqual(namedBySeveralRefs(pair.map(({ step }) => step)), [], "release.yml and build-installers.yml name one commit for an action");
+  // The same action is the same commit in every one of the files, and in every step of each.
+  assert.deepEqual(namedBySeveralRefs(pair.map(({ step }) => step)), [], `${listed(BY_ID)} name one commit for an action`);
   // Checked against the real files: each uses actions, and the second one's are all the first's.
   const usedBy = (name) => [...new Set(pair.filter(({ file }) => file === name).map(({ step }) => parseUses(step.uses).action))];
   assert.ok(usedBy("release.yml").length > 0 && usedBy("build-installers.yml").length > 0);
@@ -255,7 +264,7 @@ test("release.yml and build-installers.yml run every job on a runner of the list
   // is then a decision with that evidence. test/continuous-integration.test.mjs holds that label
   // for every job of that file.
   const { jobs } = workflowSteps();
-  const pair = jobs.filter(({ file }) => BY_ID.includes(file));
+  const pair = jobs.filter(({ file }) => RELEASE_FILES.includes(file));
   const unlisted = pair.map(({ file, job, definition }) => ({ file, job, why: runsOnUnlistedRunner(definition) })).filter(({ why }) => why);
   assert.deepEqual(unlisted.map(({ file, job, why }) => `${file}, job ${job}: ${why}`), []);
   // The list is what the two files name and nothing more: a label left on it after a move, or
@@ -270,7 +279,7 @@ test("release.yml and build-installers.yml run every job on a runner of the list
   assert.equal(linuxOf("release.yml").length, 1, `release.yml runs on one Linux: ${linuxOf("release.yml").join(", ")}`);
   assert.deepEqual(linuxOf("build-installers.yml"), linuxOf("release.yml"), "build-installers.yml builds on release.yml's Linux");
   // Checked against the real files: jobs with a label of their own, and jobs that take it from a matrix.
-  for (const file of BY_ID) assert.ok(pair.some((entry) => entry.file === file && String(entry.definition["runs-on"]).includes("matrix.")), `${file} has an installer matrix`);
+  for (const file of RELEASE_FILES) assert.ok(pair.some((entry) => entry.file === file && String(entry.definition["runs-on"]).includes("matrix.")), `${file} has an installer matrix`);
   assert.ok(pair.some(({ definition }) => !String(definition["runs-on"]).includes("${{")));
   assert.ok(pair.flatMap(({ definition }) => runnerLabels(definition).labels).some((label) => label.startsWith("macos-")), "and macOS legs");
 });
@@ -394,9 +403,9 @@ test("the rule: which actions a step may use and at which ref, and what a job ma
     [{ uses: "actions/attest-build-provenance@v4" }, /holds actions\/attest-build-provenance at v1/],
     [{ uses: "actions/checkout@v1" }, /holds actions\/checkout at v4/],
     // A commit id, a row's or not, in either case of its digits: these workflows keep tags.
-    [{ uses: `actions/checkout@${CHECKOUT}` }, /only release\.yml and build-installers\.yml name an action by commit id, and every other workflow keeps the tag of a major that was read \(actions\/checkout@v4\)$/],
-    [{ uses: `actions/checkout@${UNREAD}` }, /only release\.yml and build-installers\.yml name an action by commit id/],
-    [{ uses: "actions/setup-node@ABCDEF0123456789ABCDEF0123456789ABCDEF01" }, /only release\.yml and build-installers\.yml name an action by commit id/],
+    [{ uses: `actions/checkout@${CHECKOUT}` }, /only release\.yml, build-installers\.yml and tui-macos\.yml name an action by commit id, and every other workflow keeps the tag of a major that was read \(actions\/checkout@v4\)$/],
+    [{ uses: `actions/checkout@${UNREAD}` }, /only release\.yml, build-installers\.yml and tui-macos\.yml name an action by commit id/],
+    [{ uses: "actions/setup-node@ABCDEF0123456789ABCDEF0123456789ABCDEF01" }, /only release\.yml, build-installers\.yml and tui-macos\.yml name an action by commit id/],
   ];
   for (const [step, why] of onTags) assert.match(String(unread(step)), why, JSON.stringify(step));
   assert.match(unread({ uses: "actions/checkout@v5" }), how);
@@ -411,11 +420,11 @@ test("the rule: which actions a step may use and at which ref, and what a job ma
   ];
   for (const step of acceptedOnTags) assert.equal(unread(step), null, JSON.stringify(step));
 
-  // One of the two files: a listed action at a row's commit id, exactly.
-  const byFullId = /release\.yml and build-installers\.yml name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds/;
+  // One of the files of BY_ID: a listed action at a row's commit id, exactly.
+  const byFullId = /release\.yml, build-installers\.yml and tui-macos\.yml name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds/;
   const inThePair = [
     // A tag, the major's or the version's; a branch; a shortened id; no ref.
-    [{ uses: "actions/checkout@v4" }, /actions\/checkout@v4: release\.yml and build-installers\.yml name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds actions\/checkout at 1{40} \(v4\.4\.0\)$/],
+    [{ uses: "actions/checkout@v4" }, /actions\/checkout@v4: release\.yml, build-installers\.yml and tui-macos\.yml name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds actions\/checkout at 1{40} \(v4\.4\.0\)$/],
     [{ uses: "actions/checkout@v4.4.0" }, byFullId],
     [{ uses: "actions/checkout@main" }, byFullId],
     [{ uses: "actions/checkout@1111111" }, byFullId],
@@ -447,7 +456,7 @@ test("the table of actions that were read: full commit ids, exact versions, and 
   assert.equal(new Set(ACTIONS_READ.map((row) => row.id)).size, ACTIONS_READ.length);
 });
 
-test("the rule: the two files name one commit for an action, and the comment beside an id is its version", () => {
+test("the rule: the files that name actions by commit name one commit for an action, and the comment beside an id is its version", () => {
   const A = CHECKOUT, B = SETUP_NODE, beside = (line) => versionNotBeside(line, FIXTURE);
   assert.deepEqual(namedBySeveralRefs([{ uses: `actions/checkout@${A}` }, { uses: `actions/setup-node@${B}` }, { uses: `Actions/Checkout@${A}` }, { run: "npm ci" }]), []);
   // Two commits for one action, wherever the two steps are; a tag beside an id is a second ref too.
