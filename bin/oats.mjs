@@ -64,6 +64,7 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance as resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } from "../lib/retire-output.mjs";
+import { lostLine, statusWord } from "../lib/status-words.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
@@ -2834,7 +2835,8 @@ async function status() {
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
       // Feature instance-background: the row is marked; it is listed like any other.
-      console.log(`      • ${i.instance}${i.background === true ? " [background]" : ""}  ${i.retirePending ? "RETIRING" : livenessWord(i)}  (branch ${i.branch || "?"}, ${i.work || "?"})${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      console.log(`      • ${i.instance}${i.background === true ? " [background]" : ""}  ${statusWord(i)}  (branch ${i.branch || "?"}, ${i.work || "?"})${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      { const lost = lostLine(i); if (lost) console.log(`          ${lost}`); }
       // Feature waiting-on-you: non-null only on a running row; the reader has
       // already validated the message (one line, no control characters).
       if (i.running === true && i.waitingOnYou) console.log(`          ! needs input (${i.waitingOnYou.reason ?? "unknown"})${i.waitingOnYou.message ? `: ${i.waitingOnYou.message}` : ""}`);
@@ -2854,8 +2856,6 @@ async function status() {
   }
 }
 
-/** A status row's liveness in text: `running` null (a server that cannot be read, a Herdr home) is unknown, never idle. */
-const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown";
 /** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
  *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
  *  host through `--server`, whose route reads it. `--max-age` reaches here only on a preview or an
@@ -4859,7 +4859,10 @@ async function serverRouteCmd() {
     console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);
     for (const a of r.agents || []) {
       console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${a.repo || "?"}]`);
-      for (const i of a.instances || []) console.log(`      • ${i.instance}${i.background === true ? " [background]" : ""}  ${i.retirePending ? "RETIRING" : livenessWord(i)}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      for (const i of a.instances || []) {
+        console.log(`      • ${i.instance}${i.background === true ? " [background]" : ""}  ${statusWord(i)}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+        const lost = lostLine(i, { host: r.target.sshHost || id }); if (lost) console.log(`          ${lost}`);
+      }
     }
     const snaps = r.snapshots || [];
     if (snaps.length) console.log(`\n  spawned from this machine: ${snaps.map((s) => s.instance).join(", ")}`);

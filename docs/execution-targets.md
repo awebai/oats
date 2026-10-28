@@ -1198,6 +1198,14 @@ for its current start (`startId` in `instance.json`):
 | an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | when the sweep can vouch for the loss ([below](#which-losses-come-back)) |
 | neither (the host went down, or the tmux server died under the live harness) | `lost` | when the sweep can vouch for the loss |
 
+In text, `oats status` and `oats status --server <id>` print a `lost` row as
+`LOST`, where a `stopped` or `exited` row, or one without `sessionEnd`,
+prints `idle`, with one line under it naming the way back: `oats session
+start --resume --home <home>`, or the next sweep (`oats session resume`,
+which OATS Desktop and `oats tui` run when they open) when it can vouch for
+the loss. Both act on this machine's homes only, so a `--server` row names
+the host to run them on. `oats server roster` still prints `idle`.
+
 The window a spawn or a start makes writes the exit marker,
 `.oats-start-exited`, when the harness exits; `oats instance stop` writes its
 record, `.oats-stop.json`, and so does a retire, before it ends the window
@@ -1325,13 +1333,17 @@ resumes it. So:
 - a loss first seen a day ago or more, or a session that died before any read
   of OATS saw it run, stays down.
 
-Two limits follow from reading only what OATS saw:
+Three limits follow from reading only what OATS saw:
 
 - **After upgrading to 0.69**, open OATS Desktop or `oats tui`, or run `oats
   status`, once before you restart the computer, or nothing from before the
   upgrade comes back.
 - A whole boot with no OATS read leaves that boot unknown: what ran in it and
   was lost there is not resumed.
+- Clause 4 does not reach across a reboot. On a computer where nothing read
+  OATS for more than a day before a restart (every agent already down, no
+  client open), the first sweep after the restart can bring back a session
+  that was lost during that quiet spell.
 
 Without a boot id (neither Linux nor macOS: both have one), clause 4 applies
 to every loss and the 3-resumes-per-boot guard (below) is off.
