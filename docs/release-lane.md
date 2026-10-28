@@ -229,14 +229,15 @@ built them.
 `pull-request.yml` keeps `ubuntu-latest` on purpose: when the label moves, a
 break on the new system shows in pull-request CI first and not at a release.
 
-The labels `release.yml` and `build-installers.yml` may name are a list
-beside the table of actions in `test/workflow-no-cache.test.mjs`:
-`ubuntu-24.04` and `macos-14`. Every job of the two runs on a label of that
-list, and both build on the same Linux. A label is added to the list by whoever decides the runner, as an
-action's row is by whoever read it.
+The labels `release.yml` and `build-installers.yml` may name are a list beside
+the table of actions in `test/workflow-no-cache.test.mjs`: `ubuntu-24.04` and
+`macos-14`. Every job of the two runs on a label of that list, and both build
+on the same Linux. A label is added to the list by whoever decides the runner,
+as an action's row is by whoever read it.
 
 **Moving the runner is a pull request** that changes the label in
-`release.yml`, `build-installers.yml` and the list together, and says what the installers then need.
+`release.yml`, `build-installers.yml` and the list together, and says what the
+installers then need.
 
 **What the Linux installer needs today**, to compare with at the next move.
 Read from `oats-desktop-0.52.0-linux-amd64.deb`, built on `ubuntu-24.04`

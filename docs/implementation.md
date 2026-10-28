@@ -515,23 +515,22 @@ A pull request that touches `packages/tui/`, `packages/client/`, a
 `test/tui-*.test.mjs` file or the workflow itself also runs
 [`tui-macos.yml`](../.github/workflows/tui-macos.yml): every TUI test file,
 `packages/tui/test/*.test.mjs` and `test/tui-*.test.mjs`, one file at a time
-and each test within five minutes, on `macos-14` with tmux installed, in
-about five minutes. Its last step fails the run if a test left a tmux server
-on the default `oats` socket, as a hand-started run checks after each file;
-it does not give each file a process group of its own, as a hand-started run
-does. The TUI reads tables
-keyed by platform (the shared keymap's macOS chords) and drives macOS's own
-tmux, whose output differs from Linux's, and Linux CI sees neither
-([#1608](https://github.com/awebai/oats/issues/1608),
+and each test within five minutes, on `macos-14` with tmux installed, in about
+five minutes. Its last step fails the run if a test left a tmux server on the
+default `oats` socket, as a hand-started run checks after each file; it does
+not give each file a process group of its own, as a hand-started run does. The
+TUI reads tables keyed by platform (the shared keymap's macOS chords) and
+drives macOS's own tmux, whose output differs from Linux's, and Linux CI sees
+neither ([#1608](https://github.com/awebai/oats/issues/1608),
 [#1613](https://github.com/awebai/oats/issues/1613)). It runs at pull-request
 time, not on the tag's macOS legs: a failure found on the tag costs a version,
 and `release.yml` holds the publishing rights, so a TUI flake there would hold
 a publication (the release lane's call, 2026-10-27).
 
-The paths are the TUI's own. A change the TUI depends on outside them
-(`lib/`, `bin/`, `test/helpers/`, `package.json`, `package-lock.json`) starts
-no run, and nothing runs on a push to `main`: such a change wants a
-hand-started macOS run of the TUI's files
+The paths are the TUI's own. A change the TUI depends on outside them (`lib/`,
+`bin/`, `test/helpers/`, `package.json`, `package-lock.json`) starts no run,
+and nothing runs on a push to `main`: such a change wants hand-started macOS
+runs of the TUI's files, at most ten files a run
 ([Named test runs](named-test-runs.md)).
 
 The job is not part of the gate above. A path filter that skips the workflow
@@ -539,8 +538,8 @@ reports no check, so a required check would hold every pull request that does
 not touch the TUI. Its run on the pull request is that pull request's macOS
 evidence. `test/tui-macos-workflow.test.mjs` pins its terms: the one trigger
 and its paths, the read-only token, no secret, no artifact or cache, tmux, a
-command that runs every TUI test file, and the leak check. Like the release's workflows, it names
-its actions by commit (`test/workflow-no-cache.test.mjs`).
+command that runs every TUI test file, and the leak check. Like the release's
+workflows, it names its actions by commit (`test/workflow-no-cache.test.mjs`).
 
 **Test output is pristine.** A warning that a test expects is captured and
 asserted by the test, or by its fixture, and never left in the output: a line
