@@ -67,7 +67,8 @@ and is said once, in the line under the list of workspaces, in the kernel's word
 it comes while the switcher, the help, a confirmation, the palette, the
 spawn prompt, a detail or a terminal has the screen or the focus, it is said
 once a view's list has the focus again, so no screen that covers the
-sidebar hides it. A deployment opened from the switcher is
+sidebar hides it. It never replaces a line that answers something you did:
+it waits until that line goes. A deployment opened from the switcher is
 on the list already.
 
 **From inside an agent's pane it still reads the deployment you asked
