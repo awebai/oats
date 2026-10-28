@@ -1392,6 +1392,37 @@ test("the add of the deployment the run started in, refused while the switcher, 
   assert.deepEqual(reduce(stateOf(observed(TREE)), { notListed: reason }).state.outcome, { said: LIST_WORDS.notAdded(reason.message), under: [] });
 });
 
+test("the add of the deployment the run started in, refused while a line answers what the person did, never replaces that line: it waits, and is said once the line has gone (#1603)", () => {
+  const reason = { code: "E_DEPLOYMENTS_BUSY", message: "the list is locked" }, said = { said: LIST_WORDS.notAdded(reason.message), under: [] };
+  // The person picked a row of the list of workspaces that is not a deployment any more: the line says so.
+  const answered = reduce(stateOf(observed(TREE)), { refused: "/srv/gone" }).state;
+  const line = answered.outcome;
+  assert.notEqual(line, null);
+  const held = reduce(answered, { notListed: reason }).state;
+  assert.deepEqual([held.outcome, held.notice], [line, said], "the person's line stands, and the refusal waits");
+  // What the loop reports in the meantime (a read) leaves both as they are.
+  const read = reduce(held, { collecting: true }).state;
+  assert.deepEqual([read.outcome, read.notice], [line, said]);
+  // The next key bound to an action puts the person's line away, and the refusal is said in its place, once.
+  const after = press(held, ["j"]).state;
+  assert.deepEqual([after.outcome, after.notice], [said, null]);
+  assert.deepEqual([press(after, ["j"]).state.outcome, press(after, ["j"]).state.notice], [null, null]);
+
+  // A line of one key (the list of workspaces' end, said by the leader's Down) goes at the next key
+  // of any kind, one bound to nothing, or what the loop saw typed to the agent: the refusal comes then, not lost.
+  let reads = 0;
+  const key = (state, id) => reduce(state, { key: id, ...(id.length === 1 ? { text: id } : {}), read: ++reads });
+  const start = stateOf(observed(TREE));
+  const ended = key(key(start, start.leaderKey).state, "down").state;
+  assert.equal(ended.outcome?.once, true);
+  const waiting = reduce(ended, { notListed: reason }).state;
+  assert.deepEqual([waiting.outcome, waiting.notice], [ended.outcome, said], "the line of one key stands, and the refusal waits");
+  for (const [how, step] of [["a key bound to nothing", (s) => key(s, "x")], ["bytes typed to the agent", (s) => reduce(s, { passed: true })]]) {
+    const gone = step(waiting).state;
+    assert.deepEqual([gone.outcome, gone.notice], [said, null], how);
+  }
+});
+
 // --- Lost sessions resumed (#1559): the kernel's machine sweep says nothing --------------------------
 
 /** One reading of each kind the shared reader gives, and what is not one. */
