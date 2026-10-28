@@ -1575,19 +1575,22 @@ const PYTHON = (() => { try { return execFileSync("/bin/sh", ["-c", "command -v 
 const parentOf = (pid) => { try { return Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").pop().split(" ")[1]); } catch { return null; } };
 /** Whether `pid` has ended: gone, or a zombie its subreaper has not reaped yet (the test's waits on its stdin). */
 const endedProcess = (pid) => { try { return /^[ZX]/.test(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").pop()); } catch { return true; } };
-const isKeeper = (pid) => { try { return readFileSync(`/proc/${pid}/cmdline`, "utf8").includes("oats-tui-keeper"); } catch { return false; } };
+/** Whether `pid` is the keeper's own shell: its $0 is `oats-tui-keeper` once it has exec'd (the subshell it forks from names it only in its script). */
+const isKeeper = (pid) => { try { return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0")[3] === "oats-tui-keeper"; } catch { return false; } };
 
 test("a keeper whose server ended before its shell started kills nothing: reparented by then to a subreaper (systemd --user on a host, the test's own here), whose pid is both its $PPID and its parent now (awebai/oats#1615)", { skip: HAS_PROC && PYTHON ? false : "needs /proc and python3 for a subreaper of the test's own" }, async (t) => {
   // The subreaper: python, PR_SET_CHILD_SUBREAPER (36) set, says its pid, runs the stand-in, which
   // starts the keeper a second later and exits at once (its `$$` is the pid TMUX names, as the
   // server's), and then waits on its stdin. The keeper is let go only once it is seen adopted by
-  // that subreaper: if it is not, it is killed itself, and the FIFO never let go.
+  // that subreaper: if it is not, it is killed itself, and the FIFO never let go. The subreaper
+  // leads a process group of its own, and the whole group is killed at the end: nothing of the
+  // test's is ever left for the host's own subreaper to adopt.
   const fifo = path.join(mkdtempSync(path.join(ROOT, "keeper-")), "alive"), pidFile = `${fifo}.pid`;
   execFileSync("mkfifo", ["-m", "600", fifo]);
   const held = PANEL_FS.hold(fifo);
   const standIn = '( sleep 1; TMUX="/tmp/oats-tui/tmux,$$,0" exec /bin/sh -c "$1" oats-tui-keeper "$2" ) & echo $! >"$3"; exit 0';
   const reaper = "import ctypes, os, subprocess, sys\nif ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0: sys.exit(3)\nprint(os.getpid(), flush=True)\nsubprocess.run(['/bin/sh', '-c', sys.argv[1], 'server', sys.argv[2], sys.argv[3], sys.argv[4]])\nsys.stdin.read()\n";
-  const sub = spawn(PYTHON, ["-c", reaper, standIn, KEEPER_SCRIPT, fifo, pidFile], { stdio: ["pipe", "pipe", "ignore"] });
+  const sub = spawn(PYTHON, ["-c", reaper, standIn, KEEPER_SCRIPT, fifo, pidFile], { stdio: ["pipe", "pipe", "ignore"], detached: true });
   const ended = new Promise((resolve) => sub.once("exit", (code, signal) => resolve({ code, signal })));
   let said = "";
   sub.stdout.on("data", (chunk) => { said += chunk; });
@@ -1610,8 +1613,7 @@ test("a keeper whose server ended before its shell started kills nothing: repare
     sub.stdin.end();
     assert.deepEqual(await ended, { code: 0, signal: null }, "and it ends on its own");
   } finally {
-    if (keeper && isKeeper(keeper)) { try { process.kill(keeper, "SIGKILL"); } catch { /* gone */ } }
-    try { sub.kill("SIGKILL"); } catch { /* gone */ }
+    try { process.kill(-sub.pid, "SIGKILL"); } catch { /* gone */ }
     if (!released) PANEL_FS.release(held);
   }
 });
