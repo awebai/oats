@@ -27,56 +27,64 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { enableCliCompileCache } from "../lib/compile-cache.mjs";
+import { hotImport, hotRead } from "../lib/hot-reads.mjs";
 
-// Node's compile cache is on before any kernel module is parsed (lib/compile-cache.mjs): static
-// imports are all parsed and linked before this module's body runs, so the kernel and `yaml` are
-// imported here, in order, once it is on.
+// Node's compile cache is on before the kernel is parsed (lib/compile-cache.mjs): static imports are
+// all parsed and linked before this module's body runs, so they are Node built-ins and the two small
+// dependency-free modules above, and the kernel and `yaml` are imported here, in order, once it is on.
 enableCliCompileCache();
-const { doctorCaptureWarnings } = await import("../lib/doctor-capture.mjs");
-const { assertNoPartialUpgrade } = await import("../lib/upgrade-state.mjs");
-const { runtimeNameWarning, noteRuntimeName } = await import("../lib/deprecation.mjs");
-const { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } = await import("../lib/errors.mjs");
+// A hot read (lib/hot-reads.mjs) imports only the leaves it uses, never core.mjs: each line below takes
+// the leaves its names come from, and every other command imports every module, in this order. A hot
+// read takes its names from lib/hot-reads.mjs: a name newly used on a hot read's path must be listed
+// there, under its line, or its first use throws (a tripwire); test/cli-hot-reads.test.mjs pins what
+// each hot read must not load. Each line names its module and imports it by one string literal.
+const HOT_READ = hotRead(process.argv.slice(2));
+const kernelImport = (name, load) => (HOT_READ ? hotImport(HOT_READ, name) : load());
+const { doctorCaptureWarnings } = await kernelImport("doctor-capture", () => import("../lib/doctor-capture.mjs"));
+const { assertNoPartialUpgrade } = await kernelImport("upgrade-state", () => import("../lib/upgrade-state.mjs"));
+const { runtimeNameWarning, noteRuntimeName } = await kernelImport("deprecation", () => import("../lib/deprecation.mjs"));
+const { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } = await kernelImport("errors", () => import("../lib/errors.mjs"));
 const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
-} = await import("../lib/core.mjs");
+} = await kernelImport("core", () => import("../lib/core.mjs"));
 const {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
-  classifyPackageValue, parsePackageRequest } = await import("../lib/packages.mjs");
-const { harnessTrust } = await import("../lib/harness-trust-write.mjs");
-const { previewLaunchEnvironment, previewPaneEnvironment } = await import("../lib/core.mjs");
-const { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } = await import("../lib/pi-bridge.mjs");
-const { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } = await import("../lib/workspace.mjs");
-const { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } = await import("../lib/teams.mjs");
-const { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } = await import("../lib/launch-preference.mjs");
-const { terminalText } = await import("../lib/refused-text.mjs");
-const { qualifiedSoulName, soulCandidates, soulsOffered } = await import("../lib/instance-resolution.mjs");
-const { parseConfigData } = await import("../lib/config-data.mjs");
-const remoteModule = await import("../lib/remote.mjs");
-const { activateLocalInputs, localRevision } = await import("../lib/local-inputs.mjs");
-const { default: YAML } = await import("yaml");
-const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await import("../lib/servers.mjs");
-const { readSessionViewer } = await import("../lib/session-viewer.mjs");
-const { tickTriggers } = await import("../lib/triggers.mjs");
-const A = await import("../lib/automations.mjs");
-const { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe: describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled: setScheduleEnabled, removeSchedule, runNow: runScheduleNow, reconcile: reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } = await import("../lib/schedule.mjs");
-const { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } = await import("../lib/schedule-host.mjs");
-const { kernelNode, stableNode } = await import("../lib/stable-node.mjs");
-const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } = await import("../lib/attachments.mjs");
-const { observeInstanceGit, diffInstanceFile } = await import("../lib/instance-git.mjs");
-const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await import("../lib/instance-lifecycle.mjs");
-const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await import("../lib/retire-output.mjs");
-const { livenessWord, lostLine, statusWord } = await import("../lib/status-words.mjs");
-const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await import("../lib/retained-after-retire.mjs");
+  classifyPackageValue, parsePackageRequest } = await kernelImport("packages", () => import("../lib/packages.mjs"));
+const { harnessTrust } = await kernelImport("harness-trust-write", () => import("../lib/harness-trust-write.mjs"));
+const { previewLaunchEnvironment, previewPaneEnvironment } = await kernelImport("core", () => import("../lib/core.mjs"));
+const { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } = await kernelImport("pi-bridge", () => import("../lib/pi-bridge.mjs"));
+const { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } = await kernelImport("workspace", () => import("../lib/workspace.mjs"));
+const { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } = await kernelImport("teams", () => import("../lib/teams.mjs"));
+const { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } = await kernelImport("launch-preference", () => import("../lib/launch-preference.mjs"));
+const { terminalText } = await kernelImport("refused-text", () => import("../lib/refused-text.mjs"));
+const { qualifiedSoulName, soulCandidates, soulsOffered } = await kernelImport("instance-resolution", () => import("../lib/instance-resolution.mjs"));
+const { parseConfigData } = await kernelImport("config-data", () => import("../lib/config-data.mjs"));
+const remoteModule = await kernelImport("remote", () => import("../lib/remote.mjs"));
+const { activateLocalInputs, localRevision } = await kernelImport("local-inputs", () => import("../lib/local-inputs.mjs"));
+const { default: YAML } = await kernelImport("yaml", () => import("yaml"));
+const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await kernelImport("servers", () => import("../lib/servers.mjs"));
+const { readSessionViewer } = await kernelImport("session-viewer", () => import("../lib/session-viewer.mjs"));
+const { tickTriggers } = await kernelImport("triggers", () => import("../lib/triggers.mjs"));
+const A = await kernelImport("automations", () => import("../lib/automations.mjs"));
+const { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe: describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled: setScheduleEnabled, removeSchedule, runNow: runScheduleNow, reconcile: reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } = await kernelImport("schedule", () => import("../lib/schedule.mjs"));
+const { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } = await kernelImport("schedule-host", () => import("../lib/schedule-host.mjs"));
+const { kernelNode, stableNode } = await kernelImport("stable-node", () => import("../lib/stable-node.mjs"));
+const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } = await kernelImport("attachments", () => import("../lib/attachments.mjs"));
+const { observeInstanceGit, diffInstanceFile } = await kernelImport("instance-git", () => import("../lib/instance-git.mjs"));
+const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await kernelImport("instance-lifecycle", () => import("../lib/instance-lifecycle.mjs"));
+const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await kernelImport("retire-output", () => import("../lib/retire-output.mjs"));
+const { livenessWord, lostLine, statusWord } = await kernelImport("status-words", () => import("../lib/status-words.mjs"));
+const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await kernelImport("retained-after-retire", () => import("../lib/retained-after-retire.mjs"));
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
-const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await import("../lib/instance-inspect.mjs");
-const { readEvents, setWaiting, incarnationOf } = await import("../lib/instance-events.mjs");
-const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await import("../lib/deployments.mjs");
-const { observeResolvedDeployment } = await import("../lib/resolved-deployment.mjs");
-const { SESSION_RESUME_FEATURE } = await import("../lib/session-resume-contract.mjs");
+const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await kernelImport("instance-inspect", () => import("../lib/instance-inspect.mjs"));
+const { readEvents, setWaiting, incarnationOf } = await kernelImport("instance-events", () => import("../lib/instance-events.mjs"));
+const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await kernelImport("deployments", () => import("../lib/deployments.mjs"));
+const { observeResolvedDeployment } = await kernelImport("resolved-deployment", () => import("../lib/resolved-deployment.mjs"));
+const { SESSION_RESUME_FEATURE } = await kernelImport("session-resume-contract", () => import("../lib/session-resume-contract.mjs"));
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
@@ -1782,7 +1790,7 @@ function standaloneCatalogVersion(ref) {
 async function discoverForCli(ctx, bail) {
   // The standalone case (decisions 10/25) is a discovery too: the repo's own view
   // plus the kernel's oats.core default — discoverOrStandalone decides.
-  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); return await discoverOrStandalone(ctx.local, { deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions }); }
+  try { const { discoverOrStandalone } = await import("../lib/member-clone.mjs"); return await discoverOrStandalone(ctx.local, { deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions }); }
   catch (e) {
     if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
     throw e;
@@ -2231,7 +2239,7 @@ function sharedTeamRows(discovery) {
  *  computer (member clones and the rule that found each, disabled souls, the lock); file locations with
  *  browsable urls; each catalog package's newer version, when the official catalog has one. */
 async function workspaceStatusFacts(result, discovery, lock, ctx) {
-  const { memberCloneOf } = await import("../lib/instance-resolution.mjs");
+  const { memberCloneOf } = await import("../lib/member-clone.mjs");
   const { browseUrl } = remoteModule;
   const defaults = discovery.standalone === true ? {} : (discovery.workspace?.defaults ?? {});
   const rows = (entries) => Object.entries(entries && typeof entries === "object" ? entries : {}).map(([name, v]) => ({ name, from: v === "off" ? null : v?.from ?? null, off: v === "off" })).sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -2248,7 +2256,7 @@ async function workspaceStatusFacts(result, discovery, lock, ctx) {
   });
   result.disabledSouls = [...(Array.isArray(ctx.local?.souls?.disabled) ? ctx.local.souls.disabled : [])];
   result.lock = { path: join(ctx.deploymentDir, LOCK_FILE), lockfileVersion: lock.lockfileVersion ?? null };
-  const { compareSemver } = await import("../lib/servers.mjs");
+  const { compareSemver } = await import("../lib/semver.mjs");
   let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
   const cat = catalog && typeof catalog === "object" ? (catalog.packages && typeof catalog.packages === "object" && !("url" in catalog.packages) ? catalog.packages : catalog) : {};
   for (const p of result.packages) {
@@ -2674,12 +2682,12 @@ async function statusDrift(data) {
   let discovery;
   // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
   // instance is computed against its member's current state, not reported "unreachable".
-  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
+  try { const { discoverOrStandalone } = await import("../lib/member-clone.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
     return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) }, local: ctx.local, discovery: null };
   }
-  const { driftOf, soulDriftOf } = await import("../lib/materialize.mjs");
+  const { driftOf, soulDriftOf } = await import("../lib/drift.mjs");
   const drift = new Map();
   const soul = new Map();
   for (const a of data) for (const i of a.instances || []) {
