@@ -68,7 +68,9 @@ the wake bring the answer. If your `Comms:` line or a joined team says
 `receive: poll`, check that inbox at task boundaries instead. Session delivery
 may mark mail read, so delivered mail may not appear in unread `aw mail inbox`.
 For session delivery recovery after an uncertain crash, compaction or restart,
-reconcile STATE and task records against exact delivered ids: use
+and on pi with `@awebai/pi` 0.4.0 after any interrupted turn and at task
+boundaries (load `/oats-aweb` section 4), reconcile STATE and task records
+against exact delivered ids: use
 `aw mail show --message-id <id> --json`, or page
 `aw mail inbox --show-all --json` with `--cursor`. Read state is not completion,
 and `--conversation-id` is not a recovery check.

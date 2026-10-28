@@ -96,7 +96,7 @@ and **no `--reply-to`**.
 aw mail send --to <alias> --subject "<short subject>" --body-file /tmp/msg.md
 aw mail reply <message-id> --body-file /tmp/reply.md    # stay in the thread
 aw mail inbox                                          # UNREAD only
-aw mail inbox --show-all --json                       # history; page recovery with --cursor
+aw mail inbox --show-all --json                       # recovery, including affected Pi interrupts (section 4); page with --cursor
 aw mail show --message-id <id> --json                  # exact delivered message recovery
 aw mail show --conversation-id <id>                    # thread view, not recovery
 aw mail ack <message-id>                               # mark one read without replying
@@ -283,17 +283,40 @@ service"), and reruns it after every aw upgrade to restart it:
 **Never sleep, poll or busy-wait for a reply.** Send, finish your turn, and let
 the wake bring the answer. For a joined team with `receive: poll`, check at
 natural task boundaries only; there, an empty `aw mail inbox` means no *unread* mail.
+
+**Mail recovery: session delivery and affected Pi channel versions**
+
 For `Notification delivery: external`, delivery may mark mail read, so a
-presented mail may no longer appear in unread `aw mail inbox`. Recovery after
-an uncertain crash, compaction or restart reconciles STATE and task records
-against exact delivered ids. If you know an id (for example from the Recovery
-line), use `aw mail show --message-id <id> --json`; otherwise page
+presented mail may no longer appear in unread `aw mail inbox`. After an uncertain
+crash, compaction or restart, use the reconciliation procedure below.
+
+**Temporary Pi channel workaround — `@awebai/pi` 0.4.0**, reported with Pi
+1.3.0 in [aweb#68](https://github.com/awebai/aweb/issues/68): mail arriving
+during a turn can be queued as a follow-up and lost when the human interrupts
+that turn, even though the extension logs it as delivered and the server marks
+it read. **After any interrupted turn (as soon as you resume), and at task
+boundaries, run `aw mail inbox --show-all --json` and reconcile by `message_id`**
+as below, even if the unread inbox is empty or no wake was presented. This is
+recovery guidance, not a delivery fix. Remove this Pi-specific workaround only
+once an `@awebai/pi` version fixing #68 is pinned for the affected instances;
+an upstream release alone does not update their extension. Other versions are
+not established by that report; do not infer a fixed-version floor.
+
+For either case, reconcile STATE and task records against exact message ids.
+If you know an id (for example from the Recovery line), use
+`aw mail show --message-id <id> --json`; to discover missed ids, page
 `aw mail inbox --show-all --json` across the uncertain interval, following
-`has_more` / `next_cursor` with `--cursor`. Read state is not completion: check
-the receipts of earlier side effects before retrying. `aw mail show
---conversation-id` is a thread view, not a recovery check. The unread inbox
-stays useful for new waiting mail that was not already delivered into the
-session.
+`has_more` / `next_cursor` with `--cursor`. For the Pi workaround, always do
+that history scan; a known id alone cannot reveal other dropped follow-ups.
+Use the receiving identity's `--identity-home` for joined-team mail. Check
+sender verification as for any wake, compare each id with recorded handling,
+and handle only outstanding work; record the handled ids and outcomes in STATE
+or task records. Read state is not completion: check the receipts of earlier
+side effects before retrying, so recovery does not repeat completed actions.
+`aw mail show --conversation-id` is a thread view, not a recovery check. These
+are boundary/recovery checks, never a polling loop while waiting for replies.
+The unread inbox stays useful for new waiting mail that was not already
+delivered into the session.
 
 ### Receive verification and recovery
 
@@ -861,7 +884,7 @@ copied whole.
 
 ## Gotchas
 
-- `aw mail inbox` shows **unread** only; session-delivery recovery uses `aw mail show --message-id <id> --json` or paginated `aw mail inbox --show-all --json` with `--cursor`, not read state or `--conversation-id`.
+- `aw mail inbox` shows **unread** only. Section 4's shared recovery procedure covers session delivery and the version-scoped Pi interrupt workaround: reconcile by message id, not read state or `--conversation-id`; affected Pi instances scan `aw mail inbox --show-all --json` after interrupted turns and at task boundaries.
 - `aw chat send` continues a session; it has no `--to`.
 - Every `aw` call for a joined team needs `--identity-home` **before** the subcommand.
 - `oats aweb …` run from `./work` cannot tell which instance you are; run it

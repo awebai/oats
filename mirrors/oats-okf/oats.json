@@ -1,9 +1,9 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "5.5.0",
+  "version": "5.6.0",
   "compatibility": {
-    "oats": ">=0.49.0"
+    "oats": ">=0.69.2"
   },
   "layer": "knowledge",
   "description": "The OKF knowledge slot for working souls: consult the soul's accepted OKF bases remotely (no per-instance copy), keep instance knowledge with judgment, and at important checkpoints propose durable knowledge by spawning the oats.okf/knowledge-harvester package soul with a short, self-contained proposal.",
