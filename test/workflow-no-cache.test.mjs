@@ -13,8 +13,8 @@
 // installer steps are release.yml's, and tui-macos.yml, by the release lane's call. Every other
 // workflow names the major of a row by its tag.
 //
-// The system those two files run on is the same question one layer down, and the same two files
-// answer it the same way: every job of theirs runs on a runner of the list below.
+// The system release.yml and build-installers.yml run on is the same question one layer down, and
+// those two answer it the same way: every job of theirs runs on a runner of the list below.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -56,7 +56,7 @@ const ACTIONS_READ = [
 const RELEASE_FILES = ["release.yml", "build-installers.yml"];
 /** The files that name every action by a row's commit id: the two that publish, and
  *  tui-macos.yml, the TUI's tests on macOS at pull-request time, by the release lane's call
- *  (2026-10-28). The workflows outside them keep tags, and that is the decision, not an
+ *  (2026-10-27). The workflows outside them keep tags, and that is the decision, not an
  *  oversight: nothing is published from them, and an id there is upkeep nobody decided to take
  *  on. `usesUnreadAction` holds both halves. */
 const BY_ID = [...RELEASE_FILES, "tui-macos.yml"];

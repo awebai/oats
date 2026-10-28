@@ -2,7 +2,7 @@
 # Pull-request CI runs on Linux only, and the TUI reads tables keyed by platform (the shared
 # keymap's macOS chords) and runs on macOS's own tmux, whose output differs from Linux's: two
 # failures of that kind went unseen until a release rehearsal. The release lane's call
-# (2026-10-28): a job at pull-request time, never the tag's leg, where a failure would cost a
+# (2026-10-27): a job at pull-request time, never the tag's leg, where a failure would cost a
 # version and a flake would hold a publication.
 #
 # The terms, each pinned by test/tui-macos-workflow.test.mjs:
@@ -13,9 +13,13 @@
 #   * The token reads contents and nothing else; no secret is named; no step uploads an artifact
 #     or saves or restores a cache. Every action is named by the commit release.yml names it by
 #     (test/workflow-no-cache.test.mjs).
-#   * tmux is installed first: the TUI's root tests drive it and skip without it.
-#   * Every TUI test file, each alone (`--test-concurrency=1`), as a hand-started macOS run
-#     runs them (docs/named-test-runs.md): the files of packages/tui/test and test/tui-*.
+#   * tmux is installed first, and its version said: the TUI's root tests drive it and skip
+#     without it, and Homebrew's tmux is the latest.
+#   * Every TUI test file, one file at a time (`--test-concurrency=1`), each test within five
+#     minutes: the files of packages/tui/test and test/tui-*. A hand-started macOS run
+#     (docs/named-test-runs.md) also gives each file a process group of its own; this job does not.
+#   * Last, whatever came before: no test left a tmux server on the default `oats` socket, as a
+#     hand-started run checks after each file.
 #
 # It is no part of pull-request CI's gate: a workflow a path filter skips reports no check.
 name: TUI tests on macOS
@@ -40,9 +44,9 @@ concurrency:
 jobs:
   tui-macos:
     name: TUI tests on macOS
-    # The image release.yml's macOS legs and macos-tests.yml run on.
+    # The image of macos-tests.yml, whose hand-started runs this job repeats.
     runs-on: macos-14
-    # About five minutes on macos-14, each file alone; tmux and npm ci before them.
+    # About five minutes on macos-14, one file at a time; tmux and npm ci before them.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -56,12 +60,17 @@ jobs:
           node-version: 22
 
       - name: Install tmux
-        run: brew install tmux
+        run: brew install tmux && tmux -V
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run the TUI's tests, each file alone
-        run: node --test --test-concurrency=1 packages/tui/test/*.test.mjs test/tui-*.test.mjs
+      - name: Run the TUI's tests, one file at a time
+        run: node --test --test-concurrency=1 --test-timeout=300000 packages/tui/test/*.test.mjs test/tui-*.test.mjs
+
+      # A test's own server is private; one on the default socket is a fixture that leaked.
+      - name: No tmux server left on the default socket
+        if: always()
+        run: test ! -e "$(realpath /tmp)/tmux-$(id -u)/oats" || { echo "::error::a test left a tmux server at $(realpath /tmp)/tmux-$(id -u)/oats"; exit 1; }
