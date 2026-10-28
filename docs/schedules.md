@@ -826,7 +826,11 @@ Whether an `unknown` job keeps its host slot depends on what is still running:
 
 **Slots.** A wake job that starts a stopped home holds a launch slot until the
 harness is proven stopped or the home is gone; delivering to a running home
-takes none. The host tick admits due jobs in one host-wide order, least
+takes none. A start that OATS retiring, stopping or upgrading the home refuses
+at its lifecycle claim (`E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`; #1602) did
+nothing, so it is recorded `skipped`, with a reason that begins `start
+refused before any effect:` and names the act, holds no slot, and keeps its
+message pending: the home is started again at the job's next due minute. The host tick admits due jobs in one host-wide order, least
 recently launched first, so one frequent job cannot keep the only slot
 forever. An invalid definition is reported on its job; the rest of the tick
 continues.
