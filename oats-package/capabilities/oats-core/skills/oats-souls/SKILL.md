@@ -75,8 +75,8 @@ restrict anything (see `/oats-operate`, "Teams to join").
 
 Spawn only when your task, your human or your soul's capabilities say so; a
 child your capabilities call for (a developer's reviewer, an expert's
-developers) needs no human's approval. When you do, declare what the new instance **is to you** — the roster groups related
-instances by these links:
+developers) needs no human's approval. When you do, declare what the new
+instance **is to you** — the roster groups related instances by these links:
 
 - **child** — `--parent "$OATS_INSTANCE"` (or `--relation child --relative-to
   <you>`): it works **for** you. A coordinator spawning the developers of its
