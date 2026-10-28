@@ -1,0 +1,3 @@
+## Fixed
+
+- **`oats tui` can no longer kill your session's systemd user manager.** When `oats tui` ends, a keeper kills its private tmux server. The keeper took its server to be the parent its shell saw when it started. If the server had already ended by then, that parent was `systemd --user` on a systemd host, so an `oats tui` killed at the wrong moment could SIGKILL the user manager and every process under it, every agent of the host included. The keeper now kills only the server that tmux names in the keeper's own `TMUX`, and only while that server is still its parent; in any doubt it kills nothing ([awebai/oats#1615](https://github.com/awebai/oats/issues/1615); [What it reads, and what it runs](../tui.md#what-it-reads-and-what-it-runs)).

@@ -2456,11 +2456,15 @@ with the Desktop (`packages/client/`).
   found on `PATH` like `tmux`.
   - **`mkfifo`** makes `alive`. Without it an open is refused: the line
     says the terminal could not be opened, with what was said under it.
-  - **A way to tell that the server is still its parent.** The keeper reads
-    that from `/proc` where the system has one (Linux), and otherwise asks
-    `ps -o ppid= -p` (macOS). With neither (no `/proc`, and no `ps` or one
-    that refuses `-p`, like BusyBox's), the keeper kills nothing. A normal
-    end is not affected. An `oats tui` killed with SIGKILL can then leave
+  - **A way to tell that the server is still its parent.** The keeper kills
+    only the server tmux names in the keeper's own `TMUX`, and only while
+    that server is still its parent, read from `/proc` where the system has
+    one (Linux), and otherwise from `ps -o ppid= -p` (macOS). A keeper whose
+    server ended first has been handed to another parent (pid 1, or
+    `systemd --user` on a systemd host), and kills nothing. With no way to
+    read its parent (no `/proc`, and no `ps` or one that refuses `-p`, like
+    BusyBox's), or no server pid in `TMUX`, the keeper kills nothing. A
+    normal end is not affected. An `oats tui` killed with SIGKILL can then leave
     its private server running, with its tabs' viewers still
     attached to their agents, until you end it with `tmux -S
     <run directory>/tmux kill-server`. The next run's sweep leaves that

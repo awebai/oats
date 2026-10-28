@@ -1507,8 +1507,10 @@ test("a callback that throws does not break the panel: it is thrown again outsid
 
 // THE KEEPER'S SCRIPT, run by itself: a stand-in for the server (`/bin/sh`, the keeper's parent)
 // starts it with the FIFO, then says "keeper done" and waits on its stdin. The test holds the
-// FIFO's write end and lets go: a keeper that can name its parent kills it (SIGKILL); one that
-// cannot kills nothing, and the stand-in lives on. PATH holds `cat` and, as the case says, a `ps`.
+// FIFO's write end and lets go: a keeper that can tell its parent is the server `TMUX` names kills
+// it (SIGKILL); one that cannot kills nothing, and the stand-in lives on. PATH holds `cat` and, as
+// the case says, a `ps`. Every process a keeper here could kill is the test's own: the stand-in,
+// a decoy, or a subreaper the test made (never `$PPID` read at a start: awebai/oats#1615).
 /** A directory for PATH: `cat`, and `ps` as given (null: none). */
 function keeperPath(ps) {
   const bin = mkdtempSync(path.join(ROOT, "keeper-bin-"));
@@ -1516,12 +1518,17 @@ function keeperPath(ps) {
   if (ps !== null) { writeFileSync(path.join(bin, "ps"), ps); chmodSync(path.join(bin, "ps"), 0o755); }
   return bin;
 }
-/** Run the keeper under a stand-in server, let go of the FIFO: -> "killed" or "left". */
-async function keeperRun(bin) {
+/** The stand-in's `TMUX`, as a tmux server sets it for a pane: `<socket>,<pid>,<session>`, the
+ *  socket's path with a comma in it, as one may have. `server` names the stand-in itself. */
+const STAND_IN_TMUX = { server: "server", none: "none", of: (pid) => `/tmp/oats,tui/tmux,${pid},0` };
+/** Run the keeper under a stand-in server whose panes get `tmux` (STAND_IN_TMUX: its own pid, none,
+ *  or another), let go of the FIFO: -> "killed" or "left". */
+async function keeperRun(bin, tmux = STAND_IN_TMUX.server) {
   const fifo = path.join(mkdtempSync(path.join(ROOT, "keeper-")), "alive");
   execFileSync("mkfifo", ["-m", "600", fifo]);
   const held = PANEL_FS.hold(fifo);
-  const server = spawn("/bin/sh", ["-c", '/bin/sh -c "$1" oats-tui-keeper "$2"; echo "keeper done"; read x', "server", KEEPER_SCRIPT, fifo], { env: { PATH: bin }, stdio: ["pipe", "pipe", "ignore"] });
+  const standIn = 'case $3 in server) TMUX="/tmp/oats,tui/tmux,$$,0"; export TMUX;; none) unset TMUX;; *) TMUX=$3; export TMUX;; esac; /bin/sh -c "$1" oats-tui-keeper "$2"; echo "keeper done"; read x';
+  const server = spawn("/bin/sh", ["-c", standIn, "server", KEEPER_SCRIPT, fifo, tmux], { env: { PATH: bin }, stdio: ["pipe", "pipe", "ignore"] });
   let said = "";
   server.stdout.on("data", (chunk) => { said += chunk; });
   const ended = new Promise((resolve) => server.once("exit", (code, signal) => resolve(signal)));
@@ -1549,6 +1556,64 @@ test("the keeper with a BusyBox-like ps that refuses -p: /proc gives the parent 
 
 test("the keeper with a ps that names its parent, and no /proc to read first (macOS): the server is killed", { skip: HAS_PROC ? "/proc is read first here" : false }, async () => {
   assert.equal(await keeperRun(keeperPath(`#!/bin/sh\nexec ${execFileSync("/bin/sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim()} "$@"\n`)), "killed");
+});
+
+test("the keeper kills only the server `TMUX` names, while that server is its parent: with another pid there (a decoy of the test's), none, or pid 1, nothing is killed (awebai/oats#1615)", async () => {
+  const decoy = spawn("/bin/sh", ["-c", "exec sleep 30"], { stdio: "ignore" });
+  try {
+    assert.equal(await keeperRun(keeperPath(null), STAND_IN_TMUX.of(decoy.pid)), "left", "another pid: the stand-in lives");
+    assert.doesNotThrow(() => process.kill(decoy.pid, 0), "and so does the decoy");
+    assert.equal(await keeperRun(keeperPath(null), STAND_IN_TMUX.none), "left", "no TMUX");
+    assert.equal(await keeperRun(keeperPath(null), STAND_IN_TMUX.of(1)), "left", "pid 1");
+    assert.equal(await keeperRun(keeperPath(null), "/tmp/oats-tui/tmux"), "left", "a TMUX that names no pid");
+  } finally { decoy.kill("SIGKILL"); }
+});
+
+/** python3, for a subreaper of the test's own (prctl PR_SET_CHILD_SUBREAPER, Linux), or null. */
+const PYTHON = (() => { try { return execFileSync("/bin/sh", ["-c", "command -v python3"], { encoding: "utf8" }).trim() || null; } catch { return null; } })();
+/** The parent of `pid` now, from /proc, or null when it is gone. */
+const parentOf = (pid) => { try { return Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").pop().split(" ")[1]); } catch { return null; } };
+/** Whether `pid` has ended: gone, or a zombie its subreaper has not reaped yet (the test's waits on its stdin). */
+const endedProcess = (pid) => { try { return /^[ZX]/.test(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").pop()); } catch { return true; } };
+const isKeeper = (pid) => { try { return readFileSync(`/proc/${pid}/cmdline`, "utf8").includes("oats-tui-keeper"); } catch { return false; } };
+
+test("a keeper whose server ended before its shell started kills nothing: reparented by then to a subreaper (systemd --user on a host, the test's own here), whose pid is both its $PPID and its parent now (awebai/oats#1615)", { skip: HAS_PROC && PYTHON ? false : "needs /proc and python3 for a subreaper of the test's own" }, async (t) => {
+  // The subreaper: python, PR_SET_CHILD_SUBREAPER (36) set, says its pid, runs the stand-in, which
+  // starts the keeper a second later and exits at once (its `$$` is the pid TMUX names, as the
+  // server's), and then waits on its stdin. The keeper is let go only once it is seen adopted by
+  // that subreaper: if it is not, it is killed itself, and the FIFO never let go.
+  const fifo = path.join(mkdtempSync(path.join(ROOT, "keeper-")), "alive"), pidFile = `${fifo}.pid`;
+  execFileSync("mkfifo", ["-m", "600", fifo]);
+  const held = PANEL_FS.hold(fifo);
+  const standIn = '( sleep 1; TMUX="/tmp/oats-tui/tmux,$$,0" exec /bin/sh -c "$1" oats-tui-keeper "$2" ) & echo $! >"$3"; exit 0';
+  const reaper = "import ctypes, os, subprocess, sys\nif ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0: sys.exit(3)\nprint(os.getpid(), flush=True)\nsubprocess.run(['/bin/sh', '-c', sys.argv[1], 'server', sys.argv[2], sys.argv[3], sys.argv[4]])\nsys.stdin.read()\n";
+  const sub = spawn(PYTHON, ["-c", reaper, standIn, KEEPER_SCRIPT, fifo, pidFile], { stdio: ["pipe", "pipe", "ignore"] });
+  const ended = new Promise((resolve) => sub.once("exit", (code, signal) => resolve({ code, signal })));
+  let said = "";
+  sub.stdout.on("data", (chunk) => { said += chunk; });
+  let keeper = null, released = false;
+  try {
+    for (let waited = 0; !/^\d+\n/.test(said) && waited < 5000; waited += 10) await sleep(10);
+    if (!/^\d+\n/.test(said)) { const { code } = await Promise.race([ended, sleep(500).then(() => ({}))]); if (code === 3) return t.skip("prctl PR_SET_CHILD_SUBREAPER refused here"); assert.fail("the subreaper never said its pid"); }
+    const reaperPid = Number(said.trim());
+    for (let waited = 0; waited < 5000 && !(keeper && isKeeper(keeper) && parentOf(keeper) === reaperPid); waited += 10) {
+      if (keeper === null && existsSync(pidFile)) keeper = Number(readFileSync(pidFile, "utf8").trim()) || null;
+      await sleep(10);
+    }
+    assert.ok(keeper && isKeeper(keeper) && parentOf(keeper) === reaperPid, `the keeper adopted by the test's subreaper ${reaperPid} (its parent: ${keeper && parentOf(keeper)}): not let go`);
+    await sleep(200); // in its read of the FIFO
+    PANEL_FS.release(held);
+    released = true;
+    for (let waited = 0; waited < 3000 && !endedProcess(keeper); waited += 10) await sleep(10);
+    assert.ok(endedProcess(keeper), "the keeper ended");
+    assert.doesNotThrow(() => process.kill(reaperPid, 0), "the subreaper, its $PPID and its parent, was not killed");
+    sub.stdin.end();
+    assert.deepEqual(await ended, { code: 0, signal: null }, "and it ends on its own");
+  } finally {
+    if (keeper && isKeeper(keeper)) { try { process.kill(keeper, "SIGKILL"); } catch { /* gone */ } }
+    try { sub.kill("SIGKILL"); } catch { /* gone */ }
+    if (!released) PANEL_FS.release(held);
+  }
 });
 
 // Last and alone, so that nothing else keeps the event loop alive: a start that fails with a
