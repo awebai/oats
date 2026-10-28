@@ -6,7 +6,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -17,7 +16,7 @@ const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
 // ---- rosterGroups, against a host that answers with fixture rows ----
 
-const base = mkdtempSync(join(tmpdir(), "oats-roster-end-"));
+const base = mkdtempSync("/tmp/oats-rse-"); // short: the ssh control socket path under OATS_HOME_DIR must fit in 104 bytes
 const prevHomeDir = process.env.OATS_HOME_DIR;
 process.env.OATS_HOME_DIR = join(base, "oh");
 test.after(() => {
@@ -79,7 +78,8 @@ const rowLine = (stdout, name) => stdout.split("\n").find((l) => l.startsWith(` 
 const lineAfter = (stdout, name) => { const lines = stdout.split("\n"); return lines[lines.indexOf(rowLine(stdout, name)) + 1]; };
 
 test("CLI: oats server roster carries sessionEnd in --json and prints LOST with the way back on the host", async (t) => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-roster-end-cli-"))); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Short: the ssh control socket path under OATS_HOME_DIR must fit in 104 bytes.
+  const dir = realpathSync(mkdtempSync("/tmp/oats-rsec-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const { bin, tools } = fakeBin(dir);
   // The host's tmux has no server: a launched home there reads not running.
   writeFileSync(join(bin, "tmux"), "#!/bin/sh\ncase \"$1\" in -V) echo 'tmux 3.4'; exit 0;; esac\necho 'no server running on /tmp/none' >&2\nexit 1\n"); chmodSync(join(bin, "tmux"), 0o755);

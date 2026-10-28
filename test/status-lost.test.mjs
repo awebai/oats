@@ -6,7 +6,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -70,7 +69,8 @@ const lineAfter = (stdout, name) => { const lines = stdout.split("\n"); return l
 test("CLI: oats status prints LOST and the way back for a lost home only", async (t) => {
   const fx = v2Deployment();
   t.after(() => fx.cleanup());
-  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "oats-status-lost-"))); t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  // Short: the recorded tmux socket path must fit in 104 bytes.
+  const scratch = realpathSync(mkdtempSync("/tmp/oats-slt-")); t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const socket = join(scratch, "no-server.sock");
   const homes = {};
   for (const [name, ends] of [["s-lost", "lost"], ["s-stopped", "stopped"], ["s-exited", "exited"], ["s-never", null]]) {
@@ -92,7 +92,8 @@ test("CLI: oats status prints LOST and the way back for a lost home only", async
 });
 
 test("CLI: oats status --server prints LOST and names the host to run the way back on", async (t) => {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-status-lost-server-"))); t.after(() => rmSync(base, { recursive: true, force: true }));
+  // Short: the ssh control socket path under OATS_HOME_DIR must fit in 104 bytes.
+  const base = realpathSync(mkdtempSync("/tmp/oats-sls-")); t.after(() => rmSync(base, { recursive: true, force: true }));
   const { bin, tools } = fakeBin(base);
   // The host's tmux has no server: a launched home there reads not running.
   writeFileSync(join(bin, "tmux"), "#!/bin/sh\ncase \"$1\" in -V) echo 'tmux 3.4'; exit 0;; esac\necho 'no server running on /tmp/none' >&2\nexit 1\n"); chmodSync(join(bin, "tmux"), 0o755);
