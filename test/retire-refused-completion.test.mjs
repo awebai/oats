@@ -73,6 +73,8 @@ async function during(ms, invariant) {
 }
 /** The pending markers and outcomes beside the homes of `instances`. */
 const besideTheHomes = (instances) => readdirSync(instances).filter((name) => name.startsWith(".oats-retire-pending-") || name.startsWith(".oats-retired-"));
+/** The lifecycle claim of the home of `i`. */
+const claimOf = (i) => join(dirname(i.home), ".oats-retirement", "claims", `${i.name}.lock`);
 
 /** Every entry under `dir`, one row each: its path, its mode, and a file's bytes (as a digest) or a
  *  link's target. Two listings that are equal are the same tree, byte for byte. */
@@ -97,10 +99,11 @@ const bound = process.env.OATS_TEST_SCHEDULING_WAIT_MS;
 process.exitCode = completeDeferredRetirement(given, { delaySec: 0, ...(bound ? { schedulingWaitMs: Number(bound) } : {}) }) ? 0 : 1;`;
 
 /** `oats retire <name> --self` as the instance's own process runs it, its completion due at once:
- *  the answer on stdout, an error as `{ error: { code, message, reached } }` with exit 1. */
+ *  the answer on stdout, an error as `{ error: { code, message, reached } }` with exit 1.
+ *  `children`, when given: the recorded children the CLI reads from the plan and hands the retire. */
 const SCHEDULING = `import { retireInstance } from ${JSON.stringify(CORE)};
-const { root, name } = JSON.parse(process.env.OATS_TEST_SCHEDULING);
-try { console.log(JSON.stringify(retireInstance(root, name, { self: true, selfKillDelaySec: 0 }))); }
+const { root, name, children } = JSON.parse(process.env.OATS_TEST_SCHEDULING);
+try { console.log(JSON.stringify(retireInstance(root, name, { self: true, selfKillDelaySec: 0, ...(children ? { children } : {}) }))); }
 catch (e) { console.log(JSON.stringify({ error: { code: e.code, message: e.message, reached: e.details?.reached ?? null } })); process.exitCode = 1; }`;
 
 /** The retire hook. It appends the instance it ran for to `<agents root>/retire-hook.log`, outside
@@ -205,8 +208,8 @@ function deployment(t) {
     completeGated: (intent, gates) => startGated(["--input-type=module", "-e", COMPLETION], { cwd: fx.dep, env: { ...fx.env, OATS_RETIRE_INTENT: JSON.stringify(intent) }, gateDir: join(fx.base, `gates-${++gateDirs}`), gates }),
     /** The same scheduling, its completion far away, as the promise of its answer or its error. */
     scheduling: (i) => onFixturePath(() => retireInstance(fx.root, i.name, { self: true, selfKillDelaySec: 600 })),
-    /** A scheduling of `i` in a process of its own, held at `gates`. */
-    scheduleGated: (i, gates) => startGated(["--input-type=module", "-e", SCHEDULING], { cwd: fx.dep, env: { ...fx.env, OATS_TEST_SCHEDULING: JSON.stringify({ root: fx.root, name: i.name }) }, gateDir: join(fx.base, `gates-${++gateDirs}`), gates }),
+    /** A scheduling of `i` in a process of its own, held at `gates`. `children`: as for `schedule`. */
+    scheduleGated: (i, gates, { children } = {}) => startGated(["--input-type=module", "-e", SCHEDULING], { cwd: fx.dep, env: { ...fx.env, OATS_TEST_SCHEDULING: JSON.stringify({ root: fx.root, name: i.name, ...(children ? { children: children.map((kid) => ({ instance: kid.name, home: kid.home })) } : {}) }) }, gateDir: join(fx.base, `gates-${++gateDirs}`), gates }),
     /** The completion a held scheduling of `i` has started → its pid. It is the one process that
      *  works in the instances directory, where the kernel starts it (the kernel's own scan). */
     completionOf: async (i) => {
@@ -257,9 +260,23 @@ test("a scheduled self-retire refused before its home was touched: its marker is
   assert.deepEqual([f.refused(parent.homeLog), f.refused(parent.workspaceLog)], [[], []], "a retire that a person runs and that is refused writes no retire-refused row");
 
   const before = listing(parent.home);
-  const scheduled = await f.schedule(parent, { children: [kid] });
-  assert.equal(readJson(parent.marker).completionPid, scheduled.completionPid, "fixture premise: the marker names the completion that runs");
-  await f.ended(scheduled.completionPid);
+  // Once the scheduling has released the home's claim, its completion may be refused and remove the
+  // marker before anything reads it. So the scheduling is held there, its marker written, and the
+  // marker is read while the completion still waits for it.
+  const run = f.scheduleGated(parent, [{ name: "held", fn: "unlinkSync", path: claimOf(parent), when: "before", waitMs: COMPLETION_MS }], { children: [kid] });
+  let completionPid;
+  try {
+    await run.waitGate("held", COMPLETION_MS);
+    completionPid = await f.completionOf(parent);
+    assert.equal(readJson(parent.marker).completionPid, completionPid, "fixture premise: the marker names the completion that runs");
+    run.release("held");
+    const done = await run.done;
+    assert.deepEqual(done.timedOut, []);
+    assert.equal(done.code, 0, done.stdout + done.stderr);
+    const receipt = JSON.parse(done.stdout.trim());
+    assert.deepEqual([receipt.deferred, receipt.completionPid], [true, completionPid], "fixture premise: the self-retire was scheduled, and its completion is the one that runs");
+  } finally { await run.finish(); }
+  await f.ended(completionPid);
   assert.deepEqual(listing(parent.home), before, "neither the scheduling nor its completion changed a file of the home");
 
   // The outcome and its log stay, as before.
@@ -580,7 +597,6 @@ test("the intent is the completion's own input: a retire hook of a scheduled sel
 });
 
 const SCHEDULING_REACHED = { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null };
-const claimOf = (i) => join(dirname(i.home), ".oats-retirement", "claims", `${i.name}.lock`);
 
 for (const [what, gate, unwritable] of [
   ["before it writes its marker", (i) => ({ fn: "writeFileSync", path: i.marker }), false],
