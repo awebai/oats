@@ -13,7 +13,7 @@ import { basename, join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
 import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
-import { HotReadUnlisted, hotLeaves, hotRead, standIn } from "../lib/hot-reads.mjs";
+import { HotReadUnlisted, hotImport, hotLeaves, hotRead, standIn } from "../lib/hot-reads.mjs";
 import { isDefect } from "../lib/errors.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -116,28 +116,42 @@ test("help is never a hot read: -h or --help as a flag's value, spaced or inline
 test("a hot read's listed names are its leaves' own; anything else is a tripwire that throws on use", async () => {
   const read = hotRead(["version", "--json"]);
   assert.equal(read.form, "version");
-  assert.deepEqual(hotLeaves(read, "../lib/core.mjs"), ["version"]);
-  assert.deepEqual(hotLeaves(read, "../lib/workspace.mjs"), []);
+  assert.deepEqual(hotLeaves(read, "core"), ["version"]);
+  assert.deepEqual(hotLeaves(read, "workspace"), []);
   assert.deepEqual(hotLeaves(read, "yaml"), []);
   assert.equal(hotRead(["version", "--help"]), null, "a flag the form does not take is no hot read");
   const version = await import("../lib/version.mjs");
   // As bin/oats.mjs takes them: the line awaited, its names destructured. Neither touches a tripwire.
-  const { OATS_VERSION, listInstances } = await Promise.resolve(standIn(read, "../lib/core.mjs", [version]));
+  const { OATS_VERSION, listInstances } = await Promise.resolve(standIn(read, "core", [version]));
   assert.equal(OATS_VERSION, version.OATS_VERSION);
-  const { loadLocal } = await Promise.resolve(standIn(read, "../lib/workspace.mjs", []));
+  const { loadLocal } = await Promise.resolve(standIn(read, "workspace", []));
   const message = (name, line) => `oats version is a hot read, and it used ${name} of ${line}, which lib/hot-reads.mjs does not list for it: list the module that defines ${name} under that line in the read's entry in lib/hot-reads.mjs`;
   for (const [use, name, line] of [
-    [() => listInstances("/x"), "listInstances", "../lib/core.mjs"],
-    [() => new listInstances(), "listInstances", "../lib/core.mjs"],
-    [() => `${loadLocal}`, "loadLocal", "../lib/workspace.mjs"],
-    [() => loadLocal.length, "loadLocal", "../lib/workspace.mjs"],
-    [() => "x" in loadLocal, "loadLocal", "../lib/workspace.mjs"],
-    [() => Object.keys(loadLocal), "loadLocal", "../lib/workspace.mjs"],
+    [() => listInstances("/x"), "listInstances", "lib/core.mjs"],
+    [() => new listInstances(), "listInstances", "lib/core.mjs"],
+    [() => `${loadLocal}`, "loadLocal", "lib/workspace.mjs"],
+    [() => loadLocal.length, "loadLocal", "lib/workspace.mjs"],
+    [() => "x" in loadLocal, "loadLocal", "lib/workspace.mjs"],
+    [() => Object.keys(loadLocal), "loadLocal", "lib/workspace.mjs"],
   ]) {
     assert.throws(use, (e) => e instanceof HotReadUnlisted && e.name === "HotReadUnlisted" && e.message === message(name, line) && isDefect(e), String(use));
   }
   // A namespace taken whole (remoteModule, A): its own names live, any other a tripwire.
-  const ns = standIn(read, "../lib/core.mjs", [version]);
+  const ns = standIn(read, "core", [version]);
   assert.equal(ns.PKG_ROOT, version.PKG_ROOT);
   assert.throws(() => ns.ensureRoot("/x"), HotReadUnlisted);
+});
+
+test("every leaf a hot read lists loads, and bin names each import line by the one literal it imports", async () => {
+  const forms = [["version"], ["session", "inspect"], ["status"], ["status", "--server", "s"], ["workspace", "status"], ["instance", "events", "x"], ["instance", "waiting", "clear"]];
+  for (const argv of forms) {
+    const read = hotRead(argv);
+    assert.ok(read, argv.join(" "));
+    for (const name of Object.keys(read.lines)) assert.ok(Object.keys(await hotImport(read, name)).length > 0 || hotLeaves(read, name).length === 0, `${read.form}: ${name}`);
+  }
+  // `kernelImport("<name>", () => import("<specifier>"))`: the hot path reads the name, the full path the literal.
+  const lines = [...readFileSync(CLI, "utf8").matchAll(/await kernelImport\("([^"]+)", \(\) => import\("([^"]+)"\)\)/g)];
+  assert.ok(lines.length > 30, "bin's import lines were read");
+  for (const [, name, specifier] of lines) assert.equal(specifier, name === "yaml" ? "yaml" : `../lib/${name}.mjs`, `kernelImport("${name}")`);
+  assert.doesNotMatch(readFileSync(CLI, "utf8"), /kernelImport\((?!"[^"]+", \(\) => import\("[^"]+"\)\))/, "every kernelImport call has that one shape");
 });

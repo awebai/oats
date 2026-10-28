@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { enableCliCompileCache } from "../lib/compile-cache.mjs";
-import { hotLeaves, hotRead, standIn } from "../lib/hot-reads.mjs";
+import { hotImport, hotRead } from "../lib/hot-reads.mjs";
 
 // Node's compile cache is on before the kernel is parsed (lib/compile-cache.mjs): static imports are
 // all parsed and linked before this module's body runs, so they are Node built-ins and the two small
@@ -37,59 +37,54 @@ enableCliCompileCache();
 // the leaves its names come from, and every other command imports every module, in this order. A hot
 // read takes its names from lib/hot-reads.mjs: a name newly used on a hot read's path must be listed
 // there, under its line, or its first use throws (a tripwire); test/cli-hot-reads.test.mjs pins what
-// each hot read must not load.
+// each hot read must not load. Each line names its module and imports it by one string literal.
 const HOT_READ = hotRead(process.argv.slice(2));
-async function kernelImport(specifier) {
-  if (!HOT_READ) return import(specifier);
-  const modules = [];
-  for (const leaf of hotLeaves(HOT_READ, specifier)) modules.push(await import(`../lib/${leaf}.mjs`));
-  return standIn(HOT_READ, specifier, modules);
-}
-const { doctorCaptureWarnings } = await kernelImport("../lib/doctor-capture.mjs");
-const { assertNoPartialUpgrade } = await kernelImport("../lib/upgrade-state.mjs");
-const { runtimeNameWarning, noteRuntimeName } = await kernelImport("../lib/deprecation.mjs");
-const { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } = await kernelImport("../lib/errors.mjs");
+const kernelImport = (name, load) => (HOT_READ ? hotImport(HOT_READ, name) : load());
+const { doctorCaptureWarnings } = await kernelImport("doctor-capture", () => import("../lib/doctor-capture.mjs"));
+const { assertNoPartialUpgrade } = await kernelImport("upgrade-state", () => import("../lib/upgrade-state.mjs"));
+const { runtimeNameWarning, noteRuntimeName } = await kernelImport("deprecation", () => import("../lib/deprecation.mjs"));
+const { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } = await kernelImport("errors", () => import("../lib/errors.mjs"));
 const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
-} = await kernelImport("../lib/core.mjs");
+} = await kernelImport("core", () => import("../lib/core.mjs"));
 const {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
-  classifyPackageValue, parsePackageRequest } = await kernelImport("../lib/packages.mjs");
-const { harnessTrust } = await kernelImport("../lib/harness-trust-write.mjs");
-const { previewLaunchEnvironment, previewPaneEnvironment } = await kernelImport("../lib/core.mjs");
-const { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } = await kernelImport("../lib/pi-bridge.mjs");
-const { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } = await kernelImport("../lib/workspace.mjs");
-const { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } = await kernelImport("../lib/teams.mjs");
-const { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } = await kernelImport("../lib/launch-preference.mjs");
-const { terminalText } = await kernelImport("../lib/refused-text.mjs");
-const { qualifiedSoulName, soulCandidates, soulsOffered } = await kernelImport("../lib/instance-resolution.mjs");
-const { parseConfigData } = await kernelImport("../lib/config-data.mjs");
-const remoteModule = await kernelImport("../lib/remote.mjs");
-const { activateLocalInputs, localRevision } = await kernelImport("../lib/local-inputs.mjs");
-const { default: YAML } = await kernelImport("yaml");
-const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await kernelImport("../lib/servers.mjs");
-const { readSessionViewer } = await kernelImport("../lib/session-viewer.mjs");
-const { tickTriggers } = await kernelImport("../lib/triggers.mjs");
-const A = await kernelImport("../lib/automations.mjs");
-const { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe: describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled: setScheduleEnabled, removeSchedule, runNow: runScheduleNow, reconcile: reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } = await kernelImport("../lib/schedule.mjs");
-const { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } = await kernelImport("../lib/schedule-host.mjs");
-const { kernelNode, stableNode } = await kernelImport("../lib/stable-node.mjs");
-const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } = await kernelImport("../lib/attachments.mjs");
-const { observeInstanceGit, diffInstanceFile } = await kernelImport("../lib/instance-git.mjs");
-const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await kernelImport("../lib/instance-lifecycle.mjs");
-const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await kernelImport("../lib/retire-output.mjs");
-const { livenessWord, lostLine, statusWord } = await kernelImport("../lib/status-words.mjs");
-const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await kernelImport("../lib/retained-after-retire.mjs");
+  classifyPackageValue, parsePackageRequest } = await kernelImport("packages", () => import("../lib/packages.mjs"));
+const { harnessTrust } = await kernelImport("harness-trust-write", () => import("../lib/harness-trust-write.mjs"));
+const { previewLaunchEnvironment, previewPaneEnvironment } = await kernelImport("core", () => import("../lib/core.mjs"));
+const { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } = await kernelImport("pi-bridge", () => import("../lib/pi-bridge.mjs"));
+const { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } = await kernelImport("workspace", () => import("../lib/workspace.mjs"));
+const { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } = await kernelImport("teams", () => import("../lib/teams.mjs"));
+const { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } = await kernelImport("launch-preference", () => import("../lib/launch-preference.mjs"));
+const { terminalText } = await kernelImport("refused-text", () => import("../lib/refused-text.mjs"));
+const { qualifiedSoulName, soulCandidates, soulsOffered } = await kernelImport("instance-resolution", () => import("../lib/instance-resolution.mjs"));
+const { parseConfigData } = await kernelImport("config-data", () => import("../lib/config-data.mjs"));
+const remoteModule = await kernelImport("remote", () => import("../lib/remote.mjs"));
+const { activateLocalInputs, localRevision } = await kernelImport("local-inputs", () => import("../lib/local-inputs.mjs"));
+const { default: YAML } = await kernelImport("yaml", () => import("yaml"));
+const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await kernelImport("servers", () => import("../lib/servers.mjs"));
+const { readSessionViewer } = await kernelImport("session-viewer", () => import("../lib/session-viewer.mjs"));
+const { tickTriggers } = await kernelImport("triggers", () => import("../lib/triggers.mjs"));
+const A = await kernelImport("automations", () => import("../lib/automations.mjs"));
+const { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe: describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled: setScheduleEnabled, removeSchedule, runNow: runScheduleNow, reconcile: reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } = await kernelImport("schedule", () => import("../lib/schedule.mjs"));
+const { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } = await kernelImport("schedule-host", () => import("../lib/schedule-host.mjs"));
+const { kernelNode, stableNode } = await kernelImport("stable-node", () => import("../lib/stable-node.mjs"));
+const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } = await kernelImport("attachments", () => import("../lib/attachments.mjs"));
+const { observeInstanceGit, diffInstanceFile } = await kernelImport("instance-git", () => import("../lib/instance-git.mjs"));
+const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await kernelImport("instance-lifecycle", () => import("../lib/instance-lifecycle.mjs"));
+const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await kernelImport("retire-output", () => import("../lib/retire-output.mjs"));
+const { livenessWord, lostLine, statusWord } = await kernelImport("status-words", () => import("../lib/status-words.mjs"));
+const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await kernelImport("retained-after-retire", () => import("../lib/retained-after-retire.mjs"));
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
-const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await kernelImport("../lib/instance-inspect.mjs");
-const { readEvents, setWaiting, incarnationOf } = await kernelImport("../lib/instance-events.mjs");
-const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await kernelImport("../lib/deployments.mjs");
-const { observeResolvedDeployment } = await kernelImport("../lib/resolved-deployment.mjs");
-const { SESSION_RESUME_FEATURE } = await kernelImport("../lib/session-resume-contract.mjs");
+const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await kernelImport("instance-inspect", () => import("../lib/instance-inspect.mjs"));
+const { readEvents, setWaiting, incarnationOf } = await kernelImport("instance-events", () => import("../lib/instance-events.mjs"));
+const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await kernelImport("deployments", () => import("../lib/deployments.mjs"));
+const { observeResolvedDeployment } = await kernelImport("resolved-deployment", () => import("../lib/resolved-deployment.mjs"));
+const { SESSION_RESUME_FEATURE } = await kernelImport("session-resume-contract", () => import("../lib/session-resume-contract.mjs"));
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
