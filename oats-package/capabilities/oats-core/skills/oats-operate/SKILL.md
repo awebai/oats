@@ -199,7 +199,9 @@ oats doctor                  # this deployment's local file and lock, plus diagn
 
 ## Spawn: preview, then apply
 
-Spawn only when your task or your human asks for it.
+Spawn only when your task, your human or your soul's capabilities say so: a
+developer spawning its reviewer, or an expert its developers, needs no
+human's approval.
 
 ```bash
 oats spawn <soul> --preview                         # nothing is created
@@ -222,7 +224,8 @@ preview's decision is refused if the member moved in between.
 pass `--parent "$OATS_INSTANCE"` (sugar for `--relative-to <you> --relation
 child`). Use `--relation sibling|parent|unrelated --relative-to <instance>`
 only when that is the true relation; without one the new instance is
-top-level. Ask your human when the relation is unclear.
+top-level. When the relation is unclear, ask your parent or the agent that
+gave you this task; ask your human only when no agent can say.
 
 From OATS 0.64.0, `spawnOrigin` records caller context independently of the
 relation: valid `OATS_INSTANCE` and/or `OATS_INSTANCE_HOME` resolving consistently

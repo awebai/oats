@@ -420,8 +420,8 @@ proposes promotions by pull request. See [knowledge](knowledge.md).
 
 ### Spawning and coordinating with other agents
 
-OATS agents can run `oats spawn` when their instructions or the
-human ask them to create another expert instance. The spawned agent is another
+OATS agents can run `oats spawn` when their task, their human or their
+soul's capabilities call for another instance. The spawned agent is another
 full OATS instance, with its own soul, home, worktree, and lifecycle.
 
 Spawn lineage is **explicit** and relation-based:
