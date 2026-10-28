@@ -8,7 +8,7 @@ import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentL
 import { LIST_WORDS } from "../lib/model.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
 import { ENTER, LEAVE, POP, PUSH, QUERY } from "../lib/term/tty.mjs";
-import { CLI, DEPLOYMENT, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, TEST_PLATFORM, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
 
 /** One outcome of the roster read as an event for the store, made as lib/read.mjs `takeRoster`
  *  makes it: the shared rule over the roster held, then what it reported into the memory of
@@ -82,11 +82,14 @@ function fakePanel(log, options) {
 /** The help is on the screen: its first heading, the chords' on Linux and Windows, the keys' on macOS. */
 const HELP_HEADING = /\b(Chords|Keys)\b/;
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
- *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false, keyboard = false, platform, keys = chordFamilyFrom(null) } = {}) {
+ *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own, and so is
+ *  its platform: Linux (helpers.mjs TEST_PLATFORM), whatever platform runs the tests, so that the
+ *  chords the tests type are the ones the run binds (#1608: on macOS Alt+Shift+Down is no chord).
+ *  macOS's are pinned with `platform: "darwin"`. */
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", listed = [], listAnswer = null, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false, keyboard = false, platform = TEST_PLATFORM, keys = chordFamilyFrom(null) } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
-  if (platform !== undefined) proc.platform = platform;
+  proc.platform = platform;
   const kill = proc.kill;
   proc.kill = (pid, signal) => { log.push(["kill", pid, signal]); return kill(pid, signal); };
   const errors = [];
@@ -450,11 +453,9 @@ test("a run says it is reading, draws the instances when the reader answers (the
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
   // Beside the sidebar, its top row the time of the read the screen shows. The chords lead (every
-  // one is read in any terminal), each with its leader key: on Linux and Windows the Alt family's,
-  // on macOS the Alt (Option) arrows alone. Either way, at 24 rows its first page ends before Esc.
-  assert.match(textOf(r.stdout.take()), process.platform === "darwin"
-    ? /│ {3}read 10:00:00 .*Chords.*Shortcuts on macOS: Alt \(Option\).*Alt\+Up\/Down +previous and.*Alt\+Left\/Right +previous and.*more below/s
-    : /│ {3}read 10:00:00 .*Chords.*Shortcuts: Alt\..*Alt\+K +palette, or.*Ctrl\+\\ then k.*more below/s);
+  // one is read in any terminal), each with its leader key: the Alt family's, on Linux (macOS's in
+  // the next test). At 24 rows its first page ends before Esc.
+  assert.match(textOf(r.stdout.take()), /│ {3}read 10:00:00 .*Chords.*Shortcuts: Alt\..*Alt\+K +palette, or.*Ctrl\+\\ then k.*more below/s);
   r.stdin.type("G");
   // Its last page: the last section's commands, `oats server connect`'s on two rows, and the close.
   assert.match(textOf(r.stdout.take()), /oats session attach --home <home>.*oats server connect <id> --ssh <alias>.*--dir <path on that machine>.*closes this help.*more above/s, "the movement keys scroll the help to its end");
@@ -469,6 +470,17 @@ test("a run says it is reading, draws the instances when the reader answers (the
   assert.deepEqual(r.log.filter(([what, which]) => (what === "write" || which === "stop")).map(([what, which]) => (what === "write" ? "leave" : which)), ["leave", "stop"], "the terminal first, then the reads");
   r.reader.answer(ENTRY);
   assert.equal(r.stdout.take(), "", "an answer that arrives after the end draws nothing");
+});
+
+test("on macOS the help's chords are the Alt (Option) arrows alone, and at 24 rows its first page ends before Esc", async () => {
+  const r = await started({ platform: "darwin" });
+  r.reader.answer(ENTRY);
+  r.stdout.take();
+  r.stdin.type("?");
+  assert.match(textOf(r.stdout.take()), /│ {3}read 10:00:00 .*Chords.*Shortcuts on macOS: Alt \(Option\).*Alt\+Up\/Down +previous and.*Alt\+Left\/Right +previous and.*more below/s);
+  r.stdin.type("?");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
 });
 
 test("every key press tells the reader the user is there; r asks for a live read, at once", async () => {
