@@ -1782,7 +1782,7 @@ function standaloneCatalogVersion(ref) {
 async function discoverForCli(ctx, bail) {
   // The standalone case (decisions 10/25) is a discovery too: the repo's own view
   // plus the kernel's oats.core default — discoverOrStandalone decides.
-  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); return await discoverOrStandalone(ctx.local, { deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions }); }
+  try { const { discoverOrStandalone } = await import("../lib/member-clone.mjs"); return await discoverOrStandalone(ctx.local, { deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions }); }
   catch (e) {
     if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
     throw e;
@@ -2231,7 +2231,7 @@ function sharedTeamRows(discovery) {
  *  computer (member clones and the rule that found each, disabled souls, the lock); file locations with
  *  browsable urls; each catalog package's newer version, when the official catalog has one. */
 async function workspaceStatusFacts(result, discovery, lock, ctx) {
-  const { memberCloneOf } = await import("../lib/instance-resolution.mjs");
+  const { memberCloneOf } = await import("../lib/member-clone.mjs");
   const { browseUrl } = remoteModule;
   const defaults = discovery.standalone === true ? {} : (discovery.workspace?.defaults ?? {});
   const rows = (entries) => Object.entries(entries && typeof entries === "object" ? entries : {}).map(([name, v]) => ({ name, from: v === "off" ? null : v?.from ?? null, off: v === "off" })).sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -2248,7 +2248,7 @@ async function workspaceStatusFacts(result, discovery, lock, ctx) {
   });
   result.disabledSouls = [...(Array.isArray(ctx.local?.souls?.disabled) ? ctx.local.souls.disabled : [])];
   result.lock = { path: join(ctx.deploymentDir, LOCK_FILE), lockfileVersion: lock.lockfileVersion ?? null };
-  const { compareSemver } = await import("../lib/servers.mjs");
+  const { compareSemver } = await import("../lib/semver.mjs");
   let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
   const cat = catalog && typeof catalog === "object" ? (catalog.packages && typeof catalog.packages === "object" && !("url" in catalog.packages) ? catalog.packages : catalog) : {};
   for (const p of result.packages) {
@@ -2674,12 +2674,12 @@ async function statusDrift(data) {
   let discovery;
   // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
   // instance is computed against its member's current state, not reported "unreachable".
-  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
+  try { const { discoverOrStandalone } = await import("../lib/member-clone.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
     return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) }, local: ctx.local, discovery: null };
   }
-  const { driftOf, soulDriftOf } = await import("../lib/materialize.mjs");
+  const { driftOf, soulDriftOf } = await import("../lib/drift.mjs");
   const drift = new Map();
   const soul = new Map();
   for (const a of data) for (const i of a.instances || []) {
