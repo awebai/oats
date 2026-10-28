@@ -655,6 +655,18 @@ home has its own copy under `<home>/.oats/modules/<capability>/`
 ([souls-and-instances.md](souls-and-instances.md)). The store is a cache; it
 is safe to delete.
 
+## The compile cache
+
+Every `oats` command keeps Node's compile cache in `~/.oats/compile-cache`
+(`$OATS_HOME_DIR/compile-cache` when `OATS_HOME_DIR` is set), so a command
+does not recompile the kernel each time it starts. The CLI creates the
+directory mode 0700. It is a cache: delete it at any time; it holds one
+subdirectory per Node version, so it grows a little with each Node upgrade.
+Node's own variables override it: `NODE_COMPILE_CACHE=<dir>` moves it there,
+and `NODE_DISABLE_COMPILE_CACHE=1` turns it off. A cache that cannot be
+written means no cache, never a different answer. Hooks and other processes the
+CLI starts do not inherit it.
+
 ## What is not in it
 
 - **Which capabilities a soul gets:** the soul's `capabilities:` plus the

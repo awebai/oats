@@ -71,7 +71,7 @@ and the rules its tests pin.
 
 | path | contents |
 |---|---|
-| `bin/oats.mjs` | the CLI: argument parsing, JSON envelopes, the verbs |
+| `bin/oats.mjs` | the CLI: argument parsing, JSON envelopes, the verbs. Its only static imports are Node built-ins and `lib/compile-cache.mjs`: it turns Node's compile cache on first, then imports the kernel and `yaml` with top-level `await import()`, in their order, because static imports are all parsed and linked before a module's body runs |
 | `lib/` | the kernel (below) |
 | `injects/` | the kernel and work-mode instruction blocks composed into every instance |
 | `skills/` | bootstrap skills shipped with the kernel |
@@ -96,6 +96,7 @@ and the rules its tests pin.
 | `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit. Its text rules (`decodeText`, `skillDocDescription`, the limits) are also the rules of `inspect --soul --skills` (`instance-inspect.mjs` `soulSkills`), which reads a soul copy's own skills locally, and of `--composed-skills` (`composedSkillsIn`), which adds the capability skills of the scratch composition |
 | `materialize.mjs` | the shared home composer for spawn and module upgrade: `stageMaterialize` stages module copies and derived files, then a durable rename journal commits or rolls back a replacement in an existing home; `moduleSkills` is the one rule for which skills a module gives, read over the fetched tree, or over a remote listing for the spawn preview (`plannedModuleSkills`) |
 | `instance-upgrade.mjs` | `planUpgrade` and `applyUpgrade`: verified package-module staging, provider adoption, idempotent forward completion, undo and retirement baseline refresh for a stopped local home, using the shared composer for derived home files |
+| `compile-cache.mjs` | the CLI's Node compile cache (awebai/oats#1630): `$OATS_HOME_DIR/compile-cache`, made 0700, unless the caller's `NODE_COMPILE_CACHE` or `NODE_DISABLE_COMPILE_CACHE` decides; any failure is no cache and prints nothing, and `NODE_COMPILE_CACHE` is never put in the environment children inherit ([configuration](configuration.md#the-compile-cache)). Node built-ins only; kernel-private, not in `./core` |
 | `upgrade-state.mjs` | upgrade receipt state and the partial-upgrade guard used before session start; receipts remain lifecycle state, and provider adoption stays in the module's upgrade hook |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata. A home's record (`instance.json`) is read with `readHomeRecord`, which never throws: a record, an absent one, or one that is there and cannot be read, with the reason. Code that walks other homes (the listing, a retire's lineage repair) uses it, so that one home's record decides only for that home; `identifiedHomeRecord` is the one refusal (`E_UNIDENTIFIED_INSTANCE_HOME`) a lifecycle verb makes when it has resolved its home: `resolveRetireHome`, `startInstanceSession`, and `resolveTarget` in `instance-lifecycle.mjs` for the stop and retire plans. A plan reads its own home's record with `targetRecord` (the same refusal) and any other home's with `otherRecord` (absent or unreadable: nobody's parent or child) |
 | `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |

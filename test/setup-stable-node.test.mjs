@@ -50,7 +50,9 @@ const dryRun = (node, path) => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /dry run: no first capture pass/);
   assert.equal(readFileSync(r.settings, "utf8"), "{}\n", "a dry run writes nothing");
-  assert.deepEqual(readdirSync(r.home), [".claude"], "no unit, no record");
+  // ~/.oats holds the CLI's compile cache (lib/compile-cache.mjs), and only that.
+  assert.deepEqual(readdirSync(r.home).sort(), [".claude", ".oats"], "no unit, no record");
+  assert.deepEqual(readdirSync(join(r.home, ".oats")), ["compile-cache"]);
   assert.equal(existsSync(join(standins, "calls.log")), false, "no service manager was called");
   return r;
 };

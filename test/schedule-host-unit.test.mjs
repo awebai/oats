@@ -217,7 +217,8 @@ test("install --print shows exactly what install would write and changes nothing
     const text = execFileSync(process.execPath, [cli, "schedule", "host", "install", "--print", "--os", os], { cwd, env, encoding: "utf8" });
     for (const [path, content] of Object.entries(json.files)) assert.ok(text.includes(`==> ${path} <==\n${content}`), `${os}: ${path} in the text output`);
   }
-  assert.equal(existsSync(oatsHome), false, "no registry and no log dir");
+  // The CLI keeps its compile cache there (lib/compile-cache.mjs); nothing of the scheduler is written.
+  assert.deepEqual(readdirSync(oatsHome), ["compile-cache"], "no registry and no log dir");
   assert.deepEqual(readdirSync(home), [], "no unit file");
   assert.equal(existsSync(calls), false, "no launchctl or systemctl call");
   // --os is --print's only, and names a supported OS.
@@ -225,7 +226,7 @@ test("install --print shows exactly what install would write and changes nothing
   assert.equal(refused(["--print", "--os", "win32"])?.code, "E_BAD_ARGS");
   assert.equal(refused(["--os", "linux"])?.code, "E_BAD_ARGS");
   assert.equal(refused(["--print", "--max-concurrent", "2"])?.code, "E_BAD_ARGS", "--print writes no cap");
-  assert.equal(existsSync(oatsHome), false); assert.equal(existsSync(calls), false);
+  assert.deepEqual(readdirSync(oatsHome), ["compile-cache"]); assert.equal(existsSync(calls), false);
 });
 
 test("install warns, without refusing, when the oats it would run lives under the instance home", () => {
