@@ -1,17 +1,22 @@
 /**
- * core-loader.mjs — locate the globally installed @awebai/oats kernel and
- * re-export its lib/core.mjs. The pi package is a thin adapter: it never ships
- * the kernel, skills, injects, or capabilities — those live in the global CLI
- * package (npm i -g @awebai/oats), the single source of truth that the
- * future Claude plugin shares.
+ * core-loader.mjs — locate the @awebai/oats kernel and re-export its
+ * lib/core.mjs. The pi package is a thin adapter: it never ships the kernel,
+ * skills, injects, or capabilities — those live in the kernel package, the
+ * single source of truth that the future Claude plugin shares.
  *
  * Resolution order:
  *   1. $OATS_PKG_ROOT (explicit override, e.g. a dev clone)
- *   2. the `oats` binary on PATH → realpath → its package root
- *   3. `npm root -g`/@awebai/oats (binary not linked but package present)
+ *   2. inside an instance, the home's kernel shim ($OATS_INSTANCE_HOME/.oats/bin/oats,
+ *      a link to the kernel that launched it) → realpath → its package root, whatever
+ *      PATH pi has
+ *   3. the `oats` binary on PATH → realpath → its package root
+ *   4. `npm root -g`/@awebai/oats (binary not linked but package present)
+ * Steps 2 and 3 find the package from the binary's real path: an `oats` that is
+ * a script running the kernel from elsewhere names no package, and is passed
+ * over. Step 2 takes only a link, and falls through silently without one.
  */
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -23,17 +28,29 @@ function isKernelRoot(dir) {
   try { return JSON.parse(readFileSync(pj, "utf8")).name === PKG_NAME; } catch { return false; }
 }
 
+/** The kernel package a binary's real path lies in (<pkg>/bin/oats.mjs → <pkg>), or undefined. */
+function kernelRootOf(bin) {
+  let d = dirname(realpathSync(bin));
+  while (d !== dirname(d)) {
+    if (isKernelRoot(d)) return d;
+    d = dirname(d);
+  }
+  return undefined;
+}
+
 function findKernelRoot() {
   if (process.env.OATS_PKG_ROOT && isKernelRoot(process.env.OATS_PKG_ROOT)) return process.env.OATS_PKG_ROOT;
+  if (process.env.OATS_INSTANCE_HOME) {
+    try {
+      const shim = join(process.env.OATS_INSTANCE_HOME, ".oats", "bin", "oats");
+      const root = lstatSync(shim).isSymbolicLink() ? kernelRootOf(shim) : undefined;
+      if (root) return root;
+    } catch { /* no shim: the PATH lookup below */ }
+  }
   try {
     const bin = execSync("command -v oats", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-    if (bin) {
-      let d = dirname(realpathSync(bin)); // <pkg>/bin/oats.mjs → <pkg>/bin
-      while (d !== dirname(d)) {
-        if (isKernelRoot(d)) return d;
-        d = dirname(d);
-      }
-    }
+    const root = bin ? kernelRootOf(bin) : undefined;
+    if (root) return root;
   } catch { /* not on PATH */ }
   try {
     const g = execSync("npm root -g", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -46,9 +63,10 @@ function findKernelRoot() {
 export const OATS_PKG_ROOT = findKernelRoot();
 if (!OATS_PKG_ROOT) {
   throw new Error(
-    "OATS kernel not found — the pi adapter needs the oats CLI installed globally.\n" +
-    "  Install it:  npm install -g @awebai/oats\n" +
-    "  (or point OATS_PKG_ROOT at a checkout of the awebai/oats repo)",
+    "OATS kernel not found. In an OATS instance the bridge uses the kernel that launched it; elsewhere it needs one of:\n" +
+    "  npm install -g @awebai/oats\n" +
+    "  an `oats` on PATH that links to the kernel's bin/oats.mjs (npm link, in a checkout); a script that runs it is not followed\n" +
+    "  OATS_PKG_ROOT=<the kernel's package directory, such as a checkout of awebai/oats>",
   );
 }
 

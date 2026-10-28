@@ -53,6 +53,12 @@ must be at the same version: a pi session with an older bridge runs old
 extension code against a new kernel. A host that launches no pi instance has
 no bridge, and step 2 has nothing to move.
 
+The bridge loads the kernel that launched its pi instance, so a host that
+runs the CLI from a checkout or a local install needs no global one for its
+instances. A pi started outside any instance looks for a global install, an
+`oats` on PATH that links to the kernel, or `OATS_PKG_ROOT`
+([the bridge's README](../packages/pi/README.md)).
+
 **A release's own steps are in its notes**, in its `## Upgrade` section.
 This page is the part that is the same for every release.
 
