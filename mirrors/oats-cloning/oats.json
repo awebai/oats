@@ -1,8 +1,8 @@
 {
   "capability": "oats.cloning",
   "command": "cloning",
-  "version": "1.0.1",
-  "compatibility": { "oats": ">=0.34.0" },
+  "version": "1.1.0",
+  "compatibility": { "oats": ">=0.69.2" },
   "description": "Clone an OATS instance for a new goal: a cloner reads the source's home, work state and (when the requester includes it) transcript, decides what the clone carries, and spawns it as an independent or related instance with its own identity.",
   "requires": [
     { "command": "git", "why": "read the source's work state (read-only)" },
