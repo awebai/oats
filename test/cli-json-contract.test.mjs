@@ -86,7 +86,7 @@ test("oats version --json and oats status --json carry this host's sessionViewer
     return dir;
   };
   for (const [version, prefixScroll] of [["3.4", true], ["3.3", true], ["3.2a", false], [null, false]]) {
-    const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8", env: { HOME: process.env.HOME, PATH: pathWith(version) } });
+    const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8", env: { HOME: process.env.HOME, OATS_HOME_DIR: process.env.OATS_HOME_DIR, PATH: pathWith(version) } });
     assert.equal(r.status, 0, r.stderr);
     const doc = JSON.parse(r.stdout);
     assert.deepEqual(doc.sessionViewer, { prefixScroll }, `tmux ${version}`);
