@@ -32,6 +32,7 @@ import { instanceDisplayName } from "../packages/client/instance-display-name.mj
 import { STATUS_WAIT_MS, createPanel } from "../packages/tui/lib/panel.mjs";
 import { tmuxForwardsBoundKey } from "../lib/session-viewer.mjs";
 import { captureRows } from "../packages/tui/lib/term/capture.mjs";
+import { ESC_TIMEOUT_MS } from "../packages/tui/lib/term/keys.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -68,6 +69,9 @@ const tmuxOn = (socket, ...args) => tmuxRaw(socket, ...args).trim();
 const lines = (text) => text.split("\n").filter(Boolean);
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === "EPERM"; } };
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+/** Past the key parser's wait after a lone ESC (term/keys.mjs ESC_TIMEOUT_MS), with room to spare: a
+ *  key pressed after it is a key of its own, never Alt with it. */
+const ESC_WAIT_MS = ESC_TIMEOUT_MS * 4;
 
 // ---- the agents' server ------------------------------------------------------------------------
 const sessionsOf = (socket) => { try { return lines(tmuxOn(socket, "list-sessions", "-F", "#{session_name}")); } catch { return []; } };
@@ -1244,10 +1248,11 @@ for (const [how, end, expected] of [
 // ---- four agents, four tabs ---------------------------------------------------------------------
 // q and kill -9 as with one terminal open (the tests after "on a terminal"), with the real `oats tui`
 // and four agents' terminals open, each a tab, opened as a person opens them: Enter on the first
-// agent, then the leader and Down from each shown terminal, which opens the next agent of the list
-// (docs/tui.md, "Tabs" and "The leader"). The three agents beside alpha are these tests' own: homes
-// recorded as launched in windows of AGENTS as alpha's is (launchedAgent), spawned at the first of
-// them, each window made new by each test and killed after it, so nothing after them lists those
+// agent, then Alt+Shift+Down from each shown terminal, which opens the next agent of the list
+// (on macOS, where that is no chord, the list's j then Enter: openTab) (docs/tui.md, "Tabs" and
+// "Chords"). The three agents beside alpha are these tests' own: homes recorded as launched in
+// windows of AGENTS as alpha's is (launchedAgent), spawned at the first of them, each window made
+// new by each test and killed after it, so nothing after them lists those
 // agents running.
 const OTHERS = ["bravo", "charlie", "delta"];
 /** The four agents, in the order the list draws them (name order) and so the tabs are opened. */
@@ -1272,12 +1277,22 @@ const selectedRunning = (term, name) => term.screen().some((text) => new RegExp(
 /** The tab of FOUR[k]: Enter on the selected agent for the first, then for each next one
  *  Alt+Shift+Down (`next`, the instance move: the leader's Down moves between workspaces) from the
  *  terminal shown. It is one key, so no read can split it from a leader; it does not repeat safely
- *  (a second one opens the agent after), so it is pressed once.
+ *  (a second one opens the agent after), so it is pressed once. On macOS, where that is no chord
+ *  (docs/tui.md, "Chords on macOS"), the list's way: the leader then Esc, then `j` once its sheet is
+ *  drawn and past the key parser's wait after an ESC (a retried pair's Esc and `j` together would
+ *  read as Alt+J), then Enter once the next agent's row is selected. `j`, not Down: one byte, never
+ *  a sequence of its own after an ESC.
  *  Resolves once its viewer's session is attached, its screen is in the panel with the focus in it,
  *  its row is selected, and the strip names every agent opened so far, in the order opened. */
 async function openTab(term, run, k) {
   const name = FOUR[k], before = new Set(viewerSessions());
-  term.press(k === 0 ? "Enter" : "M-S-Down");
+  if (k > 0 && process.platform === "darwin") {
+    await run.back();
+    await pause(ESC_WAIT_MS);
+    term.press("j");
+    await until(term, () => selectedRunning(term, name), `${name}'s row selected, before its Enter`);
+    term.press("Enter");
+  } else term.press(k === 0 ? "Enter" : "M-S-Down");
   const opened = FOUR.slice(0, k + 1);
   await until(term, () => {
     assert.equal(run.status(), null, `oats tui ended opening ${name}`);

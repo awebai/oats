@@ -2505,7 +2505,9 @@ with the Desktop (`packages/client/`).
   before it has that status (3.4 does, when the viewer's terminal hangs up a
   moment before its process is reaped): `oats tui` then waits for the
   status, which follows at the next report, for ten seconds at most (2.5
-  on tmux 3.2, which never says which signal ended a pane). A tmux built
+  on tmux 3.2, which never says which signal ended a pane). tmux says that
+  signal by its number on Linux (`9`) and by the system's name on macOS
+  (`kill`); `oats tui` reads both. A tmux built
   with libutempter can lose a status for good: as it destroys a pane at
   the hang-up, libutempter holds back SIGCHLD while its helper runs, and
   tmux, which reaps only on a SIGCHLD, leaves a viewer that exited in that
