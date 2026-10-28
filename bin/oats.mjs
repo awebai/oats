@@ -29,9 +29,9 @@ import { spawnSync as spawnSyncProc } from "node:child_process";
 import { enableCliCompileCache } from "../lib/compile-cache.mjs";
 import { hotLeaves, hotRead, standIn } from "../lib/hot-reads.mjs";
 
-// Node's compile cache is on before any kernel module is parsed (lib/compile-cache.mjs): static
-// imports are all parsed and linked before this module's body runs, so the kernel and `yaml` are
-// imported here, in order, once it is on.
+// Node's compile cache is on before the kernel is parsed (lib/compile-cache.mjs): static imports are
+// all parsed and linked before this module's body runs, so they are Node built-ins and the two small
+// dependency-free modules above, and the kernel and `yaml` are imported here, in order, once it is on.
 enableCliCompileCache();
 // A hot read (lib/hot-reads.mjs) imports only the leaves it uses, never core.mjs: each line below takes
 // the leaves its names come from, and every other command imports every module, in this order. A hot
