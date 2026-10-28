@@ -73,9 +73,9 @@ restrict anything (see `/oats-operate`, "Teams to join").
 
 ## Relations: what the new instance is to you
 
-Spawn only when your task, your human or your soul's capabilities say so (a
-documented workflow counts); spawning a child they call for needs no human. When you
-do, declare what the new instance **is to you** — the roster groups related
+Spawn only when your task, your human or your soul's capabilities say so; a
+child your capabilities call for (a developer's reviewer, an expert's
+developers) needs no human's approval. When you do, declare what the new instance **is to you** — the roster groups related
 instances by these links:
 
 - **child** — `--parent "$OATS_INSTANCE"` (or `--relation child --relative-to
@@ -91,9 +91,9 @@ instances by these links:
 
 An **attached** work mode always makes the new instance a child of the work
 tree's owner; relation flags are refused there. A soul's own instructions or
-your task briefing take precedence over these defaults; when the relation is
-unclear, ask your parent or the agent that asked you, and your human only when no
-agent can say.
+your task briefing take precedence over these defaults. When the relation is
+unclear, ask your parent or the agent that gave you this task; ask your human
+only when no agent can say.
 
 ## Name the instance
 
