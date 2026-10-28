@@ -114,7 +114,7 @@ An instance is **finished** when all of these hold:
   is not landed: it may still be needed for fixes and rebases;
 - nothing waits on it: no open PR, review, question or hand-back of its own, and its own
   children are retired;
-- with a harvest duty (oats.okf; `oats okf status` says `harvest: on`), its final harvest
+- with a harvest duty (your knowledge layer says whether you have one), its final harvest
   checkpoint ("you finish a task") is recorded in its log.md with the harvester's name, and
   the harvester is launched. The harvester snapshots its evidence at spawn and the retire
   keeps a recovery copy, so nobody waits for the harvester to finish.

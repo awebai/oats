@@ -1,6 +1,6 @@
 {
   "capability": "oats.maintainer",
-  "version": "1.17.1",
+  "version": "1.17.2",
   "compatibility": {
     "oats": ">=0.30.0"
   },
