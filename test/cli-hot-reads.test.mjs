@@ -98,6 +98,21 @@ test("any other command, and a hot read given another flag, loads core.mjs as be
   }
 });
 
+test("help is never a hot read: -h or --help as a flag's value, spaced or inline, prints the command's usage in both modes", { skip: NO_HOOKS, timeout: 300_000 }, () => {
+  const forms = [["session", "inspect", "--home", "-h"], ["session", "inspect", "--home=-h"], ["status", "--dir", "-h"], ["status", "--dir=-h"], ["status", "--dir", "--help"], ["workspace", "status", "--dir=-h"],
+    ["instance", "events", "x", "--since", "-h"], ["instance", "waiting", "clear", "--producer", "-h"], ["instance", "waiting", "clear", "--producer=-h"]];
+  for (const form of forms) {
+    assert.equal(hotRead(form), null, form.join(" "));
+    const json = loads([...form, "--json"]);
+    assert.equal(json.status, 0, `oats ${form.join(" ")} --json: exit 0\n${json.out.slice(0, 2000)}`);
+    const doc = JSON.parse(json.out);
+    assert.equal(doc.ok, true); assert.equal(doc.result.command, form[0]); assert.ok(Array.isArray(doc.result.usage) && doc.result.usage.length > 0, form.join(" "));
+    const text = loads(form);
+    assert.equal(text.status, 0, `oats ${form.join(" ")}: exit 0\n${text.out.slice(0, 2000)}`);
+    assert.match(text.out, /^Usage:\n  oats /, form.join(" "));
+  }
+});
+
 test("a hot read's listed names are its leaves' own; anything else is a tripwire that throws on use", async () => {
   const read = hotRead(["version", "--json"]);
   assert.equal(read.form, "version");
