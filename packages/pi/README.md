@@ -45,6 +45,26 @@ OATS
 publishes both packages from the same version tag. Reload pi after an adapter
 install or upgrade.
 
+**Which kernel the bridge loads.** The bridge imports the kernel's
+`lib/core.mjs`, from the first of:
+
+1. `OATS_PKG_ROOT`, the kernel's package directory (a checkout of
+   awebai/oats, say), when it is one;
+2. inside an OATS instance, the kernel that launched it: the home's own
+   `oats` (`$OATS_INSTANCE_HOME/.oats/bin/oats`), a link the kernel writes at
+   every launch. A home therefore needs no global install, whatever PATH pi
+   runs with, when its kernel runs from a checkout or a local install;
+3. the `oats` on PATH, when its real path lies in the kernel's package: the
+   global install's, or a checkout's after `npm link`. An `oats` that is a
+   script running the kernel from elsewhere names no package and is passed
+   over;
+4. `@awebai/oats` in npm's global folder (`npm root -g`).
+
+Outside an instance with none of these, pi reports the extension as failing
+to load, with "OATS kernel not found" and the three ways out:
+`npm install -g @awebai/oats`, an `oats` on PATH that links to the kernel, or
+`OATS_PKG_ROOT`.
+
 All lifecycle/config/package operations use the shell-visible CLI: `oats
 status`, `oats spawn`, `oats doctor`, `oats install`, `oats trust`, `oats use`, and
 `oats retire`.

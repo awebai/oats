@@ -23,7 +23,10 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
   and may never add one: with a dependency it could no longer ship in this
   tarball.
 - **`@awebai/oats-pi`** (`packages/pi/`): a thin pi adapter that exposes an
-  instance's own resources. It registers no agent tools.
+  instance's own resources. It registers no agent tools. It ships no kernel:
+  `extension/core-loader.mjs` imports the kernel that launched the instance,
+  through the home's `oats` link, before any PATH or global lookup (the
+  order is in [its README](../packages/pi/README.md)).
 - **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup`,
   `oats.support` and `oats.knowledge-theory` capabilities and the
   `knowledge-theory-expert` soul,
