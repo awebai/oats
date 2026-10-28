@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { RESUME_NOTICE, stopInstanceSession } from "../lib/core.mjs";
+import { RESUME_NOTICE, restartInstanceSession, stopInstanceSession } from "../lib/core.mjs";
 import { readStartExited } from "../lib/session-end.mjs";
 import { bootId, readBootNote, resumeSessions } from "../lib/session-resume.mjs";
 import { readSeen, seenFile } from "../lib/session-seen.mjs";
@@ -749,4 +749,63 @@ test("a resume runs the launch its last start chose: the launch configuration, i
   const { tmux } = readJson(join(home, "instance.json"));
   const paneCommand = execFileSync("tmux", ["-u", "-S", tmux.socket, "display-message", "-p", "-t", `${tmux.session}:${tmux.window}`, "#{pane_start_command}"], { encoding: "utf8" });
   assert.ok(paneCommand.includes(standIn), "the configuration's executable");
+});
+
+/** An io for a kernel call whose launch fails: tmux runs as ever, but a pane is never made (the
+ *  respawn of the retained pane, or a new window, fails as tmux would). */
+const failingLaunch = { exec: (file, argv, options) => {
+  if (argv.includes("respawn-pane") || argv.includes("new-window")) throw Object.assign(new Error("injected launch failure"), { status: 1 });
+  return execFileSync(file, argv, options);
+} };
+test("a restart records its stop before it ends the old harness (#1601): a failed relaunch reads stopped and is not resumed; a relaunch records a new start, which reads lost when lost; a record that cannot be written blocks nothing; a home that does not run records nothing", TMUX, async () => {
+  const R = v2Deployment({ name: "r", local: { "launch-configs": { "claude-r": config("claude", "dep-r", { env: { NO_TRANSCRIPT: "1" } }) } } });
+  later.push(R);
+  const homes = {};
+  for (const name of ["r1", "r2", "r3", "r4", "r5"]) { homes[name] = await spawnHome(R, name, "claude-r"); await startHome(R, homes[name], name); }
+  await waitUntil(() => { const r = statusRows(R); return ["r1", "r2", "r3", "r4", "r5"].every((n) => r[n].running === true); }, "a status to see them run");
+  const startIdOf = (name) => readJson(join(homes[name], "instance.json")).startId;
+  const stopRecord = (name) => join(homes[name], ".oats-stop.json");
+  const restart = (name, io) => R.inEnv(() => { try { return restartInstanceSession(homes[name], { stopGraceMs: 5000, ...(io ? { io } : {}) }); } catch (e) { return e; } });
+
+  // r1: the old harness ends, then the relaunch fails. The record names the start it ended.
+  const r1Start = startIdOf("r1");
+  const failed = await restart("r1", failingLaunch);
+  assert.equal(failed.code, "E_SESSION_START_FAILED", failed.stack);
+  assert.equal(startIdOf("r1"), r1Start, "no new start was recorded");
+  await waitUntil(() => statusRows(R).r1.running === false, "r1 to read not running");
+  assert.equal(statusRows(R).r1.sessionEnd, SESSION_END.STOPPED, "a failed restart reads stopped, not lost");
+  const plan = ok(cli(R, ["session", "resume", "--deployment", R.dep, "--plan", "--json"]), "plan");
+  assert.equal(plan.rows.some((row) => row.instance === "r1"), false, `the failed restart is no candidate: ${JSON.stringify(plan.rows)}`);
+  assert.deepEqual([readJson(stopRecord("r1")).startId, readJson(stopRecord("r1")).stop], [r1Start, null], "the record names the start the restart ended");
+
+  // r2: a restart that relaunches records a new start, which the record does not name; lost, it reads lost.
+  const r2Start = startIdOf("r2");
+  const relaunched = await restart("r2");
+  assert.equal(relaunched.stop?.exited, true, relaunched.stack);
+  await waitUntil(() => launches("r2").length === 2, "r2's stand-in to run again");
+  assert.notEqual(startIdOf("r2"), r2Start, "a new start");
+  assert.equal(readJson(stopRecord("r2")).startId, r2Start, "the record names the old start");
+  await waitUntil(() => statusRows(R).r2.running === true, "a status to see r2 run again");
+  killWindow(homes.r2);
+  await waitUntil(() => statusRows(R).r2.sessionEnd === SESSION_END.LOST, "r2, lost after its restart, to read lost");
+
+  // r3: a record that cannot be written (its path a directory) does not block the restart.
+  mkdirSync(stopRecord("r3"));
+  const unrecorded = await restart("r3");
+  assert.equal(unrecorded.stop?.exited, true, unrecorded.stack);
+  await waitUntil(() => launches("r3").length === 2, "r3's stand-in to run again");
+  assert.equal(statSync(stopRecord("r3")).isDirectory(), true, "no record was written");
+  rmSync(stopRecord("r3"), { recursive: true });
+
+  // r4 (lost) and r5 (stopped with OATS): nothing runs, nothing is stopped, nothing is recorded; a
+  // failed relaunch keeps the reading.
+  killWindow(homes.r4);
+  assert.equal((await R.inEnv(() => stopInstanceSession(homes.r5, { graceMs: 5000 }))).stopped, true, "stop r5");
+  await waitUntil(() => { const r = statusRows(R); return r.r4.sessionEnd === SESSION_END.LOST && r.r5.sessionEnd === SESSION_END.STOPPED; }, "r4 lost and r5 stopped");
+  const r5Record = readFileSync(stopRecord("r5"), "utf8");
+  for (const name of ["r4", "r5"]) assert.equal((await restart(name, failingLaunch)).code, "E_SESSION_START_FAILED", name);
+  assert.equal(existsSync(stopRecord("r4")), false, "the lost home records no stop");
+  assert.equal(readFileSync(stopRecord("r5"), "utf8"), r5Record, "the stopped home's record is as it was");
+  const rows = statusRows(R);
+  assert.deepEqual([rows.r4.sessionEnd, rows.r5.sessionEnd], [SESSION_END.LOST, SESSION_END.STOPPED]);
 });

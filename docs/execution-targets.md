@@ -1185,6 +1185,16 @@ it ends, before it ends it, so a home it was retiring reads `stopped`, never
 stop record itself cannot be written (a full disk) and the retire then fails
 as well: that home reads `lost`, as it did before 0.69.2.
 
+`oats session restart` records the stop of the session it replaces the same
+way, before it asks the harness to end (#1601): a restart whose relaunch
+fails, or that dies between the stop and the relaunch, leaves a home that
+reads `stopped`, so no resume starts again the launch it was replacing. The
+relaunch records a new start, which that record does not name. A restart
+whose stop is refused (`E_SESSION_STOP_FAILED`, the harness still there after
+the grace) keeps its record: should that harness die later, the home reads
+`stopped`, not `lost`. A restart of a home that does not run stops nothing and
+records nothing, so it keeps its reading.
+
 #### How a session's end is read
 
 A launched home that does not run reads one of three ends, `sessionEnd` on
@@ -1198,10 +1208,18 @@ for its current start (`startId` in `instance.json`):
 | an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | when the sweep can vouch for the loss ([below](#which-losses-come-back)) |
 | neither (the host went down, or the tmux server died under the live harness) | `lost` | when the sweep can vouch for the loss |
 
+In text, `oats status` and `oats status --server <id>` print a `lost` row as
+`LOST`, where a `stopped` or `exited` row, or one without `sessionEnd`,
+prints `idle`, with one line under it naming the way back: `oats session
+start --resume --home <home>`, or the next sweep (`oats session resume`,
+which OATS Desktop and `oats tui` run when they open) when it can vouch for
+the loss. Both act on this machine's homes only, so a `--server` row names
+the host to run them on. `oats server roster` still prints `idle`.
+
 The window a spawn or a start makes writes the exit marker,
 `.oats-start-exited`, when the harness exits; `oats instance stop` writes its
-record, `.oats-stop.json`, and so does a retire, before it ends the window
-(0.69.2). Both are kernel-private files of the home, not a
+record, `.oats-stop.json`, and so do a retire, before it ends the window
+(0.69.2), and `oats session restart`, before it stops the harness (#1601). Both are kernel-private files of the home, not a
 contract: read `sessionEnd`. A shutdown kills the window's shell with the
 harness, so a lost session leaves no marker. A home spawned before 0.69 and
 never restarted since names no start: it reads `stopped` only after a stop,
@@ -1325,13 +1343,17 @@ resumes it. So:
 - a loss first seen a day ago or more, or a session that died before any read
   of OATS saw it run, stays down.
 
-Two limits follow from reading only what OATS saw:
+Three limits follow from reading only what OATS saw:
 
 - **After upgrading to 0.69**, open OATS Desktop or `oats tui`, or run `oats
   status`, once before you restart the computer, or nothing from before the
   upgrade comes back.
 - A whole boot with no OATS read leaves that boot unknown: what ran in it and
   was lost there is not resumed.
+- Clause 4 does not reach across a reboot. On a computer where nothing read
+  OATS for more than a day before a restart (every agent already down, no
+  client open), the first sweep after the restart can bring back a session
+  that was lost during that quiet spell.
 
 Without a boot id (neither Linux nor macOS: both have one), clause 4 applies
 to every loss and the 3-resumes-per-boot guard (below) is off.
