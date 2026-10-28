@@ -76,7 +76,7 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 const [cmd, ...rest] = process.argv.slice(2);
 const pick = (k) => process.env[k] === undefined ? null : process.env[k];
-const record = { cmd, rest, cwd: process.cwd(), env: Object.fromEntries(["OATS_HOME", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SETTINGS", "OATS_OPERATION", "OATS_CAPABILITY", "OATS_CLI_BIN", "OATS_NODE_BIN", "OATS_AGENT", "OATS_SOUL", "OATS_CONTEXT", "OATS_ROOT", "OATS_WORKSPACE", "OATS_EVENT", "PI_AGENT_HOME", "PI_AGENTS_ROOT"].map((k) => [k, pick(k)])) };
+const record = { cmd, rest, cwd: process.cwd(), env: Object.fromEntries(["OATS_HOME", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SETTINGS", "OATS_OPERATION", "OATS_CAPABILITY", "OATS_CLI_BIN", "OATS_NODE_BIN", "OATS_AGENT", "OATS_SOUL", "OATS_CONTEXT", "OATS_ROOT", "OATS_WORKSPACE", "OATS_EVENT", "PI_AGENT_HOME", "PI_AGENTS_ROOT", "NODE_COMPILE_CACHE"].map((k) => [k, pick(k)])) };
 writeFileSync(join(process.cwd(), "notes-invocation.json"), JSON.stringify(record));
 if (cmd === "digest") { console.error("digesting"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { digested: true, instance: "notes-harvester-1", home: join(process.cwd(), "..", "notes-harvester-1") } })); }
 else if (cmd === "memory") { const f = join(process.cwd(), "MEMORY.md"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { summary: "one file", documents: [{ label: "Memory", kind: "markdown", path: f, text: existsSync(f) ? readFileSync(f, "utf8") : null }] } })); }
@@ -117,6 +117,7 @@ test("operation run resolves the home's provider from its modules, runs the prov
   assert.equal(JSON.parse(inv.env.OATS_SETTINGS)["state-dir"], "/tmp/nw-state");
   assert.equal(inv.env.OATS_CLI_BIN, CLI);
   assert.equal(realpathSync(inv.env.OATS_NODE_BIN), realpathSync(process.execPath), "the node that runs the kernel, by a path of the kernel's choosing");
+  assert.equal(inv.env.NODE_COMPILE_CACHE, process.env.NODE_COMPILE_CACHE ?? null, "the kernel's own compile cache is not handed on (lib/compile-cache.mjs)");
   // A view operation answers validated documents.
   r = oats(["operation", "run", "knowledge:memory", "--home", home, "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);

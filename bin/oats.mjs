@@ -25,53 +25,58 @@ import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { doctorCaptureWarnings } from "../lib/doctor-capture.mjs";
-import { assertNoPartialUpgrade } from "../lib/upgrade-state.mjs";
-import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
-import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } from "../lib/errors.mjs";
-import {
+import { spawnSync as spawnSyncProc } from "node:child_process";
+import { enableCliCompileCache } from "../lib/compile-cache.mjs";
+
+// Node's compile cache is on before any kernel module is parsed (lib/compile-cache.mjs): static
+// imports are all parsed and linked before this module's body runs, so the kernel and `yaml` are
+// imported here, in order, once it is on.
+enableCliCompileCache();
+const { doctorCaptureWarnings } = await import("../lib/doctor-capture.mjs");
+const { assertNoPartialUpgrade } = await import("../lib/upgrade-state.mjs");
+const { runtimeNameWarning, noteRuntimeName } = await import("../lib/deprecation.mjs");
+const { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } = await import("../lib/errors.mjs");
+const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
-} from "../lib/core.mjs";
-import {
+} = await import("../lib/core.mjs");
+const {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
-  classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
-import { harnessTrust } from "../lib/harness-trust-write.mjs";
-import { previewLaunchEnvironment, previewPaneEnvironment } from "../lib/core.mjs";
-import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
-import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
-import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
-import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
-import { terminalText } from "../lib/refused-text.mjs";
-import { qualifiedSoulName, soulCandidates, soulsOffered } from "../lib/instance-resolution.mjs";
-import { parseConfigData } from "../lib/config-data.mjs";
-import * as remoteModule from "../lib/remote.mjs";
-import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
-import YAML from "yaml";
-import { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } from "../lib/servers.mjs";
-import { readSessionViewer } from "../lib/session-viewer.mjs";
-import { spawnSync as spawnSyncProc } from "node:child_process";
-import { tickTriggers } from "../lib/triggers.mjs";
-import * as A from "../lib/automations.mjs";
-import { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
-import { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
-import { kernelNode, stableNode } from "../lib/stable-node.mjs";
-import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
-
-import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance as resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
-import { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } from "../lib/retire-output.mjs";
-import { lostLine, statusWord } from "../lib/status-words.mjs";
-import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
+  classifyPackageValue, parsePackageRequest } = await import("../lib/packages.mjs");
+const { harnessTrust } = await import("../lib/harness-trust-write.mjs");
+const { previewLaunchEnvironment, previewPaneEnvironment } = await import("../lib/core.mjs");
+const { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } = await import("../lib/pi-bridge.mjs");
+const { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } = await import("../lib/workspace.mjs");
+const { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } = await import("../lib/teams.mjs");
+const { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } = await import("../lib/launch-preference.mjs");
+const { terminalText } = await import("../lib/refused-text.mjs");
+const { qualifiedSoulName, soulCandidates, soulsOffered } = await import("../lib/instance-resolution.mjs");
+const { parseConfigData } = await import("../lib/config-data.mjs");
+const remoteModule = await import("../lib/remote.mjs");
+const { activateLocalInputs, localRevision } = await import("../lib/local-inputs.mjs");
+const { default: YAML } = await import("yaml");
+const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await import("../lib/servers.mjs");
+const { readSessionViewer } = await import("../lib/session-viewer.mjs");
+const { tickTriggers } = await import("../lib/triggers.mjs");
+const A = await import("../lib/automations.mjs");
+const { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe: describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled: setScheduleEnabled, removeSchedule, runNow: runScheduleNow, reconcile: reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } = await import("../lib/schedule.mjs");
+const { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } = await import("../lib/schedule-host.mjs");
+const { kernelNode, stableNode } = await import("../lib/stable-node.mjs");
+const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } = await import("../lib/attachments.mjs");
+const { observeInstanceGit, diffInstanceFile } = await import("../lib/instance-git.mjs");
+const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await import("../lib/instance-lifecycle.mjs");
+const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await import("../lib/retire-output.mjs");
+const { lostLine, statusWord } = await import("../lib/status-words.mjs");
+const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await import("../lib/retained-after-retire.mjs");
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
-import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
-import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
-import { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } from "../lib/deployments.mjs";
-import { observeResolvedDeployment } from "../lib/resolved-deployment.mjs";
-import { SESSION_RESUME_FEATURE } from "../lib/session-resume-contract.mjs";
+const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await import("../lib/instance-inspect.mjs");
+const { readEvents, setWaiting, incarnationOf } = await import("../lib/instance-events.mjs");
+const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await import("../lib/deployments.mjs");
+const { observeResolvedDeployment } = await import("../lib/resolved-deployment.mjs");
+const { SESSION_RESUME_FEATURE } = await import("../lib/session-resume-contract.mjs");
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
