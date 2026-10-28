@@ -18,7 +18,9 @@
 // The completion is the real one wherever a test needs no step in between: a self-retire scheduled
 // with no delay, whose detached completion the test waits for. Where a test must choose the marker
 // or stand between two steps, the completion is a child of the test that runs the same function
-// with no delay, from an intent or from the marker's path, as the detached script does.
+// with no delay, from an intent or from the marker's path, as the detached script does. A test that
+// reads the marker a real completion may remove holds the scheduling before it releases the home's
+// claim, where that completion still waits.
 //
 // The scheduling and its completion are two processes, and the scheduling writes the marker last,
 // under the home's claim. Two rules order them, and the last tests hold a real scheduling to show
@@ -174,7 +176,7 @@ function deployment(t) {
     /** From now on no stop of `kid` can take its claim: the file there is no claim, so the stop is
      *  refused at once and signals nothing. */
     unstoppable: (kid) => {
-      const claim = join(dirname(kid.home), ".oats-retirement", "claims", `${kid.name}.lock`);
+      const claim = claimOf(kid);
       mkdirSync(dirname(claim), { recursive: true });
       writeFileSync(claim, "not a claim\n");
       return claim;
@@ -268,6 +270,7 @@ test("a scheduled self-retire refused before its home was touched: its marker is
   try {
     await run.waitGate("held", COMPLETION_MS);
     completionPid = await f.completionOf(parent);
+    assert.equal(readJson(claimOf(parent)).pid, run.child.pid, "fixture premise: the scheduling holds the home's claim");
     assert.equal(readJson(parent.marker).completionPid, completionPid, "fixture premise: the marker names the completion that runs");
     run.release("held");
     const done = await run.done;
