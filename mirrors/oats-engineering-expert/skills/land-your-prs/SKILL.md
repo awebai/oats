@@ -109,4 +109,5 @@ An instance is **finished** when all of these hold:
   when they must decide, approve or provide something), and send your parent your done line,
   unprompted; it retires you. With no OATS parent (spawned `--relation unrelated`, or
   started directly by a human), send the done line to the maintainer you report to, then run
-  the same checks on yourself and retire yourself: `oats retire --self`.
+  the same checks on yourself and retire yourself with
+  `oats retire "$OATS_INSTANCE" --self` (the instance name is required).
