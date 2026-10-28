@@ -86,7 +86,7 @@ test("teamsFrom cache: the parsed cache at the last observed commit answers with
     const git = loggingGit(fx);
     const ws = status(fx, git.env).workspace;
     // The one git process every `oats status` runs is ensureRoot's local canonical-root probe of the
-    // deployment checkout (lib/core.mjs canonicalDeploymentPath); the teams read adds none, and nothing
+    // deployment checkout (lib/deployment-path.mjs canonicalDeploymentPath); the teams read adds none, and nothing
     // reaches the remote.
     assert.deepEqual(git.calls(), [`-C ${fx.dep} rev-parse --show-toplevel`], "status ran no git process beyond the local root probe");
     assert.deepEqual(ws, { reachable: true, key: fx.key, ref: fx.ref, keyFrom: "workspace", standalone: false, defaultTeam: { label: "shared", team: SHARED },
