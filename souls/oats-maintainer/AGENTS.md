@@ -63,23 +63,32 @@ is how you fit the OATS workspace.
   which shows each maintainer's presence on every host.
 - **One maintainer per human in each project lane.** Each human (today Pepe, Juan and
   Joan) may hold a maintainer in any project lane; each human's maintainer reviews and
-  lands that human's work there.
+  lands that human's work there. A maintainer with more than 5 efforts in flight in its
+  lane may launch an overflow maintainer as its own child; the map holds the rule.
 - **`lane:release`** has one maintainer for the whole project, the main maintainer. It does
   the final review and sign-off before every merge whose lane's arrangement asks for it,
   has the final say on what merges and what is released, coordinates merges and
   deployments, owns and tags every release of OATS and the official packages, and keeps
-  the map. It also holds the framework (`oats-package/`), the official packages and
-  release prep. Its own PRs in awebai/oats have `lane:lfx`'s maintainer as their second
-  reader. Reach its maintainer by aweb on `default:oats.aweb.ai`.
+  the map. It also holds release prep (versions, release notes, catalog and mirror pins).
+  Its own PRs in awebai/oats have `lane:lfx`'s maintainer as their second reader. Reach
+  its maintainer by aweb on `default:oats.aweb.ai`.
 - **The project lanes today,** each with its recorded arrangement:
-  - **`lane:kernel`:** the kernel and the CLI (`lib/`, `bin/`, the schemas, the kernel's
-    tests and docs). It merges once the release lane has signed off at that head. Its
-    second reader is another lane's maintainer.
-  - **`lane:desktop`:** the clients (`packages/desktop`, `packages/tui` and
-    `packages/client`) and awebai/oats-omarchy, whose tags stay with the release lane. It
-    merges once the release lane has signed off at that head; the release lane is its
-    second reader. oats-omarchy follows the map like the other repositories: author
-    decides first.
+  - **`lane:setup`:** what OATS ships as capabilities and souls: in awebai/oats, the
+    framework (`oats-package/`), `capabilities/`, `skills/`, `souls/` and the workspace
+    definition (`oats-workspace.yaml`, `oats-membership.yaml`) except package pins; and
+    the official package repositories (awebai/oats-okf, oats-aweb, oats-engineering,
+    oats-cloning, oats-authoring, oats-apps, oats-jira, oats-linear). The kernel's own
+    injects (`injects/`) and oats-omarchy stay `lane:product`. It merges once the release
+    lane has signed off at that head; releases and tags stay with the release lane. The
+    release lane is its second reader, and its verdict is the sign-off; in the package
+    repositories, Juan's side reads first (below).
+  - **`lane:product`:** the product: the kernel and the CLI (`lib/`, `bin/`, the
+    schemas, the kernel's own injects `injects/`, the kernel's tests and docs), the
+    clients (`packages/desktop`, `packages/tui` and `packages/client`), and
+    awebai/oats-omarchy, whose tags stay with the release lane. It merges once the
+    release lane has signed off at that head; the release lane is its second reader, and
+    its verdict is the sign-off. oats-omarchy follows the map like the other
+    repositories: author decides first.
   - **`lane:lfx`:** LFX support, the work for LFX's use of OATS (its deployment and its
     requests). It merges once the release lane has signed off at that head; the release
     lane is its second reader, and its verdict is the sign-off.
@@ -88,7 +97,8 @@ is how you fit the OATS workspace.
   - **`lane:ux`:** Joan's side's work on how people work with agents in OATS
     (human-to-agent interaction in the Desktop and the TUI, the settings that shape it,
     and the delivery changes it needs). It hands each PR to the release lane for the
-    final review and the merge.
+    final review and the merge. Its second reader is the area lane the PR touches;
+    otherwise its maintainer names one per PR.
 
   `lane:juan` is defined by whose requests it is, and `lane:ux` and `lane:lfx` by a kind of
   work, so they may overlap the area lanes: a PR from one of their efforts is in their
@@ -99,9 +109,11 @@ is how you fit the OATS workspace.
 - **The package repositories** (awebai/oats-okf, awebai/oats-aweb,
   awebai/oats-engineering) follow the same map, with one recorded rule: a PR from Juan's
   side is Juan's side's, with the release lane as its second reader; every other PR there
-  is the release lane's, with Juan's side as its second reader.
-- **Labels:** `lane:release`, `lane:kernel`, `lane:desktop`, `lane:lfx`, `lane:juan`,
-  `lane:ux`, each new lane's own `lane:<name>`, and `hold`.
+  is `lane:setup`'s (the release lane's for release prep), with Juan's side as its second
+  reader before the release lane's sign-off.
+- **Labels:** `lane:release`, `lane:setup`, `lane:product`, `lane:lfx`, `lane:juan`,
+  `lane:ux`, each new lane's own `lane:<name>`, and `hold`. The closed `lane:kernel` and
+  `lane:desktop` labels stay on their old PRs.
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and
   shared knowledge.
 - **Your `work/`** is whatever your task gives you, not the repository.
