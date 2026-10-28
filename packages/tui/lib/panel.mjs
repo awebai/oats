@@ -223,15 +223,22 @@ export const SESSION = "oats-tui";
  *  the TUI is already gone). Then the keeper SIGKILLs its parent, the server: `kill-server` or
  *  SIGTERM would not do, since a server ends only once its clients are gone, and the client tmux
  *  cannot drain is never gone. The kernel then closes every pane's terminal, so each viewer gets
- *  SIGHUP and cleans up, and the control client, its server gone, exits. The parent is killed only
- *  while it is still the keeper's parent: a keeper whose server has ended is reparented, and its
- *  `$PPID` may name another process by then. The parent now is read from `/proc/$$/stat` where
- *  there is one (field 4, after the `) ` that ends the command name, which may itself hold one),
- *  else from `ps -o ppid= -p $$` (macOS). FAIL SAFE: when neither names it (no /proc, and no ps or
- *  one that refuses `-p`, as BusyBox's does), nothing is killed, and the server is left to the
- *  stdin EOF alone (docs/tui.md says what that can leave). `read` and `kill` are the shell's own:
- *  a PATH without them does not matter. All of it quietly. */
-export const KEEPER_SCRIPT = 'exec 3<>"$1" 4<"$1" 3>&-; cat <&4 >/dev/null; exec >/dev/null 2>&1; p=; if [ -r /proc/$$/stat ]; then read -r s </proc/$$/stat; set -- ${s##*) }; p=$2; else set -- $(ps -o ppid= -p $$); p=$1; fi; [ -n "$p" ] && [ "$p" -eq "$PPID" ] && kill -KILL "$PPID"';
+ *  SIGHUP and cleans up, and the control client, its server gone, exits.
+ *  WHICH PROCESS IS THE SERVER. Never `$PPID`: the shell reads it once, as it starts, and a keeper
+ *  whose server ended before its shell started has already been reparented, to pid 1 or to the
+ *  nearest subreaper, which on a systemd host is the user's `systemd --user`. That pid was then
+ *  both `$PPID` and the parent now, and the keeper SIGKILLed the user manager and every process
+ *  under it (awebai/oats#1615). The server's pid is the one tmux itself puts in every pane's
+ *  environment, `TMUX=<socket>,<server pid>,<session>`, read from the right (a socket's path may
+ *  hold a comma). The server is killed only while it is the keeper's parent now, read from
+ *  `/proc/$$/stat` where there is one (field 4, after the `) ` that ends the command name, which
+ *  may itself hold one), else from `ps -o ppid= -p $$` (macOS): a keeper whose server has ended
+ *  has another parent, and kills nothing. FAIL SAFE: nothing is killed when `TMUX` names no pid
+ *  above 1, or the parent now cannot be read (no /proc, and no ps or one that refuses `-p`, as
+ *  BusyBox's does), or is not that pid; the server is then left to the stdin EOF alone
+ *  (docs/tui.md says what that can leave). `read` and `kill` are the shell's own: a PATH without
+ *  them does not matter. All of it quietly. */
+export const KEEPER_SCRIPT = 'exec 3<>"$1" 4<"$1" 3>&-; cat <&4 >/dev/null; exec >/dev/null 2>&1; t=${TMUX%,*}; t=${t##*,}; case $t in ""|*[!0-9]*) exit 0;; esac; [ "$t" -gt 1 ] || exit 0; p=; if [ -r /proc/$$/stat ]; then read -r s </proc/$$/stat; set -- ${s##*) }; p=$2; else set -- $(ps -o ppid= -p $$); p=$1; fi; case $p in ""|*[!0-9]*) exit 0;; esac; [ "$p" -eq "$t" ] && kill -KILL "$t"';
 /** The command list the control client starts the server with (see THE START above): the session
  *  with its keeper, attached; `exit-unattached` at once after it; then every option. `unbind-key
  *  -a` empties the prefix table only: the root table (mouse bindings by default) and the
