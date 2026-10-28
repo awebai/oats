@@ -3622,6 +3622,12 @@ route target:
   whose kernel predates the feature, and a saved route the host did not list
   carry no key ([`sameWork`](#row-same-work)). `oats status --server <id>
   --json` relays the host's answer verbatim, `sameWork` included.
+- **`sessionEnd`** (feature `session-resume`; relayed after 0.69.4) is on a row only
+  when the host's row has the key, with the host's value: a host whose kernel
+  predates the feature, a row the host reports without it (one that runs,
+  for example), and a saved route the host did not list carry none. Its
+  meaning and when the host sends it are the [local row's](#row-session-end).
+  A value that is not `lost`, `stopped` or `exited` drops the key.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared

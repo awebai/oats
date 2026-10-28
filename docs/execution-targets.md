@@ -1208,13 +1208,13 @@ for its current start (`startId` in `instance.json`):
 | an exit marker that names it with a signal's status (128 and up: the harness alone was killed, an out-of-memory kill for example) | `lost` | when the sweep can vouch for the loss ([below](#which-losses-come-back)) |
 | neither (the host went down, or the tmux server died under the live harness) | `lost` | when the sweep can vouch for the loss |
 
-In text, `oats status` and `oats status --server <id>` print a `lost` row as
-`LOST`, where a `stopped` or `exited` row, or one without `sessionEnd`,
-prints `idle`, with one line under it naming the way back: `oats session
-start --resume --home <home>`, or the next sweep (`oats session resume`,
-which OATS Desktop and `oats tui` run when they open) when it can vouch for
-the loss. Both act on this machine's homes only, so a `--server` row names
-the host to run them on. `oats server roster` still prints `idle`.
+In text, `oats status`, `oats status --server <id>` and `oats server roster`
+print a `lost` row as `LOST`, where a `stopped` or `exited` row, or one
+without `sessionEnd`, prints `idle`, with one line under it naming the way
+back: `oats session start --resume --home <home>`, or the next sweep (`oats
+session resume`, which OATS Desktop and `oats tui` run when they open) when
+it can vouch for the loss. Both act on this machine's homes only, so a row
+of another host names the host to run them on.
 
 The window a spawn or a start makes writes the exit marker,
 `.oats-start-exited`, when the harness exits; `oats instance stop` writes its

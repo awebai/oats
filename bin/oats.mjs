@@ -69,7 +69,7 @@ const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_B
 const { observeInstanceGit, diffInstanceFile } = await import("../lib/instance-git.mjs");
 const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await import("../lib/instance-lifecycle.mjs");
 const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await import("../lib/retire-output.mjs");
-const { lostLine, statusWord } = await import("../lib/status-words.mjs");
+const { livenessWord, lostLine, statusWord } = await import("../lib/status-words.mjs");
 const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await import("../lib/retained-after-retire.mjs");
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await import("../lib/instance-inspect.mjs");
@@ -4467,7 +4467,10 @@ async function serverCmd() {
     for (const g of out.groups) {
       console.log(`  ${g.server}${g.label && g.label !== g.server ? `  ${g.label}` : ""}  [${g.id}]  ssh ${g.target.sshHost}  workspace ${g.target.workspace}${g.registrationPresent ? "" : "  (registration removed or changed; saved routes only)"}`);
       console.log(g.probe?.ok ? `      reachable, ${g.souls.length} soul(s)` : `      UNREACHABLE: ${g.probe?.error?.message || "?"}`);
-      for (const i of g.instances) console.log(`      • ${i.instance}${i.background === true ? " [background]" : ""}  ${i.missingRemotely ? "GONE on the host (saved route is stale: oats server forget)" : i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown"}${i.retirePending ? " RETIRING" : ""}${i.rollbackIncomplete ? " QUARANTINED" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      for (const i of g.instances) {
+        console.log(`      • ${i.instance}${i.background === true ? " [background]" : ""}  ${i.missingRemotely ? "GONE on the host (saved route is stale: oats server forget)" : livenessWord(i)}${i.retirePending ? " RETIRING" : ""}${i.rollbackIncomplete ? " QUARANTINED" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+        const lost = lostLine(i, { host: g.target.sshHost || g.server }); if (lost) console.log(`          ${lost}`);
+      }
       for (const f of g.retireFailures || []) console.log(`      ! deferred retirement of ${f.instance} (${f.agent}) FAILED there${f.error?.message ? `: ${f.error.message}` : ""}${f.retry ? ` — retry on the host: ${f.retry}` : ""}`);
     }
     console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target within ${out.bounds.budgetMs} ms, ${out.bounds.elapsedMs} ms used`);

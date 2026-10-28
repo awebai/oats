@@ -10,7 +10,7 @@
   OATS Desktop or `oats tui` opens) when it can vouch for the loss. A
   `--server` row names the host to run them on. A stopped, exited or
   never-launched row, and a row from a host whose kernel reports no
-  `sessionEnd`, still print `idle`; `oats server roster` still prints `idle`.
+  `sessionEnd`, still print `idle`.
   The JSON is unchanged
   ([How a session's end is read](../execution-targets.md#how-a-sessions-end-is-read)).
 
