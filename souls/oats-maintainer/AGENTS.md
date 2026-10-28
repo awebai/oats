@@ -97,7 +97,8 @@ is how you fit the OATS workspace.
   - **`lane:ux`:** Joan's side's work on how people work with agents in OATS
     (human-to-agent interaction in the Desktop and the TUI, the settings that shape it,
     and the delivery changes it needs). It hands each PR to the release lane for the
-    final review and the merge.
+    final review and the merge. Its second reader is the area lane the PR touches;
+    otherwise its maintainer names one per PR.
 
   `lane:juan` is defined by whose requests it is, and `lane:ux` and `lane:lfx` by a kind of
   work, so they may overlap the area lanes: a PR from one of their efforts is in their
