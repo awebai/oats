@@ -1,7 +1,8 @@
 // The CLI's hot reads (awebai/oats#1630, lib/hot-reads.mjs) load only the modules they use: run over the
 // Northwind fixture with a load hook, none of them loads core.mjs or the heavy modules beside it, on its
 // answer's path or its refusals'. Absences only: what a read does load is free to change. A command that
-// is not a hot read loads core.mjs as before, which also shows the hook sees what is loaded.
+// is not a hot read loads core.mjs as before, which also shows the hook sees what is loaded. And a name a
+// hot read does not list is a tripwire: taking it is free, and its first use throws a defect naming it.
 import test from "node:test";
 import assert from "node:assert/strict";
 import module from "node:module";
@@ -12,6 +13,8 @@ import { basename, join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
 import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
+import { HotReadUnlisted, hotLeaves, hotRead, standIn } from "../lib/hot-reads.mjs";
+import { isDefect } from "../lib/errors.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const NO_HOOKS = typeof module.registerHooks !== "function" && "module.registerHooks is newer than this Node";
@@ -93,4 +96,33 @@ test("any other command, and a hot read given another flag, loads core.mjs as be
     const r = loads(args);
     assert.ok(r.loaded.some((url) => url.endsWith("/lib/core.mjs")), `oats ${args.join(" ")} loads core.mjs`);
   }
+});
+
+test("a hot read's listed names are its leaves' own; anything else is a tripwire that throws on use", async () => {
+  const read = hotRead(["version", "--json"]);
+  assert.equal(read.form, "version");
+  assert.deepEqual(hotLeaves(read, "../lib/core.mjs"), ["version"]);
+  assert.deepEqual(hotLeaves(read, "../lib/workspace.mjs"), []);
+  assert.deepEqual(hotLeaves(read, "yaml"), []);
+  assert.equal(hotRead(["version", "--help"]), null, "a flag the form does not take is no hot read");
+  const version = await import("../lib/version.mjs");
+  // As bin/oats.mjs takes them: the line awaited, its names destructured. Neither touches a tripwire.
+  const { OATS_VERSION, listInstances } = await Promise.resolve(standIn(read, "../lib/core.mjs", [version]));
+  assert.equal(OATS_VERSION, version.OATS_VERSION);
+  const { loadLocal } = await Promise.resolve(standIn(read, "../lib/workspace.mjs", []));
+  const message = (name, line) => `oats version is a hot read, and it used ${name} of ${line}, which lib/hot-reads.mjs does not list for it: list the module that defines ${name} under that line in the read's entry in lib/hot-reads.mjs`;
+  for (const [use, name, line] of [
+    [() => listInstances("/x"), "listInstances", "../lib/core.mjs"],
+    [() => new listInstances(), "listInstances", "../lib/core.mjs"],
+    [() => `${loadLocal}`, "loadLocal", "../lib/workspace.mjs"],
+    [() => loadLocal.length, "loadLocal", "../lib/workspace.mjs"],
+    [() => "x" in loadLocal, "loadLocal", "../lib/workspace.mjs"],
+    [() => Object.keys(loadLocal), "loadLocal", "../lib/workspace.mjs"],
+  ]) {
+    assert.throws(use, (e) => e instanceof HotReadUnlisted && e.name === "HotReadUnlisted" && e.message === message(name, line) && isDefect(e), String(use));
+  }
+  // A namespace taken whole (remoteModule, A): its own names live, any other a tripwire.
+  const ns = standIn(read, "../lib/core.mjs", [version]);
+  assert.equal(ns.PKG_ROOT, version.PKG_ROOT);
+  assert.throws(() => ns.ensureRoot("/x"), HotReadUnlisted);
 });

@@ -27,22 +27,23 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { enableCliCompileCache } from "../lib/compile-cache.mjs";
-import { hotRead } from "../lib/hot-reads.mjs";
+import { hotLeaves, hotRead, standIn } from "../lib/hot-reads.mjs";
 
 // Node's compile cache is on before any kernel module is parsed (lib/compile-cache.mjs): static
 // imports are all parsed and linked before this module's body runs, so the kernel and `yaml` are
 // imported here, in order, once it is on.
 enableCliCompileCache();
-// A hot read (lib/hot-reads.mjs) imports only the leaves it uses, never core.mjs: each line below
-// takes the leaves its names come from, and nothing for a module the read does not use. Every other
-// command imports every module, in this order.
+// A hot read (lib/hot-reads.mjs) imports only the leaves it uses, never core.mjs: each line below takes
+// the leaves its names come from, and every other command imports every module, in this order. A hot
+// read takes its names from lib/hot-reads.mjs: a name newly used on a hot read's path must be listed
+// there, under its line, or its first use throws (a tripwire); test/cli-hot-reads.test.mjs pins what
+// each hot read must not load.
 const HOT_READ = hotRead(process.argv.slice(2));
 async function kernelImport(specifier) {
   if (!HOT_READ) return import(specifier);
   const modules = [];
-  for (const leaf of HOT_READ[/^\.\.\/lib\/(.+)\.mjs$/.exec(specifier)?.[1]] ?? []) modules.push(await import(`../lib/${leaf}.mjs`));
-  // One module is its namespace (`remoteModule.X` reads it live); several are their names together.
-  return modules.length === 1 ? modules[0] : Object.assign({}, ...modules);
+  for (const leaf of hotLeaves(HOT_READ, specifier)) modules.push(await import(`../lib/${leaf}.mjs`));
+  return standIn(HOT_READ, specifier, modules);
 }
 const { doctorCaptureWarnings } = await kernelImport("../lib/doctor-capture.mjs");
 const { assertNoPartialUpgrade } = await kernelImport("../lib/upgrade-state.mjs");
