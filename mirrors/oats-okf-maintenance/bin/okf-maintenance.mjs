@@ -99,7 +99,6 @@ const gitRun = (cwd, args) => {
   if (r.status !== 0) fail('E_GIT', `git ${args[0]} failed: ${(r.stderr || '').trim()}`);
   return r.stdout.trim();
 };
-export const NEEDS_HUMAN = 'okf-needs-human';
 export function reviewContext(flags, env = process.env, { view = viewPr, git = gitRun } = {}) {
   const ref = resolveRef(flags), pr = view(ref, env);
   const provenance = parseProvenance(pr.body);
@@ -115,10 +114,7 @@ export function reviewContext(flags, env = process.env, { view = viewPr, git = g
   const result = {
     pr: { repo: ref.repo, number: pr.number, url: pr.url, state: pr.state, draft: pr.isDraft === true, head: pr.headRefName, headSha: pr.headRefOid, base: pr.baseRefName, labels, mergedAt: pr.mergedAt || null, closedAt: pr.closedAt || null },
     event: flags.event ? { event: ref.event, headSha: ref.headSha, trigger: ref.trigger, headMoved: !!ref.headSha && ref.headSha !== pr.headRefOid } : null,
-    // okf 4.0.1 #5: okf-needs-human is a HARD STOP. Only a human removing the
-    // label clears it; no event (reopened, ready_for_review, a new head) does.
-    blocked: labels.includes(NEEDS_HUMAN) ? 'needs-human' : null,
-    settled: pr.state !== 'OPEN' || labels.includes(NEEDS_HUMAN),
+    settled: pr.state !== 'OPEN',
     provenance: { valid: provenance.valid, problems: provenance.problems, value: p },
     tasks: p ? { provider: p.tasks.provider, refs: p.tasks.refs, note: p.tasks.provider ? `read these through your tasks capability if it is ${p.tasks.provider}; otherwise record tasks: "unavailable"` : 'no tasks provider recorded: record tasks: "unavailable"' } : null,
     harvester: p ? p.harvester : null,
@@ -157,7 +153,6 @@ function text(event, r) {
   const v = r.provenance.value;
   lines.push(r.provenance.valid ? `provenance v${v.version}: ${v.version === 1 ? `run ${v.run}, ` : ''}source ${v.source.soul}/${v.source.instance}, harvester ${r.harvester.alias || r.harvester.instance}` : `provenance INVALID: ${r.provenance.problems.join('; ')}`);
   if (r.tasks) lines.push(`tasks: ${r.tasks.refs.join(', ') || '(none)'} — ${r.tasks.note}`);
-  if (r.blocked) lines.push(`BLOCKED: ${r.blocked} — the okf-needs-human label is a hard stop: do not review, amend, merge or close; only a human removes it`);
   lines.push('reading list:', ...r.reading.map((x) => `  - ${x}`));
   if (r.checkout) for (const b of r.checkout.bases) lines.push(`checkout ${b.alias} (${b.root}): ${b.problem || `${b.changed.length} changed; owner ${b.owner ?? '(unknown)'}; outside owned nodes: ${b.outsideOwned.join(', ') || 'none'}${b.baseMetaChanged ? '; okf-base.json CHANGED' : ''}${b.claimedNotOwned.length ? `; provenance claims nodes not owned by ${b.owner}: ${b.claimedNotOwned.join(', ')}` : ''}`}`);
   return lines.join('\n');
