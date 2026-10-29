@@ -93,7 +93,7 @@ test("a status routed to a server loads no core.mjs", { skip: NO_HOOKS, timeout:
   assertAbsent(["status", "--server", "no-such-server"], ["lib/core.mjs"], 1);
 });
 
-test("the warm reader loads no core.mjs: its hello comes after the reads' own closure, bin's dispatch only besides", { skip: NO_HOOKS, timeout: 300_000 }, async () => {
+test("the warm reader loads no core.mjs: its hello comes after the reads' own closure, bin's dispatch only besides", { skip: NO_HOOKS, timeout: 300_000 }, async (t) => {
   // As a client starts it: the hello read, then stdin closed, which ends it (exit 0). The hook writes at that exit, so
   // what it records is everything the reader loaded until its hello, and nothing it loads on a request.
   writeFileSync(loadedFile, "");
@@ -101,6 +101,14 @@ test("the warm reader loads no core.mjs: its hello comes after the reads' own cl
   let out = "", err = "";
   child.stderr.setEncoding("utf8").on("data", (d) => { err += d; });
   const exited = new Promise((done) => child.on("exit", (code) => done(code)));
+  // A failed assertion or a cancelled test leaves no reader behind: its stdin closed, then killed if still running.
+  t.after(async () => {
+    child.stdin.destroy();
+    if (child.exitCode === null && child.signalCode === null) {
+      const gone = await Promise.race([exited.then(() => true), new Promise((done) => setTimeout(done, 5000, false))]);
+      if (!gone) child.kill("SIGKILL");
+    }
+  });
   const hello = await new Promise((done, fail) => {
     child.stdout.setEncoding("utf8").on("data", (d) => { out += d; if (out.includes("\n")) done(JSON.parse(out.slice(0, out.indexOf("\n")))); });
     child.on("exit", () => fail(new Error(`the reader exited before its hello\n${err}`)));
