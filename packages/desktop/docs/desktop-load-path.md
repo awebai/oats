@@ -307,6 +307,11 @@ not change; a cycle's reads may queue behind each other in the reader, which ans
   with the app (#698).
 - **Seen nowhere.** `/api/cli` carries `reader: { state, code }` for diagnostics. It is a probe
   diagnostic field, so a change in it is never a CLI change for the renderer, and no page reads it.
+  `state` is `off`, `idle`, `starting`, `ready`, `backoff`, `stale`, `mismatch`, `given-up` or
+  `stopped`. `code` is the last refusal or failure: the reader's own `E_READER_*` refusal codes, or
+  this client's `E_READER_EXIT`, `E_READER_HELLO_TIMEOUT`, `E_READER_TIMEOUT`,
+  `E_READER_OUTPUT_LIMIT` or `E_READER_MISMATCH`. `off` with `E_READER_PATH` means the PATH has a
+  relative or empty entry, so every read is the CLI's (above).
 
 ## Contract additions (renderer-facing, additive)
 
