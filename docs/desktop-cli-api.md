@@ -135,7 +135,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 | `session-inspect-size` | `size: { cols, rows }` in cells on `session inspect --json` when `present` is true; absent otherwise. Remote inspect relays the execution host's size ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)) | |
-| `session-inspect-running` | `running` on every successful `session inspect --json` result: `true` exactly when `oats status --json` reads the same observation as `running: true` (a live non-shell process in the agent pane, a harness behind a wrapper shell included), `false` for a fallback shell, an absent or dead pane, a missing home and a home that never launched. It is endpoint activity, not health, readiness, busy or idle, the executable's identity or a consumed wake. A failed observation stays an error, never `false`, a gone tmux server included (status reads that row `running: false`; inspect answers `E_SESSION_UNAVAILABLE`); `state` and its enum are unchanged. `E_RUNTIME_AUTHORITY_MISMATCH` carries `details.fields`, the differing fields among `launched`, `tmux.session`, `tmux.window`, `tmux.socket`, never their values. Remote inspect relays the execution host's answer; a host without the feature omits `running`, and nothing adds it ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)) | |
+| `session-inspect-running` | `running` on every successful `session inspect --json` result: `true` exactly when `oats status --json` reads the same observation as `running: true` (a live non-shell process in the agent pane, a harness behind a wrapper shell included), `false` for a fallback shell, an absent or dead pane, a missing home and a home that never launched. It is endpoint activity, not health, readiness, busy or idle, the executable's identity or a consumed wake. A failed observation stays an error, never `false`, a gone tmux server included (status reads that row `running: false`; inspect answers `E_SESSION_UNAVAILABLE`), and so does a process scan that cannot establish a fallback shell ([#1641](https://github.com/awebai/oats/issues/1641): status reads it `null`); `state` and its enum are unchanged. `E_RUNTIME_AUTHORITY_MISMATCH` carries `details.fields`, the differing fields among `launched`, `tmux.session`, `tmux.window`, `tmux.socket`, never their values. Remote inspect relays the execution host's answer; a host without the feature omits `running`, and nothing adds it ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
 | `session-attach-no-status-line` | `oats session attach … --no-status-line`, local and `--server`: a viewer without a detach key, without its status line (`Shift+PgUp or C-b [ to scroll back`), for a caller that shows the scroll keys itself ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe: a kernel without it ignores the flag and shows the line. A routed attach sends it to any host, with no probe of its own | |
 | `session-attach-prefix-scroll` | `sessionViewer: {prefixScroll}` on `oats version --json` and `oats status --json`, and `probe.sessionViewer` on each `oats server roster --json` group: whether that host's viewer without a detach key binds `C-b [` (tmux 3.3 and later), read afresh per host at each run. A kernel with the feature has the viewer's `Shift+PgUp` binding; one without it may not, so don't name the viewer's scroll keys for its tabs ([execution-targets.md](execution-targets.md#inspect-input-and-attach)) | |
@@ -3269,14 +3269,21 @@ its absence.
   `true` means the harness is running, using the same pane and shell-descendant
   rule as session inspection. A fallback shell is `false` with `runtimeState:
   "shell"`, even though the window remains; a dead pane or absent window is
-  `false`. A wrapper shell with a live non-shell descendant stays `true`;
+  `false`. A wrapper shell with a live non-shell descendant stays `true`.
+  `false` for a shell needs positive evidence: the process table holds the
+  pane's own process as a shell and no non-shell process below it
+  ([#1641](https://github.com/awebai/oats/issues/1641)); a table that cannot
+  establish that reads `null` with the reason as `runtimeError`: one without
+  the pane's process (a `ps` in another PID namespace, a pane respawned since
+  tmux answered), one with a process in the pane that has no command name, or
+  one with a line that is not a process when nothing non-shell was found.
   `null` with `runtimeState: "unreachable"` and the tmux error as
   `runtimeError` when that server or its panes cannot be read (including a
   window where OATS cannot tell which pane is the agent's
   ([which pane is the agent's](execution-targets.md#which-pane-is-the-agents)),
-  a session with two windows of the instance's name, or a failed
-  shell-descendant process scan; a window whose agent's pane is found reads by
-  that pane alone), and also when its socket
+  a session with two windows of the instance's name, or a failed or
+  inconclusive shell-descendant process scan; a window whose agent's pane is
+  found reads by that pane alone), and also when its socket
   file is missing while a process works in the home or the process scan
   cannot run, `runtimeError` then naming the processes or the scan's error
   ([#624](execution-targets.md#missing-socket); with no process in the home

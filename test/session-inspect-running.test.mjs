@@ -102,6 +102,63 @@ test("1381: inspect and status resolve missing command labels from the same pane
   }
 });
 
+// #1641: tmux names the pane's foreground process group's leader, the launch's own shell, while the
+// harness runs as its child, so a running instance is read through the process scan. Only a snapshot
+// that shows the pane's own shell with no non-shell descendant is a fallback prompt; a snapshot that
+// cannot establish that is unknown with its reason (status: null, inspect: an error), never false.
+test("1641: a shell-labelled pane is idle only on positive evidence of a fallback prompt", async (t) => {
+  const name = "shell-scan";
+  const { home } = await recordedHome(name, { harness: "claude" });
+  const why = (reason) => `${reason}, so whether the harness runs cannot be told`;
+  for (const facts of [
+    { label: "the harness runs a child under the wrapper shell",
+      ps: `1 0 launchd\n${PANE_PID} 1 zsh\n4300 ${PANE_PID} /Users/x/.local/share/claude/versions/2.1.0\n4301 4300 node\n`, running: true },
+    { label: "the harness runs a long tool subprocess, a shell child of the harness",
+      ps: `${PANE_PID} 1 /bin/zsh\n4300 ${PANE_PID} claude\n4301 4300 /bin/zsh\n4302 4301 sh\n`, running: true },
+    { label: "the pane's own process is not a shell while a job-control shell holds the foreground",
+      ps: `${PANE_PID} 1 claude\n4301 ${PANE_PID} zsh\n`, running: true },
+    { label: "a live non-shell descendant wins over an unreadable line",
+      ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID} claude\nnot a process\n`, running: true },
+    { label: "a genuine idle prompt", ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID} -zsh\n9999 1 claude\n`, running: false },
+    { label: "the snapshot has no pane process (another PID namespace)", ps: "1 0 ps\n",
+      error: why(`the process table has no process ${PANE_PID}, the agent's pane's own`) },
+    { label: "the snapshot is empty", ps: "", error: why(`the process table has no process ${PANE_PID}, the agent's pane's own`) },
+    { label: "the pane's process is gone but its harness is listed, reparented", ps: `4300 1 claude\n`,
+      error: why(`the process table has no process ${PANE_PID}, the agent's pane's own`) },
+    { label: "a process with no command name still links the harness below it to the pane",
+      ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID}\n4301 4300 claude\n`, running: true },
+    { label: "a process in the pane has no command name", ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID}\n4301 4300 sh\n`,
+      error: why("process 4300 in the agent's pane has no command name in the process table") },
+    { label: "the pane's own process has no command name", ps: `${PANE_PID} 1\n`,
+      error: why(`process ${PANE_PID} in the agent's pane has no command name in the process table`) },
+    { label: "a line that is not a process row", ps: `${PANE_PID} 1 zsh\n4300 ${PANE_PID} sh\n43O1 4300 claude\n`,
+      error: why("the process table has a line that is not a process") },
+  ]) {
+    await t.test(facts.label, async () => {
+      const seen = observing({ panes: pane("zsh"), ps: facts.ps });
+      if (facts.error) {
+        assert.throws(() => inspectInstanceSession(home, { io: seen.io }),
+          (e) => e.code === "E_SESSION_UNAVAILABLE" && e.message === `cannot inspect session: ${facts.error}`);
+      } else {
+        const inspected = inspectInstanceSession(home, { io: seen.io });
+        assert.deepEqual([inspected.present, inspected.state, inspected.running], [true, facts.running ? "unknown" : "shell", facts.running]);
+      }
+      assert.deepEqual(seen.calls, { tmux: 1, ps: 1 });
+
+      const io = { exec(binary, args) {
+        if (binary === "ps") return facts.ps;
+        assert.equal(binary, "tmux");
+        if (args.includes("list-windows")) return `${name}\n`;
+        assert.ok(args.includes("list-panes"), "status only reads windows and panes");
+        return `${name}\t@3\t%7\t0\tzsh\t${PANE_PID}\t${name}\n`;
+      } };
+      const row = (await fx.inEnv(() => listInstances(fx.root, SESSION, io))).flatMap((soul) => soul.instances).find((r) => r.home === home);
+      if (facts.error) assert.deepEqual([row.running, row.runtimeState, row.runtimeError], [null, "unreachable", facts.error]);
+      else assert.deepEqual([row.running, row.runtimeState, row.runtimeError], [facts.running, facts.running ? undefined : "shell", undefined]);
+    });
+  }
+});
+
 // The three harnesses, each with the command name its pane shows when it is the pane's own process.
 const HARNESSES = [
   { harness: "claude", spawn: { harness: "claude" }, command: "claude" },
