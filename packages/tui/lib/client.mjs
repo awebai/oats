@@ -8,6 +8,7 @@ import { clientTerms } from "../../client/client-terms.mjs";
 
 export { displayLine, DETAIL_WITHHELD } from "../../client/display-text.mjs";
 export { parseProbeStdout, acceptProbe, cliRecord } from "../../client/cli-locator.mjs";
+export { cliDeploymentRead } from "../../client/deployment-read-cli.mjs";
 export { cliDeploymentList } from "../../client/deployment-list-cli.mjs";
 export { deploymentsListSupported } from "../../client/deployment-list.mjs";
 export { cliRemoteRoster } from "../../client/cli-adapter.mjs";

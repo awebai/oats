@@ -61,12 +61,12 @@ function makeWorld({ rows = [], features = [] } = {}) {
   return world;
 }
 /** A reader over `world`'s one deployment: what it emitted, and every process it started. */
-function reading(t, world) {
+function reading(t, world, { getServed = () => [world.deployment] } = {}) {
   const entries = [], spawned = [];
   let n = 0;
   const reader = createReader({
     cli: world.cli, env: CLEAN_ENV, collector: world.collector,
-    getServed: () => [world.deployment], getEntry: () => null, getRoster: () => ({ remote: { remoteGroups: [], rosterAnswered: false, rosterFailure: null }, memory: new Map(), notes: new Map() }),
+    getServed, getEntry: () => null, getRoster: () => ({ remote: { remoteGroups: [], rosterAnswered: false, rosterFailure: null }, memory: new Map(), notes: new Map() }),
     onEntry: (emitted) => entries.push(emitted), onRoster: () => {},
     clock: () => new Date(Date.UTC(2026, 0, 1, 0, 0, ++n)).toISOString(),
     spawn: (file, args, options) => { spawned.push({ file, args, options }); return nodeSpawn(file, args, options); },
@@ -163,4 +163,66 @@ test("without status-liveness the collector runs over the rows, as today", async
   await reader.start();
   assert.equal(world.calls("collector", "start").length, 1, "the collector ran for the cycle");
   assert.equal(entries.at(-1).entry.instances[0].runtimeState, "shell", "the collector's answer");
+});
+
+/** Whether `promise` settles within `ms`. */
+async function settles(promise, ms) {
+  let timer;
+  const done = await Promise.race([promise.then(() => true, () => true), new Promise((resolve) => { timer = setTimeout(() => resolve(false), ms); })]);
+  clearTimeout(timer);
+  return done;
+}
+
+test("voidInFlight() while the warm reader holds a cycle's reads: that cycle is released at once and emits nothing, and the live request after it is read by the CLI and observed", async (t) => {
+  const world = makeWorld();
+  const { reader, entries } = reading(t, world);
+  await warmUp(world, reader);
+  world.plan({ reader: { version: VERSION, hold: true } });
+  const asked = readerRequests(world).length, emitted = entries.length;
+  const background = reader.request();
+  await waitFor("the reader to hold the cycle's two reads", () => readerRequests(world).length === asked + 2);
+  // As lib/main.mjs does at a stop and its return: the reads in flight are void, then a live read is asked for.
+  reader.voidInFlight();
+  assert.ok(await settles(background, 2000), "the void cycle let the refresh loop go at once");
+  const before = cliReads(world);
+  assert.ok(await settles(reader.request({ live: true }), 10_000), "the live cycle ran");
+  assert.equal(cliReads(world), before + 2, "its reads by the CLI");
+  assert.equal(entries.length, emitted + 1, "one entry: the live cycle's, none for the void one");
+  assert.equal(entries.at(-1).entry.deployment.status, "observed");
+  assert.equal(readerRequests(world).length, asked + 2, "nothing more was sent to the reader");
+});
+
+test("a cycle made void after it began and before its reads were dispatched sends nothing to the warm reader and starts no CLI read", async (t) => {
+  const world = makeWorld();
+  // The cycle asks for its deployments after it began and before it reads them: the moment to make it void.
+  let voidNow = false, made = null;
+  const { reader, entries } = made = reading(t, world, { getServed: () => { if (voidNow) { voidNow = false; made.reader.voidInFlight(); } return [world.deployment]; } });
+  await warmUp(world, reader);
+  const asked = readerRequests(world).length, before = cliReads(world), emitted = entries.length;
+  voidNow = true;
+  assert.ok(await settles(reader.request(), 2000), "the void cycle ended");
+  assert.equal(voidNow, false, "fixture premise: the cycle began, and was made void");
+  await sleep(200);
+  assert.equal(readerRequests(world).length, asked, "no request reached the reader");
+  assert.equal(cliReads(world), before, "no CLI read started");
+  assert.equal(entries.length, emitted, "nothing emitted");
+});
+
+test("at process exit the reader is ended and nothing new starts: a read it held starts no CLI child", async (t) => {
+  const world = makeWorld();
+  const listeners = new Set(process.listeners("exit"));
+  const { reader } = reading(t, world);
+  const [atExit] = process.listeners("exit").filter((listener) => !listeners.has(listener));
+  assert.equal(typeof atExit, "function", "createReader registered its exit listener");
+  await warmUp(world, reader);
+  world.plan({ reader: { version: VERSION, hold: true } });
+  const asked = readerRequests(world).length;
+  const background = reader.request();
+  await waitFor("the reader to hold the cycle's two reads", () => readerRequests(world).length === asked + 2);
+  const before = cliReads(world);
+  atExit(); // only this listener: the test process does not exit
+  await waitFor("the reader to see its stdin end", () => world.calls("reader", "stdin-end").length === 1);
+  assert.ok(await settles(background, 2000), "the held reads were answered");
+  await sleep(200);
+  assert.equal(cliReads(world), before, "no CLI child was started on the way out");
 });
