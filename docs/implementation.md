@@ -497,7 +497,15 @@ atomically, a corrupt one is a miss, and `pruneStores` bounds the store
 (`PARSED_LIMITS`, least recently used first). `--max-age` adds the observation
 store `<cache>/.observed/` ([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0311)):
 one record per (repo key, ref args, url digest), so two spellings of one repo
-keep a record each; the url itself is never written. Adding a cached item
+keep a record each; the url itself is never written. Beside it,
+`<cache>/.observed-facts/` holds the remote facts that are not heads
+(`factObservation`): today the `gh` login `workspace status` places automations
+with for display ([the `gh` login, display only](desktop-cli-api.md#the-gh-login-display-only)).
+A record is named by the digest of its fact's context (`ghLoginParts` in
+`automations.mjs`: never a token value) and holds only the answer and when it
+was observed; only `workspace-read.mjs` passes the reuse to `ghLogin` (its
+`lookup`, with the display's 5 s wait), so a tick, a poll or a run always asks
+`gh` live. `pruneStores` bounds both stores alike. Adding a cached item
 means choosing an item name unique to its producer (the item string its
 call site passes to `memoAtCommit`, or to `atCommit` in `workspace.mjs`) and
 adding it to `test/parsed-cache.test.mjs`; `test/read-path-scale.test.mjs` pins the member

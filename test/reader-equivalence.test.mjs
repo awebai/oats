@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import YAML from "yaml";
@@ -199,4 +199,64 @@ test("one warm reader answers status and workspace status as fresh CLI runs, whi
 
   const end = await reader.end();
   assert.deepEqual(end, { code: 0, signal: null }, `the reader exits 0 on stdin EOF\n${reader.stderr()}`);
+});
+
+// Under --max-age a status display reuses a recent gh login as it reuses heads (#1630). A fixture with a workspace
+// trigger placed on this host, and a stand-in gh on PATH that counts its logins: within --max-age the reader and
+// the CLI both answer from the one recorded login, even when gh would now say another; past it, the reader asks
+// again, and both show what gh says now.
+test("a reused gh login reads the same through the reader and the CLI: within --max-age, and asked again after it", { timeout: 300_000 }, async (t) => {
+  const trigger = { kind: "oats-trigger", schemaVersion: 1, description: "Review PRs", runsOn: "kb-host", owner: "github.com/kb-bot",
+    on: { source: "github.pull_request", repo: "github.com/acme/knowledge", events: ["opened"], poll: "2m" },
+    spawn: { soul: "dev", purpose: "review-pr-{number}", task: "Review {repo}#{number}." } };
+  const fx = v2Deployment({ t, name: "reader-gh", souls: { dev: {} }, local: { host: { name: "kb-host" }, automations: { trust: "*" } },
+    files: { "oats-triggers/kb-review.yaml": { yaml: trigger } } });
+  const ghDir = join(fx.base, "gh-stand-in");
+  mkdirSync(join(ghDir, "bin"), { recursive: true });
+  writeFileSync(join(ghDir, "login"), "kb-bot\n");
+  writeFileSync(join(ghDir, "bin", "gh"), `#!/bin/sh\ncase "$*" in "api user"*) echo x >> "${ghDir}/logins"; cat "${ghDir}/login"; exit 0 ;; esac\nexit 2\n`, { mode: 0o755 });
+  const logins = () => (existsSync(join(ghDir, "logins")) ? readFileSync(join(ghDir, "logins"), "utf8").split("\n").filter(Boolean).length : 0);
+  const env = { ...fx.env, PATH: `${join(ghDir, "bin")}:${fx.env.PATH}` };
+  const sync = fx.cli(["sync", "--json"], { env });
+  assert.equal(sync.status, 0, sync.stdout + sync.stderr);
+  const reader = startReader({ env, cwd: fx.base });
+  fx.beforeCleanup(() => { if (reader.child.exitCode === null && reader.child.signalCode === null) reader.child.kill("SIGKILL"); });
+  assert.equal((await reader.next()).readerApi, 1);
+
+  let id = 0;
+  /** workspace status --max-age <maxAge> through the reader, then through the CLI: equal exit and answer. */
+  async function compare(maxAge) {
+    const argv = ["workspace", "status", "--dir", fx.dep, "--max-age", String(maxAge), "--json"];
+    reader.send({ id: ++id, argv });
+    const frame = await reader.next();
+    assert.equal(frame.refused, undefined, JSON.stringify(frame));
+    const r = spawnSync(process.execPath, [CLI, ...argv], { cwd: fx.dep, env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    assert.equal(frame.exit, r.status, `${r.stdout}\n${r.stderr}`);
+    const doc = JSON.parse(r.stdout);
+    const reused = observationOf(doc)?.reused === true && observationOf(frame.answer)?.reused === true;
+    assert.deepEqual(normalise(frame.answer, reused), normalise(doc, reused), `oats ${argv.join(" ")}`);
+    return frame.answer.result.automations.rows.find((row) => row.kind === "trigger");
+  }
+
+  // Live (0): both ask; each records the login.
+  assert.equal((await compare(0)).runsHere, true);
+  assert.equal(logins(), 2);
+  // Within --max-age: both reuse it, and gh is not asked, even when it would now say another login.
+  assert.equal((await compare(60)).runsHere, true);
+  writeFileSync(join(ghDir, "login"), "someone-else\n");
+  assert.equal((await compare(60)).runsHere, true, "within --max-age the recorded login is what both show");
+  assert.equal(logins(), 2);
+  // Past --max-age (the record dated two minutes ago): the reader asks gh again and records what it says, and the
+  // CLI reuses that: both show the login gh gives now.
+  const facts = join(fx.remoteOptions.cacheDir, ".observed-facts");
+  for (const name of readdirSync(facts)) {
+    const file = join(facts, name), rec = JSON.parse(readFileSync(file, "utf8"));
+    writeFileSync(file, JSON.stringify({ ...rec, observedAt: new Date(Date.now() - 120_000).toISOString() }));
+  }
+  const after = await compare(60);
+  assert.deepEqual([after.runsHere, after.reason], [false, "owner-mismatch"]);
+  assert.equal(logins(), 3, "the reader asked once past --max-age; the CLI reused its answer");
+
+  const end = await reader.end();
+  assert.deepEqual(end, { code: 0, signal: null }, reader.stderr());
 });
