@@ -85,6 +85,11 @@ const { readEvents, setWaiting, incarnationOf } = await kernelImport("instance-e
 const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await kernelImport("deployments", () => import("../lib/deployments.mjs"));
 const { observeResolvedDeployment } = await kernelImport("resolved-deployment", () => import("../lib/resolved-deployment.mjs"));
 const { SESSION_RESUME_FEATURE } = await kernelImport("session-resume-contract", () => import("../lib/session-resume-contract.mjs"));
+const { KERNEL_FEATURES } = await kernelImport("kernel-features", () => import("../lib/kernel-features.mjs"));
+const { inheritedContextRefusal } = await kernelImport("captured-context", () => import("../lib/captured-context.mjs"));
+const { callSession, parseMaxAge, readBudget } = await kernelImport("read-call", () => import("../lib/read-call.mjs"));
+const { cachedWorkspace, legacyLayoutProblems, statusAnswer, statusView } = await kernelImport("roster-read", () => import("../lib/roster-read.mjs"));
+const { memberLabel, memberRows, packageRows, standaloneCatalogVersion, standalonePackages, workspaceName, workspaceStatusAnswer, workspaceStatusView } = await kernelImport("workspace-read", () => import("../lib/workspace-read.mjs"));
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
@@ -120,11 +125,6 @@ const HELP_WORDS = new Set(["help", "--help", "-h"]);
 const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "deployments", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "tui", "update", "version", "workspace", "worktree"]);
 /** Commands whose argv another parser reads (packages/record, packages/experimental and packages/tui parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental", "tui"]);
-/** The kernel features this binary implements: `features` in `version --json` (the Desktop API v1
- *  probe) and in `status --json`, which a remote roster relays as the host's (feature
- *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
- *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age", "status-retire-state", "session-inspect-size", "session-inspect-running", "deployments-list", "soul-composed-skills", "instance-color", "spawn-suggest-name", "instance-upgrade", "session-attach-no-status-line", "session-attach-prefix-scroll", "instance-suggest-name", "spawn-apply-suggest-name", SESSION_RESUME_FEATURE, "instance-background", "instance-same-work"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -287,7 +287,7 @@ async function doctorComposition(ctx, soulName, ws, bail) {
  *  rules. → { problems, information } */
 function doctorLocalTeams(local) {
   const standalone = typeof local.standalone === "string" && local.standalone !== "";
-  const file = standalone ? null : cachedWorkspace(local.workspace)?.file ?? null;
+  const file = standalone ? null : cachedWorkspace(local.workspace, remoteOptionsFromEnv)?.file ?? null;
   const model = teamModel(file, local);
   const declared = ["teams", "defaultTeam"].some((k) => Object.hasOwn(local, k));
   return { problems: model.closedKeys.length ? [localTeamsClosedProblem(model.closedKeys)] : [],
@@ -827,11 +827,6 @@ async function doctorJson(dir) {
 
 /** The v2 doctor payload: the deployment declaration + lock (offline) and, with
  *  --soul, the composed instructions. No v1 keys (chain/layers/acquired/injects…). */
-/** The problems doctor and status share for a v2 deployment: what OATS 0.25 left
- *  under local-agents/ (named, never read), and the captured homes under the agents root. */
-function legacyLayoutProblems(root) {
-  return [legacyLocalAgents(root), legacyCapturedHomes(root)].filter(Boolean);
-}
 /** What retires left in the deployment (#703 part 2a), read-only: the
  *  `retained-recovery:` and `retained-worktree:` information lines, as one
  *  block per kind (a count line, then one line per item). */
@@ -1644,7 +1639,7 @@ let maxAgeGiven = null;
 let readBudgetMs = null;
 function commandSession() {
   if (!readSession) {
-    readSession = remoteModule.createReadSession({ maxAge: maxAgeGiven ?? 0, ...(readBudgetMs !== null ? { deadline: Date.now() + readBudgetMs } : {}) });
+    readSession = callSession({ maxAge: maxAgeGiven, budgetMs: readBudgetMs });
     process.on("exit", () => { sayReadNotices(); readSession.closeNow(); });
     for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) process.once(signal, () => {
       readSession.closeNow();
@@ -1701,8 +1696,29 @@ const withObservation = (doc) => (maxAgeGiven === null ? doc : { ...doc, observa
 /** Remote options threaded into every remote call. OATS_REMOTE_CACHE relocates
  * the content-addressed fetch cache (tests never touch ~/.cache); `session` is the command's read session. */
 function remoteOptionsFromEnv() {
+  const cacheDir = remoteCacheDir();
+  return { ...(cacheDir ? { cacheDir } : {}), session: commandSession() };
+}
+/** OATS_REMOTE_CACHE, absolute, or undefined. */
+function remoteCacheDir() {
   const cacheDir = process.env.OATS_REMOTE_CACHE;
-  return { ...(cacheDir ? { cacheDir: resolve(cacheDir) } : {}), session: commandSession() };
+  return cacheDir ? resolve(cacheDir) : undefined;
+}
+/** Say a lifted read's answer (lib/read-call.mjs: `{ exit, answer, stderr }`) as the command always did. JSON
+ *  mode prints the answer (`indent`: status's document is printed indented; a failure envelope never is),
+ *  text mode a failure as `oats: <message>`; then the read session's notices, and a failure exits. On a
+ *  text failure the deprecated-name warning comes before the notices, as the exit hooks said them. */
+function sayRead(read, { indent } = {}) {
+  if (JSON_MODE) {
+    if (read.answer && Object.hasOwn(read.answer, "warnings")) warningDelivered = true;
+    console.log(read.exit === 0 && indent ? JSON.stringify(read.answer, null, indent) : JSON.stringify(read.answer));
+  } else {
+    console.error(`oats: ${read.answer.error.message}`);
+    const w = runtimeNameWarning();
+    if (w && !warningDelivered) { process.stderr.write(`oats: warning: ${w.message}\n`); warningDelivered = true; }
+  }
+  process.stderr.write(read.stderr);
+  if (read.exit) process.exit(read.exit);
 }
 
 /** The v2 deployment context at --dir: { dir, localPath, local, deploymentDir, remoteOptions }. */
@@ -1762,30 +1778,6 @@ function catalogForSync(bail) {
   catch (e) { return bail(e.code || "E_PACKAGE_MISSING", e.message); }
 }
 
-/** The package requests of a standalone view: the catalog's own pin of the package
- *  providing oats.core (decision 25) — nothing else, since the version list lives in
- *  the workspace file we cannot read. The request is written as resolvePackages
- *  expects a CATALOG entry: the bare version (`v1.1.3`), never the catalog's raw ref
- *  (`oats-framework/v1.1.3` is a tag PATH the one grammar refuses); parsePackageRequest
- *  recomposes the tag from the catalog's own convention.
- *  → { packages: { <id>: <version> }, problems: [ { code: "E_PACKAGE_MISSING", … } ] } */
-function standalonePackages(catalog) {
-  let id = "oats.framework";
-  const file = officialCatalogFile();
-  try { const alias = officialCapabilityAliases()["oats.core"]; id = (typeof alias === "string" ? alias : alias?.package) ?? id; } catch { /* the catalog is diagnosed below */ }
-  const version = standaloneCatalogVersion(catalog?.[id]?.ref);
-  if (version) return { packages: { [id]: version }, problems: [] };
-  const why = catalog?.[id] ? `its ref ${JSON.stringify(catalog[id].ref)} carries no version` : `it has no entry ${JSON.stringify(id)}`;
-  return { packages: {}, problems: [{ code: "E_PACKAGE_MISSING", id, reason: "no-catalog", catalog: file, path: `/packages/${id}`, message: `the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file}): ${why}; standalone spawns will be refused until it does` }] };
-}
-/** The bare version of a catalog ref: its LAST path segment when that is a version
- *  (`v1.1.3` → `v1.1.3`; `oats-framework/v1.1.3` → `v1.1.3`; `main` → null). */
-function standaloneCatalogVersion(ref) {
-  if (typeof ref !== "string" || !ref.trim()) return null;
-  const tail = ref.trim().split("/").filter(Boolean).pop() ?? "";
-  return classifyPackageValue(tail).kind === "catalog" ? tail : null;
-}
-
 /** Discover the workspace named by oats-local.yaml over the real remote. */
 async function discoverForCli(ctx, bail) {
   // The standalone case (decisions 10/25) is a discovery too: the repo's own view
@@ -1798,9 +1790,6 @@ async function discoverForCli(ctx, bail) {
 }
 
 const short = (oid) => (typeof oid === "string" ? oid.slice(0, 8) : "?");
-/** Display name of a discovery: the workspace's name, or the standalone label (decision 10). */
-const workspaceName = (discovery) => discovery.workspace?.name ?? `standalone:${memberLabel(discovery.key)}`;
-const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || String(key);
 const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
 
 /** A soul's launch here (feature launch-preference): the `Launch` report a spawn with no flags would decide
@@ -1849,19 +1838,6 @@ function workspaceItems(discovery, lock, local, deploymentDir) {
   souls.sort(byName);
   capabilities.sort(byName);
   return { souls, capabilities };
-}
-
-/** Membership rows for `sync` / `workspace status`. */
-function memberRows(discovery) {
-  return discovery.members.map((m) => ({
-    key: m.key, name: memberLabel(m.key), commit: m.commit ?? null, confirmed: m.confirmed, status: m.confirmed ? "confirmed" : m.reason, detail: m.detail ?? null,
-    souls: m.souls.map((s) => s.name), capabilities: m.capabilities.map((c) => c.name), publishes: m.publishes ?? null,
-  }));
-}
-
-/** Package rows for `sync` / `workspace status` from the lock. */
-function packageRows(lock) {
-  return Object.entries(lock.packages).map(([id, p]) => ({ id, version: p.version, source: p.source, commit: p.commit, integrity: p.integrity, capabilities: p.capabilities, souls: (p.souls ?? []).map((x) => x.name) }));
 }
 
 /** Print a padded table: rows are arrays of strings. */
@@ -2179,38 +2155,17 @@ async function packageCmd() {
     : `Removed packages.${id} (${had}) from ${shortPath(checkout.file)}. Commit it, then \`oats sync\`.`);
 }
 
-/** `oats workspace status [--dir] [--json]` — contract §6. */
+/** `oats workspace status [--dir] [--json]` — contract §6. The read is lib/workspace-read.mjs's. */
 async function workspaceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   if (args[1] !== "status") return bail("E_USAGE", "usage: oats workspace status [--dir <d>] [--json]");
-  const ctx = workspaceContext(bail);
-  const discovery = await discoverForCli(ctx, bail);
-  let lock;
-  try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
-  const members = memberRows(discovery);
-  const packages = packageRows(lock);
-  // Standalone (decision 10): there is no workspace file — the declared packages are the
-  // kernel's own default (decision 25) and there are no teams.
-  const standalone = discovery.standalone === true;
-  const declared = Object.keys(standalone ? standalonePackages(catalogForSync(bail)).packages : (discovery.workspace?.packages || {})).sort();
-  const locked = new Set(packages.map((p) => p.id));
-  const unsynced = declared.filter((id) => !locked.has(id));
-  const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
-  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: sharedTeamRows(discovery) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name })), problems: discovery.problems, warnings: [...(discovery.warnings ?? [])] };
-  // Workspace automations (0.29.0), from the snapshot `oats sync` took, placed on this host.
-  const actx = scopeAutomations(ctx.deploymentDir, {});
-  result.automations = { host: actx.host.name, snapshot: actx.snapshot ? { takenAt: actx.snapshot.takenAt, problems: actx.snapshot.problems.length } : null, rows: [...actx.triggers, ...actx.schedules].map((a) => ({ kind: a.kind, id: a.id, runsOn: a.runsOn, owner: a.owner, runsHere: a.placement.runsHere, reason: a.placement.reason, enabledHere: a.placement.enabledHere, origin: a.origin, ...(a.invalid ? { invalid: a.invalid } : {}) })) };
-  // Automation trust (0.30): a workspace automation placed here but not trusted, and a trust entry
-  // that names none, are warnings the operator acts on in oats-local.yaml.
-  for (const a of [...actx.triggers, ...actx.schedules].filter((x) => x.placement.reason === "untrusted")) {
-    result.warnings.push({ code: "automation-untrusted", kind: a.kind, id: a.id, message: `${a.kind} ${a.id} is declared for this host (${a.runsOn}, as ${a.owner}) but not trusted here, so it does not run`, remedy: A.trustRemedy(a.id) });
-  }
-  for (const entry of A.staleTrust(actx.host, [...actx.triggers, ...actx.schedules])) {
-    result.warnings.push({ code: "automation-trust-stale", entry, message: `oats-local.yaml automations.trust names ${entry}, which is no workspace trigger or schedule${actx.snapshot ? "" : " (no automations snapshot yet: run oats sync)"}; its member may not have synced yet` });
-  }
-  await workspaceStatusFacts(result, discovery, lock, ctx);
-  if (JSON_MODE) { jsonOk(withObservation(result)); return; }
-  console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
+  const ctx = { dir: dirFlag(), maxAge: maxAgeGiven, session: commandSession, cacheDir: remoteCacheDir() };
+  if (JSON_MODE) return sayRead(await workspaceStatusAnswer(ctx));
+  const read = await workspaceStatusView(ctx);
+  if (read.exit) return sayRead(read);
+  const { result, discovery, localPath } = read.view;
+  const { members, packages, unsynced, stale } = result, standalone = result.standalone === true;
+  console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(localPath)}\n`);
   if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
   console.log("Members:");
   printTable(["member", "status", "commit", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
@@ -2227,44 +2182,7 @@ async function workspaceCmd() {
   }
   if (discovery.problems.length) { console.log("\nProblems:"); for (const p of discovery.problems) console.log(`  ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`); }
   if (result.warnings.length) { console.log("\nWarnings:"); for (const w of result.warnings) console.log(`  ${w.code}  ${w.message}${w.remedy ? `\n    ${w.remedy}` : ""}`); }
-}
-
-/** The committed (shared) teams as `workspace status` reports them: rows in label order (team model v2). */
-function sharedTeamRows(discovery) {
-  const teams = discovery.standalone === true ? {} : discovery.workspace?.teams || {};
-  return Object.keys(teams).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((label) => ({ label, team: typeof teams[label]?.team === "string" ? teams[label].team : null, description: typeof teams[label]?.description === "string" ? teams[label].description : null }));
-}
-
-/** `oats workspace status` facts (feature desktop-facts): the workspace defaults as rows; this
- *  computer (member clones and the rule that found each, disabled souls, the lock); file locations with
- *  browsable urls; each catalog package's newer version, when the official catalog has one. */
-async function workspaceStatusFacts(result, discovery, lock, ctx) {
-  const { memberCloneOf } = await import("../lib/member-clone.mjs");
-  const { browseUrl } = remoteModule;
-  const defaults = discovery.standalone === true ? {} : (discovery.workspace?.defaults ?? {});
-  const rows = (entries) => Object.entries(entries && typeof entries === "object" ? entries : {}).map(([name, v]) => ({ name, from: v === "off" ? null : v?.from ?? null, off: v === "off" })).sort((a, b) => (a.name < b.name ? -1 : 1));
-  const slot = (d) => (d && typeof d === "object" ? Object.entries(d).map(([name, v]) => ({ name, from: v?.from ?? null }))[0] ?? null : d ?? null);
-  result.defaults = {
-    slots: Object.fromEntries(LAYERS.map((l) => [l, slot(defaults[l])])),
-    capabilities: rows(defaults.capabilities),
-  };
-  result.workspace.file = discovery.standalone === true ? null : { path: "oats-workspace.yaml", url: browseUrl(discovery.key, discovery.commit, "oats-workspace.yaml") };
-  for (const m of result.members) Object.assign(m, { url: browseUrl(m.key, m.commit), membershipFile: { path: "oats-membership.yaml", url: browseUrl(m.key, m.commit, "oats-membership.yaml") } });
-  result.clones = result.members.map((m) => {
-    try { return { key: m.key, name: m.name, ...memberCloneOf(ctx.deploymentDir, ctx.local, m.key) }; }
-    catch (e) { if (e?.code === "E_CLONE_MISMATCH") return { key: m.key, name: m.name, path: null, rule: null, problem: { code: e.code, message: e.message } }; throw e; }
-  });
-  result.disabledSouls = [...(Array.isArray(ctx.local?.souls?.disabled) ? ctx.local.souls.disabled : [])];
-  result.lock = { path: join(ctx.deploymentDir, LOCK_FILE), lockfileVersion: lock.lockfileVersion ?? null };
-  const { compareSemver } = await import("../lib/semver.mjs");
-  let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
-  const cat = catalog && typeof catalog === "object" ? (catalog.packages && typeof catalog.packages === "object" && !("url" in catalog.packages) ? catalog.packages : catalog) : {};
-  for (const p of result.packages) {
-    const ref = p.source === `catalog:${p.id}` ? cat[p.id]?.ref : undefined;
-    const tag = standaloneCatalogVersion(ref);
-    const version = tag ? tag.replace(/^v/, "") : null;
-    p.latest = version && typeof p.version === "string" && compareSemver(version, p.version) > 0 ? { version, ref } : null;
-  }
+  process.stderr.write(read.stderr);
 }
 
 /** The deployment's team facts for the team verbs: oats-local.yaml, the committed workspace file and the
@@ -2649,125 +2567,6 @@ async function soulFacts(rows, discovery, lock, ctx, remote = remoteModule) {
 }
 
 // ---------- roster: status / spawn / retire / create ----------
-/** Workspace drift for `oats status` (decision 17: shown, not prevented). ONE discovery over
- *  the remotes serves every instance; `driftOf` compares each instance's recorded modules to
- *  the members' current state (and package modules to the lock), `soulDriftOf` the instance's
- *  recorded SOUL SOURCE (instance.json.workspace.soul) to its member's current commit. Offline →
- *  { unreachable }. Returns null when the deployment is not a workspace deployment (no
- *  oats-local.yaml). `souls` maps each workspace soul NAME (agents/<name>/.oats-soul-source.json
- *  present) to its stamp — the roster's `repo:` column for a workspace soul. */
-async function statusDrift(data) {
-  let ctx;
-  try { ctx = loadLocal(dirFlag()); }
-  catch (e) {
-    if (e?.code === "E_LOCAL_MISSING") return null;
-    // A 0.25 oats-config.yaml inside the deployment: the typed migration error, never a stack.
-    if (e?.code === "E_CONFIG_BROKEN") { if (JSON_MODE) jsonFail(e.code, e.message, e.details); die(e.message); }
-    throw e;
-  }
-  const hasModules = (i) => i.modules && typeof i.modules === "object" && Object.keys(i.modules).length > 0;
-  const hasSoul = (i) => i.workspace && typeof i.workspace === "object" && i.workspace.soul && typeof i.workspace.soul === "object" && typeof i.workspace.soul.repoKey === "string";
-  // Workspace souls of this roster: the stamp ensureWorkspaceSoul leaves beside the soul pointer.
-  const souls = new Map();
-  for (const a of data) {
-    if (!a.dir) continue;
-    try { const stamp = JSON.parse(readFileSync(join(a.dir, ".oats-soul-source.json"), "utf8")); if (stamp && typeof stamp.repoKey === "string") souls.set(a.name, { repoKey: stamp.repoKey, commit: typeof stamp.commit === "string" ? stamp.commit : null, path: stamp.path ?? null, ...(typeof stamp.package === "string" ? { package: stamp.package, version: stamp.version ?? null } : {}) }); }
-    catch { /* not a workspace soul (classic, or an unreadable stamp) */ }
-  }
-  const anything = data.some((a) => (a.instances || []).some((i) => hasModules(i) || hasSoul(i)));
-  if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null, local: ctx.local, discovery: null };
-  const deploymentDir = dirname(ctx.path);
-  let lock = null;
-  try { lock = readLockIfPresent(deploymentDir); } catch { lock = null; }
-  let discovery;
-  // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
-  // instance is computed against its member's current state, not reported "unreachable".
-  try { const { discoverOrStandalone } = await import("../lib/member-clone.mjs"); discovery = await discoverOrStandalone(ctx.local, { lock, remoteOptions: remoteOptionsFromEnv() }); }
-  catch (e) {
-    const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
-    return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) }, local: ctx.local, discovery: null };
-  }
-  const { driftOf, soulDriftOf } = await import("../lib/drift.mjs");
-  const drift = new Map();
-  const soul = new Map();
-  for (const a of data) for (const i of a.instances || []) {
-    const key = i.home ?? `${a.name}/${i.instance}`;
-    if (hasModules(i)) { try { drift.set(key, driftOf(i, discovery, { lock })); } catch { /* an unreadable module record shows as no drift rows */ } }
-    if (hasSoul(i)) { try { const row = soulDriftOf(i, discovery); if (row) soul.set(key, row); } catch { /* an unreadable soul record shows as no soul row */ } }
-  }
-  // The roster's soul row reflects the CURRENT member commit too (the pointer may lag a moved member).
-  // First match per key, as `find` gave, from indexes built once (not a scan per agent).
-  const packageSoulAt = new Map();
-  for (const p of discovery.packageSouls || []) { const k = `${p.package}\0${p.path}`; if (!packageSoulAt.has(k)) packageSoulAt.set(k, p); }
-  for (const [, stamp] of souls) {
-    if (typeof stamp.package === "string") { const now = packageSoulAt.get(`${stamp.package}\0${stamp.path}`); if (now) stamp.current = now.commit; continue; }
-    const member = memberRowByKey(discovery.members, stamp.repoKey);
-    if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
-  }
-  return { drift, soul, souls, unreachable: null, local: ctx.local, discovery };
-}
-/** The deployment's workspace identity in `oats status --json` (feature workspace-identity), read
- *  OFFLINE. `key` is the workspace HOST's canonical repo key (parseRepoRef(...).key) and `ref` the
- *  reference as oats-local.yaml writes it. The host is the one this run observed, else the one this
- *  machine's parsed cache knows: `ref` itself when the cache holds its workspace file, or the host its
- *  cached oats-membership.yaml names when `ref` is a member ("workspace"). A member whose host is not
- *  known keys as itself ("member"); a ref nothing is known of is taken as the host, as the schema
- *  defines `workspace:` ("workspace"). The team model resolves as teamModel resolves it (the default is
- *  the local one the workspace allows, else the workspace's; a committed team wins a collision) over the shared teams of, in order, the workspace
- *  file this run observed (`teamsFrom: "observed"`), the cached file ("cache": no git process), or none
- *  ("local"). `standalone` is the CONFIGURED standalone view only (oats-local.yaml `standalone:`): it
- *  reads no workspace file, so its local teams are the whole team model. A run that fell back to the
- *  standalone view (the host unreadable) is not: its team model is the workspace's, and its
- *  discovery is the member's, never the host's key. */
-function workspaceIdentity(local, discovery) {
-  const ref = local.workspace;
-  const standalone = typeof local.standalone === "string" && local.standalone !== "";
-  const observed = discovery && discovery.standalone !== true && discovery.workspace ? discovery : null;
-  const cached = observed ? null : cachedWorkspace(ref);
-  const keyOf = (r) => { try { return remoteModule.parseRepoRef(r).key; } catch { return null; } };
-  let key, keyFrom;
-  if (observed) [key, keyFrom] = [observed.key, "workspace"];
-  else if (cached && cached.host === null) [key, keyFrom] = [keyOf(ref), "member"];
-  else [key, keyFrom] = [keyOf(cached?.host ?? ref), "workspace"];
-  if (key === null) keyFrom = null; // a reference parseRepoRef refuses: unusable, never matched
-  let shared = null, teamsFrom = "local";
-  if (!standalone) {
-    if (observed) [shared, teamsFrom] = [observed.workspace, "observed"];
-    else if (cached?.file) [shared, teamsFrom] = [cached.file, "cache"];
-  }
-  const model = teamModel(shared, local);
-  // A soul with no souls: default of its own lives here (team model 3: the local default the workspace allows, else the workspace's).
-  const deploymentDefault = model.localDefault ?? model.workspaceDefault;
-  const labels = [...model.labels.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return {
-    key, ref, keyFrom, standalone,
-    defaultTeam: deploymentDefault === null ? null : { label: deploymentDefault, team: model.labels.get(deploymentDefault)?.team ?? null },
-    teams: Object.fromEntries(labels.map((l) => [l, model.labels.get(l).team])),
-    teamsFrom,
-  };
-}
-/** What this machine's parsed cache knows of the workspace `ref` names (the values observeWorkspace and
- *  confirmMembership stored, each at its repo's last observed commit): { host, file } — `host` the ref
- *  of the workspace host, `file` its workspace file or null — when `ref` is the host (its workspace file
- *  is cached) or a member whose cached oats-membership.yaml names it (discoverOrStandalone follows the
- *  same backlink). A member's backlink is cached whether its own workspace slot was observed (missing)
- *  or never was (the host's discovery confirmed it). { host: null, file: null } for a ref cached as
- *  having no workspace file and no backlink; null when nothing is known. */
-function cachedWorkspace(ref) {
-  const options = remoteOptionsFromEnv();
-  const cached = (r, item) => {
-    const commit = remoteModule.lastObservedCommit(r, options);
-    const value = commit ? remoteModule.peekAtCommit(r, commit, item, options) : undefined;
-    return value && typeof value === "object" ? value : null;
-  };
-  const fileOf = (read) => (read && !read.missing && !read.problems && read.value && typeof read.value === "object" ? read.value : null);
-  const read = cached(ref, "workspace");
-  if (read && !read.missing) return { host: ref, file: fileOf(read) };
-  const membership = cached(ref, "membership");
-  const host = membership?.kind === "ok" && typeof membership.value?.workspace === "string" ? membership.value.workspace : null;
-  if (host !== null) return { host, file: fileOf(cached(host, "workspace")) };
-  return read ? { host: null, file: null } : null;
-}
 /** One `modules:` line per module. */
 function driftLine(row) {
   const from = row.from || {};
@@ -2798,47 +2597,20 @@ function soulRepoLabel(a, ws) {
   const moved = stamp.current && stamp.commit && stamp.current !== stamp.commit ? ` (member now @ ${short7(stamp.current)})` : "";
   return `${memberLabel(stamp.repoKey)} @ ${short7(stamp.commit)}${moved}`;
 }
-/** A roster agent's soul key: the qualified name of a package soul, else the recorded agent (soul) name;
- *  null when no instance records a workspace soul. Exactly soulKeyOf for the soul it was spawned from. */
-function agentSoulKey(a) {
-  for (const i of a.instances || []) {
-    const soul = i?.workspace?.soul;
-    if (!soul || typeof soul !== "object") continue;
-    return soul.package && typeof soul.qualifiedName === "string" ? soul.qualifiedName : (typeof i.agent === "string" ? i.agent : a.name);
-  }
-  return null;
-}
 const short7 = (oid) => (typeof oid === "string" ? oid.slice(0, 7) : "?");
 
+/** `oats status [--dir] [--verbose] [--json]`. The read is lib/roster-read.mjs's; `--team` is refused
+ *  before --dir is read. */
 async function status() {
-  if (args.includes("--team")) { const msg = "status --team was removed with the classic team scope: `oats status` in the deployment lists every instance, and `oats workspace status` shows the members"; if (JSON_MODE) jsonFail("E_BAD_ARGS", msg); die(msg); }
-  let root;
-  try { root = ensureRoot(dirFlag()); }
-  catch (e) { if (e?.code === "E_NO_DEPLOYMENT") { if (JSON_MODE) jsonFail("E_NO_DEPLOYMENT", e.message, e.details ?? e.provenance); die(e.message); } throw e; }
-  const data = listInstances(root);
-  const ws = await statusDrift(data);
-  const verbose = args.includes("--verbose");
-  const problems = legacyLayoutProblems(root);
-  if (args.includes("--json")) {
-    // The soul key (feature launch-preference): what souls.launch and `oats soul teams <key>` use —
-    // from the instances' records, so it needs no remote.
-    for (const a of data) a.key = agentSoulKey(a);
-    if (ws) for (const a of data) {
-      const stamp = ws.souls.get(a.name);
-      if (stamp) a.soulSource = { repoKey: stamp.repoKey, commit: stamp.commit, path: stamp.path, ...(stamp.current ? { current: stamp.current, status: stamp.current === stamp.commit ? "current" : "moved" } : {}) };
-      for (const i of a.instances || []) {
-        const key = i.home ?? `${a.name}/${i.instance}`;
-        const rows = ws.drift.get(key);
-        if (rows) i.modules = rows.map((r) => ({ name: r.module, from: r.from, commit: r.recorded?.commit ?? null, current: r.current, status: r.status, ...(r.reason ? { reason: r.reason } : {}) }));
-        const s = ws.soul.get(key);
-        if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}), ...(s.package ? { package: s.package, version: s.version, currentVersion: s.current?.version ?? null } : {}) };
-      }
-    }
-    const observation = maxAgeGiven === null ? {} : { observation: observationBlock() };
-    // `features` (feature server-probe-features): this kernel's own list, as `version --json` answers
-    // it, so a remote roster relays the host's without probing it. Never part of a reused observation.
-    console.log(JSON.stringify({ root, agents: data, ...observation, features: KERNEL_FEATURES, sessionViewer: readSessionViewer(), ...(ws ? { workspace: { ...(ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true }), ...workspaceIdentity(ws.local, ws.discovery) } } : {}), ...(problems.length ? { problems } : {}), ...envelopeWarnings() }, null, 2)); return;
-  }
+  const team = args.includes("--team");
+  const ctx = { dir: team ? null : dirFlag(), team, maxAge: maxAgeGiven, session: commandSession, cacheDir: remoteCacheDir() };
+  if (JSON_MODE) return sayRead(await statusAnswer(ctx), { indent: 2 });
+  const read = await statusView(ctx);
+  if (read.exit) return sayRead(read);
+  printStatus(read.view, args.includes("--verbose"));
+  process.stderr.write(read.stderr);
+}
+function printStatus({ root, agents: data, ws, problems }, verbose) {
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
   for (const p of problems) console.log(`  ! ${p.code}: ${p.message}\n`);
@@ -4922,18 +4694,16 @@ try {
   if (kernelArgv && head.includes("--max-age")) {
     const refusal = maxAgeRefusal(cmd, head);
     if (refusal) cmdFail("E_BAD_ARGS", refusal);
-    const raw = flag("max-age");
-    if (raw === true) cmdFail("E_BAD_ARGS", `--max-age needs a value: whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}`);
-    if (!/^\d{1,5}$/.test(raw) || Number(raw) > remoteModule.MAX_AGE_LIMIT) cmdFail("E_BAD_ARGS", `--max-age takes whole seconds from 0 to ${remoteModule.MAX_AGE_LIMIT}, got ${JSON.stringify(raw)}`);
-    maxAgeGiven = Number(raw);
+    const { maxAge, refusal: badAge } = parseMaxAge(flag("max-age"));
+    if (badAge) cmdFail(badAge.code, badAge.message);
+    maxAgeGiven = maxAge;
     activateLocalInputs(); // observation.localRevision: every local config read from here on is recorded
   }
   if (kernelArgv && !head.includes("--server") && (cmd === "status" || (cmd === "workspace" && head[1] === "status"))) {
-    const override = Number(process.env.OATS_READ_REMOTE_BUDGET_MS);
-    readBudgetMs = Number.isSafeInteger(override) && override > 0 ? override : remoteModule.READ_REMOTE_BUDGET_MS;
+    readBudgetMs = readBudget(process.env);
   }
-  const inherited = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"].filter((k) => process.env[k]);
-  if (inherited.length && cmd !== "version") refuse(`this environment carries a captured context (${inherited.join(", ")}): the captured/portable path was removed in 0.26, and nothing is run against the current context in its place — retire the captured home and re-spawn it from the deployment`, { inherited });
+  const captured = cmd === "version" ? null : inheritedContextRefusal(process.env);
+  if (captured) refuse(captured.message, captured.details);
   if (cmd === "inspect" && head.includes("--request")) {
     const message = "oats inspect --request (portable onboarding inspection) is gone (the captured/portable path was removed in 0.26); use `oats onboard` / `oats sync` to set up a workspace and `oats spawn <soul> --preview` to see what a spawn would resolve";
     if (JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", message, { removed: "inspect --request", replacement: "oats onboard / oats sync; oats spawn --preview" });
