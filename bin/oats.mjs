@@ -85,53 +85,23 @@ const { readEvents, setWaiting, incarnationOf } = await kernelImport("instance-e
 const { CLIENT_VIA, addDeployment, deploymentAtOrAbove, importDesktopDeployments, listDeployments, listResolved, removeDeployment } = await kernelImport("deployments", () => import("../lib/deployments.mjs"));
 const { observeResolvedDeployment } = await kernelImport("resolved-deployment", () => import("../lib/resolved-deployment.mjs"));
 const { SESSION_RESUME_FEATURE } = await kernelImport("session-resume-contract", () => import("../lib/session-resume-contract.mjs"));
-const { KERNEL_FEATURES } = await kernelImport("kernel-features", () => import("../lib/kernel-features.mjs"));
+const { KERNEL_FEATURES, READER_API } = await kernelImport("kernel-features", () => import("../lib/kernel-features.mjs"));
 const { inheritedContextRefusal } = await kernelImport("captured-context", () => import("../lib/captured-context.mjs"));
 const { callSession, parseMaxAge, readBudget } = await kernelImport("read-call", () => import("../lib/read-call.mjs"));
 const { cachedWorkspace, legacyLayoutProblems, statusAnswer, statusView } = await kernelImport("roster-read", () => import("../lib/roster-read.mjs"));
 const { memberLabel, memberRows, packageRows, standaloneCatalogVersion, standalonePackages, workspaceName, workspaceStatusAnswer, workspaceStatusView } = await kernelImport("workspace-read", () => import("../lib/workspace-read.mjs"));
+const { expandInlineValues, flagValue } = await kernelImport("argv", () => import("../lib/argv.mjs"));
 
 const rawArgs = process.argv.slice(2);
-/** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "background", "check", "clear", "composed-skills", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-background", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "same-work", "self", "skills", "suggest-name", "verbose", "yes", "yolo"]);
-/** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
- *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
- *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
- *  expanded, it would be a flag token every reader sees, which the spaced form can never carry. */
-/** Free-text flags whose inline value may start with `--` (`--message=--deploy failed`). Such a
- *  value is kept out of argv, where it would read as a flag (`--message=--clear` must not
- *  clear), and flag() answers it from `inline`. */
-const INLINE_TEXT_FLAGS = new Set(["message"]);
-/** Free-text flags whose inline value is always kept whole, the empty one included:
- *  `--description=` clears a trigger's or schedule's description. */
-const INLINE_WHOLE_FLAGS = new Set(["description"]);
-function expandInlineValues(argv) {
-  const out = [];
-  const inline = new Map();
-  let problem;
-  for (const a of argv) {
-    const eq = a.indexOf("=");
-    if (!a.startsWith("--") || eq <= 2) { out.push(a); continue; }
-    const name = a.slice(2, eq), value = a.slice(eq + 1);
-    if (INLINE_WHOLE_FLAGS.has(name) || (INLINE_TEXT_FLAGS.has(name) && value.startsWith("--"))) { inline.set(name, value); out.push(`--${name}`); continue; }
-    problem ??= KERNEL_SWITCHES.has(name) ? `--${name} takes no value (got ${a})` : value === "" ? `--${name}= needs a value` : value.startsWith("--") ? `--${name}= takes a value, not an option (got ${a})` : undefined;
-    out.push(`--${name}`, value);
-  }
-  return { argv: out, problem, inline };
-}
 const { argv: args, problem: argvProblem, inline: inlineValues } = expandInlineValues(rawArgs);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "deployments", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "tui", "update", "version", "workspace", "worktree"]);
+const KERNEL_COMMANDS = new Set(["harness", "automations", "trigger", "capture", "capabilities", "deployments", "doctor", "inspect", "instance", "operation", "package", "readiness", "souls", "soul", "teams", "launch-config", "experimental", "onboard", "pane", "reader", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "tui", "update", "version", "workspace", "worktree"]);
 /** Commands whose argv another parser reads (packages/record, packages/experimental and packages/tui parse process.argv). */
 const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental", "tui"]);
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
-const flag = (name) => {
-  const i = args.indexOf(`--${name}`);
-  if (i >= 0 && inlineValues.has(name)) return inlineValues.get(name);
-  return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
-};
+const flag = (name) => flagValue(args, inlineValues, name);
 function yoloFlag() {
   if (args.includes("--yolo") && args.includes("--no-yolo")) cmdFail("E_BAD_ARGS", "choose --yolo or --no-yolo, not both");
   return args.includes("--yolo") ? true : args.includes("--no-yolo") ? false : undefined;
@@ -4140,6 +4110,14 @@ function updateCmd() {
 }
 
 // ---------- version (Desktop CLI API v1 probe) ----------
+/** `oats reader --stdio`: the warm reader (lib/reader.mjs), a client's child that answers status and workspace
+ *  status on its stdin and stdout until the client ends it. */
+async function readerCmd() {
+  if (args.length !== 2 || args[1] !== "--stdio") return cmdFail("E_USAGE", "usage: oats reader --stdio (the warm reader: a client's child process that answers status and workspace status reads on stdin and stdout; docs/desktop-cli-api.md \"The warm reader\")");
+  const { runReader } = await import("../lib/reader.mjs");
+  await runReader();
+}
+
 function versionCmd() {
   if (JSON_MODE) {
     // EXACT Desktop API v1 probe payload — one JSON object, nothing else on
@@ -4153,7 +4131,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: KERNEL_FEATURES, automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1, sessionViewer: readSessionViewer() }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: KERNEL_FEATURES, automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1, readerApi: READER_API, sessionViewer: readSessionViewer() }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4702,7 +4680,8 @@ try {
   if (kernelArgv && !head.includes("--server") && (cmd === "status" || (cmd === "workspace" && head[1] === "status"))) {
     readBudgetMs = readBudget(process.env);
   }
-  const captured = cmd === "version" ? null : inheritedContextRefusal(process.env);
+  // The warm reader answers each request as the CLI would, this refusal included (lib/reader.mjs).
+  const captured = cmd === "version" || cmd === "reader" ? null : inheritedContextRefusal(process.env);
   if (captured) refuse(captured.message, captured.details);
   if (cmd === "inspect" && head.includes("--request")) {
     const message = "oats inspect --request (portable onboarding inspection) is gone (the captured/portable path was removed in 0.26); use `oats onboard` / `oats sync` to set up a workspace and `oats spawn <soul> --preview` to see what a spawn would resolve";
@@ -4768,6 +4747,7 @@ else if (cmd === "status") await status();
 else if (cmd === "pane") await paneCmd();
 else if (cmd === "tui") await tuiCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
+else if (cmd === "reader") await readerCmd();
 else if (cmd === "session") await sessionCmd();
 else if (cmd === "schedule") await scheduleCmd();
 else if (cmd === "trigger") await triggerCmd();
@@ -4832,6 +4812,9 @@ Usage:
                                             Desktop CLI API v1 probe payload
   oats status [--json]                       agents, souls, running instances
       [--max-age <s>]                        reuse head observations up to <s> s old (below)
+  oats reader --stdio                        the warm reader: a client starts it as its child and
+                                            asks it status and workspace status reads, one JSON
+                                            line each way (docs/desktop-cli-api.md "The warm reader")
   oats tui [--dir <path>] [--ascii]          PREVIEW: the full-screen terminal client (docs/tui.md):
                                             the instances of the workspace of the deployment at or
                                             above <path> (default: where you are), on this machine
