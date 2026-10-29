@@ -2384,7 +2384,9 @@ with the Desktop (`packages/client/`).
   them). It has 30 seconds. An instance the kernel itself reported as
   unknown is not probed and stays unknown. A kernel with the feature reads
   that itself, live, in `oats status`: no probe runs, and each instance is
-  as the kernel reported it.
+  as the kernel reported it, its tmux record included. An instance home
+  with no tmux record (every spawn records one) then has no terminal to
+  open, where the probe fills in the default session.
 - **Every deployment opened in the run is read each time**, at most two at
   a time.
 - **How often:** 5 seconds after the last read ended; 30 seconds once ten
