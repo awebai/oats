@@ -110,8 +110,21 @@ on a module load. The reader classifies a request with the kernel's hot-read
 forms but does not load through the hot-read table, so a `HotReadUnlisted`
 tripwire can never reach a reader answer.
 
-Rejected: loading on first use, which puts a module load inside the first
-request's deadline.
+`oats reader --stdio` is itself a hot-read form (`lib/hot-reads.mjs`): `bin`
+loads only its dispatch's own leaves for it, never `core.mjs` or the other
+modules of the full command set, and `lib/reader.mjs`'s own imports, with
+`PRELOAD`, load the reads. Every module the reads use, and nothing the CLI's
+other commands need, is loaded before the hello (measured on a real
+deployment: the hello in about 140–180 ms instead of about 300, and about
+20 MiB less resident memory while it answers a poll). `test/cli-hot-reads.test.mjs` pins that no heavy module loads before
+it.
+
+Rejected:
+- Loading on first use, which puts a module load inside the first request's
+  deadline.
+- Loading the CLI's full module set first, as every command that is no hot
+  read does: it adds `core.mjs` and the rest, which no read uses, to the
+  reader's start and its memory for its whole life.
 
 ### D5. Two reads, one at a time
 
