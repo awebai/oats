@@ -149,10 +149,31 @@ their place.
 ## 7. Labels
 
 Harvest PRs carry `okf-harvest` (the harvester creates the label if the
-repository lacks it). The maintainer adds `okf-needs-human` when a PR
-would supersede a human-accepted decision. To pre-create both:
+repository lacks it). To pre-create it:
 
 ```sh
 gh label create okf-harvest --repo <owner>/<repo> --force --color 0E8A16 --description "OKF harvest PR (oats.okf)"
-gh label create okf-needs-human --repo <owner>/<repo> --force --color D93F0B --description "OKF: needs a human decision"
 ```
+
+A label `okf-needs-human` left from an older release no longer stops
+anything, but a PR it parked is reviewed again only on a new trigger event.
+The trigger polls: a close it never saw is no reopen. On this host, once the
+lock has 5.7.0:
+
+1. Retire the knowledge-maintainer instances left from older reviews, running
+   or stopped (`oats retire <instance>`): a retained home holds a concurrency
+   slot, and one composed from an older package keeps the old behaviour.
+2. Remove the label from each parked PR, then close it
+   (`gh pr edit <number> --repo <owner>/<repo> --remove-label okf-needs-human`,
+   `gh pr close <number> --repo <owner>/<repo>`).
+3. Wait until `oats trigger status <id> --json` shows a `lastPoll` after the
+   closes with `ok: true` and `prs` under 100. Only such a poll records a
+   close: a failed poll records none (keep waiting), and one that fetched 100
+   open PRs may be truncated (stop and report the poll cap; do not reopen).
+   `oats trigger test` does not count: it records nothing.
+4. Reopen each PR (`gh pr reopen <number> --repo <owner>/<repo>`), and check
+   that `oats trigger status <id> --json` lists a `pending` or `fired` entry
+   with `event: "reopened"` for each PR's number. With `max` 2, the rest wait
+   as `held` until a maintainer retires.
+
+Never clear the trigger's dedup state.
