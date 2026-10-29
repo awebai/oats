@@ -125,6 +125,7 @@ Otherwise it is listed with the reason `assigned-elsewhere`, `owner-mismatch` (n
 3. **Tasks:** if the provenance names a tasks provider and refs, and its own tasks capability matches, it reads those tickets. Otherwise the verdict records `tasks: "unavailable"`. This is never a blocker.
 4. **Verdict**, recorded as a structured `okf-review` PR comment: `merge`; `amend+merge` (it pushes fixes, supersession edits in other concepts of the same base, index and log to the PR branch); `request-changes` (it messages the harvester and waits, bounded); `close` (with the reason); `needs-human`. It checks the doctrine's two-part test, one canonical home, explicit supersession and provenance.
 5. **Human-accepted decisions are never superseded silently.** A PR that would supersede a concept with human acceptance evidence is not merged: the maintainer labels it `okf-needs-human` and asks a human. That label is a hard stop that only a human removes.
+   *Superseded by oats.okf 5.7.0 ([awebai/oats-okf#118](https://github.com/awebai/oats-okf/issues/118)): the maintainer never parks a PR; it merges such a supersession only with the human's acceptance cited (checked when the record is on GitHub, otherwise recorded as source-reported) and closes it otherwise.*
 6. It merges with the host's `gh` (squash, pinned to the reviewed head), notifies the harvester (`merged` or `closed`) and retires.
 
 **Messaging:** the harvester and the maintainer talk through the soul's messaging capability, in the deployment's default team like every instance. There is no dedicated team to declare; a deployment that wants them in another team opts them in locally, as for any soul (see [the team model](2026-09-27-team-model-v2.md)).
@@ -160,5 +161,6 @@ The oats.okf inject teaches a work mode over both kinds of knowledge:
 3. **Workspace automations are placed by declaration:** `runsOn` names the one host, `owner` the account it acts as, and a host runs one only when both match.
 4. **The harvester is a package soul** (it needs messaging and a lifetime past its PR); capability agents are removed.
 5. **The maintainer merges autonomously** when the doctrine passes, except where it would supersede a human-accepted decision (`okf-needs-human`).
+   *Superseded by oats.okf 5.7.0 ([awebai/oats-okf#118](https://github.com/awebai/oats-okf/issues/118)): no exception remains, and the maintainer settles every PR itself: a supersession of a human-accepted decision merges when it cites the human's acceptance and is closed otherwise.*
 6. **The harvester and the maintainer hold no knowledge slot** (no recursive harvest).
 7. **Harvest is opt-in per host and opt-out per soul**, and the soul's opt-out is absolute.
