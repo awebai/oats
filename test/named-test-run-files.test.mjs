@@ -118,7 +118,7 @@ test("named-test-run runFile: a file that ends leaves no process of its group ru
 });
 
 // `npm test` puts the tree's node_modules/.bin first on PATH, and the tests find the tree's
-// dev-installed binaries there by name (pi, for a fixture instance): a file run alone does too.
+// installed binaries there by name (pi, for a fixture instance): a file run alone does too.
 test("named-test-run runFile: a file finds the tree's node_modules/.bin binaries by name, first on PATH", async () => {
   const bin = join(tree, "node_modules", ".bin");
   mkdirSync(bin, { recursive: true });

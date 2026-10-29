@@ -230,6 +230,8 @@ test("named-test-run testEnv: a test file gets this process's environment, less 
   // The tested tree's node_modules/.bin comes first, as `npm test` puts it: the files find its pi.
   assert.deepEqual(testEnv(env, Object.values(macos.request), "/w/tested"), { PATH: `/w/tested/node_modules/.bin${delimiter}/bin`, CI: "true", GITHUB_ACTIONS: "true", TMUX_TMPDIR: "/t" });
   assert.deepEqual(testEnv({ CI: "true" }, [], "/w/tested"), { CI: "true", PATH: "/w/tested/node_modules/.bin" });
+  // A relative tree is made absolute: a child resolves a relative PATH entry against its own directory.
+  assert.equal(testEnv({ PATH: "/bin" }, [], "tested").PATH, `${join(process.cwd(), "tested", "node_modules", ".bin")}${delimiter}/bin`);
 });
 
 const facts = (over = {}) => ({

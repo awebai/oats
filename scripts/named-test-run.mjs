@@ -341,11 +341,11 @@ function killGroup(pid) {
  *  a nested test run, which would make the file report in the runner's wire format when this
  *  script is itself under test. `requestVars` are the names of the request's two variables. With a
  *  `tree`, its `node_modules/.bin` comes first on PATH, as `npm test` puts it there: the tests find
- *  the tree's dev-installed binaries (pi) by name. */
+ *  the binaries installed in the tree (pi) by name. */
 export function testEnv(env, requestVars = [], tree = null) {
   const dropped = new Set([...requestVars, "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "NODE_TEST_CONTEXT"]);
   const kept = Object.fromEntries(Object.entries(env).filter(([key]) => !dropped.has(key)));
-  if (tree) kept.PATH = [join(tree, "node_modules", ".bin"), kept.PATH].filter(Boolean).join(delimiter);
+  if (tree) kept.PATH = [resolve(tree, "node_modules", ".bin"), kept.PATH].filter(Boolean).join(delimiter);
   return kept;
 }
 

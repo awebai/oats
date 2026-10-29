@@ -189,8 +189,8 @@ leaves out the request's two variables, the runner's command files
 `GITHUB_EVENT_NAME` reach the test, and on Linux so does `XDG_RUNTIME_DIR`.
 It puts the tested tree's `node_modules/.bin` first on `PATH`, as `npm test`
 does in pull-request CI and the release workflow: a test that starts a
-fixture instance finds the tree's dev-installed `pi` there, from the
-workflow's `npm ci` in the tested tree.
+fixture instance finds there the `pi` that the workflow's `npm ci` installs
+in the tested tree.
 
 A guard is a switch, not a proof. Anyone can set these variables on their own
 machine, and a guarded test that runs there drives that machine's real
