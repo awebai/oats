@@ -7,8 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { fixtureBase } from "./helpers/host-fixture.mjs";
+import { delimiter, dirname, join } from "node:path";
+import { fakeProgram, fixtureBase } from "./helpers/host-fixture.mjs";
 import { buildTable, conclude, defaultTmuxSocket, runFile, runFiles, verdict } from "../scripts/named-test-run.mjs";
 
 // The shared fixtures' base, for its short path: a socket's path has about a hundred bytes, and
@@ -115,6 +115,18 @@ test("named-test-run runFile: a file that ends leaves no process of its group ru
   await runFiles([LINGER], { cwd: tree, write: said.write, timeoutMs: 120_000 });
   recorded("linger");
   assert.match(said.text(), /\(processes it started were still running when it ended: they were killed\)/);
+});
+
+// `npm test` puts the tree's node_modules/.bin first on PATH, and the tests find the tree's
+// installed binaries there by name (pi, for a fixture instance): a file run alone does too.
+test("named-test-run runFile: a file finds the tree's node_modules/.bin binaries by name, first on PATH", async () => {
+  const bin = join(tree, "node_modules", ".bin");
+  mkdirSync(bin, { recursive: true });
+  fakeProgram(bin, "oats-mtr-tree-bin", "echo from-the-tree");
+  const file = "test/tree-bin.test.mjs";
+  writeFileSync(join(tree, file), `${HEAD}import { execFileSync } from "node:child_process";\ntest("runs the tree's binary by name", () => {\n  assert.equal(execFileSync("oats-mtr-tree-bin", { encoding: "utf8" }).trim(), "from-the-tree");\n  assert.equal(process.env.PATH.split(${JSON.stringify(delimiter)})[0], ${JSON.stringify(bin)});\n});\n`);
+  const out = collect(), run = await runFile(file, { cwd: tree, env: { ...process.env, PATH: dirname(process.execPath) }, write: out.write, timeoutMs: 120_000 });
+  assert.deepEqual([verdict(run).label, run.counts?.pass], ["passed", 1], out.text());
 });
 
 // The seam: a plain script in place of `node --test <file>`, for the ends a test runner does not have on request.
