@@ -26,6 +26,10 @@ successor, with a link to its full text.
   a stopped home's package modules to the locked versions, with plan, apply,
   provider adoption and undo (supersedes workspace model v2 items 10–11 for
   package modules).
+- [The warm reader](2026-10-29-warm-reader.md): `oats reader --stdio`, a
+  child the Desktop and the TUI start, answers `oats status` and `oats
+  workspace status` with the kernel's own read code kept loaded: warm code,
+  not warm data, the same answers as the CLI, and the CLI as the fallback.
 
 The Desktop's design brief for designers is in
 [packages/desktop/docs](../../packages/desktop/docs/design-brief.md).
