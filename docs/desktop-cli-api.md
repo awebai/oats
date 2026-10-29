@@ -73,6 +73,10 @@ see the [official catalog](official-catalog.md) for current pins.
   at every run and keeps no answer, so read it again after a tmux upgrade.
   The feature is in every kernel's list that has the field, whatever this
   host's tmux: gate on the feature, then read the field.
+- `readerApi` (feature `warm-reader`) is the protocol of `oats reader
+  --stdio`, which the reader's hello repeats. Start a reader only where the
+  probe lists both the feature and `readerApi: 1`
+  ([The warm reader](#the-warm-reader)).
 - In text mode the command prints `@awebai/oats <version> (desktop API v1)`.
 
 ### Features
@@ -156,6 +160,8 @@ see the [official catalog](official-catalog.md) for current pins.
 | `spawn-apply-suggest-name` | `--suggest-name` on a spawn apply, without `--preview`: the apply names the instance as a preview's `--suggest-name` would, on the machine that spawns, and its result carries `naming` ([On an apply](#on-an-apply-feature-spawn-apply-suggest-name)). Routed, the host needs the feature (`E_REMOTE_INCOMPATIBLE`, nothing sent): gate on the host's `probe.features` and don't send the flag to a host without it | |
 | `instance-background` | background instances (awebai/oats#1579): `soul.yaml` `background:`; `oats spawn … --background\|--no-background`, whose preview and result carry `background` and `backgroundFrom`; `oats instance background <instance> on\|off`, local and `--server`; `background: true` on `oats status --json` instance rows, `oats server roster --json` rows, `oats inspect --home` `instance` and `oats souls --json` soul rows, absent otherwise ([Background instances](#background-instances-oats-instance-background)). Gate on the probe, locally or in the host's `probe.features`: an older kernel refuses the flags and the verb, and its rows have no `background`. A routed spawn with either flag needs the host's feature (`E_REMOTE_INCOMPATIBLE`, nothing sent) | `instanceBackgroundApi: 1` (payload only) |
 | `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
+| `warm-reader` | `oats reader --stdio`, the warm reader: a child process a client starts, which answers `oats status --json` and `oats workspace status --json` on its stdin and stdout, many times, with the CLI's own answers ([The warm reader](#the-warm-reader)). Gate on the probe, never by trying: a kernel without it has no `oats reader` | `readerApi: 1` |
+| `status-liveness` | the local liveness on `oats status --json` instance rows is complete: `running` and `runtimeState` are read live at every call, from the row's recorded tmux server under the pane and shell-descendant rule, with `false` for a shell only on positive evidence and `null` when the reading is inconclusive ([The roster](#the-roster-oats-status---json)). A client needs no liveness probe of its own beside the roster where the probe lists it, whether the read goes through the warm reader or the CLI. Independent of `warm-reader` | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -267,6 +273,7 @@ stdout (progress goes to stderr):
 | `oats version --json` | the probe |
 | `oats status --json` | the [roster document](#the-roster-oats-status---json) |
 | a first `oats retire --json`, and a deferred self-retire | the raw [retire receipt](#retire) |
+| `oats reader --stdio` | the reader's protocol lines ([The warm reader](#the-warm-reader)) |
 
 <a id="flags"></a>
 ### Flag syntax
@@ -3884,6 +3891,206 @@ instance's own machine: the local command, with `--server <id>` added.
 - A host that does not advertise the feature and API number is refused with
   `E_REMOTE_INCOMPATIBLE`, naming both and the host's version, before
   anything is sent. A name two homes share on the host is `E_AMBIGUOUS`.
+
+<a id="the-warm-reader"></a>
+## The warm reader (`oats reader --stdio`)
+
+Feature `warm-reader`, `readerApi: 1`. A client that polls a deployment can
+start one long-lived child, `oats reader --stdio`, and send it the poll's
+reads, `oats status --json` and `oats workspace status --json`, over its
+stdin and stdout instead of running the CLI for each one. The reader answers
+with the kernel's own read code, kept loaded. It is an accelerator of
+identical answers: whenever it is absent, refuses, times out or dies, the
+client runs that same read through the CLI, unchanged. The decisions are in
+the [design record](design/2026-10-29-warm-reader.md).
+
+```text
+oats reader --stdio
+```
+
+It takes no other argument: bare `oats reader`, or anything else after it,
+is `E_USAGE`.
+
+- **Warm code, not warm data.** The reader keeps only loaded kernel code and
+  install-derived constants (the kernel's code fingerprint, the parsed JSON
+  schemas, the boot id). Every request reads the deployment afresh: instances
+  spawned or retired by another process, an edited `oats-local.yaml` or
+  lock, a dead session all show in the next answer exactly as in a CLI run.
+  `--max-age` reuse is the CLI's own on-disk
+  [observation reuse](#observation-reuse-feature-observe-max-age-oats-0311),
+  unchanged.
+- **Same answer as the CLI.** For an accepted request, `exit` and `answer` are
+  what `oats <argv>`, run by the same install with the same environment and
+  with cwd = `--dir`, prints and exits with at that moment: the same envelope
+  and schema versions, the same error codes and refusals, the same `null` and
+  unknown facts. An environment that carries `OATS_RESOLUTION` or
+  `OATS_DEPLOYMENT` is one of them: the reader starts, and answers each
+  request with the CLI's `E_UNSUPPORTED_MODE`. Anything the reader cannot
+  answer that way is a refusal, a frame of its own, on which the client runs
+  the CLI: a client cannot tell the warm path from the fallback.
+
+### Starting it and the probe
+
+- `oats version --json` lists feature `warm-reader` and `readerApi: 1` (the
+  feature and API number convention). A client starts a reader only when the
+  probe it holds lists both.
+- The client starts `oats reader --stdio` from the same binary, Node and
+  environment it runs its CLI reads with.
+- The version rule is the CLI's own: a reader is trusted only when its
+  version equals the probe's, which the client has already accepted under its
+  normal range. There is no second rule. Remote routes are out: a reader
+  answers reads of this machine's deployments only.
+
+### Wire format
+
+UTF-8, one JSON object per line (`\n`), both directions. Frames are told
+apart by their keys. A client ignores unknown keys and any line that is no
+frame it knows (a request it then misses times out and falls back).
+
+- **Hello** (reader to client, the first line, once every module the reads
+  use is loaded, so a hello means ready):
+
+  ```json
+  {"readerApi":1,"version":"<the kernel's version>","reads":["status","workspace status"]}
+  ```
+
+- **Request** (client to reader), at most 64 KiB a line:
+
+  ```json
+  {"id":"<a string of at most 64 characters, or a safe integer>","argv":["status","--dir","/w","--max-age","60","--json"]}
+  ```
+
+  Accepted: an argv the kernel's own hot-read classification
+  (`lib/hot-reads.mjs`) names as one of `reads`, that includes `--json` and
+  an absolute `--dir`. So the flags, [`--flag=value`](#flags) and the
+  exclusion of `--help` are exactly the CLI's; `--team` or a bad `--max-age`
+  get the CLI's own `E_BAD_ARGS` answer; `status --server` is another read
+  and is refused. A relative, blank or missing `--dir`, or no `--json`, is
+  refused. Other keys of a request are ignored.
+- **Answer** (reader to client):
+
+  ```json
+  {"id":"…","exit":0,"answer":{"…":"…"},"stderr":"<text>"}
+  ```
+
+  `answer` is the JSON value the CLI prints on stdout, an error envelope
+  included. Equivalence is `exit` and `answer`. `stderr`, present only when
+  there is some, is diagnostic text (the CLI's stderr for that read),
+  informative only, never parsed and outside the equivalence. It is at most
+  8 KiB of UTF-8, cut at a character boundary, so that it never pushes an
+  answer line over a client's bound.
+- **Refusal** (reader to client), never a CLI answer:
+
+  ```json
+  {"id":"…","refused":{"code":"E_READER_UNSUPPORTED","message":"…"}}
+  ```
+
+  `id` is `null` when the line's id cannot be read. The codes are used only
+  here, never in an envelope:
+
+  | Code | When | Then the reader |
+  |---|---|---|
+  | `E_READER_BAD_REQUEST` | a line that is not a request: not one JSON object, an `id` that is neither a string of at most 64 characters nor a safe integer, an `argv` that is not an array of strings, a line over 64 KiB | answers the next request |
+  | `E_READER_UNSUPPORTED` | an argv outside the accepted forms; a `--dir` the reader cannot make its working directory (a removed deployment), which the CLI then answers with its own failure | answers the next request |
+  | `E_READER_STALE` | the install changed since the reader started ([The install stamp](#reader-install-stamp)) | refuses every queued request the same way, then exits 0 |
+  | `E_READER_DEFECT` | an unexpected failure of the reader | writes the stack to its stderr and exits 1: per-request state may be half reset |
+
+- Answers may arrive in any order: match them by `id`. This kernel answers
+  one request at a time, in arrival order.
+
+<a id="reader-install-stamp"></a>
+### The install stamp
+
+An install that changed under a reader (an upgrade, a Node upgrade) is never
+answered from the old code. The reader takes a stamp of its install before
+any of the kernel's own modules load (only the CLI's entry point and three
+small modules of Node built-ins load before it), so an install that changes
+while the reader starts is seen too:
+the install root directory's device and inode; device, inode, size and mtime
+of `package.json`, `bin/oats.mjs`, `package-catalog.json`, every file under
+`lib/`, `docs/*.schema.json`, each runtime dependency's `package.json`
+where it resolves at that moment (a dependency newly installed nearer the
+install moves it) and the Node binary (its real path); and the mtime of each
+directory under `lib/` and of `docs/` (a file added or removed). It takes the
+stamp again when a request starts and again just before that request's answer
+is written. Any difference, or a file gone (an npm global update replaces the
+package directory; a half-written install reads as changed too), refuses that
+request and every queued one with `E_READER_STALE`, and the reader exits 0.
+No hashing, no timers, no file watchers. A `PATH` symlink re-pointed at
+another install of the same version is invisible to any stamp: the client's
+binding of its reader to the probe record it started it for covers it.
+
+### Lifetime
+
+The reader's lifetime is its client's. Its exit and signal handlers are
+installed once, at start.
+
+| The reader exits | Status |
+|---|---|
+| on stdin's end or a read error on it (its client is gone) | 0 |
+| on `EPIPE` on stdout | 0 |
+| on `SIGTERM`, `SIGINT`, `SIGHUP` | 128 + the signal's number: 143, 130, 129 |
+| after `E_READER_STALE` | 0 |
+| after `E_READER_DEFECT` | 1 |
+
+A request in flight when the reader ends is not answered, and its read session
+is closed on the way out, which kills its `git` children. A reader killed
+with `SIGKILL` leaves its `git` process groups to their own timeouts, as the
+CLI does. Its stdout carries protocol lines only: anything else written there
+goes to its stderr, and no child it runs inherits its stdout.
+
+<a id="reader-working-directory"></a>
+### The working directory
+
+The reads read no working directory, but the programs they run by name
+(`tmux`, `git`) are found on `PATH`, and a relative or empty `PATH` entry
+resolves against the process's working directory, not the deployment's. So
+that it resolves as in a CLI run with cwd = `--dir`, the reader changes its
+working directory to the request's `--dir` for the read and back to its
+install root when the request ends, answered or failed: it never keeps a
+deployment directory that may be removed or unmounted. This depends on
+answering one request at a time. A reader that answers two at once must first
+give each child it runs its own working directory.
+
+### Client rules
+
+- **Start.** Exactly as the client runs its CLI reads: the same realpath'd
+  binary, the same Node, the same environment, no shell. Stdin and stdout
+  piped, stderr ignored or drained with a bound (an undrained pipe would
+  block the reader). Reads issued before the hello arrives go to the CLI: no
+  tick waits on the reader's start.
+- **Trust.** Only after a hello, within the CLI read's timeout, with
+  `readerApi === 1`, a `version` equal to that of the probe that gated it,
+  and the read in `reads`. A mismatch: end the reader and use the CLI until
+  the client's probe changes; no retries. A reader is bound to the probe
+  record it was started for: a read under another record ends it, and the
+  next one starts for the new record.
+- **What goes to the reader.** Background reads (`--max-age` above 0). Live
+  reads (`--max-age 0`: after a mutation, an admission, a probe change) go to
+  the CLI, so they never queue behind the reader's one-at-a-time answers.
+- **Refusals.** `E_READER_UNSUPPORTED` or `E_READER_BAD_REQUEST`: that read
+  goes to the CLI, and the reader is kept. `E_READER_STALE`: the install
+  changed; the read goes to the CLI, the client probes again and starts a
+  fresh reader on a later tick (not counted as a failure). A client that
+  never probes again uses the CLI for the rest of its session.
+- **Failures**, which count toward giving up: an exit without an answer, a
+  hello timeout, a request timeout, `E_READER_DEFECT`. The reads in flight go
+  to the CLI; a new reader starts on a later tick with backoff (1 s, doubling
+  to 5 min); after 5 consecutive failures without an answer, the CLI until
+  the client's probe changes, or until its session ends.
+- **Timeout.** A request's deadline is the CLI read's own timeout, counted
+  from when it becomes the oldest unanswered request: time in the queue does
+  not count.
+- **Answers.** The client bounds the raw answer line by the CLI read's output
+  limit before parsing it, parses it once, and passes `answer` and `exit`
+  through the same validation as the CLI's stdout and exit status: an error
+  envelope with a nonzero `exit` is handled exactly as from the CLI. The
+  reader's stderr, the answer's field and its own, is never forwarded, as
+  the CLI read's stderr is not. A client never
+  treats the reader as authority beyond what the same CLI read would be.
+- **End.** The app ends its reader when it quits: closing its stdin is
+  enough, and `SIGTERM` works too. The reader's lifeline is the app's
+  exclusive hold of its stdin: the app's death closes it.
 
 <a id="instance-git-state-oats-instance-gitdiff-instancegitapi-1-oats-0247"></a>
 ## Git and diff
