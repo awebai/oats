@@ -20,10 +20,22 @@
     with its link).
   - `oats okf-maintenance review-context` no longer reports `blocked`, and
     `settled` now means only that the PR is not open.
-  - **Re-review each parked PR** once the pin moves: remove its
-    `okf-needs-human` label, then close and reopen it, so the
-    `harvest-review` trigger spawns a maintainer under the new rule. A label
-    left in place is inert, but the PR is not reviewed again until it is
-    reopened.
+  - **Re-review each parked PR.** A label left in place is inert, but the
+    PR is reviewed again only on a new `harvest-review` event. The trigger
+    polls: a close it never saw is no reopen. On the trigger's review host,
+    once its lock has 5.7.0:
+    1. Retire the knowledge-maintainer instances left from older reviews,
+       running or stopped: a retained home holds a concurrency slot (`max`
+       2, `perKey` 1), and one composed from an older package keeps the old
+       behaviour.
+    2. Remove `okf-needs-human` from each parked PR, then close it.
+    3. Wait until `oats trigger status <id>` shows a poll that completed
+       after the closes (every 2m). `oats trigger test` does not count: it
+       records nothing.
+    4. Reopen each PR, and check that `oats trigger status <id>` lists a
+       `reopened` event for each, pending or fired. At most two reviews run
+       at once; the rest wait as `held` until a maintainer retires.
+
+    Never clear the trigger's dedup state.
   - [Knowledge operations: the flow](../knowledge.md#the-flow), step 4,
     says what holds before and after 5.7.0.
