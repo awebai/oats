@@ -280,8 +280,13 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    for a labelled PR. A gh error can leave remote effects, so partial or
    uncertain publication is not completion or permission to clean up.
 4. **Review.** A separate `oats.okf/knowledge-maintainer` reviews the PR.
-   Human-accepted decisions are not silently superseded; the review path
-   keeps its human gate. A PR is not accepted knowledge until merged.
+   A PR is not accepted knowledge until merged. Human-accepted decisions are
+   not silently superseded. Before oats.okf 5.7.0 the maintainer labels a PR
+   that would supersede one `okf-needs-human` and leaves it to a human. From
+   5.7.0 the review never parks a PR: such a supersession merges only with the
+   human's acceptance cited (checked when the record is on GitHub, otherwise
+   recorded as source-reported), and is closed without it
+   ([awebai/oats-okf#118](https://github.com/awebai/oats-okf/issues/118)).
 
 The promotion test belongs to
 [What deserves to become knowledge](knowledge-theory.md#what-deserves-to-become-knowledge),
