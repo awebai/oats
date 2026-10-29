@@ -3288,7 +3288,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
   // mapped, not assumed.
   const expected = { "oats-okf": "oats.okf", "oats-aweb": "oats.aweb", "oats-aweb-tasks": "oats.aweb", "oats-jira": "oats.jira", "oats-linear": "oats.linear", "oats-authoring": "oats.authoring",
     "oats-engineering-expert": "oats.engineering", "oats-developer": "oats.engineering", "oats-code-review": "oats.engineering", "oats-maintainer": "oats.engineering",
-    "oats-cloning": "oats.cloning", "oats-folio": "oats.apps", "oats-library": "oats.apps" };
+    "oats-folio": "oats.apps", "oats-library": "oats.apps" };
   for (const [slug, pkg] of Object.entries(expected)) {
     const ref = catalog.packages[pkg]?.ref;
     assert.ok(ref, `package-catalog.json pins no ref for ${pkg}`);
@@ -3305,6 +3305,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
   }
   assert.equal(catalog.packages["oats.engineering"].ref, "v1.17.2");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
+  // This workspace does not pin it, so it has no mirror here (as oats.machine).
   assert.equal(catalog.packages["oats.cloning"].ref, "v1.1.0");
   assert.equal(catalog.capabilities["oats.cloning"], undefined, "an identity mapping needs no alias");
   // oats.apps exports two capabilities under their own ids; the catalog aliases each to the package.
