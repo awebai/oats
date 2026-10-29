@@ -3975,7 +3975,9 @@ frame it knows (a request it then misses times out and falls back).
   `answer` is the JSON value the CLI prints on stdout, an error envelope
   included. Equivalence is `exit` and `answer`. `stderr`, present only when
   there is some, is diagnostic text (the CLI's stderr for that read),
-  informative only, never parsed and outside the equivalence.
+  informative only, never parsed and outside the equivalence. It is at most
+  8 KiB of UTF-8, cut at a character boundary, so that it never pushes an
+  answer line over a client's bound.
 - **Refusal** (reader to client), never a CLI answer:
 
   ```json

@@ -14,7 +14,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { hotLeaves, hotRead } from "../lib/hot-reads.mjs";
-import { LINE_LIMIT, PRELOAD } from "../lib/reader.mjs";
+import { boundedStderr, LINE_LIMIT, PRELOAD, STDERR_LIMIT } from "../lib/reader.mjs";
 import { OATS_VERSION } from "../lib/version.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -301,4 +301,18 @@ test("ids round-trip, strings and integers; unknown keys are tolerated; requests
   r.send({ id: "extra", argv: status, extra: true, argv2: ["x"] });
   assertCliAnswer(fx, await r.next(), "extra", status);
   assert.deepEqual(await r.end(), { code: 0, signal: null }, r.stderr);
+});
+
+test("an answer's stderr is at most 8 KiB of UTF-8, cut at a character boundary, and short text is kept whole", () => {
+  assert.equal(STDERR_LIMIT, 8 * 1024);
+  const notice = "oats: warning: a notice\n";
+  assert.equal(boundedStderr(notice), notice);
+  const ascii = "x".repeat(STDERR_LIMIT + 10);
+  assert.equal(boundedStderr(ascii), "x".repeat(STDERR_LIMIT));
+  // A 4-byte character across the limit is left out, never split.
+  const wide = `${"x".repeat(STDERR_LIMIT - 2)}\u{1F600}tail`;
+  const cut = boundedStderr(wide);
+  assert.equal(cut, "x".repeat(STDERR_LIMIT - 2));
+  assert.ok(Buffer.byteLength(cut) <= STDERR_LIMIT);
+  assert.equal(Buffer.from(cut).toString("utf8"), cut, "no broken character");
 });
