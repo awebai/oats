@@ -18,7 +18,7 @@
  *                                   { action: show|file, capability, path? } → `oats capabilities show` for one held catalog row
  *                                   (server/capability-show.mjs; local only; errors 409/400 { error, code })
  *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
- *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
+ *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError, reader)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
  *   POST /api/windows               { views: [viewId|null, …] } → the views the open windows show: the remote roster

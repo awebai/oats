@@ -924,7 +924,14 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
 
 ## Unchanged, v2-agnostic
 
-Terminal-target liveness (`packages/client/liveness.mjs`, run out of process by `packages/client/liveness-main.mjs`) still
+With a CLI that lists feature `status-liveness`, a `status` row's `running`, `runtimeState`,
+`runtimeError` and `tmux` are the complete local liveness reading, made by the kernel under its pane
+rule on every call. The backend then runs no collector and keeps the rows as reported
+(`packages/client/deployment-panel.mjs` `kernelLiveness`): there is no `terminal-probe` text on a local
+row, and a home with no tmux record has no terminal to open. Nothing fills in a default session. The gate
+is the feature of the probe the cycle read with, never the version, whichever route answered the read.
+
+For a CLI without it, terminal-target liveness (`packages/client/liveness.mjs`, run out of process by `packages/client/liveness-main.mjs`)
 observes the exact recorded tmux socket/session/window — it reads no deployment
 file. It refines a row only when the kernel answered `running` true or false: a row the kernel
 answered `running: null` is not probed, and keeps the kernel's `running`, `runtimeState`,

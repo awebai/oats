@@ -175,7 +175,7 @@ outcome (`complete`, `partial` or `incomplete`, from `apply` or from a `result`
 that found a pending apply settled), the backend also reads that one local
 deployment at once (`observeSpawned`, the `OATSWEB_SPAWNREAD` block): the same
 per-deployment read as a cycle (`oats status --max-age 0`, `oats workspace
-status`, the liveness child), live, through a second observer made by the same
+status`, the liveness child where one runs), live, through a second observer made by the same
 factory (`spawnObserver`). That observer is used only on demand: no timer, no
 loop, and it never joins a cycle's read, which started before the apply
 answered. The bound is at most 2 post-spawn reads at once beside the cycle's 2,
@@ -254,7 +254,7 @@ show nothing new.
 A window focus re-probes the CLI (`POST /api/cli/reprobe`). The probe
 generation — the revision every pending deployment read is admitted under —
 moves only when `probeSignature` (`packages/client/cli-probe-contract.mjs`:
-everything but `probedAt`, `tried`, `source`) changes. An unchanged probe
+everything but `probedAt`, `tried`, `source` and the warm reader's `reader`) changes. An unchanged probe
 updates the diagnostics in place, cancels nothing and wipes nothing. The
 renderer's `cli-status.mjs` applies the same rule before notifying its
 subscribers (which treat a notification as "the CLI changed"), so the focus
@@ -275,6 +275,35 @@ never carries the flag, and mutating verbs refuse the option
 (`packages/client/deployment-contract.mjs`: `maxAgeArgv`, `validMaxAge`). The kernel
 reports `observation` only when the flag was passed; otherwise `observedAt` is
 the read's completion time.
+
+## The warm reader (kernel feature `warm-reader`, `readerApi: 1`)
+
+Both observers read through `createWarmReader` (`packages/client/warm-reader.mjs`), a reader
+with `cliDeploymentRead`'s signature, so coalescing, the admission bound and probe-generation
+revocation stay the observer's. A background read (`--max-age 60`) goes to one long-lived
+`oats reader --stdio` child of the accepted CLI, when the probe lists the reader; every live read
+(`--max-age 0`) and every read the reader cannot answer runs the CLI as before. The cadence does
+not change; a cycle's reads may queue behind each other in the reader, which answers one at a time.
+
+- **One answer, one check.** The reader's answer goes through the CLI read's own validation
+  (`deployment-read-cli.mjs` `deploymentReadAnswer`, with `deploymentReadRefusal` and
+  `deploymentReadArgv`, which both routes use). The line is bounded before it is parsed and
+  parsed once. The reader's stderr is ignored, as the CLI read's is.
+- **Start and trust.** It starts on the first background read under a probe record. That read,
+  and every read before its hello, is the CLI's: no cycle waits for it. Only a hello within the
+  CLI read's timeout, with the probe's version and the read listed, makes it answer. A wrong
+  hello means the CLI until the probe changes. The reader belongs to the probe record it started
+  for, and a read under another record ends it.
+- **Failure and fallback.** A refusal sends that read to the CLI. An exit, a timeout (from when a
+  request becomes the oldest unanswered one), `E_READER_DEFECT` or an oversized line sends every
+  read in flight to the CLI. It also holds the next start back 1 s, doubling, and after 5 in a row
+  without an answer the CLI is used until the probe changes. `E_READER_STALE` (the install
+  changed) re-probes the CLI (`reprobeCli`), and the next reader starts only after that probe.
+- **Lifetime.** The server holds the reader's stdin and closes it on exit. A killed server's stdin
+  closes with it, so the reader ends with the server however the server ends, as the server ends
+  with the app (#698).
+- **Seen nowhere.** `/api/cli` carries `reader: { state, code }` for diagnostics. It is a probe
+  diagnostic field, so a change in it is never a CLI change for the renderer, and no page reads it.
 
 ## Contract additions (renderer-facing, additive)
 
@@ -303,6 +332,12 @@ is a 404 `E_WORKSPACE_NOT_SERVED`, never the first workspace's answer
   gate per adapter); `test/cli-probe-signature.test.mjs`,
   `test/cli-status-parity.test.mjs` (emit on change);
   `test/window-activity.test.mjs`.
+- The warm reader: its client rules against a stand-in reader in
+  `test/warm-reader.test.mjs` (fake timers for backoff and deadlines; each answer checked against
+  `cliDeploymentRead`'s for the same output); in the root `test/`,
+  `desktop-warm-reader-lifeline.test.mjs` (the real server SIGKILLed, and its parent with
+  long-lived children: the reader exits) and `desktop-warm-reader-kernel.test.mjs` (the client
+  against the kernel's own `oats reader --stdio`).
 - The shipped server with a scripted fake kernel:
   `test/load-path-server.test.mjs` on `test/helpers/load-path-server.mjs`.
   The fake logs every call at start and at end and **gates** the verbs the

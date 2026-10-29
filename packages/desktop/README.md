@@ -129,8 +129,9 @@ The shell has three navigation contexts:
 
 The modules that read the kernel's JSON are not in this package: the CLI
 adapters (`cli-adapter.mjs`, `workspace-cli.mjs`, `deployment-read-cli.mjs`),
-the contract decoders (`*-contract.mjs`, `deployment-data.mjs`) and the
-liveness collector. They are in `packages/client/`, beside this directory, so
+the warm reader's client (`warm-reader.mjs`), the contract decoders
+(`*-contract.mjs`, `deployment-data.mjs`) and the liveness collector (run only
+for a CLI without `status-liveness`). They are in `packages/client/`, beside this directory, so
 that another client of the kernel can import the same readers. Main, the
 backend and the page import them by a plain relative path (`../client/`,
 `../../client/` from `server/` and `renderer/`, `../../../client/` from
