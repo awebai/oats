@@ -339,10 +339,14 @@ function killGroup(pid) {
  *  summary and the next steps' environment are the workflow's to write: this keeps a test from
  *  writing them by accident and is no boundary, the files are the same user's) and node's marker of
  *  a nested test run, which would make the file report in the runner's wire format when this
- *  script is itself under test. `requestVars` are the names of the request's two variables. */
-export function testEnv(env, requestVars = []) {
+ *  script is itself under test. `requestVars` are the names of the request's two variables. With a
+ *  `tree`, its `node_modules/.bin` comes first on PATH, as `npm test` puts it there: the tests find
+ *  the binaries installed in the tree (pi) by name. */
+export function testEnv(env, requestVars = [], tree = null) {
   const dropped = new Set([...requestVars, "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "NODE_TEST_CONTEXT"]);
-  return Object.fromEntries(Object.entries(env).filter(([key]) => !dropped.has(key)));
+  const kept = Object.fromEntries(Object.entries(env).filter(([key]) => !dropped.has(key)));
+  if (tree) kept.PATH = [resolve(tree, "node_modules", ".bin"), kept.PATH].filter(Boolean).join(delimiter);
+  return kept;
 }
 
 /** Run one test file alone, as a developer does: `node --test <file>` from `cwd`, in a process
@@ -350,15 +354,15 @@ export function testEnv(env, requestVars = []) {
  *  error }. Its output goes to `write` as it comes. After `timeoutMs` the whole group is killed. A
  *  file that ended leaves no process of its group behind either (`leftover` says there was one):
  *  the next file runs alone. `timeoutMs` is required: a runner's constant, never a default here, and a
- *  missing one throws rather than kill every file at once. `requestVars` go to testEnv. `command` is
- *  the tests' seam; the command line never passes it. */
+ *  missing one throws rather than kill every file at once. `requestVars` and `cwd` (the tree) go to
+ *  testEnv. `command` is the tests' seam; the command line never passes it. */
 export function runFile(file, { cwd, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs, graceMs = KILL_GRACE_MS, requestVars = [], command = [process.execPath, "--test"] } = {}) {
   if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError(`runFile: timeoutMs must be a positive number of milliseconds, got ${String(timeoutMs)}`);
   return new Promise((done) => {
     const started = Date.now(), reader = countsReader();
     const result = { file, counts: null, code: null, signal: null, timedOut: false, durationMs: 0, leftover: false, error: null };
     let child;
-    try { child = spawn(command[0], [...command.slice(1), file], { cwd, env: testEnv(env, requestVars), detached: true, stdio: ["ignore", "pipe", "pipe"] }); }
+    try { child = spawn(command[0], [...command.slice(1), file], { cwd, env: testEnv(env, requestVars, cwd), detached: true, stdio: ["ignore", "pipe", "pipe"] }); }
     catch (error) { done({ ...result, error: error.message }); return; }
     let settled = false, closed = false, wait = null;
     const settle = () => {
