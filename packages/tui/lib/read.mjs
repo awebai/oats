@@ -439,15 +439,23 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  A read the warm reader holds is a request inside it, not a child the TUI can end; so a read of a
    *  cycle already void (or after stop()) is never sent to it, and voidInFlight() and stop() answer
    *  a read it still holds now, each as the shared CLI read whose exec refuses: a failed read, which
-   *  such a cycle never emits, and no child. The reader's own answer, when it comes, is dropped. So
-   *  the refresh loop is released at once, and nothing a void cycle asked for runs. */
+   *  such a cycle never emits, and no child. The reader's own answer, when it comes, is dropped, and
+   *  the CLI fallback it keeps refuses too, whenever it runs. So the refresh loop is released at once,
+   *  and nothing a void cycle asked for runs. */
   function cycleRead(kernel, options) {
-    const given = () => cliDeploymentRead(kernel, options, { exec, env });
-    if (stopped || flight !== epoch) return given();
+    // Its exec is bound to the cycle it belongs to: the shared reader keeps a held read's CLI fallback,
+    // which may run after a later cycle began (the reader ends late), and must refuse then too.
+    const mine = flight;
+    const own = (bin, argv, opts, callback) => {
+      if (mine !== epoch) throw new Error("this read was given up before it started");
+      return exec(bin, argv, opts, callback);
+    };
+    const given = () => cliDeploymentRead(kernel, options, { exec: own, env });
+    if (stopped || mine !== epoch) return given();
     return new Promise((resolve, reject) => {
       const abandon = () => { abandons.delete(abandon); resolve(given()); };
       abandons.add(abandon);
-      warm.read(kernel, options, { exec, env }).then(
+      warm.read(kernel, options, { exec: own, env }).then(
         (answer) => { if (abandons.delete(abandon)) resolve(answer); },
         (error) => { if (abandons.delete(abandon)) reject(error); });
     });

@@ -2,10 +2,11 @@
 // three names, and the name says what it plays:
 //   oats.mjs       a kernel: `version --json`, `status … --json`, `workspace status … --json`,
 //                  `server roster --json` (the action `server`), and `reader --stdio` (the warm
-//                  reader: plan.reader is `{ version, exitOn, hold }`; it says its hello, then answers each
-//                  request with the step the same CLI read would print; `exitOn: n` exits at the
-//                  n-th request without answering it; `hold` answers none; it writes down each request
-//                  and its stdin's end)
+//                  reader: plan.reader is `{ version, exitOn, hold, exit }`; it says its hello, then answers
+//                  each request with the step the same CLI read would print; `exitOn: n` exits at the
+//                  n-th request without answering it; `hold` answers none, and `exit` exits at the next
+//                  request, both as the plan is when it comes; it writes down each request, its
+//                  stdin's end and an `exit` exit)
 //   collector.mjs  the liveness collector: rows on stdin, answers on stdout
 //   sleeper.mjs    a grandchild that only sleeps
 // It does what plan.json beside it says for the command it was asked (`{ stdout, stderr, exit,
@@ -45,8 +46,9 @@ note({ event: "start", argv, cwd: process.cwd(), env: environment, ...ids(), ...
 
 if (action === "reader") {
   const { version, exitOn } = plan.reader ?? {};
-  // `hold` is read at each request: a test warms the reader up, then holds what it asks next.
-  const holding = () => JSON.parse(readFileSync(join(here, "plan.json"), "utf8")).reader?.hold === true;
+  // `hold` and `exit` are read at each request: a test warms the reader up, then holds what it asks next,
+  // or has it exit at the next request without answering.
+  const now = () => JSON.parse(readFileSync(join(here, "plan.json"), "utf8")).reader ?? {};
   process.stdout.on("error", () => {});
   process.stdout.write(`${JSON.stringify({ readerApi: 1, version, reads: ["status", "workspace status"] })}\n`);
   let pending = "", count = 0;
@@ -59,7 +61,8 @@ if (action === "reader") {
       const read = asked[0] === "workspace" ? "workspace" : "status", dir = asked[asked.indexOf("--dir") + 1];
       note({ event: "request", argv: asked });
       if (++count === exitOn) process.exit(0);
-      if (holding()) continue;
+      if (now().exit === true) { note({ event: "exit" }); process.exit(0); }
+      if (now().hold === true) continue;
       const answered = plan.deployments?.[dir]?.[read] ?? plan[read] ?? {};
       process.stdout.write(`${JSON.stringify({ id, exit: answered.exit ?? 0, answer: JSON.parse(answered.stdout) })}\n`);
     }

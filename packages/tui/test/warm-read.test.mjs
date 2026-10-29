@@ -226,3 +226,26 @@ test("at process exit the reader is ended and nothing new starts: a read it held
   await sleep(200);
   assert.equal(cliReads(world), before, "no CLI child was started on the way out");
 });
+
+test("reads a void cycle left with the warm reader start no CLI child when the reader fails later, while a new cycle is in flight", async (t) => {
+  const world = makeWorld();
+  const { reader, entries } = reading(t, world);
+  await warmUp(world, reader);
+  world.plan({ reader: { version: VERSION, hold: true } });
+  const asked = readerRequests(world).length;
+  const held = reader.request();
+  await waitFor("the reader to hold the cycle's two reads", () => readerRequests(world).length === asked + 2);
+  reader.voidInFlight();
+  assert.ok(await settles(held, 2000), "the void cycle let the refresh loop go");
+  assert.ok(await settles(reader.request({ live: true }), 10_000), "the live cycle after it ran");
+  // The reader still holds the void cycle's reads. A new background cycle is sent to it, and it exits without
+  // answering: every read it held fails over to the CLI read, and only the new cycle's may run.
+  world.plan({ reader: { version: VERSION, exit: true } });
+  const before = cliReads(world), emitted = entries.length;
+  assert.ok(await settles(reader.request(), 10_000), "the new cycle ran");
+  assert.equal(world.calls("reader", "exit").length, 1, "fixture premise: the reader exited at the new cycle's read, holding the void cycle's");
+  await sleep(300);
+  assert.equal(cliReads(world), before + 2, "the CLI read the new cycle's two reads, and none of the void cycle's");
+  assert.equal(entries.length, emitted + 1);
+  assert.equal(entries.at(-1).entry.deployment.status, "observed");
+});
