@@ -542,7 +542,14 @@ Otherwise the item is listed with a reason: `assigned-elsewhere`,
 else or not at all), `host-unnamed`, or `untrusted` (placed here but not
 trusted: it never runs, and `oats workspace status` warns with the exact
 line to add). Both names come from a commit, so anyone who can commit to a
-member could name your host; trust is the operator's own yes. A trust entry
+member could name your host; trust is the operator's own yes.
+
+`oats workspace status` shows the same placement. Under `--max-age <s>` it
+may show it with a `gh` login observed up to `<s>` seconds ago, and it waits
+at most 5 s for `gh` (a `gh` that does not answer in time reads
+`owner-mismatch`): [the `gh` login, display only](desktop-cli-api.md#the-gh-login-display-only).
+What runs never depends on that: a tick, `oats trigger poll` and every run
+ask `gh` live and wait up to 30 s. A trust entry
 that names no workspace automation is a warning (`automation-trust-stale`),
 not an error: its member may not have synced yet. Your own `oats trigger
 add` / `oats schedule add` definitions need no trust.

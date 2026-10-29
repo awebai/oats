@@ -492,3 +492,66 @@ test("a workspace command schedule's cwd stays inside the deployment: `..` and a
     assert.throws(() => S.validateWorkspaceSchedule(fx.dep, spec(cwd)), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "cwd" && /leaves the deployment/.test(e.message), cwd);
   }
 });
+
+// #1630: under --max-age a status display may reuse a recent gh login, as it reuses heads. An act that places or
+// fires an automation never does: with a fresh record present, each one still asks gh.
+test("--max-age reuses the gh login for the status display only: a schedule tick and a trigger poll ask gh live", (t) => {
+  const fx = fixture();
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const logins = () => fx.gh.calls().filter((c) => c.startsWith("api user")).length;
+  const shown = (maxAge) => ok(fx.cli(["workspace", "status", ...(maxAge === null ? [] : ["--max-age", String(maxAge)]), "--json"]), "workspace status");
+  const trigger = (ws) => ws.automations.rows.find((r) => r.kind === "trigger");
+
+  const first = shown(60);
+  assert.deepEqual([trigger(first).id, trigger(first).runsHere], ["ws/kb-review", true]);
+  const recorded = logins();
+  assert.equal(recorded, 1, "the display asked gh once and recorded the login");
+  const reused = shown(60);
+  assert.equal(logins(), recorded, "within --max-age the display reuses the recorded login");
+  assert.equal(reused.observation.reused, true);
+  assert.deepEqual(trigger(reused), trigger(first));
+
+  // The record is fresh; every act asks.
+  ok(fx.cli(["schedule", "tick", "--dry-run", "--json"]), "schedule tick");
+  assert.equal(logins(), recorded + 1, "a schedule tick places automations with a live login");
+  const poll = fx.cli(["trigger", "poll", "ws/kb-review", "--max-age", "60", "--json"]);
+  assert.equal(logins(), recorded + 2, `a trigger poll asks gh live, --max-age or not: ${poll.stdout}${poll.stderr}`);
+  // And a display without --max-age, or with 0, asks too.
+  shown(null); shown(0);
+  assert.equal(logins(), recorded + 4);
+});
+
+test("a failed gh login in any status display, with --max-age or without, ends the reuse of the login before it (#1630)", (t) => {
+  const fx = fixture();
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const logins = () => fx.gh.calls().filter((c) => c.startsWith("api user")).length;
+  const shown = (maxAge) => ok(fx.cli(["workspace", "status", ...(maxAge === null ? [] : ["--max-age", String(maxAge)]), "--json"]), "workspace status")
+    .automations.rows.find((r) => r.kind === "trigger");
+  assert.equal(shown(60).runsHere, true, "recorded");
+  fx.gh.login(null); // gh now answers HTTP 401
+  for (const maxAge of [null, 0]) {
+    assert.equal(shown(maxAge).reason, "owner-mismatch", `--max-age ${maxAge}: the live display sees the failure`);
+    const asked = logins();
+    assert.equal(shown(60).reason, "owner-mismatch", `after a failed display (--max-age ${maxAge}), --max-age 60 does not reuse the login before it`);
+    assert.equal(logins(), asked + 1, "it asks gh again");
+    fx.gh.login("kb-bot");
+    assert.equal(shown(60).runsHere, true, "and a success is recorded again");
+    fx.gh.login(null);
+  }
+});
+
+test("a hung gh costs a status display 5 s, not 30 (#1630)", { timeout: 60_000 }, (t) => {
+  const fx = fixture();
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  const hung = join(fx.base, "hung-gh");
+  mkdirSync(hung);
+  writeFileSync(join(hung, "gh"), "#!/bin/sh\nexec sleep 40\n", { mode: 0o755 });
+  const started = Date.now();
+  const ws = ok(fx.cli(["workspace", "status", "--max-age", "0", "--json"], { env: { ...fx.env, PATH: `${hung}:${fx.env.PATH}` } }), "workspace status");
+  const took = Date.now() - started;
+  assert.ok(took >= 5_000 && took < 25_000, `the display waited the display bound, not 30 s: ${took} ms`);
+  assert.equal(ws.automations.rows.find((r) => r.kind === "trigger").reason, "owner-mismatch", "a login that did not answer is not logged in");
+});
