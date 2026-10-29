@@ -1,11 +1,11 @@
 {
   "capability": "oats.okf-maintenance",
   "command": "okf-maintenance",
-  "version": "5.6.0",
+  "version": "5.7.0",
   "compatibility": {
     "oats": ">=0.69.2"
   },
-  "description": "The OKF knowledge maintainer: reviews one harvest PR by the OKF promotion doctrine, situates it in the base, amends and merges or closes it, never silently supersedes a human-accepted decision, and notifies the harvester.",
+  "description": "The OKF knowledge maintainer: reviews one harvest PR by the OKF promotion doctrine, situates it in the base, amends and merges or closes it, supersedes a human-accepted decision only on the human's cited acceptance and never parks a PR, and notifies the harvester.",
   "requires": [
     { "command": "gh", "why": "read, comment on, amend and merge the harvest PR" },
     { "command": "git", "why": "check out the knowledge-base PR" }
