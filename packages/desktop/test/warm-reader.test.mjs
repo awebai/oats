@@ -5,6 +5,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { createWarmReader } from '../../client/warm-reader.mjs';
 import { cliDeploymentRead, DEPLOYMENT_READ_TIMEOUT, DEPLOYMENT_READ_MAX_BUFFER } from '../../client/deployment-read-cli.mjs';
 import { withoutInstanceVariables, INSTANCE_VARIABLES } from '../../client/kernel-environment.mjs';
+import { createDeploymentObserver } from '../../client/deployment-observer.mjs';
 
 /* The warm reader's client rules (#1630): a stand-in `spawn` plays `oats reader --stdio` on the wire, a stand-in
    `exec` plays the CLI read it falls back to. What the CLI answers is marked (`/d/cli`), so a result says who answered. */
@@ -96,6 +97,22 @@ test('start: binary, argv, environment without instance variables, stdio and no 
   assert.equal(env.OATS_INSTANCE_HOME, '/foreign', 'the caller environment is not changed');
   const plain = harness(); await plain.read();
   assert.deepEqual(plain.last().options.env, withoutInstanceVariables(process.env), 'no io.env: the process environment, cleaned');
+});
+
+// Rule 1: the reader starts from the CLI read's own launch. A relative or empty PATH entry makes the CLI's
+// interpreter depend on each read's deployment (its cwd); one reader cannot follow that, so the CLI answers.
+for (const PATH of ['relbin:/usr/bin', '/usr/bin::/bin', ':/usr/bin', '/usr/bin:', '']) test(`start: PATH ${JSON.stringify(PATH)} never spawns; reads of two deployments are the CLI's`, async () => {
+  const h = harness({ env: { PATH } });
+  for (const context of ['/d', '/e']) for (const action of ['status', 'workspace-status']) assert.deepEqual(await h.read(action, cli(), { action, context, maxAge: 60 }), FROM_CLI[action]);
+  await flush();
+  assert.equal(h.children.length, 0); assert.equal(h.calls.length, 4);
+  assert.deepEqual(h.reader.status(), { state: 'off', code: 'E_READER_PATH' });
+});
+test('start: an absolute PATH, or none (the system\'s default search), starts the reader', async () => {
+  for (const env of [{ PATH: '/usr/local/bin:/usr/bin' }, {}]) {
+    const h = harness({ env }); await h.read();
+    assert.equal(h.children.length, 1, JSON.stringify(env));
+  }
 });
 
 // Rule 1: reads before the hello go to the CLI (the read that starts it included); after it, background reads go to the reader.
@@ -408,4 +425,38 @@ test('stop before any start: no spawn ever', async () => {
   h.reader.stop();
   assert.deepEqual(await h.read(), FROM_CLI.status); await flush();
   assert.equal(h.children.length, 0); assert.equal(h.state(), 'stopped');
+});
+
+// Binding through the observer (deployment-observer.mjs), as a client composes them: the record a read runs under is
+// the probe's whole gate-relevant identity, so a probe change in a field the reads do not gate on (an API integer)
+// still ends the reader and forgets a mismatch, and a change of diagnostics alone keeps it.
+test('binding through the observer: a changed probe field ends a trusted reader and resets a mismatch; diagnostics keep it', async () => {
+  const h = harness();
+  const state = { deployment: D, revision: 1, cli: { ...cli(), probedAt: 1, tried: [] } };
+  const observer = createDeploymentObserver({ getContext: id => (id === D ? state : null), read: (record, options) => h.reader.read(record, options, h.io) });
+  const observe = async () => { await observer.observe(D, { maxAge: 60 }); await flush(); };
+  await observe();
+  assert.equal(h.children.length, 1);
+  h.last().hello(); await flush();
+  assert.equal(h.state(), 'ready');
+  // A no-change reprobe: the diagnostics move in place, the revision does not.
+  Object.assign(state.cli, { probedAt: 2, tried: [{ path: '/x' }] });
+  const kept = track(observer.observe(D, { maxAge: 60 })); await flush();
+  for (const request of h.last().requests) h.last().answer(request, request.argv[0] === 'status' ? STATUS : HEADER);
+  await kept.promise;
+  assert.equal(h.children.length, 1, 'diagnostics are no probe change'); assert.equal(h.last().ended(), false);
+  // A real probe change: a new API integer, and the revision moves as reprobeCli moves it.
+  const trusted = h.last();
+  state.cli = { ...state.cli, operationsApi: 2 }; state.revision++;
+  await observe();
+  assert.ok(trusted.ended(), 'the reader of the old record is ended');
+  assert.equal(h.children.length, 2, 'a reader starts for the new record');
+  // A mismatch under that record, then another probe change: forgotten, a fresh reader starts.
+  h.last().hello({ version: 'Y' }); await flush();
+  assert.equal(h.state(), 'mismatch');
+  await observe();
+  assert.equal(h.children.length, 2, 'no retry under the same record');
+  state.cli = { ...state.cli, remote: ['roster'] }; state.revision++;
+  await observe();
+  assert.equal(h.children.length, 3, 'a new record forgets the mismatch');
 });

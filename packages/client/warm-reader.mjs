@@ -14,6 +14,9 @@
  * - Start: only when the probe lists feature `warm-reader` and `readerApi: 1`, from the same binary and
  *   environment as the CLI reads (`withoutInstanceVariables`), no shell, stdin and stdout piped, stderr
  *   ignored (never read, never forwarded). Reads before its hello go to the CLI: no read waits for it.
+ *   Not when that environment's PATH has a relative or empty entry: the CLI runs in each read's
+ *   deployment, so such an entry can pick its interpreter (`#!/usr/bin/env node`) there, and one reader
+ *   started once cannot do the same for every deployment.
  * - Trust: a hello within the CLI read's timeout, `readerApi === 1`, the probe's `version`, and the read
  *   in `reads`. A wrong hello ends it, and the CLI answers until the record changes. The reader is bound
  *   to the probe record it started for (`probeSignature`); a read under another record ends it.
@@ -51,6 +54,9 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const absolute = path => typeof path === 'string' && !path.includes('\0') && isAbsolute(path) && resolve(path) === path;
 const wanted = id => (typeof id === 'string' && id.length <= 64) || Number.isSafeInteger(id);
 const later = timer => { if (typeof timer?.unref === 'function') timer.unref(); return timer; };
+/** No program PATH finds depends on the process's cwd: every entry is an absolute directory, or there is no
+ * PATH (the system's default search path). */
+const cwdFreePath = path => path === undefined || (typeof path === 'string' && path.split(':').every(entry => isAbsolute(entry)));
 
 /** The probe lists the reader at the API this client speaks. */
 export const readerAdvertised = cli => cli?.ok === true && absolute(cli.bin) && cli.readerApi === READER_API
@@ -68,7 +74,7 @@ export function createWarmReader({ spawn, onStale = null } = {}) {
     const key = probeSignature(cli);
     if (binding?.key === key) return;
     if (child) end(child);
-    binding = { key, advertised: readerAdvertised(cli), failures: 0, nextStartAt: 0, givenUp: false, mismatch: false, stale: false, code: null };
+    binding = { key, advertised: readerAdvertised(cli), pathRefused: false, failures: 0, nextStartAt: 0, givenUp: false, mismatch: false, stale: false, code: null };
   }
 
   function read(cli, options, io = {}) {
@@ -78,18 +84,21 @@ export function createWarmReader({ spawn, onStale = null } = {}) {
     if (!binding.advertised || deploymentReadRefusal(cli, options)) return fallback();
     // Background only: a positive --max-age the argv carries (the probe declares observe-max-age).
     if (!(options.maxAge > 0) || !maxAgeArgv(cli.features, options.maxAge).length) return fallback();
-    if (!child) { start(cli, io); return fallback(); }
+    const env = withoutInstanceVariables(io.env ?? process.env);
+    binding.pathRefused = !cwdFreePath(env.PATH);
+    if (binding.pathRefused) { binding.code = 'E_READER_PATH'; return fallback(); }
+    if (!child) { start(cli, env); return fallback(); }
     if (!child.trusted || !child.reads.has(READS[options.action])) return fallback();
     return ask(child, options.action, deploymentReadArgv(cli, options), fallback);
   }
 
-  function start(cli, io) {
+  function start(cli, env) {
     const b = binding;
     if (b.givenUp || b.mismatch || b.stale || Date.now() < b.nextStartAt) return;
     const c = { binding: b, version: cli.version, proc: null, trusted: false, reads: new Set(), pending: new Map(),
       chunks: [], bytes: 0, helloTimer: null, headId: undefined, headTimer: null, done: false };
     try {
-      c.proc = spawn(cli.bin, ['reader', '--stdio'], { env: withoutInstanceVariables(io.env ?? process.env), stdio: ['pipe', 'pipe', 'ignore'], shell: false });
+      c.proc = spawn(cli.bin, ['reader', '--stdio'], { env, stdio: ['pipe', 'pipe', 'ignore'], shell: false });
     } catch { b.code = 'E_READER_EXIT'; return countFailure(b); }
     child = c;
     c.proc.stdin?.on?.('error', () => { /* a dead reader: its close says so */ });
@@ -216,6 +225,7 @@ export function createWarmReader({ spawn, onStale = null } = {}) {
   function status() {
     if (stopped) return { state: 'stopped', code: binding?.code ?? null };
     if (!binding || !binding.advertised) return { state: 'off', code: null };
+    if (binding.pathRefused && !child) return { state: 'off', code: binding.code };
     const state = binding.givenUp ? 'given-up' : binding.mismatch ? 'mismatch' : binding.stale ? 'stale'
       : child ? (child.trusted ? 'ready' : 'starting') : binding.failures ? 'backoff' : 'idle';
     return { state, code: binding.code };

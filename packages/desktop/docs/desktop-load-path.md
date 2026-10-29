@@ -293,7 +293,10 @@ not change; a cycle's reads may queue behind each other in the reader, which ans
   and every read before its hello, is the CLI's: no cycle waits for it. Only a hello within the
   CLI read's timeout, with the probe's version and the read listed, makes it answer. A wrong
   hello means the CLI until the probe changes. The reader belongs to the probe record it started
-  for, and a read under another record ends it.
+  for (all of its gate-relevant fields: the observer passes them all), and a read under another
+  record ends it. No reader starts while the environment's PATH has a relative or empty entry: the
+  CLI runs in each read's deployment, where such an entry may find another `node` for the CLI's
+  `#!/usr/bin/env node`, and one reader cannot follow it there.
 - **Failure and fallback.** A refusal sends that read to the CLI. An exit, a timeout (from when a
   request becomes the oldest unanswered one), `E_READER_DEFECT` or an oversized line sends every
   read in flight to the CLI. It also holds the next start back 1 s, doubling, and after 5 in a row
