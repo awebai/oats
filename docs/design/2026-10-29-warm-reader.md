@@ -115,8 +115,8 @@ loads only its dispatch's own leaves for it, never `core.mjs` or the other
 modules of the full command set, and `lib/reader.mjs`'s own imports, with
 `PRELOAD`, load the reads. Every module the reads use, and nothing the CLI's
 other commands need, is loaded before the hello (measured on a real
-deployment: the hello in 139 ms instead of 299, and about 30 MiB less resident
-memory). `test/cli-hot-reads.test.mjs` pins that no heavy module loads before
+deployment: the hello in about 140–180 ms instead of about 300, and about
+20 MiB less resident memory while it answers a poll). `test/cli-hot-reads.test.mjs` pins that no heavy module loads before
 it.
 
 Rejected:
