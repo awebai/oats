@@ -15,3 +15,8 @@
   dies. Bare `oats reader` is `E_USAGE`. The protocol and the client rules
   are in [The warm reader](../desktop-cli-api.md#the-warm-reader); the
   decisions in [the design record](../design/2026-10-29-warm-reader.md).
+- Feature `status-liveness`: `oats status --json` instance rows' `running`
+  and `runtimeState` are the complete local liveness reading, read live at
+  every call under the kernel's pane rule, so a client that sees the feature
+  in the probe needs no liveness probe of its own beside the roster
+  ([The roster](../desktop-cli-api.md#the-roster-oats-status---json)).
