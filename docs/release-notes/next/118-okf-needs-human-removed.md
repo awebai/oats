@@ -29,12 +29,16 @@
        2, `perKey` 1), and one composed from an older package keeps the old
        behaviour.
     2. Remove `okf-needs-human` from each parked PR, then close it.
-    3. Wait until `oats trigger status <id>` shows a poll that completed
-       after the closes (every 2m). `oats trigger test` does not count: it
-       records nothing.
-    4. Reopen each PR, and check that `oats trigger status <id>` lists a
-       `reopened` event for each, pending or fired. At most two reviews run
-       at once; the rest wait as `held` until a maintainer retires.
+    3. Wait until `oats trigger status <id> --json` shows a `lastPoll`
+       after the closes with `ok: true` and `prs` under 100 (every 2m). Only
+       such a poll records a close: a failed poll records none (keep
+       waiting), and one that fetched 100 open PRs may be truncated (stop
+       and report the poll cap; do not reopen). `oats trigger test` does not
+       count: it records nothing.
+    4. Reopen each PR, and check that `oats trigger status <id> --json`
+       lists a `pending` or `fired` entry with `event: "reopened"` for each
+       PR's number. At most two reviews run at once; the rest wait as `held`
+       until a maintainer retires.
 
     Never clear the trigger's dedup state.
   - [Knowledge operations: the flow](../knowledge.md#the-flow), step 4,
