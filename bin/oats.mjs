@@ -28,9 +28,14 @@ import { performance } from "node:perf_hooks";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { enableCliCompileCache } from "../lib/compile-cache.mjs";
 import { hotImport, hotRead } from "../lib/hot-reads.mjs";
+import { installStamp } from "../lib/install-stamp.mjs";
+
+// The warm reader's baseline (lib/reader.mjs): its install's stamp before any kernel module loads, so that an
+// install changed while the kernel loads is never the install the reader believes it answers from.
+const READER_STAMP = process.argv[2] === "reader" ? installStamp() : null;
 
 // Node's compile cache is on before the kernel is parsed (lib/compile-cache.mjs): static imports are
-// all parsed and linked before this module's body runs, so they are Node built-ins and the two small
+// all parsed and linked before this module's body runs, so they are Node built-ins and the three small
 // dependency-free modules above, and the kernel and `yaml` are imported here, in order, once it is on.
 enableCliCompileCache();
 // A hot read (lib/hot-reads.mjs) imports only the leaves it uses, never core.mjs: each line below takes
@@ -4115,7 +4120,7 @@ function updateCmd() {
 async function readerCmd() {
   if (args.length !== 2 || args[1] !== "--stdio") return cmdFail("E_USAGE", "usage: oats reader --stdio (the warm reader: a client's child process that answers status and workspace status reads on stdin and stdout; docs/desktop-cli-api.md \"The warm reader\")");
   const { runReader } = await import("../lib/reader.mjs");
-  await runReader();
+  await runReader({ stamp: READER_STAMP });
 }
 
 function versionCmd() {

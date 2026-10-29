@@ -137,19 +137,26 @@ Rejected: in-process warm reads in the TUI.
 
 ### D7. Install change: the reader notices and exits
 
-At start the reader takes a stamp of its install: the install root
-directory's device and inode; device, inode, size and mtime of
-`package.json`, `bin/oats.mjs`, `package-catalog.json`, every file under
-`lib/`, `docs/*.schema.json`, each runtime dependency's resolved
-`package.json` and the real path of the Node binary; the mtime of the
+The reader takes a stamp of its install before any of the kernel's own
+modules load (`lib/install-stamp.mjs`, Node built-ins only, which the CLI's
+entry point imports statically and calls first for `oats reader`): a stamp
+taken once the kernel had loaded would make a change made while it loaded
+the baseline, and the old code would answer with no refusal. The stamp is
+the install root directory's device and inode; device, inode, size and mtime
+of `package.json`, `bin/oats.mjs`, `package-catalog.json`, every file under
+`lib/`, `docs/*.schema.json`, each runtime dependency's `package.json` where
+it resolves at each stamp (a dependency newly installed nearer the install
+shadows the one loaded) and the real path of the Node binary; the mtime of the
 directories under `lib/` and of `docs/` (a file added or removed). It takes
 the stamp again when a request starts and again just before that request's
 answer is written, so an install that changes while a request runs is not
 answered from the old code either. Any difference, or a file gone (an npm
 global update replaces the package directory; a half-written install also
 reads as changed), refuses that request and every queued one with
-`E_READER_STALE`, and the reader exits 0. The stamp is about 120 `stat`
-calls, within a 2 ms budget.
+`E_READER_STALE`, and the reader exits 0. The stamp is about 130 `stat`
+calls, within a 2 ms budget. What loads before the first stamp (the entry
+point and three small modules of Node built-ins) is a window of a few
+milliseconds that no stamp can close.
 
 Rejected:
 - Hashing the files: a replaced install has new inodes, and an edited file a

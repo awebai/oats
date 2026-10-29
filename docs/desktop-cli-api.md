@@ -4002,11 +4002,15 @@ frame it knows (a request it then misses times out and falls back).
 ### The install stamp
 
 An install that changed under a reader (an upgrade, a Node upgrade) is never
-answered from the old code. At start the reader takes a stamp of its install:
+answered from the old code. The reader takes a stamp of its install before
+any of the kernel's own modules load (only the CLI's entry point and three
+small modules of Node built-ins load before it), so an install that changes
+while the reader starts is seen too:
 the install root directory's device and inode; device, inode, size and mtime
 of `package.json`, `bin/oats.mjs`, `package-catalog.json`, every file under
-`lib/`, `docs/*.schema.json`, each runtime dependency's resolved
-`package.json` and the Node binary (its real path); and the mtime of each
+`lib/`, `docs/*.schema.json`, each runtime dependency's `package.json`
+where it resolves at that moment (a dependency newly installed nearer the
+install moves it) and the Node binary (its real path); and the mtime of each
 directory under `lib/` and of `docs/` (a file added or removed). It takes the
 stamp again when a request starts and again just before that request's answer
 is written. Any difference, or a file gone (an npm global update replaces the
