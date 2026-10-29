@@ -2,11 +2,13 @@
 // Northwind fixture with a load hook, none of them loads core.mjs or the heavy modules beside it, on its
 // answer's path or its refusals'. Absences only: what a read does load is free to change. A command that
 // is not a hot read loads core.mjs as before, which also shows the hook sees what is loaded. And a name a
-// hot read does not list is a tripwire: taking it is free, and its first use throws a defect naming it.
+// hot read does not list is a tripwire: taking it is free, and its first use throws a defect naming it. The warm
+// reader (`oats reader --stdio`) is a hot-read form too: until its hello it loads the reads' own closure and bin's
+// dispatch, no heavy module; its row also checks that the reads did load, so its record reaches the hello.
 import test from "node:test";
 import assert from "node:assert/strict";
 import module from "node:module";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -91,8 +93,30 @@ test("a status routed to a server loads no core.mjs", { skip: NO_HOOKS, timeout:
   assertAbsent(["status", "--server", "no-such-server"], ["lib/core.mjs"], 1);
 });
 
+test("the warm reader loads no core.mjs: its hello comes after the reads' own closure, bin's dispatch only besides", { skip: NO_HOOKS, timeout: 300_000 }, async () => {
+  // As a client starts it: the hello read, then stdin closed, which ends it (exit 0). The hook writes at that exit, so
+  // what it records is everything the reader loaded until its hello, and nothing it loads on a request.
+  writeFileSync(loadedFile, "");
+  const child = spawn(process.execPath, ["--import", hook, CLI, "reader", "--stdio"], { cwd: dep, env: { ...env, HOT_READS_LOADED: loadedFile }, stdio: ["pipe", "pipe", "pipe"] });
+  let out = "", err = "";
+  child.stderr.setEncoding("utf8").on("data", (d) => { err += d; });
+  const exited = new Promise((done) => child.on("exit", (code) => done(code)));
+  const hello = await new Promise((done, fail) => {
+    child.stdout.setEncoding("utf8").on("data", (d) => { out += d; if (out.includes("\n")) done(JSON.parse(out.slice(0, out.indexOf("\n")))); });
+    child.on("exit", () => fail(new Error(`the reader exited before its hello\n${err}`)));
+  });
+  assert.equal(hello.readerApi, 1, JSON.stringify(hello));
+  child.stdin.end();
+  assert.equal(await exited, 0, err);
+  const loaded = JSON.parse(readFileSync(loadedFile, "utf8"));
+  for (const m of ["lib/roster-read.mjs", "lib/workspace-read.mjs"]) assert.ok(loaded.some((url) => url.endsWith(`/${m}`)), `the reader loaded ${m} before its hello`);
+  for (const m of HEAVY) assert.deepEqual(loaded.filter((url) => url.endsWith(`/${m}`)), [], `oats reader --stdio loads no ${m}`);
+  // Bare `oats reader` is the same form: its usage refusal loads none of them either.
+  assertAbsent(["reader"], HEAVY, 1);
+});
+
 test("any other command, and a hot read given another flag, loads core.mjs as before", { skip: NO_HOOKS, timeout: 300_000 }, () => {
-  for (const args of [["souls", "--json"], ["status", "--help"], ["instance", "waiting", "set", "--json"]]) {
+  for (const args of [["souls", "--json"], ["status", "--help"], ["instance", "waiting", "set", "--json"], ["reader", "--stdio", "--json"]]) {
     const r = loads(args);
     assert.ok(r.loaded.some((url) => url.endsWith("/lib/core.mjs")), `oats ${args.join(" ")} loads core.mjs`);
   }
@@ -143,7 +167,7 @@ test("a hot read's listed names are its leaves' own; anything else is a tripwire
 });
 
 test("every leaf a hot read lists loads, and bin names each import line by the one literal it imports", async () => {
-  const forms = [["version"], ["session", "inspect"], ["status"], ["status", "--server", "s"], ["workspace", "status"], ["instance", "events", "x"], ["instance", "waiting", "clear"]];
+  const forms = [["version"], ["session", "inspect"], ["status"], ["status", "--server", "s"], ["workspace", "status"], ["instance", "events", "x"], ["instance", "waiting", "clear"], ["reader", "--stdio"]];
   for (const argv of forms) {
     const read = hotRead(argv);
     assert.ok(read, argv.join(" "));
