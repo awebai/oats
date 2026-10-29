@@ -52,9 +52,13 @@ from it, and the test lists the stable surface a second client may import.
 layers that each do one thing. `lib/term/` is the terminal: the key parser,
 cell widths, safe text, the screen and the guard that restores the terminal;
 only the screen and the guard write an escape byte. `lib/read.mjs` is every
-effect of reading: for each deployment opened in a run it runs the kernel
-of the same install and the shared liveness collector as children, through
-the shared observer and refresh loop; it runs that kernel's read of the
+effect of reading: for each deployment opened in a run it reads through
+the shared observer and refresh loop, its background reads through one
+warm `oats reader --stdio` of the kernel of the same install (the shared
+`createWarmReader`), every other read through that kernel as a child, and,
+for a kernel without feature `status-liveness`, the shared liveness
+collector as a child too; a void cycle's reads are answered at once,
+the warm reader's included; it runs that kernel's read of the
 other machines (`oats server roster --json`), one at a time and awaited by
 no cycle; it ends every read child and lets changes finish; and it makes the one look at the file
 system the workspace switcher needs (whether a picked row is a deployment).

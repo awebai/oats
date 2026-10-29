@@ -1,6 +1,7 @@
 // The effects of the TUI: finding the deployment, the kernel's record, one exec for every kernel
-// call, the observer of every served deployment, the roster of other machines, the refresh loop,
-// the liveness collector, and the two looks at the file system the switcher needs.
+// call, the observer of every served deployment and the warm reader it reads through, the roster of
+// other machines, the refresh loop, the liveness collector (for a kernel without status-liveness),
+// and the two looks at the file system the switcher needs.
 // Every child of this module is a read, except the changes (a stop or retire apply, a start or a
 // restart, a spawn apply) that the shared callers start through `changeExec`: those are never
 // ended by the TUI of its own accord (only at a deadline their caller gives), and their output goes
@@ -15,7 +16,7 @@ import { closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readSync, realp
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentIdentity, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, failedEntry, identityReadable, identityTimedOut, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
+import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentIdentity, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, createWarmReader, failedEntry, identityReadable, identityTimedOut, kernelLiveness, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
 
 /** A path made canonical: what the shared start rule checks a local home with (session-start.mjs
  *  verifiedLocalHome). Throws for a path that cannot be resolved; the rule answers that as no home. */
@@ -310,9 +311,11 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     remembered.set(child, record);
     return child;
   }
-  /** End the reads remembered: every one, or (`cycles`) only those a cycle or the roster started. */
+  /** End the reads remembered: every one, or (`cycles`) only those a cycle or the roster started; and
+   *  every cycle's read the warm reader still holds (cycleRead). */
   function endReads({ cycles = false } = {}) {
     for (const record of [...remembered.values()]) if (record.kind === "read" && !(cycles && record.asked)) record.giveUp(ended());
+    for (const abandon of [...abandons]) abandon();
   }
 
   /** The exec handed to the shared readers: execFile's signature, for `node <bin> <argv…>` (see
@@ -416,12 +419,53 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     return child;
   }
 
-  /** The shared observer, with the shared reader over this exec and no reader of the TUI's own: a
+  /** THE WARM READER (packages/client warm-reader.mjs, whose rules are the one client's of the contract):
+   *  one `oats reader --stdio` of this kernel answers the background reads (--max-age > 0) while it is
+   *  ready; every other read, and every read before its hello or after it ends, is the shared
+   *  cliDeploymentRead over this exec and environment, today's read. It starts as every kernel child of
+   *  the TUI does: `node <bin> …`, in a session of its own (`run`), with the module's stdio. No onStale:
+   *  the TUI never probes again, so a changed install leaves it on the CLI reads for the rest of its run
+   *  (the TUI itself runs from that install; starting it again is the fix). Its lifeline is the TUI's
+   *  hold of its stdin: stop() closes it, and so does the TUI's death. Not a remembered child: it is no
+   *  read of a cycle, and is never signalled by voidInFlight(). */
+  const warm = createWarmReader({ spawn: (file, args, options) => spawn(process.execPath, [file, ...args], { ...options, detached: true }) });
+  // On the way out, by stop() or at process exit, nothing new starts: a read the reader still held
+  // goes to the shared CLI read, whose exec then refuses.
+  const endWarm = () => { stopped = true; warm.stop(); };
+  process.once("exit", endWarm);
+  /** The cycles' reads the warm reader holds: each one's `abandon`, which answers it now. */
+  const abandons = new Set();
+  /** A CYCLE'S READ IS MADE VOID WITH ITS CYCLE, as a CLI read's child is ended with it (endReads).
+   *  A read the warm reader holds is a request inside it, not a child the TUI can end; so a read of a
+   *  cycle already void (or after stop()) is never sent to it, and voidInFlight() and stop() answer
+   *  a read it still holds now, each as the shared CLI read whose exec refuses: a failed read, which
+   *  such a cycle never emits, and no child. The reader's own answer, when it comes, is dropped, and
+   *  the CLI fallback it keeps refuses too, whenever it runs. So the refresh loop is released at once,
+   *  and nothing a void cycle asked for runs. */
+  function cycleRead(kernel, options) {
+    // Its exec is bound to the cycle it belongs to: the shared reader keeps a held read's CLI fallback,
+    // which may run after a later cycle began (the reader ends late), and must refuse then too.
+    const mine = flight;
+    const own = (bin, argv, opts, callback) => {
+      if (mine !== epoch) throw new Error("this read was given up before it started");
+      return exec(bin, argv, opts, callback);
+    };
+    const given = () => cliDeploymentRead(kernel, options, { exec: own, env });
+    if (stopped || mine !== epoch) return given();
+    return new Promise((resolve, reject) => {
+      const abandon = () => { abandons.delete(abandon); resolve(given()); };
+      abandons.add(abandon);
+      warm.read(kernel, options, { exec: own, env }).then(
+        (answer) => { if (abandons.delete(abandon)) resolve(answer); },
+        (error) => { if (abandons.delete(abandon)) reject(error); });
+    });
+  }
+  /** The shared observer, with the shared readers over this exec and no reader of the TUI's own: a
    *  failed read has the same reasons here as in the Desktop. It admits a deployment of the cycle
    *  now running and no other. */
   const observer = createDeploymentObserver({
     getContext: (id) => (served.includes(id) ? { deployment: id, cli, revision: 0 } : null),
-    read: (kernel, options) => cliDeploymentRead(kernel, options, { exec, env }),
+    read: cycleRead,
   });
 
   /** Run the collector with `input` on stdin: what it printed, or null when it exited nonzero, was
@@ -496,16 +540,18 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
 
   /** One deployment of a cycle: its two kernel reads, then the collector over its rows. It emits
    *  exactly once, unless the reader was stopped or the cycle made void meanwhile: then it emits
-   *  nothing and starts nothing more. */
+   *  nothing and starts nothing more. A kernel with feature status-liveness (`kernelLiveness`, on the
+   *  record this cycle read with) gives rows that are the liveness reading: no collector runs, and
+   *  each row is the kernel's. */
   async function readDeployment(id, { live, at, number, over }) {
     const answer = await observer.observe(id, { maxAge: live ? 0 : BACKGROUND_MAX_AGE });
     if (over()) return;
     if (!answer.ok) return void onEntry({ id, entry: failedEntry(getEntry(id), answer.reason, at), number });
     const rows = rosterRows(answer.roster, cli);
     // No rows, no collector: livenessAnswers([], null) is [].
-    const printed = rows.length ? await collect(JSON.stringify(livenessInput(rows))) : null;
+    const answers = kernelLiveness(cli) ? [] : livenessAnswers(rows, rows.length ? await collect(JSON.stringify(livenessInput(rows))) : null);
     if (over()) return;
-    const instances = panelInstances(rows, livenessAnswers(rows, printed));
+    const instances = panelInstances(rows, answers);
     onEntry({ id, entry: observedEntry({ roster: answer.roster, workspaceStatus: answer.workspaceStatus, observedAt: answer.observedAt }, instances, at), number, read: true });
   }
 
@@ -592,14 +638,16 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
      *  this run still waits for them: for the line after leaving. Answers after stop() too. */
     changes() { return [...running].map(([child, label]) => ({ pid: child.pid, label })); },
     /** Leave: synchronous and idempotent, safe before start(). The loop and the idle timer are
-     *  stopped, the observer disposed and every reading child ended (see `sever`), the roster's
-     *  included. A cycle in flight ends without emitting and without starting anything, and so
+     *  stopped, the observer disposed, the warm reader's stdin closed (it ends) and every reading
+     *  child ended (see `sever`), the roster's included. A cycle in flight ends without emitting and without starting anything, and so
      *  does a roster read; the follow-up the shared loop still runs after a stop does nothing. */
     stop() {
       stopped = true;
       rosterFlight = null;
       loop.stop();
       observer.dispose();
+      endWarm();
+      process.off("exit", endWarm);
       clearIdle();
       endReads();
       // Every change is LET GO, never signalled: its timer, if its caller gave it a deadline, is

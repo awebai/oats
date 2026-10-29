@@ -84,7 +84,7 @@ const SURFACE = Object.freeze({
   "session-resume-trigger.mjs": ["createResumeTrigger", "localDeploymentIds"],
   "client-terms.mjs": ["clientTerms"],
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
-  "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
+  "deployment-panel.mjs": ["rosterRows", "kernelLiveness", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
   // Firm (1d): the deployments a client holds and the views over them. The rest of the module is the Desktop's own composition.
   "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "listedInfo", "listedViews", "viewFor", "panelData", "workspaceChoices", "cliReadsRemotes"],
   // #482 in a switcher: the identity of a listed deployment, read before it is served.

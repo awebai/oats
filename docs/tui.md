@@ -2366,10 +2366,27 @@ with the Desktop (`packages/client/`).
   deployment, run with **the kernel it shipped with** (the `bin/oats.mjs` of
   the same install, with the Node that runs the TUI), never an `oats` found
   on `PATH`. Each has 30 seconds and 4 MiB.
-- **Then one probe of the terminals**: a small program of the shared readers
-  asks tmux which instances have a live pane (`tmux list-panes`, and `ps`
-  for what runs in them). It has 30 seconds. An instance the kernel itself
-  reported as unknown is not probed and stays unknown.
+- **The background reads go through one warm reader** when that kernel
+  lists feature `warm-reader`: `oats reader --stdio`, started once by the
+  TUI as it starts every kernel command (`node <bin> reader --stdio`, in a
+  session of its own), answers them from one process with the same answers
+  as the two commands. A live read (`r`, the return from a suspend, a row
+  opened in the switcher), every read before the reader is ready, and every
+  read it does not answer are the two commands, as above: nothing waits for
+  it and nothing shows it. The rules are the Desktop's: the client rules
+  of [The warm reader](desktop-cli-api.md#the-warm-reader). An install that changed
+  under the run leaves the TUI on the two commands until it is started
+  again. The reader ends when the TUI does: the TUI holds its stdin, and
+  closing it, on the way out or by the TUI's death, ends it.
+- **Then one probe of the terminals**, only for a kernel without feature
+  `status-liveness`: a small program of the shared readers asks tmux which
+  instances have a live pane (`tmux list-panes`, and `ps` for what runs in
+  them). It has 30 seconds. An instance the kernel itself reported as
+  unknown is not probed and stays unknown. A kernel with the feature reads
+  that itself, live, in `oats status`: no probe runs, and each instance is
+  as the kernel reported it, its tmux record included. An instance home
+  with no tmux record (every spawn records one) then has no terminal to
+  open, where the probe fills in the default session.
 - **Every deployment opened in the run is read each time**, at most two at
   a time.
 - **How often:** 5 seconds after the last read ended; 30 seconds once ten
