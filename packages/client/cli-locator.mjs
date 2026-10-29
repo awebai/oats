@@ -198,6 +198,7 @@ export function cliRecord(payload, { bin, source }) {
     ...(payload.workspaceApi === 2 ? { workspaceApi: 2 } : {}),
     ...(payload.automationsApi === 1 ? { automationsApi: 1 } : {}),
     ...(payload.capabilityShowApi === 1 ? { capabilityShowApi: 1 } : {}),
+    ...(payload.readerApi === 1 ? { readerApi: 1 } : {}),
     ...(Array.isArray(payload.features) ? { features: payload.features } : {}),
     ...(typeof payload.sessionViewer?.prefixScroll === "boolean" ? { sessionViewer: { prefixScroll: payload.sessionViewer.prefixScroll } } : {}),
     ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };

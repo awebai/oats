@@ -6,6 +6,8 @@
  * here reads a clock, a file or a process: a client runs the collector itself (liveness-main.mjs, as a
  * child, with its own environment and limits) and gives what it printed to `livenessAnswers`, and it
  * passes the time of its call as `at`, an ISO string. Each client keeps its own store of entries.
+ * The collector runs only for a kernel without feature status-liveness (`kernelLiveness`): with it, the
+ * kernel's rows are the liveness reading and a client projects them with no answers, `panelInstances(rows, [])`.
  *
  * Not for a page: this module imports `node:path`. What a page shows of a deployment that is not
  * observed is in deployment-facts.mjs (`deploymentUnavailableText`), and the Desktop's
@@ -31,6 +33,20 @@ export function rosterRows(roster, cli) {
     agent: instance.agent || agent.name, description: agent.description || "",
     team: agent.team || null, agentsRoot: roster.root, ...(Object.hasOwn(agent, "key") ? { soulKey: agent.key } : {}),
   })));
+}
+
+/** The kernel feature under which `oats status --json` rows carry the complete local liveness reading. */
+export const STATUS_LIVENESS_FEATURE = "status-liveness";
+
+/** Whether this CLI's status rows are the liveness reading (feature status-liveness): their `running`,
+ * `runtimeState`, `runtimeError` and `tmux` are the kernel's, under its pane rule, and a client runs no
+ * collector and probes no terminal. `cli` is the probe record the read was made with, never a later one.
+ * Gate on the feature, never the version. Without it the collector runs as before (`livenessInput`,
+ * `livenessAnswers`). With it, a row the kernel answered `running: null` stays unknown with the kernel's
+ * state and text (origin "kernel", `panelInstances`), and a home with no `tmux` record has none: nothing
+ * fills a default session or window, so no terminal opens for it. */
+export function kernelLiveness(cli) {
+  return Array.isArray(cli?.features) && cli.features.includes(STATUS_LIVENESS_FEATURE);
 }
 
 /** The liveness collector's input (liveness.mjs `observeLiveness`), one per row, in the rows' order.
@@ -127,7 +143,7 @@ export function panelInstance(i) {
 
 /** The panel's rows: each row merged with its liveness answer and projected, in the roster's order
  * (`byRuntimeState`: running, unknown, stopped; by name within each).
- * `answers` are `livenessAnswers`'.
+ * `answers` are `livenessAnswers`', or `[]` under status-liveness (`kernelLiveness`): each row then as the kernel gave it.
  *
  * The merged row's `runtimeErrorOrigin` is set here or removed, whatever the row carried: when the
  * answer holds the `runtimeError`, the answer's speaker; when the answer has none and the kernel's row

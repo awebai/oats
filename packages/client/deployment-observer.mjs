@@ -1,5 +1,7 @@
 /** Native deployment observations with bounded admission and both-outcome
- * ownership. No cache, queued work, reader fallback or generation conversion. */
+ * ownership. No cache, queued work or generation conversion, and no reader of
+ * deployment files of its own to fall back on: every fact is the kernel's answer
+ * to a read (`read`, the CLI's or the warm reader's, warm-reader.mjs). */
 import { isAbsolute, resolve } from 'node:path';
 import { cliDeploymentRead } from './deployment-read-cli.mjs';
 import { deploymentStatusData, workspaceStatusData, observationData } from './deployment-data.mjs';
@@ -36,8 +38,10 @@ export function createDeploymentObserver({ getContext, read = cliDeploymentRead 
     if (!value || value.deployment !== id || !absolute(id) || !Number.isSafeInteger(value.revision) || value.revision < 0) return deploymentFailure('E_BAD_ARGS');
     const gate = deploymentReadGate(value.cli, 'status');
     if (gate) return gate;
+    // `readerApi` rides along for a read that may go through the warm reader (warm-reader.mjs).
     const cli = { ok: value.cli.ok, bin: value.cli.bin, version: value.cli.version,
-      workspaceApi: value.cli.workspaceApi, features: [...value.cli.features] };
+      workspaceApi: value.cli.workspaceApi, features: [...value.cli.features],
+      ...(value.cli.readerApi === 1 ? { readerApi: 1 } : {}) };
     const stamp = JSON.stringify([id, value.revision, cli]);
     return { ok: true, deployment: id, cli, stamp };
   }

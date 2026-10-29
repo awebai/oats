@@ -60,6 +60,8 @@ const SURFACE = Object.freeze({
   "deployment-data.mjs": ["deploymentStatusData", "workspaceStatusData", "observationData",
     "soulsData", "soulCapabilitiesOf", "capabilitiesData"],
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
+  // #1630 (option C): the background reads through one warm `oats reader --stdio` child, falling back to the CLI read.
+  "warm-reader.mjs": ["createWarmReader"],
   "refresh-loop.mjs": ["createRefreshLoop", "REFRESH_FOCUSED_MS", "REFRESH_BLURRED_MS"],
   // 0.68.1: an instance name as words, the sidebar row's visible label in the Desktop and the TUI (display only).
   "instance-display-name.mjs": ["instanceDisplayName"],
@@ -508,7 +510,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 72);
+  assert.equal(Object.keys(SURFACE).length, 73);
   // #1559: the machine sweep's runner and the shared trigger, with the trigger's locality; not the reader.
   assert.deepEqual(["session-resume-cli.mjs", "session-resume.mjs", "session-resume-trigger.mjs"].map((module) => SURFACE[module]), [["runResumeSweep"], undefined, ["createResumeTrigger", "localDeploymentIds"]]);
   // #482 in a switcher: a listed deployment's identity, read before it is served.
