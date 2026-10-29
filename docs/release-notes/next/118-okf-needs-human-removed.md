@@ -8,12 +8,16 @@
   - It is closed when it cites no acceptance (who accepted the change, when
     and where).
   - A cited record on GitHub (an issue or PR comment, or a commit) is
-    checked: the named human's own account must say the cited thing there.
-    Confirmed, the PR merges as an explicit supersession with the acceptance
-    recorded as verified at its link; otherwise it is closed.
-  - A cited record the maintainer cannot read (mail, a session, a call) is
-    trusted without a check: the PR merges as an explicit supersession with
-    the acceptance recorded as source-reported.
+    checked: it must exist at the cited link, under the account the citation
+    names, and say the cited thing. Confirmed, the PR merges as an explicit
+    supersession with the acceptance recorded as verified at its link, which
+    shows the account and the record, not that the human typed it: agents
+    may post under their human's account. Otherwise it is closed.
+  - A cited record the maintainer cannot read (mail, a session, a call), or a
+    record that presents itself as a relay (an agent reporting the human's
+    words), is trusted without a check: the PR merges as an explicit
+    supersession with the acceptance recorded as source-reported (a relay
+    with its link).
   - `oats okf-maintenance review-context` no longer reports `blocked`, and
     `settled` now means only that the PR is not open.
   - **Re-review each parked PR** once the pin moves: remove its
