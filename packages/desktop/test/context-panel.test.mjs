@@ -387,7 +387,8 @@ test("a Herdr-recorded instance: Start's title says who made the reason (#982), 
 
 test('the Session card names a tmux session only when one was recorded: an unknown row with none shows no session line', t => {
   // A row whose state OATS could not establish is not probed, so its `tmux` is the kernel's own and no default
-  // session is filled in (packages/client/liveness.mjs). Every shape the projection lets through.
+  // session is filled in (packages/client/liveness.mjs; under feature status-liveness no collector runs at all and
+  // every row is the kernel's, deployment-panel.test.mjs). Every shape the projection lets through.
   const u = fixture(t), line = () => u.query('.context-panel-session-tmux');
   const unknown = extra => instance('/A/u1', { running: null, runtimeState: 'unreachable', runtimeError: 'error connecting to /x/tmux.sock', ...extra });
   u.select(unknown({ tmux: { session: 'oats-agents-2', window: 'u1', socket: '/x/tmux.sock' } }));

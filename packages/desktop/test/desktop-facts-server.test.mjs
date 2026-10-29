@@ -11,7 +11,7 @@ import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
 import { soulRows } from '../../client/soul-rows.mjs';
 import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData, SESSION_ENDS } from '../../client/deployment-data.mjs';
-import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
+import { rosterRows, kernelLiveness, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
 import { panelData } from '../../client/panel-views.mjs';
 import { createRemoteIdentityStore } from '../server/remote-identity.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -125,20 +125,24 @@ test('status: a valid waitingOnYou passes validated, an invalid one becomes null
   assert.equal(Object.hasOwn(firstRow(fx('status')), 'waitingOnYou'), false, 'a status without the field adds nothing');
 });
 
-function observeWith(features, instance) {
+/** The server's own observeDeployment over a roster of `instances` (one row, or several), read under a CLI with
+ * `features`; resolves the first projected row, or every row when `instance` is an array. `collected` gets each
+ * input the collector double was given. */
+function observeWith(features, instance, collected = []) {
   const fn = name => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
-  const roster = { root: '/d/agents', agents: [{ name: 'dev', description: '', team: null, instances: [instance] }], withheld: [] };
+  const instances = Array.isArray(instance) ? instance : [instance];
+  const roster = { root: '/d/agents', agents: [{ name: 'dev', description: '', team: null, instances }], withheld: [] };
   const context = {
     snapshot: { byWs: new Map() }, cliState: { probedAt: 1, features }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(), beginObserving() {}, endObserving() {},
     soulCatalog: { prefetch() {}, settle: () => ({ entry: null, pending: null }) }, capabilityCatalog: { prefetch() {}, ensure() {} },
     deploymentObserver: { observe: async () => ({ ok: true, roster, workspaceStatus: { workspace: {} }, observedAt: '2026-10-03T10:00:00.000Z' }) },
     soulCatalogKey: () => null, catalogProjection: () => null, attachCatalog() {},
     // The shared home's functions, as the server imports them; the collector is a double that prints its answers.
-    rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry,
-    runLivenessCollector: async input => JSON.stringify(input.map(() => ({ running: true, runtimeState: 'running', tmux: null }))), Date, String,
+    rosterRows, kernelLiveness, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry,
+    runLivenessCollector: async input => { collected.push(input); return JSON.stringify(input.map(() => ({ running: true, runtimeState: 'running', tmux: null }))); }, Date, String,
   };
   const run = runInNewContext(`${fn('observeDeployment')}\nobserveDeployment`, context);
-  return run('/d').then(entry => JSON.parse(JSON.stringify(entry)).instances[0]);
+  return run('/d').then(entry => { const rows = JSON.parse(JSON.stringify(entry)).instances; return Array.isArray(instance) ? rows : rows[0]; });
 }
 
 test('observeDeployment keeps waitingOnYou only when the CLI advertises waiting-on-you (feature, never version)', async () => {
@@ -148,6 +152,42 @@ test('observeDeployment keeps waitingOnYou only when the CLI advertises waiting-
   assert.equal(Object.hasOwn(await observeWith(undefined, instance), 'waitingOnYou'), false, 'no feature list: dropped');
   const { waitingOnYou: _w, ...bare } = instance;
   assert.equal(Object.hasOwn(await observeWith(['waiting-on-you'], bare), 'waitingOnYou'), false, 'absent is never synthesized');
+});
+
+/* D10, kernel feature status-liveness: the kernel's status rows are the complete local liveness reading. The server's
+   own observeDeployment then runs no collector child and keeps each row's running, runtimeState, runtimeError and tmux
+   as the kernel reported them; without the feature the collector runs as before. Feature, never version. */
+test('observeDeployment under status-liveness runs no collector and keeps the kernel\'s liveness; without it the collector runs', async () => {
+  const home = name => `/d/agents/dev/instances/${name}`;
+  const kernelRows = [
+    { instance: 'up', agent: 'dev', home: home('up'), running: true, runtimeState: 'running', tmux: { session: 'oats', window: 'up', socket: '/x/tmux.sock' } },
+    { instance: 'down', agent: 'dev', home: home('down'), running: false, runtimeState: 'stopped', tmux: { session: 'oats', window: 'down' } },
+    { instance: 'unknown', agent: 'dev', home: home('unknown'), running: null, runtimeState: 'unreachable', runtimeError: 'error connecting to /x/tmux.sock', tmux: { session: 'oats', window: 'unknown', socket: '/x/tmux.sock' } },
+    // A home with no tmux record: nothing fills one in.
+    { instance: 'bare', agent: 'dev', home: home('bare'), running: false, runtimeState: 'stopped' },
+  ];
+  const liveness = rows => Object.fromEntries(rows.map(r => [r.instance, [r.running, r.runtimeState, r.runtimeError, r.runtimeErrorOrigin, r.tmux]]));
+  for (const features of [['status-liveness'], ['desktop-facts', 'waiting-on-you', 'status-liveness']]) {
+    const collected = [], rows = await observeWith(features, kernelRows, collected);
+    assert.deepEqual(collected, [], `${features}: no collector child`);
+    assert.deepEqual(liveness(rows), {
+      up: [true, 'running', undefined, undefined, { session: 'oats', window: 'up', socket: '/x/tmux.sock' }],
+      down: [false, 'stopped', undefined, undefined, { session: 'oats', window: 'down' }],
+      unknown: [null, 'unreachable', 'error connecting to /x/tmux.sock', 'kernel', { session: 'oats', window: 'unknown', socket: '/x/tmux.sock' }],
+      bare: [false, 'stopped', undefined, undefined, undefined],
+    }, `${features}: the kernel's rows, as reported`);
+    assert.equal(Object.hasOwn(rows.find(r => r.instance === 'bare'), 'tmux'), false, `${features}: no tmux record stays without one`);
+    assert.ok(rows.every(r => r.runtimeErrorOrigin !== 'terminal-probe'), `${features}: no terminal-probe origin`);
+  }
+  // Without the feature (a pre-feature list, an older kernel's, none at all) the collector runs over every row, as today.
+  for (const features of [['desktop-facts', 'waiting-on-you'], [], undefined]) {
+    const collected = [], rows = await observeWith(features, kernelRows, collected);
+    assert.deepEqual(collected.map(input => input.map(i => i.instance)), [['up', 'down', 'unknown', 'bare']], `${features}: one collector run`);
+    assert.deepEqual(rows.map(r => [r.instance, r.running]).sort(), [['bare', true], ['down', true], ['unknown', true], ['up', true]], `${features}: the double's answers merged`);
+  }
+  // The gate reads the feature list only: a version, or the name somewhere else, is not the feature.
+  for (const cli of [{ version: '99.0.0' }, { features: 'status-liveness' }, { features: ['status-liveness-v2'] }, null, undefined]) assert.equal(kernelLiveness(cli), false, JSON.stringify(cli));
+  assert.equal(kernelLiveness({ features: ['status-liveness'] }), true);
 });
 
 /* Session resume: `sessionEnd` on a status row is one of SESSION_ENDS exactly, dropped otherwise without failing

@@ -18,7 +18,7 @@
  *                                   { action: show|file, capability, path? } → `oats capabilities show` for one held catalog row
  *                                   (server/capability-show.mjs; local only; errors 409/400 { error, code })
  *   POST /api/models                { harness: pi|claude|codex } → advisory model catalog for the spawn modal
- *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
+ *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError, reader)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
  *   POST /api/windows               { views: [viewId|null, …] } → the views the open windows show: the remote roster
@@ -44,7 +44,7 @@
 // process starts, sees the user's. Nothing here passes the cleaning function to a child.
 import { launchEnvironment } from "../../client/own-environment.mjs";
 import { createServer } from "node:http";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, realpathSync, accessSync, constants as fsConstants } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -53,6 +53,7 @@ import { performance } from "node:perf_hooks";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
+import { createWarmReader } from "../../client/warm-reader.mjs";
 import { createMachines } from "./machines.mjs";
 import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
@@ -91,7 +92,7 @@ import { validWorkspaceId } from "../renderer/workspace-id.mjs";
 import { MAX_WINDOW_VIEWS } from "../window-activity.mjs";
 import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
 import { startInstance, verifiedLocalHome as localHomeIn } from "../../client/session-start.mjs";
-import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
+import { rosterRows, kernelLiveness, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes, rosterWorkspaceKeys } from "../../client/panel-views.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -105,7 +106,8 @@ const flag = (name) => {
 const flagAll = (name) => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] && !args[i + 1].startsWith("--") ? [args[i + 1]] : []));
 
 // "collect" is retired: the kernel owns roster collection and the CLI read is
-// asynchronous. Terminal liveness runs in packages/client/liveness-main.mjs children.
+// asynchronous. Terminal liveness is the kernel's rows under feature status-liveness,
+// else it runs in packages/client/liveness-main.mjs children.
 if (sub !== "start") {
   console.error("usage: oats-web.mjs start [--port <n>] [--dir <deployment>]...  (repeat --dir for multiple deployments)");
   process.exit(1);
@@ -504,13 +506,17 @@ function cliStatus() {
 }
 /** /api/cli as served: the probe status plus the PATH it ran with (and every
  * oats call runs with), its source, and why the login shell's PATH could not
- * be used when it was not. */
-const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR });
+ * be used when it was not; and the warm reader's state (packages/client/warm-reader.mjs
+ * `status`), a diagnostic no page shows. */
+const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR, reader: warmReader.status() });
 
 /* ── Kernel-observed roster snapshot ──
    Every local deployment fact is one bounded `oats status --json` plus one
-   `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
-   the kernel-reported targets is observed in a separate short-lived child
+   `oats workspace status --json` (deployment-observer.mjs). A kernel with feature
+   status-liveness reports the complete local liveness reading in its status rows,
+   which are kept as they are: no child, no terminal probe (deployment-panel.mjs
+   `kernelLiveness`). For a kernel without it, terminal liveness for the
+   kernel-reported targets is observed in a separate short-lived child
    (packages/client/liveness-main.mjs) so tmux latency cannot stall request handling.
    Local roster Git is null; only the on-demand K1 route observes Git.
 
@@ -548,12 +554,18 @@ const endObserving = (id) => { const n = (observing.get(id) ?? 1) - 1; if (n > 0
 // Only a registered local deployment, with the CURRENT accepted CLI. The
 // probe generation is the revision: a real CLI change revokes pending reads.
 const observerContext = (id) => ctxs.includes(id) ? { deployment: id, revision: cliProbeGeneration, cli: cliState } : null;
-const deploymentObserver = createDeploymentObserver({ getContext: observerContext });
+// The observers' reads (#1630, option C): a background read (--max-age > 0) is answered by one warm
+// `oats reader --stdio` child of the accepted CLI where its probe lists the reader, and by the CLI read,
+// unchanged, whenever it cannot be (packages/client/warm-reader.mjs). Live reads are the CLI's. This
+// process holds the reader's stdin, its lifeline: the reader ends with this process, however it ends.
+// A reader that reports the install changed sends the CLI back through discovery.
+const warmReader = createWarmReader({ spawn, onStale: () => reprobeCli() });
+const deploymentObserver = createDeploymentObserver({ getContext: observerContext, read: warmReader.read });
 // Post-spawn reads (#1246 D2): a second observer, made by the same factory over the same context and reads, used
 // only on demand, for the one deployment a created spawn changed (observeSpawned). It has no timer and no loop: the
 // refresh loop stays the one read loop. It never joins a cycle's read, which started before the apply answered, and
 // a busy cycle never refuses it: at most 2 targeted reads at once, beside the cycle's 2.
-const spawnObserver = createDeploymentObserver({ getContext: observerContext });
+const spawnObserver = createDeploymentObserver({ getContext: observerContext, read: warmReader.read });
 /** Run the liveness collector over its input (deployment-panel.mjs `livenessInput`) and answer what it
  * printed, or null when it failed, timed out or could not start (`livenessAnswers` reads either). No
  * rows start no child. */
@@ -610,14 +622,18 @@ async function observeDeployment(id, { live = false, observer = deploymentObserv
     const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
     capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
     // The rows, the collector's input and its answers, and the projection are the shared home's
-    // (packages/client/deployment-panel.mjs); running the collector is this process's.
+    // (packages/client/deployment-panel.mjs); running the collector is this process's. Under feature
+    // status-liveness, decided on the probe record this cycle read with (`cli`), the kernel's rows are the
+    // liveness reading: no collector child, no answers, each row's running/runtimeState/runtimeError/tmux
+    // as the kernel reported them. Without it, the collector runs.
     const rows = rosterRows(roster, cli);
-    const instances = panelInstances(rows, livenessAnswers(rows, await runLivenessCollector(livenessInput(rows))));
+    const answers = kernelLiveness(cli) ? [] : livenessAnswers(rows, await runLivenessCollector(livenessInput(rows)));
+    const instances = panelInstances(rows, answers);
     const entry = observedEntry({ roster, workspaceStatus, observedAt }, instances, new Date().toISOString());
     // The Desktop's own facts of the deployment: its held souls catalog and the key it was read under.
     Object.assign(entry.deployment, { catalog: catalogProjection(catalogEntry, !!pending), catalogKey });
     // Attach the catalog when it lands: to THIS cycle's entry (it may land before the entry is published —
-    // publication still waits on the liveness child and on the other deployments) and to whatever entry is
+    // publication still waits on the liveness child, when one runs, and on the other deployments) and to whatever entry is
     // published by then.
     if (pending) attachCatalog(id, pending, entry);
     return entry;
@@ -1667,6 +1683,9 @@ if (EXIT_ON_STDIN_CLOSE) {
   process.stdin.once("close", () => onOwnerGone("closed"));
   process.stdin.once("error", (e) => onOwnerGone(`error ${e.code || e.message}`));
 }
+// The warm reader ends with this process: its stdin closes on any exit (and with the process itself, on a
+// SIGKILL), and the reader exits on that EOF without finishing a read.
+process.on("exit", () => warmReader.stop());
 void refreshLoop.start();                // the first cycle publishes "pending" until the CLI probe settles
 reprobeCli().then((s) => {
   console.log(s.ok

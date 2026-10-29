@@ -25,8 +25,11 @@ test('diagnostics that differ between identical probes never change the signatur
     payload({ tried: undefined }),
     payload({ source: 'login-shell' }),
     payload({ source: null }),
+    // The warm reader's live state (#1630): its starts, refusals and failures are no CLI change.
+    payload({ reader: { state: 'ready', code: null } }),
+    payload({ reader: { state: 'backoff', code: 'E_READER_EXIT' } }),
   ];
-  assert.deepEqual(PROBE_DIAGNOSTIC_FIELDS, ['probedAt', 'tried', 'source']);
+  assert.deepEqual(PROBE_DIAGNOSTIC_FIELDS, ['probedAt', 'tried', 'source', 'reader']);
   for (const after of same) {
     assert.equal(probeSignature(after), probeSignature(before));
     assert.equal(probeChanged(before, after), false);

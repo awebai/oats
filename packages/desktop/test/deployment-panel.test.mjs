@@ -4,11 +4,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { observeLiveness } from '../../client/liveness.mjs';
 import { deploymentStatusData } from '../../client/deployment-data.mjs';
 import { HERDR_REMOVED } from '../../client/terminal-contract.mjs';
-import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry, publicDeployment } from '../../client/deployment-panel.mjs';
+import { rosterRows, kernelLiveness, STATUS_LIVENESS_FEATURE, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry, publicDeployment } from '../../client/deployment-panel.mjs';
+import { openAct } from '../../client/instance-acts.mjs';
+import { canAddressRemote, rowReason } from '../../client/remote-address.mjs';
+import { rowReasonLine, runtimeErrorLine } from '../renderer/speaker-line.mjs';
 
 /** Frozen at every depth: a function that writes to its input throws (modules are strict). */
 const frozen = value => {
@@ -385,6 +390,80 @@ test('livenessAnswers: a runtimeErrorOrigin the collector printed never survives
     assert.deepEqual(origins(panelInstances(rows.map(row => ({ ...row, agentsRoot: '/d/agents' })), answers)),
       { fine: [undefined, undefined, false], probed: ['tmux said no', 'terminal-probe', true], kept: ['the kernel\'s text', 'kernel', true], 'herdr-old': [STAND_IN, undefined, false] }, at);
   }
+});
+
+// ── The same rows under feature status-liveness (D10): the kernel's rows are the liveness reading ──
+// The Desktop runs no collector then (server/oats-web.mjs observeDeployment, `kernelLiveness`): its panel rows are
+// `panelInstances(rows, [])`. The kernel-unknown decision holds on that path too, now enforced by the kernel's rows alone.
+
+const LIVENESS_CLI = frozen({ ok: true, features: ['desktop-facts', 'waiting-on-you', STATUS_LIVENESS_FEATURE] });
+/** `answered()` plus a row the kernel answered running with no tmux record. */
+const answeredBare = () => { const document = answered(); return frozen({ ...document, agents: [{ ...document.agents[0], instances: [...document.agents[0].instances,
+  { instance: 'yes-bare', home: '/d/agents/dev/instances/yes-bare', running: true, runtimeState: 'running' }] }] }); };
+/** The Desktop's terminal open (renderer/shell.mjs openTerminalTabInner) up to its refusals, as terminal-focus.test.mjs runs it:
+ * what it said, or `passed` when it went on past them (it then reaches a name this context does not give). */
+const shellOpen = runInNewContext(`(${readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8').match(/async function openTerminalTabInner\(inst, ws, key, owns,[\s\S]*?\n\}/)[0]})`,
+  { canAddressRemote, rowReason, rowReasonLine, runtimeErrorLine });
+const terminalOpen = async inst => {
+  const said = [];
+  try { await shellOpen(inst, 'A', 'key', () => true, message => said.push(message), () => assert.fail('no destination is committed')); }
+  catch (error) { if (said.length || !/terminalOrigin/.test(error.message)) throw error; return 'passed'; }
+  return said;
+};
+
+test('status-liveness: kernelLiveness reads the feature list, never the version', () => {
+  assert.equal(STATUS_LIVENESS_FEATURE, 'status-liveness');
+  assert.equal(kernelLiveness(LIVENESS_CLI), true);
+  for (const cli of [WAITING, { ok: true, version: '99.0.0', features: [] }, { features: 'status-liveness' }, { features: ['status-liveness '] }, {}, null, undefined]) {
+    assert.equal(kernelLiveness(cli), false, JSON.stringify(cli));
+  }
+});
+
+test('status-liveness: rows and panel with no answers: no row the kernel answered `running: null` leaves as running or stopped, and every row is the kernel\'s', () => {
+  const rows = rosterRows(answeredBare(), LIVENESS_CLI);
+  assert.equal(kernelLiveness(LIVENESS_CLI), true);
+  const instances = panelInstances(rows, []), by = Object.fromEntries(instances.map(i => [i.instance, i]));
+  // Every row's running, state, text and tmux are exactly the kernel's: no probe refines an answered row, nothing fills a default.
+  for (const row of answeredBare().agents[0].instances) {
+    const got = by[row.instance];
+    assert.deepEqual([got.running, got.runtimeState, got.runtimeError, got.tmux], [row.running, row.runtimeState, row.runtimeError, row.tmux], row.instance);
+    // As /api/panel serves it (JSON): a tmux record only where the kernel gave one.
+    assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(got)), 'tmux'), Object.hasOwn(row, 'tmux'), `${row.instance}: a tmux record only where the kernel gave one`);
+  }
+  assert.deepEqual([by.yes.running, by.no.running], [true, false], 'the kernel decides an answered row');
+  for (const name of UNKNOWN_ROWS) assert.equal(by[name].running, null, name);
+  assert.deepEqual([by['unknown-recorded'].runtimeState, by['unknown-recorded'].runtimeError, by['unknown-recorded'].tmux],
+    ['unreachable', 'error connecting to /x/tmux.sock', { session: 'oats', window: 'unknown-recorded', socket: '/x/tmux.sock' }]);
+  assert.deepEqual([by['unknown-bare'].runtimeState, by['unknown-bare'].runtimeError, by['unknown-bare'].tmux], ['unreachable', 'E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read', undefined]);
+  // The kernel gave no state for this one: none is written here either (the collector's 'unreachable' default is gone with it).
+  assert.deepEqual([by['unknown-null'].runtimeState, by['unknown-null'].runtimeError, by['unknown-null'].tmux], [undefined, undefined, null]);
+  assert.deepEqual([by['unknown-empty'].runtimeState, by['unknown-empty'].tmux], ['unidentified', {}]);
+  assert.equal(by['yes-bare'].tmux, undefined, 'a home with no tmux record gets none');
+  // Each text is the kernel's: origin "kernel", never the terminal check's; a row with no text has no key.
+  assert.deepEqual(origins(instances), {
+    yes: [undefined, undefined, false], no: [undefined, undefined, false], 'yes-bare': [undefined, undefined, false],
+    'unknown-recorded': ['error connecting to /x/tmux.sock', 'kernel', true],
+    'unknown-bare': ['E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read', 'kernel', true],
+    'unknown-null': [undefined, undefined, false], 'unknown-empty': [undefined, undefined, false],
+  });
+  // The sort is the same as with answers: running, unknown, stopped.
+  assert.deepEqual(instances.map(i => i.instance), ['yes', 'yes-bare', ...UNKNOWN_ROWS, 'no']);
+});
+
+test('status-liveness: no terminal opens on a row the kernel answered unknown, nor on a home with no tmux record', async () => {
+  const by = Object.fromEntries(panelInstances(rosterRows(answeredBare(), LIVENESS_CLI), []).map(i => [i.instance, i]));
+  for (const name of UNKNOWN_ROWS) {
+    const open = openAct(by[name]);
+    assert.deepEqual([open.enabled, open.reason.code], [false, 'state-unknown'], `${name}: the shared act`);
+    assert.equal((await terminalOpen(by[name])).length, 1, `${name}: the Desktop's open refuses with one notice`);
+  }
+  assert.deepEqual(await terminalOpen(by['unknown-recorded']), ['OATS says: error connecting to /x/tmux.sock'], 'the kernel\'s text, under its name');
+  // The kernel says running but recorded no session: the shared act would open, the Desktop's own condition does not.
+  assert.equal(openAct(by['yes-bare']).enabled, true);
+  assert.deepEqual(await terminalOpen(by['yes-bare']), ['"yes-bare" has no live terminal session']);
+  assert.deepEqual(await terminalOpen(by.no), ['"no" has no live terminal session'], 'a stopped row');
+  // A running row with its recorded session goes on past the refusals.
+  assert.equal(openAct(by.yes).enabled, true); assert.equal(await terminalOpen(by.yes), 'passed');
 });
 
 test('the collector failed or printed something else: every row is the terminal check\'s, a row the kernel answered itself included', () => {

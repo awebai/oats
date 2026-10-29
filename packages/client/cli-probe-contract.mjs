@@ -13,8 +13,10 @@
    Pure data; no node: imports so the renderer can share it with the server. */
 
 /** Top-level fields that legitimately differ between two probes of the same
- * CLI and therefore never participate in the signature. */
-export const PROBE_DIAGNOSTIC_FIELDS = Object.freeze(['probedAt', 'tried', 'source']);
+ * CLI and therefore never participate in the signature. `reader` is the warm
+ * reader's live state in /api/cli (warm-reader.mjs `status`): a diagnostic, so
+ * its changes never read as a CLI change and no page holds reader state. */
+export const PROBE_DIAGNOSTIC_FIELDS = Object.freeze(['probedAt', 'tried', 'source', 'reader']);
 const DIAGNOSTIC = new Set(PROBE_DIAGNOSTIC_FIELDS);
 
 /* Object keys are sorted at every depth so the serialization order a

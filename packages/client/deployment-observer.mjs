@@ -1,9 +1,12 @@
 /** Native deployment observations with bounded admission and both-outcome
- * ownership. No cache, queued work, reader fallback or generation conversion. */
+ * ownership. No cache, queued work or generation conversion, and no reader of
+ * deployment files of its own to fall back on: every fact is the kernel's answer
+ * to a read (`read`, the CLI's or the warm reader's, warm-reader.mjs). */
 import { isAbsolute, resolve } from 'node:path';
 import { cliDeploymentRead } from './deployment-read-cli.mjs';
 import { deploymentStatusData, workspaceStatusData, observationData } from './deployment-data.mjs';
 import { deploymentReadGate, deploymentFailure, validMaxAge } from './deployment-contract.mjs';
+import { probeSignature } from './cli-probe-contract.mjs';
 export const MAX_DEPLOYMENT_OBSERVATIONS = 2; // each owns at most two CLI reads
 
 /** Run `fn` over `items` with at most `limit` calls in flight, first come first served; results keep
@@ -36,8 +39,10 @@ export function createDeploymentObserver({ getContext, read = cliDeploymentRead 
     if (!value || value.deployment !== id || !absolute(id) || !Number.isSafeInteger(value.revision) || value.revision < 0) return deploymentFailure('E_BAD_ARGS');
     const gate = deploymentReadGate(value.cli, 'status');
     if (gate) return gate;
-    const cli = { ok: value.cli.ok, bin: value.cli.bin, version: value.cli.version,
-      workspaceApi: value.cli.workspaceApi, features: [...value.cli.features] };
+    // The record the reads run under: a copy of every gate-relevant field of the probe, all but its
+    // diagnostics (cli-probe-contract.mjs `probeSignature`). Those move only with the revision, so the
+    // stamp is as it was; a read sees the whole identity of the probe, which the warm reader is bound to.
+    const cli = JSON.parse(probeSignature(value.cli));
     const stamp = JSON.stringify([id, value.revision, cli]);
     return { ok: true, deployment: id, cli, stamp };
   }
