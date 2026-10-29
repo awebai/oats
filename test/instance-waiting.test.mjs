@@ -395,6 +395,12 @@ test("a kept window whose harness is gone (a crash's fallback shell, a retained 
   tmux("new-window", "-d", "-t", "oats-agents:", "-n", "w-shell", "sh");
   tmux("set-option", "-g", "remain-on-exit", "on");
   tmux("new-window", "-d", "-t", "oats-agents:", "-n", "w-dead", "true");
+  // Read once tmux has marked the pane dead: until then it answers the pane live while ps no longer
+  // lists its process, which reads unknown (#1641).
+  for (const deadline = Date.now() + 10000; tmux("display-message", "-p", "-t", "=oats-agents:=w-dead", "#{pane_dead}").trim() !== "1";) {
+    assert.ok(Date.now() < deadline, "tmux marks w-dead's pane dead");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
   const shell = await recordedHome("w-shell"), dead = await recordedHome("w-dead");
   tmux("set-option", "-g", "remain-on-exit", "off");
   for (const home of [shell, dead]) setWaiting(home, { producer: "agent", waiting: true, reason: "attention", message: "old session question" });
