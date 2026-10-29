@@ -13,11 +13,15 @@
     supersession with the acceptance recorded as verified at its link, which
     shows the account and the record, not that the human typed it: agents
     may post under their human's account. Otherwise it is closed.
-  - A cited record the maintainer cannot read (mail, a session, a call), or a
-    record that presents itself as a relay (an agent reporting the human's
-    words), is trusted without a check: the PR merges as an explicit
-    supersession with the acceptance recorded as source-reported (a relay
-    with its link).
+  - A relay on GitHub (a record that presents itself as an agent reporting
+    the human's words) is checked the same way: it must exist at the cited
+    link and say that the relaying agent reported the human's acceptance of
+    this change. Confirmed, the PR merges as an explicit supersession with
+    the acceptance recorded as `source-reported (relay at <link>)`, never as
+    verified; otherwise it is closed.
+  - A cited record the maintainer cannot read (mail, a session, a call) is
+    trusted without a check: the PR merges as an explicit supersession with
+    the acceptance recorded as source-reported.
   - `oats okf-maintenance review-context` no longer reports `blocked`, and
     `settled` now means only that the PR is not open.
   - **Re-review each parked PR.** A label left in place is inert, but the
