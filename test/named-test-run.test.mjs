@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import {
   MAX_FILES, boundsRefusal, buildMarkdownTable, buildTable, chooseCommit, conclude, countsReader, defaultTmuxSocket, fileShapeRefusal,
   formatHeader, main, measureCase, parseFileList, prepare, readCounts, refCandidates, refShapeRefusal, resolveRef, run, show, summaryLines, testEnv,
@@ -227,6 +227,9 @@ test("named-test-run testEnv: a test file gets this process's environment, less 
   assert.deepEqual(testEnv(env, Object.values(macos.request)), { PATH: "/bin", CI: "true", GITHUB_ACTIONS: "true", TMUX_TMPDIR: "/t" });
   // Each runner drops its own request's names.
   assert.deepEqual(testEnv({ PATH: "/bin", LINUX_TESTS_REF: "main", LINUX_TESTS_FILES: "test/a.test.mjs", XDG_RUNTIME_DIR: "/run/user/1001" }, Object.values(linuxPlatform().request)), { PATH: "/bin", XDG_RUNTIME_DIR: "/run/user/1001" });
+  // The tested tree's node_modules/.bin comes first, as `npm test` puts it: the files find its pi.
+  assert.deepEqual(testEnv(env, Object.values(macos.request), "/w/tested"), { PATH: `/w/tested/node_modules/.bin${delimiter}/bin`, CI: "true", GITHUB_ACTIONS: "true", TMUX_TMPDIR: "/t" });
+  assert.deepEqual(testEnv({ CI: "true" }, [], "/w/tested"), { CI: "true", PATH: "/w/tested/node_modules/.bin" });
 });
 
 const facts = (over = {}) => ({
