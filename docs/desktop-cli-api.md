@@ -333,7 +333,8 @@ message}` and `legacy-local-agents {code, dirs, instances, message}`.
 Every read asks each remote for its current head (`git ls-remote`). With
 `--max-age <seconds>` a read verb reuses a head this machine observed at most
 that many seconds ago instead, so a refresh right after another costs no
-network round trip. Gate the flag on the feature: an older kernel may ignore
+network round trip. `oats workspace status` reuses the host's `gh` login the
+same way, for display only ([below](#the-gh-login-display-only)). Gate the flag on the feature: an older kernel may ignore
 it and answer live, without the block.
 
 ```text
@@ -351,10 +352,11 @@ oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature tr
 - **The block:** with the flag (`0` included) the document gains one key,
   `observation: {observedAt, reused, localRevision}`: in the result of an
   envelope, at the top level of the roster (after `agents`). `observedAt` is the
-  OLDEST remote head the answer used, so the answer is at least that fresh
-  everywhere; `reused` is `true` when any head came from an earlier observation.
-  A command that read no remote head reports the time it started and
-  `reused: false`. Without the flag the key is absent and every document is
+  OLDEST remote observation the answer used (a head, or a reused `gh` login),
+  so the answer is at least that fresh everywhere; `reused` is `true` when any
+  head or that login came from an earlier observation.
+  A command that used no remote observation (no head, and no reused `gh`
+  login) reports the time it started and `reused: false`. Without the flag the key is absent and every document is
   exactly as before. A refusal (`E_SOUL_UNKNOWN`, any error envelope) never
   carries the block.
 - **Spawn preview** (feature `spawn-preview-max-age`, OATS 0.33.0): the
@@ -383,8 +385,9 @@ oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature tr
   not through `localRevision`: the bundled catalog is not an input. Instance
   homes, member clones and tmux are not inputs either, because the answer
   itself reports them.
-- **What is reused:** only remote heads (the commit a branch or tag named),
-  never local state. Instances, `oats-local.yaml` and the lock are read afresh
+- **What is reused:** remote heads (the commit a branch or tag named) and,
+  in `workspace status`, the `gh` login it places automations with; never
+  local state. Instances, `oats-local.yaml` and the lock are read afresh
   by every command. A member's backlink (`oats-membership.yaml`) is read at
   the member's observed head, which may be a reused one: a backlink removed
   less than `<s>` seconds ago can still show the member `confirmed` under
@@ -392,6 +395,27 @@ oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature tr
   afresh. A reused head's
   `observedAt` (for example `workspace.observedAt` in `workspace status`) is
   the time it was observed, not now.
+- <a id="the-gh-login-display-only"></a>**The `gh` login, display only:**
+  `workspace status` places each workspace trigger and schedule
+  with the account this host's `gh` is logged in as (`gh api user`;
+  [who runs it](schedules.md#workspace-triggers-and-schedules)). Under `--max-age <s>`
+  it reuses a login a status read observed at most `<s>` seconds ago, so a
+  client polling every few seconds asks GitHub about once per `<s>`. Only
+  that display does: a schedule tick, `oats trigger poll` (with `--max-age`
+  too), `oats trigger run` and every other act that places or fires an
+  automation asks `gh` live. A login is reused only under the same `gh`
+  context: the same GitHub host, the same `gh` binary (as `PATH` finds it
+  from the deployment), the same set of token variables (`GH_TOKEN`,
+  `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`: which are
+  set, never their values), the same `GH_HOST` and config directory, and an
+  unchanged `hosts.yml` there (a `gh auth login`, `logout` or `switch`
+  rewrites it). Only a successful answer is kept, never a token or its
+  digest; a failed one is not, and it ends the reuse of the success before
+  it. Within `<s>`, a token variable given another value or a token revoked
+  on GitHub still shows the login, as a head moved on the remote shows
+  unmoved. The display waits at most 5 s for `gh` (an act waits 30 s): a
+  `gh` that does not answer in time reads `owner-mismatch`, as one that is
+  not logged in does.
 - **When a head is not reused:** it is older than the flag allows (or dated
   more than 5 s in the future); it was observed through a different URL
   spelling of the same repository (ssh vs https) or for a different ref; its
