@@ -502,14 +502,13 @@ function cliStatus() {
     relationsMin: locator.RELATIONS_MIN.join("."),
     probedAt: cliState.probedAt || null,
     tried: cliState.tried || [],
-    // The warm reader (packages/client/warm-reader.mjs): a diagnostic only, never shown by a page.
-    reader: warmReader.status(),
   };
 }
 /** /api/cli as served: the probe status plus the PATH it ran with (and every
  * oats call runs with), its source, and why the login shell's PATH could not
- * be used when it was not. */
-const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR });
+ * be used when it was not; and the warm reader's state (packages/client/warm-reader.mjs
+ * `status`), a diagnostic no page shows. */
+const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || "", pathSource: PATH_SOURCE, pathError: PATH_ERROR, reader: warmReader.status() });
 
 /* ── Kernel-observed roster snapshot ──
    Every local deployment fact is one bounded `oats status --json` plus one

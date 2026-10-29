@@ -25,6 +25,9 @@ export const CLIENT_OWN_CODES = Object.freeze([
   // Stop, start, restart and remove, and the plan a person confirms (a spawn's plan too).
   'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_PLAN_LIMIT', 'E_PLAN_REQUIRED',
   'E_HOME_UNVERIFIED', 'E_START_UNCONFIRMED',
+  // The warm reader's client (packages/client/warm-reader.mjs): why a reader stopped answering, or never started.
+  // E_READER_STALE and E_READER_DEFECT are the reader's own refusal codes, the kernel's, and not here.
+  'E_READER_EXIT', 'E_READER_HELLO_TIMEOUT', 'E_READER_MISMATCH', 'E_READER_OUTPUT_LIMIT', 'E_READER_PATH', 'E_READER_TIMEOUT',
   // keys.json (packages/client/keys-file.mjs): a write that could not keep every key, so none is made.
   'E_KEYS_UNWRITABLE',
   // An instance's Activity.
