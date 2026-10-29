@@ -2374,7 +2374,7 @@ with the Desktop (`packages/client/`).
   opened in the switcher), every read before the reader is ready, and every
   read it does not answer are the two commands, as above: nothing waits for
   it and nothing shows it. The rules are the Desktop's: the client rules
-  of "The warm reader" in the Desktop CLI API. An install that changed
+  of [The warm reader](desktop-cli-api.md#the-warm-reader). An install that changed
   under the run leaves the TUI on the two commands until it is started
   again. The reader ends when the TUI does: the TUI holds its stdin, and
   closing it, on the way out or by the TUI's death, ends it.
