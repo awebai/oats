@@ -530,6 +530,18 @@ export async function waitUntil(predicate, description, timeoutMs = 10000) {
   return true;
 }
 
+/** `read()` (an inspection, or anything over the pane inspector), or undefined for the moment a
+ *  pane's own process has ended and tmux has not yet marked the pane dead: tmux still answers it
+ *  live with a shell label while ps no longer lists it, which reads unknown (#1641). For a
+ *  waitUntil predicate across a pane's exit; every other failure still fails the test. */
+export function acrossPaneExit(read) {
+  try { return read(); }
+  catch (e) {
+    if (/the process table has no process \d+, the agent's pane's own/.test(String(e?.message))) return undefined;
+    throw e;
+  }
+}
+
 /** End the process `pid` (SIGKILL) and wait until it is gone: reaped, for a child of this process,
  *  which is a zombie until this event loop has reaped it. For a test that needs the pid itself to
  *  be gone (`kill(pid, 0)` answering ESRCH). A record that names a zombie (a claim, a retire's

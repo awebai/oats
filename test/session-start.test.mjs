@@ -10,7 +10,7 @@ import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, withSafeTaskP
 import { startRemote } from "../lib/servers.mjs";
 import { inspectSessionTarget } from "../lib/session-input.mjs";
 import { liveWaiting, readEvents, setWaiting } from "../lib/instance-events.mjs";
-import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
+import { acrossPaneExit, isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -516,7 +516,7 @@ test("a pending target that cannot be observed is kept and the start refuses; a 
   assert.equal(mark(), "", "a pane OATS did not launch carries no mark");
   tmux("set-option", "-w", "-t", `=${session}:=deadpane`, "remain-on-exit", "on");
   releaseHarness(d.home);
-  await waitUntil(() => inspectInstanceSession(d.home).state === "stopped", "retained dead pane");
+  await waitUntil(() => acrossPaneExit(() => inspectInstanceSession(d.home))?.state === "stopped", "retained dead pane");
   const st = inspectInstanceSession(d.home);
   assert.equal(st.present, false);
   assert.equal(st.state, "stopped");

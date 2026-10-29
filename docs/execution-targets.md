@@ -56,7 +56,16 @@ agents' tmux (ssh, cron, a plain terminal) sees the same liveness as `session
 inspect`. `running` means the harness is running, not merely that its window
 exists. A fallback shell reads `running: false` with `runtimeState: "shell"`;
 a retained dead pane also reads `false`. A wrapper shell with a live non-shell
-descendant still reads `true`. Status shares session inspection's pane rule,
+descendant still reads `true`. tmux names the pane's foreground process group,
+which is the launch's own shell while the harness runs as its child, so a
+running instance is usually read through this process scan. `false` needs
+positive evidence of the fallback prompt: the process table holds the pane's
+own process as a shell and no non-shell process below it. A table that cannot
+establish that (no pane process in it, as for a `ps` in another PID
+namespace; a process in the pane with no command name; a line that is not a
+process, when nothing non-shell was found) reads `running: null` with its
+reason, and `session inspect` answers `E_SESSION_UNAVAILABLE`
+([#1641](https://github.com/awebai/oats/issues/1641)). Status shares session inspection's pane rule,
 with one batched pane read per socket/session and one lazy process scan across
 all panes that need it. It reads the agent's pane alone, so a window with
 another pane reads as one without it
@@ -1470,7 +1479,7 @@ oats session attach --home /abs/home --detach-key 'C-\'
   for input, nor that it consumed a wake, and it does not prove which
   executable runs if a process inside the pane was replaced. When the backend
   cannot be read, a required process-table read for an explicitly labelled
-  shell fails, the pane answer is
+  shell fails or cannot establish a fallback shell (above), the pane answer is
   malformed, or OATS cannot tell which of the window's panes is the agent's,
   inspect is an error as before, never `running: false`.
   That includes a tmux server that is gone (`no server running on` its
