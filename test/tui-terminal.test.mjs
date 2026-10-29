@@ -75,12 +75,15 @@ const withPath = async (path, fn) => { const saved = process.env.PATH; process.e
  *  PATH is `front/tmux`: it asks the fixture's own `oats` server instead, which nothing started,
  *  and real tmux answers that no server runs: every row is `stopped`. It writes down the
  *  environment it was started with. While the file `hold` exists it does not answer the collector
- *  (the process that started it runs liveness-main.mjs): it starts a `sleep` of half a minute,
+ *  (the process that started it runs liveness-main.mjs) or the kernel's own `oats status` read (a
+ *  kernel with feature status-liveness reads the liveness itself, and its TUI runs no collector;
+ *  every kernel's status asks tmux, `tmux -V` at least): it starts a `sleep` of half a minute,
  *  writes that pid to `held` and waits for it: a read that stays in flight. The sleep is in the
- *  collector's process group and outlives the four seconds the collector gives its tmux, so when it
+ *  process group of that collector or kernel and outlives its own time limit for tmux, so when it
  *  is gone long before its time, the TUI ended the group. Every other caller is answered as ever:
  *  the kernel's machine sweep, which the TUI runs when it opens (`oats session resume`), reads the
- *  deployment's status and with it tmux, and is a change the TUI never ends, not a read. */
+ *  deployment's status and with it tmux, and is a change the TUI never ends, not a read; and the
+ *  warm reader (`oats reader --stdio`) answers only background reads, never the refresh key's. */
 async function deployment(t, { souls = { dev: {}, reviewer: {} }, capabilities = {} } = {}) {
   const fx = v2Deployment({ souls, capabilities, t });
   const world = { fx, dep: fx.dep, enter: join(fx.base, "enter.sh"), holdFile: join(fx.base, "hold"), heldFile: join(fx.base, "held"), seenFile: join(fx.base, "collector-tmux.env") };
@@ -92,7 +95,7 @@ async function deployment(t, { souls = { dev: {}, reviewer: {} }, capabilities =
   mkdirSync(front);
   writeFileSync(join(front, "tmux"), `#!/bin/sh
 env > ${shq(world.seenFile)}
-if [ -e ${shq(world.holdFile)} ]; then case "$(${shq(PS)} -o args= -p $PPID 2>/dev/null)" in *liveness-main*) sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.heldFile)}; wait; exit 1;; esac; fi
+if [ -e ${shq(world.holdFile)} ]; then case "$(${shq(PS)} -o args= -p $PPID 2>/dev/null)" in *liveness-main*|*/bin/oats.mjs\\ status\\ *) sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.heldFile)}; wait; exit 1;; esac; fi
 exec ${shq(join(base, "system-bin", "tmux"))} -L oats "$@"
 `, { mode: 0o755 });
   const env = world.env = { ...fx.env, PATH: `${front}:${fx.env.PATH}` };
@@ -559,7 +562,7 @@ async function tui(term, given = {}, { record = true, world = WORLD, args = `--d
       await untilScreen(term, (screen) => switcherFaults(screen, { ...at, ...want }), `the switcher ${why}`);
       assert.equal(run.status(), null, `oats tui still runs ${why}`);
     },
-    /** A read in flight: the next answer of the collector's tmux is held (see `deployment`), the
+    /** A read in flight: the next answer of the collector's or the kernel status read's tmux is held (see `deployment`), the
      *  refresh key starts a read now, and this resolves once a held tmux wrote down the pid of its
      *  sleep: the pids that hold reads, of processes that run. `release()` lets the next read
      *  answer again. */
@@ -567,7 +570,7 @@ async function tui(term, given = {}, { record = true, world = WORLD, args = `--d
       const before = world.held().length;
       writeFileSync(world.holdFile, "");
       term.press("r");
-      await until(term, () => world.held().length > before, `a read in flight ${why}: the collector's tmux, held`);
+      await until(term, () => world.held().length > before, `a read in flight ${why}: its tmux, held`);
       const pids = world.held().slice(before);
       assert.ok(pids.every((pid) => Number.isInteger(pid) && pid > 1 && alive(pid)), `what holds the read runs ${why} (${pids})`);
       return pids;
@@ -1302,8 +1305,8 @@ test("started in an agent's pane, in the instance's home and with the variables 
 
   rmSync(WORLD.seenFile, { force: true });
   const run = await tui(term, {}, { args: "" }); // no --dir: the deployment is found from the home
-  // The view is drawn from a read whose collector ran its tmux, which wrote its environment down.
-  await until(term, () => existsSync(WORLD.seenFile) && /(^|\n)PATH=/.test(readFileSync(WORLD.seenFile, "utf8")), "the environment the collector's tmux was started with");
+  // The view is drawn from a read whose kernel (and, without status-liveness, collector) ran tmux, which wrote its environment down.
+  await until(term, () => existsSync(WORLD.seenFile) && /(^|\n)PATH=/.test(readFileSync(WORLD.seenFile, "utf8")), "the environment a read's tmux was started with");
   const seen = lines(readFileSync(WORLD.seenFile, "utf8")).map((line) => line.split("=")[0]);
   assert.deepEqual(INSTANCE_VARIABLES.filter((name) => seen.includes(name)), [], "no instance variable reached a child's child");
   assert.ok(seen.includes("HOME") && seen.includes("OATS_HOME_DIR"), "the rest of the environment did");

@@ -69,14 +69,15 @@ const TAKEN = Object.freeze({
   "client-terms.mjs": ["clientTerms"],
   "display-text.mjs": ["displayLine", "DETAIL_WITHHELD"],
   "cli-locator.mjs": ["parseProbeStdout", "acceptProbe", "cliRecord"],
-  "deployment-read-cli.mjs": ["cliDeploymentRead"],
   // awebai/oats#1390: this computer's deployments list, through the kernel (the switcher's rows, the add on opening, Remove).
   "deployment-list-cli.mjs": ["cliDeploymentList"],
   "deployment-list.mjs": ["deploymentsListSupported"],
   "cli-adapter.mjs": ["cliRemoteRoster"],
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
+  // #1630: the background reads through one warm `oats reader --stdio`, whose fallback is the shared cliDeploymentRead.
+  "warm-reader.mjs": ["createWarmReader"],
   "refresh-loop.mjs": ["createRefreshLoop"],
-  "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry"],
+  "deployment-panel.mjs": ["rosterRows", "kernelLiveness", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry"],
   "panel-views.mjs": ["panelData", "cliReadsRemotes", "workspaceChoices", "viewModel", "listedViews", "deployments"],
   // #482 in the switcher: a listed deployment's identity, read before it is opened, matched in by listedViews.
   "deployment-identity.mjs": ["cliDeploymentIdentity", "identityReadable", "identityTimedOut"],
@@ -214,27 +215,30 @@ test("who made a row's text is said by the shared home: no module of packages/tu
   }
 });
 
-test("lib/read.mjs gives the shared observer no reader of its own: the one observer of the package is handed the shared cliDeploymentRead, so a failed read has the same reasons as in the Desktop", () => {
+test("lib/read.mjs gives the shared observer no reader of its own: the one observer of the package reads through the one shared warm reader, whose fallback is the shared cliDeploymentRead over this client's exec and environment, so a failed read has the same reasons as in the Desktop", () => {
   const READ = "packages/tui/lib/read.mjs", source = code(read(READ));
-  // The reader is the shared home's own function, through the seam, under its own name.
-  assert.ok(TAKEN["deployment-read-cli.mjs"].includes("cliDeploymentRead") && TAKEN["deployment-observer.mjs"].includes("createDeploymentObserver"));
+  // The readers are the shared home's own functions, through the seam, under their own names.
+  assert.ok(TAKEN["warm-reader.mjs"].includes("createWarmReader") && TAKEN["deployment-observer.mjs"].includes("createDeploymentObserver"));
   const fromSeam = source.match(/import\s*\{([^}]*)\}\s*from\s*"\.\/client\.mjs"/);
   assert.ok(fromSeam, "read.mjs names what it takes from the seam");
   const names = fromSeam[1].split(",").map((part) => part.trim());
-  for (const name of ["cliDeploymentRead", "createDeploymentObserver"]) assert.ok(names.includes(name), `${name}, under its own name`);
-  // One observer in the whole client, and it is made in read.mjs.
-  const makers = TUI_SOURCES.filter((path) => path !== CLIENT && /\bcreateDeploymentObserver\b/.test(code(read(path))));
-  assert.deepEqual(makers, [READ]);
-  assert.equal(source.match(/\bcreateDeploymentObserver\s*\(/g)?.length, 1);
-  // Its `read` is the shared reader, called with what it was given and this client's exec and
+  for (const name of ["createWarmReader", "createDeploymentObserver"]) assert.ok(names.includes(name), `${name}, under its own name`);
+  // One observer and one warm reader in the whole client, both made in read.mjs.
+  for (const maker of ["createDeploymentObserver", "createWarmReader"]) {
+    const makers = TUI_SOURCES.filter((path) => path !== CLIENT && new RegExp(`\\b${maker}\\b`).test(code(read(path))));
+    assert.deepEqual(makers, [READ], maker);
+    assert.equal(source.match(new RegExp(`\\b${maker}\\s*\\(`, "g"))?.length, 1, maker);
+  }
+  // The warm reader starts its child as every kernel child of the TUI: `node <bin> …`, detached, the module's options kept.
+  assert.match(source, /\bcreateWarmReader\(\{\s*spawn:\s*\(file,\s*args,\s*options\)\s*=>\s*spawn\(process\.execPath,\s*\[file,\s*\.\.\.args\],\s*\{\s*\.\.\.options,\s*detached:\s*true\s*\}\)\s*\}\)/);
+  // The observer's `read` is the warm reader's, called with what it was given and this client's exec and
   // environment: nothing is decided before the call or about its answer.
   const made = source.slice(source.search(/\bcreateDeploymentObserver\s*\(/));
   const options = made.slice(0, made.indexOf("});") + 3);
-  assert.match(options, /\bread:\s*\(kernel,\s*options\)\s*=>\s*cliDeploymentRead\(kernel,\s*options,\s*\{\s*exec,\s*env\s*\}\),?\s*\}\);$/);
+  assert.match(options, /\bread:\s*\(kernel,\s*options\)\s*=>\s*warm\.read\(kernel,\s*options,\s*\{\s*exec,\s*env\s*\}\),?\s*\}\);$/);
   assert.equal(options.match(/\bread\s*:/g).length, 1);
-  // And the shared reader is called nowhere else, nor wrapped, nor given another name.
-  for (const path of TUI_SOURCES.filter((p) => p !== CLIENT && p !== READ)) assert.doesNotMatch(code(read(path)), /\bcliDeploymentRead\b/, path);
-  assert.equal(source.match(/\bcliDeploymentRead\b/g).length, 2, "named twice in read.mjs: where it is imported and where it is handed over");
+  // The shared CLI reader is no name of the package: it is the warm reader's own fallback.
+  for (const path of TUI_SOURCES) assert.doesNotMatch(code(read(path)), /\bcliDeploymentRead\b/, path);
 });
 
 test("no file in packages/tui uses a dynamic import", () => {

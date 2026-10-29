@@ -8,13 +8,13 @@ import { clientTerms } from "../../client/client-terms.mjs";
 
 export { displayLine, DETAIL_WITHHELD } from "../../client/display-text.mjs";
 export { parseProbeStdout, acceptProbe, cliRecord } from "../../client/cli-locator.mjs";
-export { cliDeploymentRead } from "../../client/deployment-read-cli.mjs";
 export { cliDeploymentList } from "../../client/deployment-list-cli.mjs";
 export { deploymentsListSupported } from "../../client/deployment-list.mjs";
 export { cliRemoteRoster } from "../../client/cli-adapter.mjs";
 export { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
+export { createWarmReader } from "../../client/warm-reader.mjs";
 export { createRefreshLoop } from "../../client/refresh-loop.mjs";
-export { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
+export { rosterRows, kernelLiveness, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 export { panelData, cliReadsRemotes, workspaceChoices, viewModel, listedViews, deployments } from "../../client/panel-views.mjs";
 export { cliDeploymentIdentity, identityReadable, identityTimedOut } from "../../client/deployment-identity.mjs";
 export { workspaceStep } from "../../client/workspace-step.mjs";
