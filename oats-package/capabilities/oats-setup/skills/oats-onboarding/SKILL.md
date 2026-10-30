@@ -78,7 +78,7 @@ to bypass a refusal. See the [corrected compatibility cards](https://github.com/
 
 ## 2. Inventory and select reuse or new
 
-**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0); this card makes the first Git reads, so a person without a checked Git and GitHub setup first completes `/oats-git-setup` (its check passes).
+**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0); this card makes the first Git reads, which need Git access to the workspace's repositories (GitHub over https, as `oats-getting-started` sets it up, is enough). `/oats-git-setup` is optional: run it when these reads fail on access, or when the person wants an SSH key, signing or the DCO sign-off.
 **Commands (read-only):**
 
 ```bash

@@ -1,8 +1,8 @@
 {
   "package": "oats.framework",
   "version": "1.17.0",
-  "description": "Explicit OATS operation and setup guidance, the support desk role, optional reference knowledge theory, and the knowledge-theory-expert package soul.",
+  "description": "Explicit OATS operation and setup guidance, onboarding a new workspace to its use case, the support desk role, optional reference knowledge theory, and the knowledge-theory-expert and oats-setup-expert package souls.",
   "compatibility": { "oats": ">=0.24.0" },
-  "capabilities": ["capabilities/oats-knowledge-theory", "capabilities/oats-core", "capabilities/oats-setup", "capabilities/oats-support"],
-  "souls": ["souls/knowledge-theory-expert"]
+  "capabilities": ["capabilities/oats-knowledge-theory", "capabilities/oats-core", "capabilities/oats-setup", "capabilities/oats-support", "capabilities/oats-onboarding"],
+  "souls": ["souls/knowledge-theory-expert", "souls/oats-setup-expert"]
 }
