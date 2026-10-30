@@ -17,7 +17,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnChild, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { retireClaimPath, startInstanceSession } from "../lib/core.mjs";
 import { resumeSessions } from "../lib/session-resume.mjs";
@@ -280,5 +280,42 @@ test("a start of a home given through a link answers what a start of the home an
     assert.deepEqual([e?.code, e?.details?.action], ["E_LIFECYCLE_BUSY", "upgrade"], `the kernel, through ${home}: ${e?.message}`);
   }
   assert.equal(readFileSync(i.lock, "utf8"), claimed, "the upgrade's claim is untouched");
+  assert.equal(f.launches(i.name).length, 1, "nothing was started");
+});
+
+const isRoot = process.getuid?.() === 0;
+for (const [name, make, code] of [
+  ["a directory with no record", () => {}, "E_RUNTIME_ENDPOINT_UNKNOWN"],
+  ["a home whose record does not parse", (dir) => writeFileSync(join(dir, "instance.json"), "{not json"), "E_UNIDENTIFIED_INSTANCE_HOME"],
+  ["a home whose record is a directory", (dir) => mkdirSync(join(dir, "instance.json")), "E_UNIDENTIFIED_INSTANCE_HOME"],
+]) {
+  test(`${name} is no home to hold: a start and a resume take no claim and write nothing beside it, and answer ${code} whether or not its parent can be written`, { skip: isRoot && "root writes through a mode" }, (t) => {
+    const f = fixture(t);
+    const parentOf = (label) => join(f.fx.base, `not-instances-${label}`);
+    for (const [label, mode] of [["writable", 0o755], ["unwritable", 0o555]]) {
+      const parent = parentOf(label);
+      mkdirSync(parent);
+      const dir = join(parent, "typed-by-mistake");
+      mkdirSync(dir);
+      make(dir);
+      chmodSync(parent, mode);
+      try {
+        for (const answer of [f.start(dir), f.resume(dir)]) assert.equal(answer.error?.code, code, `${label} parent: ${JSON.stringify(answer)}`);
+        assert.deepEqual(readdirSync(parent), ["typed-by-mistake"], `${label} parent: nothing is left beside it`);
+      } finally { chmodSync(parent, 0o755); }
+    }
+  });
+}
+
+test("a record that cannot be read refuses a start and a resume before the claim: a holder of the home's claim is not disturbed and does not change the answer", TMUX, async (t) => {
+  const f = fixture(t);
+  const i = await f.lostHome("w1");
+  const record = readFileSync(join(i.home, "instance.json"), "utf8");
+  await f.claim(i, "stop");
+  const claimed = readFileSync(i.lock, "utf8");
+  writeFileSync(join(i.home, "instance.json"), "{not json");
+  for (const answer of [f.start(i.home), f.resume(i.home)]) assert.equal(answer.error?.code, "E_UNIDENTIFIED_INSTANCE_HOME", JSON.stringify(answer));
+  assert.equal(readFileSync(i.lock, "utf8"), claimed, "the holder's claim is untouched");
+  writeFileSync(join(i.home, "instance.json"), record);
   assert.equal(f.launches(i.name).length, 1, "nothing was started");
 });

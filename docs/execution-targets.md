@@ -988,7 +988,8 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
   arrives while it runs is refused `E_LIFECYCLE_BUSY`, `details.action:
   "start"` ([Commands that meet on one home](desktop-cli-api.md#lifecycle-pairs)).
   A start that dies leaves a holder that is gone, which the next command takes
-  over. A spawn's own first launch takes no claim.
+  over. A spawn's own first launch takes no claim, and neither does a path with
+  no `instance.json` it can read, which writes nothing beside it.
 
 `session restart` takes the same flags. It sends SIGTERM to the harness and
 its children, the processes under the agent's pane, waits `--stop-grace <seconds>` (default 20, at most 300), then

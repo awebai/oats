@@ -4941,7 +4941,10 @@ and `oats session restart` holds it for the whole start, a scheduled start
 included, as `details.action: "start"`: the `start` row and column. A restart
 holds one claim across its stop and its launch, so no retire comes between
 the two. A spawn's own first launch takes no claim (a retire already handles
-a spawn in progress).
+a spawn in progress). A path with no `instance.json` it can read is no home to
+hold: a start or a resume of it takes no claim, writes nothing beside it and
+answers `E_RUNTIME_ENDPOINT_UNKNOWN`, or `E_UNIDENTIFIED_INSTANCE_HOME` for a
+record that cannot be read.
 This table covers the commands that arrive on a home; the upgrade pairs and
 the resume pairs follow separately.
 Each cell is the answer of the command that **arrives**. It is given at once
@@ -6548,8 +6551,8 @@ answer is the ordinary start answer plus one object:
   beside a stop, an upgrade or another resume `E_LIFECYCLE_BUSY`, before
   anything is read or started, and one of them that arrives while it holds
   the claim is refused `E_LIFECYCLE_BUSY` with `details.action: "resume"`
-  ([Commands that meet on one home](#lifecycle-pairs)). A home that is not
-  there takes no claim. Beside an ordinary start or restart, which holds the
+  ([Commands that meet on one home](#lifecycle-pairs)). A path with no record
+  it can read takes no claim. Beside an ordinary start or restart, which holds the
   claim too (feature `lifecycle-claim-start`), it answers
   `E_SESSION_START_BUSY`, as it did at the start lock.
 - Refused `E_INSTANCE_RETIRING` when the home is owed a retire: its status
