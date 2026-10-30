@@ -23,6 +23,11 @@ walking up to `oats-local.yaml`), or pass `--dir <deployment>`. Use `--json`
 when you parse output. Flags take `--flag value` or `--flag=value`. When a flag
 is not shown here, read `oats help`; never invent one.
 
+The CLI needs Node.js 22 or later. On Node 18 and 20, every command refuses
+with `E_NODE_UNSUPPORTED` before it runs; move to Node 22 or later. This
+includes `version`, the reader and capability commands. An older Node that
+cannot parse the entry may fail before it can print that refusal.
+
 ## Your two directories
 
 ```
@@ -196,6 +201,11 @@ oats instance git <instance>             # its work tree: branch, status, ahead/
 oats doctor                  # this deployment's local file and lock, plus diagnostics
                              # and, from OATS 0.50.0, what retires left (recovery copies, retained worktrees)
 ```
+
+Doctor's `git-version:` information line reports the Git version and partial-cache
+support (in `information[]` with `--json`). Git before 2.45 works with whole-tree
+fetches; the line is not a warning or a refusal. A newer Git supports partial
+caches, while a remote or an existing whole-tree cache may still use whole trees.
 
 ## Spawn: preview, then apply
 

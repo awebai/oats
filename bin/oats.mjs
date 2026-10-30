@@ -26,17 +26,25 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { spawnSync as spawnSyncProc } from "node:child_process";
+import { nodeVersionFailure } from "../lib/node-version.mjs";
 import { enableCliCompileCache } from "../lib/compile-cache.mjs";
 import { hotImport, hotRead } from "../lib/hot-reads.mjs";
 import { installStamp } from "../lib/install-stamp.mjs";
+
+const unsupportedNode = nodeVersionFailure(process.versions.node);
+if (unsupportedNode) {
+  if (process.argv.includes("--json")) process.stdout.write(`${JSON.stringify(unsupportedNode)}\n`);
+  else process.stderr.write(`${unsupportedNode.error.message}\n`);
+  process.exit(1);
+}
 
 // The warm reader's baseline (lib/reader.mjs): its install's stamp before any kernel module loads, so that an
 // install changed while the kernel loads is never the install the reader believes it answers from.
 const READER_STAMP = process.argv[2] === "reader" ? installStamp() : null;
 
 // Node's compile cache is on before the kernel is parsed (lib/compile-cache.mjs): static imports are
-// all parsed and linked before this module's body runs, so they are Node built-ins and the three small
-// dependency-free modules above, and the kernel and `yaml` are imported here, in order, once it is on.
+// all parsed and linked before this module's body runs, so they are Node built-ins and the small
+// dependency-free startup modules above, and the kernel and `yaml` are imported here once it is on.
 enableCliCompileCache();
 // A hot read (lib/hot-reads.mjs) imports only the leaves it uses, never core.mjs: each line below takes
 // the leaves its names come from, and every other command imports every module, in this order. A hot
@@ -823,6 +831,16 @@ function doctorMachineLaunchConfigs() {
     return { file, present: true, ok: false, configurations: [], error: e.message };
   }
 }
+/** The shared Git version probe reports support, not each repository's recorded fetch mode.
+ *  An older Git is supported too; this is information, never a warning or a refusal. */
+async function doctorGitInformation() {
+  const version = await remoteModule.gitVersion();
+  if (!version) return "git-version: Git version could not be read; partial-cache support unknown";
+  const mode = remoteModule.keepsPartialCache(version)
+    ? "partial caches supported (a remote or an existing cache may still use whole-tree fetches)"
+    : `whole-tree fallback (partial caches need Git ${remoteModule.PARTIAL_FETCH_GIT.join(".")} or later)`;
+  return `git-version: Git ${terminalText(version.text)}; ${mode}`;
+}
 async function doctorWorkspaceJson(ctx, soulName, ws) {
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg, details) => jsonFail(code, msg, details));
   const agentsRoot = join(dirname(ws.local.path), "agents");
@@ -837,7 +855,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), await doctorGitInformation(), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
     machineLaunchConfigs: doctorMachineLaunchConfigs(),
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
@@ -892,7 +910,7 @@ async function doctor(dir) {
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
   if (!soulName) for (const w of doctorCaptureWarnings()) console.log(`\nwarning  ${w.code}  ${terminalText(w.message)}`);
-  for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation()]) console.log(`\nINFO: ${line}`);
+  for (const line of [await doctorGitInformation(), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation()]) console.log(`\nINFO: ${line}`);
   for (const block of doctorRetained(ws)) console.log(`\n${block.map((line) => `INFO: ${line}`).join("\n")}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
