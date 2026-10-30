@@ -182,11 +182,15 @@ you to change a string, and `oats version --json` keeps
 `"name":"@awebai/oats"` under either npm name, with the real name in its new
 `package` field.
 
-**Nobody uninstalls the old package.** Each home's `.oats/bin/oats`, its
-`.claude/settings.json` hooks and the host's schedule unit record the kernel's
-real path. `npm rm -g @awebai/oats` strands them all, and installing the other
-name with `--force` and then removing the old one also deletes the `oats`
-command.
+**Keep `@awebai/oats` installed.** This release installs over it, under the
+same name.
+
+- `npm rm -g @awebai/oats` leaves running sessions without their kernel until
+  they restart. A start rewrites each home's `.oats/bin/oats` and hooks.
+- The host's schedule unit stays on the old path until `oats schedule host
+  install` runs.
+- Installing the other name with `--force` and then removing the old one also
+  deletes the `oats` command.
 
 ## Coming from an older version
 
