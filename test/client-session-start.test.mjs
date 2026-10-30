@@ -112,7 +112,7 @@ test('a failed start: refused only for the kernel\'s two codes; anything else, t
   assert.equal((await answering({ code: 'E_SESSION_RUNNING', message: 'running\u001b[2J here' })).detail.includes('\u001b'), false);
 });
 
-test('a start refused for another lifecycle command: refused from a kernel that lists lifecycle-claim-start, by the answering kernel\'s list, in words for a start or a restart', async () => {
+test('a start refused because of something else on the home: refused from a kernel that lists lifecycle-claim-start, by the answering kernel\'s list, in words for a start or a restart', async () => {
   assert.deepEqual(CLAIM_STARTED_NOTHING_CODES, ['E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING']); assert.equal(Object.isFrozen(CLAIM_STARTED_NOTHING_CODES), true);
   const CLAIMS = { ...CLI, features: [...CLI.features, 'lifecycle-claim-stop', 'lifecycle-claim-start', 'server-probe-features'] };
   const answering = (cli, r, error, options = {}) => startInstance(cli, r, {}, { verifyHome: x => x.home, start: async () => ({ schemaVersion: 1, ok: false, error }), terms, ...options });
@@ -125,7 +125,7 @@ test('a start refused for another lifecycle command: refused from a kernel that 
     [busy('none'), 'Nothing was started. There is no other command to wait for.', 'Nothing was stopped or started. There is no other command to wait for.'],
     [busy(), 'OATS refused this start as busy. Nothing was started.', 'OATS refused this restart as busy. Nothing was stopped or started.'],
     [busy('a holder of another kernel'), 'OATS refused this start as busy. Nothing was started.', 'OATS refused this restart as busy. Nothing was stopped or started.'],
-    [retiring, 'This instance has a retirement that hasn\'t finished. Nothing was started.', 'This instance has a retirement that hasn\'t finished. Nothing was stopped or started.'],
+    [retiring, 'This instance is being retired, or has cleanup to finish. Nothing was started.', 'This instance is being retired, or has cleanup to finish. Nothing was stopped or started.'],
   ]) {
     assert.deepEqual(await answering(CLAIMS, row(), error), { ok: false, outcome: 'refused', code: error.code, sentence: started, detail: error.message, ran: true, atClaim: true });
     assert.equal((await answering(CLAIMS, row({ running: true }), error, { restart: true })).sentence, restarted);

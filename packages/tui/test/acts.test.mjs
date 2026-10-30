@@ -444,14 +444,14 @@ test("every answer of the start rule, from the real startInstance over a fake CL
   ({ row, answer } = await started({ schemaVersion: 1, ok: false, error: { code: "E_SESSION_START_BUSY", message: "the start lock is held" } }));
   assert.equal(answer.outcome, "refused");
   assert.deepEqual(shownLines(startOutcome(row.instance, "start", answer)), [answer.sentence, ...kernelLines(answer.detail, undefined, TERMS)]);
-  // refused for another lifecycle command, from a kernel that holds the claim for a start: the rule's sentence, then the kernel's line.
+  // refused because of something else on the home, from a kernel that holds the claim for a start: the rule's sentence, then the kernel's line.
   const claims = { ...ACTS_CLI, features: [...ACTS_CLI.features, "lifecycle-claim-stop", "lifecycle-claim-start"] };
   const busy = { schemaVersion: 1, ok: false, error: { code: "E_LIFECYCLE_BUSY", message: "a stop is already running", details: { holder: "running", action: "stop" } } };
   ({ row, answer } = await started(busy, { cli: claims }));
   assert.equal(answer.outcome, "refused");
   assert.deepEqual(shownLines(startOutcome(row.instance, "start", answer)), ["Another OATS command is running on this instance. Nothing was started. Wait for it to finish, then try again.", ...kernelLines("a stop is already running", undefined, TERMS)]);
   ({ row, answer } = await started({ schemaVersion: 1, ok: false, error: { code: "E_INSTANCE_RETIRING", message: "it is being retired" } }, { cli: claims, restart: true }));
-  assert.deepEqual(shownLines(startOutcome(row.instance, "restart", answer)), ["This instance has a retirement that hasn't finished. Nothing was stopped or started.", ...kernelLines("it is being retired", undefined, TERMS)]);
+  assert.deepEqual(shownLines(startOutcome(row.instance, "restart", answer)), ["This instance is being retired, or has cleanup to finish. Nothing was stopped or started.", ...kernelLines("it is being retired", undefined, TERMS)]);
   // The same answer from a kernel without the feature: uncertain, its code and the kernel's line.
   ({ row, answer } = await started(busy));
   assert.equal(answer.outcome, "uncertain");

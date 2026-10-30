@@ -203,8 +203,9 @@ and says whether the CLI ran. A failed start is `refused`, nothing was
 started: every refusal of the gate and the home check, the kernel's
 `E_SESSION_START_BUSY` and `E_SESSION_RUNNING` (`STARTED_NOTHING_CODES`), and
 its `E_LIFECYCLE_BUSY` and `E_INSTANCE_RETIRING` when the answering kernel
-lists `lifecycle-claim-start` (`CLAIM_STARTED_NOTHING_CODES`: another lifecycle
-command holds the home, and a restart refused this way stopped nothing either);
+lists `lifecycle-claim-start` (`CLAIM_STARTED_NOTHING_CODES`: a stop, an upgrade
+or a retire holds the home, or a retirement or a failed spawn left cleanup to
+finish, and a restart refused this way stopped nothing either);
 or `uncertain`: anything else, `E_START_UNCONFIRMED` included, those two codes
 from a kernel without the feature or a host whose features aren't known, and
 `E_CLI_FAILED` when the call to the CLI fails on its way. The answering kernel
@@ -217,7 +218,7 @@ CLI call is not on it.
 A start that worked answers the kernel's result, whole. A refusal before the
 CLI ran answers `{error, code}`: the rule's sentence and its code. A failed
 start answers `{error, code}`: the kernel's message through the display filter
-(`displayLine`), and its code. A start refused for another lifecycle command
+(`displayLine`), and its code. A start refused for one of those two codes
 also carries `startedNothing`, the rule's sentence for it: the dialog shows
 that as its status, with the kernel's message under it, and `E_LIFECYCLE_BUSY`
 reads by `details.holder`, so only a holder that runs is offered waiting. When

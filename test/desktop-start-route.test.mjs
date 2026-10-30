@@ -148,7 +148,7 @@ test("start route: E_SESSION_START_BUSY and E_SESSION_RUNNING answer the kernel'
   assert.deepEqual(odd.body, { error: DETAIL_WITHHELD, code: "E_SESSION_RUNNING" });
 });
 
-// #1666: a start refused for another lifecycle command carries the rule's sentence for the dialog, beside the
+// #1666: a start refused because of something else on the home carries the rule's sentence for the dialog, beside the
 // kernel's message; a kernel without lifecycle-claim-start answers as before. A server's row reads by its host's
 // list, from the roster group of the deployment the request names.
 const invokeGrouped = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "deployments", "action"], `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];

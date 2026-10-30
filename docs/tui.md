@@ -1261,10 +1261,10 @@ text can open a confirmation but never act in it. `Esc` closes it. `q` and
   its options yourself.
 - Once an act has answered, the confirmation shows the answer, and the list
   is read again at once. A start or restart refused because a stop, an
-  upgrade or a retire has the instance says that nothing was started (a
-  restart: nothing stopped or started), with the kernel's line under it; a
-  kernel without `lifecycle-claim-start` leaves that uncertain, and shows
-  only its code and line.
+  upgrade or a retire has the instance, or because it has cleanup to finish,
+  says that nothing was started (a restart: nothing stopped or started), with
+  the kernel's line under it; a kernel without `lifecycle-claim-start` leaves
+  that uncertain, and shows only its code and line.
 
 **One act at a time per instance from this `oats tui`.** While a start or
 restart it sent is still running, whether or not the confirmation is still

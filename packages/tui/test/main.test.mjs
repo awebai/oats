@@ -2,7 +2,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, chordFamilyFrom, createResumeTrigger, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, startInstance, chordFamilyFrom, createResumeTrigger, cliReadsRemotes, createCapabilityCatalog, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { KEYBOARD_WAIT_MS, NO_TERMINAL, USAGE, main, noDeployment, noDeploymentListed, noKernel, noList, parseArgs } from "../lib/main.mjs";
 import { LIST_WORDS } from "../lib/model.mjs";
@@ -2637,6 +2637,30 @@ test("the shared boundary runs a plan read through the reader's exec as a read, 
   assert.equal(await r.status, 0);
 });
 
+test("a start on another machine is read by that machine's features, whatever this computer's kernel lists", async () => {
+  const CLAIM = ["lifecycle-claim-stop", "lifecycle-claim-start"];
+  const LOCAL = ["session-start", "session-restart", "server-probe-features"];
+  const cli = (features) => cliRecord({ version: CLI.version, workspaceApi: CLI.workspaceApi, features: [...CLI.features, ...LOCAL, ...features], remote: ["roster", "session-start"] }, { bin: CLI.bin, source: "tui" });
+  const busy = { schemaVersion: 1, ok: false, error: { code: "E_LIFECYCLE_BUSY", message: "a stop of dev-far is already running", details: { holder: "running", action: "stop" } } };
+  for (const [name, here, host, said] of [
+    ["the host lists it, this computer does not", [], [...CLI.features, ...CLAIM], "Nothing was started"],
+    ["this computer lists it, the host does not", CLAIM, [...CLI.features], "E_LIFECYCLE_BUSY"],
+  ]) {
+    const answers = [];
+    const r = await started({ kernel: { ok: true, cli: cli(here) }, confirm: reviewing(),
+      start: (kernel, row, choices, options) => startInstance(kernel, row, choices, { ...options, start: async () => busy }).then((answer) => { answers.push(answer); return answer; }) });
+    r.reader.answer(HOME_ENTRY);
+    r.reader.collecting();
+    r.reader.roster({ envelope: rosterAnswer([{ ...group("garnet:t1", "/srv/acme-platform", [remoteRow("dev-far", "/srv/acme-platform", { running: false, runtimeState: "stopped" })]), probe: { ok: true, features: host } }]) });
+    await settle();
+    for (const key of ["j", "j", "S", "\t", "\r"]) r.stdin.type(key);
+    await settle(); await settle();
+    assert.deepEqual([answers.length, answers[0]?.code, answers[0]?.outcome], [1, "E_LIFECYCLE_BUSY", said === "E_LIFECYCLE_BUSY" ? "uncertain" : "refused"], name);
+    assert.match(screenOf(r), new RegExp(said), name);
+    r.stdin.type("q"); r.stdin.type("q");
+  }
+});
+
 test("a start runs the shared start rule once, over a change of this run: while its child runs the row opens no act, and its answer is said and asks for a live read", async () => {
   let answer;
   const r = await acting({ start: (cli, row, choices, options) => new Promise((resolve) => { answer = resolve; options.exec("/opt/oats/bin/oats.mjs", ["session", "start"], { timeout: 0, detached: true }, () => {}); }) });
@@ -2649,7 +2673,6 @@ test("a start runs the shared start rule once, over a change of this run: while 
   assert.equal(r.starts.length, 1);
   const [cli, row, choices, options] = r.starts[0];
   assert.deepEqual([cli, row.instance, choices, options.restart, options.localCwd], [ACTS_CLI, "acme-maintainer-ops", {}, false, DEPLOYMENT]);
-  assert.deepEqual([Object.hasOwn(options, "group"), options.group], [true, undefined], "the row's deployment's roster group, which a local deployment has none of (actContext)");
   assert.deepEqual(r.reader.changed[0].options.label, { verb: "start", name: "acme-maintainer-ops" });
   assert.match(screenOf(r), /Starting acme-maintainer-ops/);
   r.stdin.type("\x1b"); r.tick(50); r.timers.fire(); await settle();

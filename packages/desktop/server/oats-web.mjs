@@ -1633,7 +1633,7 @@ const server = createServer(async (req, res) => {
         // A refusal before the CLI ran answers the rule's sentence. After it ran: the kernel's message, through the
         // display filter (`detail`), else the rule's sentence for the code. A start that stopped at a launch prompt
         // carries its retained outcome as `incomplete`, decoded, when it names the instance this route resolved
-        // (not the home: the kernel reports its real path). A start refused for another lifecycle command on the
+        // (not the home: the kernel reports its real path). A start refused because of something else on the
         // home carries the rule's sentence as `startedNothing`, which the dialog shows over the kernel's message.
         return send(res, started.code === "E_BAD_ARGS" ? 400 : 409, { error: (started.ran ? started.detail ?? started.sentence : started.sentence) ?? "", code: started.code,
           ...(started.atClaim ? { startedNothing: started.sentence } : {}),

@@ -34,10 +34,10 @@ export const STARTED_NOTHING_CODES = Object.freeze(['E_SESSION_START_BUSY', 'E_S
 
 /** The kernel feature from which a start or a restart holds the home's lifecycle claim (#1602). */
 const CLAIM_START_FEATURE = 'lifecycle-claim-start';
-/** The kernel's codes for a start refused for another lifecycle command on the home: a stop or an upgrade holds
- * the claim (E_LIFECYCLE_BUSY), or a retirement holds it or has not finished (E_INSTANCE_RETIRING). A kernel
- * raises both at the claim, or before the launch hooks and a restart's stop, so a restart refused this way
- * stopped nothing too; a claim's takeover that ended something answers E_LIFECYCLE_FAILED instead. They read as
+/** The kernel's codes for a start refused because of something else on the home: a stop or an upgrade holds the
+ * claim (E_LIFECYCLE_BUSY), or a retirement holds it, or a retirement or a failed spawn left cleanup to finish
+ * (E_INSTANCE_RETIRING). A kernel raises both at the claim, or before the launch hooks and a restart's stop, so
+ * a restart refused this way stopped nothing too; a claim's takeover that ended something answers E_LIFECYCLE_FAILED instead. They read as
  * STARTED_NOTHING_CODES only from a kernel that names CLAIM_START_FEATURE: the answering kernel's own list
  * (lifecycle-contract.mjs answeringFeatures), never this computer's for a server's row. */
 export const CLAIM_STARTED_NOTHING_CODES = Object.freeze(['E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING']);
@@ -51,10 +51,11 @@ const STARTED_NOTHING = Object.freeze({
 });
 /** A CLAIM_STARTED_NOTHING_CODES refusal's sentence. E_LIFECYCLE_BUSY reads by who holds the claim (`holder`,
  * lifecycle-contract.mjs busyHolder): only `running` promises that waiting ends it. E_INSTANCE_RETIRING is also
- * the answer for a retirement that failed or was interrupted, so it says "hasn't finished", not "is running". */
+ * the answer for a retirement that failed or was interrupted and for what a failed spawn left, where no
+ * retirement began, so it names both and the kernel's line under it says which. */
 function claimRefusalSentence(code, holder, restart) {
   const nothing = restart ? 'Nothing was stopped or started.' : 'Nothing was started.';
-  if (code === 'E_INSTANCE_RETIRING') return `This instance has a retirement that hasn't finished. ${nothing}`;
+  if (code === 'E_INSTANCE_RETIRING') return `This instance is being retired, or has cleanup to finish. ${nothing}`;
   if (holder === 'running') return `Another OATS command is running on this instance. ${nothing} Wait for it to finish, then try again.`;
   if (holder === 'unknown') return `${nothing} OATS can't tell whether another command is still running on this instance.`;
   if (holder === 'none') return `${nothing} There is no other command to wait for.`;
@@ -96,7 +97,7 @@ export function verifiedLocalHome(row, deployments, realpath) {
  * `ran`: whether the CLI was called (E_CLI_FAILED: the call was made and failed; whether the CLI began is not
  * known). `sentence` is null for a code the client words (E_START_UNCONFIRMED) and
  * for one it does not know: it then shows `detail`, the kernel's message through the display filter.
- * `atClaim`: refused for another lifecycle command on the home (CLAIM_STARTED_NOTHING_CODES): `sentence` is this
+ * `atClaim`: refused because of something else on the home (CLAIM_STARTED_NOTHING_CODES): `sentence` is this
  * refusal's own, and a client shows it over `detail`.
  * `incomplete`: a start that stopped at a launch prompt (E_SPAWN_INCOMPLETE) and names this row, decoded. */
 export async function startInstance(cli, row, choices = {}, { restart = false, deployments = [], realpath, localCwd, verifyHome, start = cliStart, exec, after, wait, group, terms } = {}) {
