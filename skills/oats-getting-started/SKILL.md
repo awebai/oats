@@ -618,9 +618,9 @@ stop if its readiness still reports a problem.
 
    The preview does not contact aweb, so it can't tell whether `N` is free.
    If the run fails with `E_SETUP_NATIVE` (most likely the username is
-   taken; aw's output is withheld), don't rerun. On a machine found-list,
-   ask nothing: tell the person that the run failed, most likely because `N`
-   is taken, and stop.
+   taken; aw's output is withheld), don't rerun.
+   On a machine found-list, ask nothing: tell the person that the run
+   failed, most likely because `N` is taken, and stop.
 3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
    `oats aweb invite --soul <their soul> --label L --json` in their own
    deployment and passes the token to the person privately, never by
