@@ -9,13 +9,13 @@
  * `desktop-improvements-expert` and `expert` stay as typed; the kernel refuses a typed name that breaks its
  * grammar (E_INSTANCE_NAME_INVALID).
  *
- * The grammar itself, the kernel's `--name` check (lib/core.mjs explicitInstanceName: a slug of at most
- * MAX_INSTANCE_NAME characters), is mirrored here for a client that must judge a name with no kernel call (the
+ * The grammar itself, the kernel's `--name` check (explicitInstanceName: a slug of at most MAX_INSTANCE_NAME
+ * characters), is mirrored here for a client that must judge a name with no kernel call (the
  * Desktop's `--instance` launch argument, a spawn's suggested name); the agreement test drives the kernel's own
  * check over the same cases.
  * DOM-free and import-free, with no module state. */
 
-/** The kernel's longest instance name (lib/core.mjs MAX_INSTANCE_NAME). */
+/** The kernel's longest instance name (its MAX_INSTANCE_NAME). */
 export const INSTANCE_NAME_MAX = 64;
 const INSTANCE_NAME = new RegExp(`^(?=.{1,${INSTANCE_NAME_MAX}}$)[a-z0-9]+(?:-[a-z0-9]+)*$`);
 
