@@ -273,6 +273,26 @@ means those terminal operations succeeded; `verified` only reports a display
 change, never model acceptance. Unchanged/unreadable display (`verified: false`)
 does not authorize retry. Settling offers no guaranteed busy-pane submission or
 exactly-once delivery; command errors may be uncertain after partial effects.
+Its Enter can answer an open dialog, and it takes no hold: don't run it from a
+script or an agent at a session that may show a permission prompt or a question.
+
+A scheduled wake holds, and sends no key, while the home has a live `permission`,
+`question` or unknown-reason claim (feature `wake-hold` in `oats version --json`).
+It stays pending with no expiry, and `lastRun.held` says held since `held.since`
+(`held.claimReason`). Before you rely on a wake to reach a child, check the
+feature, then `wakeHold` on `oats session inspect --home <home> --json`:
+
+- `on-claims`: its dialogs become the claims a wake holds on (from oats.core
+  2.11.0, on a Claude Code that fires them).
+- `not-exposed`: a capability vouches that it has no dialog an Enter can answer.
+- `unknown`: **not covered**, so a dialog there takes the wake's Enter. A pi home
+  reads this: an extension can open its own dialog, and the kernel can't see
+  which load.
+
+`on-claims` isn't protection. A dialog still takes the Enter in the lag before its
+claim is written, and claims can't cover every Claude dialog: the rate-limit menu
+fires no hook of its own, and `pro-trial-expired` opens the same way at startup.
+It says nothing about mail either: the aweb host wake broker types on its own path.
 
 `oats session inspect --home <abs-home> --json` reports the current window's
 `size: { cols, rows }` in cells when `present` is true and the kernel advertises

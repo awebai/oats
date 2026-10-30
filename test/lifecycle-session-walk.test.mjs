@@ -277,7 +277,7 @@ const STATES = [
       attach: { json: envelope("E_BAD_ARGS", ATTACH_JSON), text: says(1, "open terminal failed: not a terminal\n") },
       inspect: succeeds((result, { i, said }) => {
         assert.match(String(result.paneId), /^%\d+$/, said);
-        assert.deepEqual(result, { home: i.home, backend: "tmux", present: true, state: "shell", paneId: result.paneId, size: result.size, running: false, waitingOnYou: null }, said);
+        assert.deepEqual(result, { home: i.home, backend: "tmux", present: true, state: "shell", paneId: result.paneId, size: result.size, running: false, waitingOnYou: null, wakeHold: "unknown" }, said);
         assert.ok(Number.isSafeInteger(result.size?.cols) && result.size.cols > 0, said);
         assert.ok(Number.isSafeInteger(result.size?.rows) && result.size.rows > 0, said);
       }),
@@ -288,7 +288,7 @@ const STATES = [
     answers: {
       // The regression of the pull request's first head: a plain Error without a code.
       attach: { json: envelope("E_BAD_ARGS", ATTACH_JSON), text: line("session no longer exists") },
-      inspect: succeeds((result, { i, said }) => assert.deepEqual(result, { home: i.home, backend: "tmux", present: false, state: "stopped", running: false, waitingOnYou: null }, said)),
+      inspect: succeeds((result, { i, said }) => assert.deepEqual(result, { home: i.home, backend: "tmux", present: false, state: "stopped", running: false, waitingOnYou: null, wakeHold: "unknown" }, said)),
       input: refused("E_SESSION_INPUT_FAILED", "cannot submit session input: cannot submit input: session is stopped"),
       upload: uploads, receive: receives, start: starts("new"), restart: starts("new"),
     } },
@@ -381,7 +381,7 @@ test("the kernel's own stop leaves a session as the walk's stopped state: the wi
     assert.ok(Number.isSafeInteger(size?.rows) && size.rows > 0);
     return rest;
   };
-  assert.deepEqual(facts(s.inspected(home)), { backend: "tmux", present: true, state: "shell", running: false, waitingOnYou: null }, "what the kernel's stop leaves");
+  assert.deepEqual(facts(s.inspected(home)), { backend: "tmux", present: true, state: "shell", running: false, waitingOnYou: null, wakeHold: "unknown" }, "what the kernel's stop leaves");
   assert.deepEqual(facts(s.inspected(other.home)), facts(s.inspected(home)), "a session whose harness exited by itself reads the same");
 });
 

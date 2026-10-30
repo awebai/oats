@@ -21,7 +21,8 @@
  * (absent under a kernel older than the variable) and, for a launch preview,
  * OATS_LAUNCH_PREVIEW=1. The manifest declares `launchPreview:
  * true`: a preview writes nothing, and every pass answers the same contribution
- * (`{}`, never launch args or env), apart from a warning. The hooks are
+ * (`{}`, never launch args or env), apart from a warning and, on a real pass,
+ * `dialogClaims`, which is no contribution (runHook). The hooks are
  * advisory (string form): this script never throws and ends with a JSON last
  * line, exiting 0 for spawn and launch; upgrade() says when upgrade exits 1.
  *
@@ -272,8 +273,15 @@ export function runHook(event, env = process.env) {
   // (OATS_NODE_BIN, a path that survives a Node upgrade), else this process's own, as written
   // before the kernel set it. Never a warning: an older kernel is not a defect.
   const node = typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
-  const warning = writeClaudeSettings({ home: real, script, node, cli, marker, stopFailure: takesStopFailure(env) });
-  return warning ? { warning } : {};
+  // One probe answers for the settings and for `dialogClaims`. `reported` only when these hooks were
+  // written (every warning of writeClaudeSettings means they were not) and this Claude fires them: the
+  // same version rule, so an older Claude, an unknown executable or a failed --version answers nothing
+  // and the home reads `unknown`, never covered. Replacement includes absence: the kernel drops an
+  // earlier `reported` when this hook answers nothing.
+  const stopFailure = takesStopFailure(env);
+  const warning = writeClaudeSettings({ home: real, script, node, cli, marker, stopFailure });
+  if (warning) return { warning };
+  return stopFailure ? { dialogClaims: "reported" } : {};
 }
 
 /** The upgrade hook's answer for its phase (OATS_UPGRADE_PHASE) and the exit status it

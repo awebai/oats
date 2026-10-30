@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { addSchedule, tickWorkspace, withHostLock } from "../lib/schedule.mjs";
 import { inspectInstanceSession, inputInstanceSession } from "../lib/core.mjs";
+import { setWaiting } from "../lib/instance-events.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { ensureOatsSocketDir, leaveEnclosingInstance, privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
@@ -87,9 +88,23 @@ setTimeout(()=>process.exit(0),30000);\n`);
     result = tick("2026-09-07T12:00:20Z");
     assert.equal(result.some(r => r.id === "one" && r.action === "delivered"), false, "same-minute tick sends no duplicate");
     assert.equal(received(homes[0]), before);
+    // A live claim holds the wake on the real path: no byte reaches the harness, and it stays pending.
+    setWaiting(homes[0].home, { producer: "oats.core", waiting: true, reason: "permission" });
+    const held = tick("2026-09-07T12:01:00Z").find(r => r.id === "one");
+    assert.deepEqual([held.action, held.reason, held.pending, held.held.claimReason], ["skipped", "waiting-on-you", true, "permission"]);
+    await new Promise(r => setTimeout(r, 300));
+    assert.equal(received(homes[0]), before, "a held wake sends no key");
+    // `oats session input` is unchanged: it types with the claim set.
+    assert.equal(inputInstanceSession(homes[0].home, "typed by hand").submitted, true);
+    await waitFor(() => received(homes[0]).includes("typed by hand\n"), "session input reaches stdin with a claim set");
+    const typed = received(homes[0]);
+    setWaiting(homes[0].home, { producer: "oats.core", waiting: false });
+    assert.equal(tick("2026-09-07T12:01:10Z").find(r => r.id === "one").action, "delivered", "the claim cleared: the pending wake goes");
+    await waitFor(() => received(homes[0]).length > typed.length, "the held wake reaches real stdin");
+    assert.equal(received(homes[0]), typed + homes[0].message + "\n");
     inputInstanceSession(homes[0].home, "STOP-FIXTURE");
     await waitFor(() => existsSync(join(homes[0].home, ".oats-start-exited")) && inspectInstanceSession(homes[0].home).state === "shell", "dummy exits to fallback shell");
-    result = tick("2026-09-07T12:01:00Z");
+    result = tick("2026-09-07T12:02:00Z");
     assert.equal(result.find(r => r.id === "two").action, "started", "the never-launched home gets the free slot");
     assert.ok(existsSync(homes[0].home), "stopping a harness does not require deleting its persistent home");
   } finally {

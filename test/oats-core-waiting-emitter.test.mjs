@@ -118,6 +118,8 @@ function ordered(h, extra = {}) {
 const what = (argv) => argv[0] === "set" ? `set ${argv[4]}` : argv[0];
 const FAKE_CLI_ABS = "/fake/oats/bin/oats.mjs"; // the CLI path the hook bakes; never run
 
+// A real pass of the hook for a Claude that takes these settings (#1670): the home reads `on-claims`.
+const REPORTED = { dialogClaims: "reported" };
 function cleanEnv(extra) {
   const env = { ...process.env, ...extra };
   for (const [k, v] of Object.entries(env)) if (v === undefined) delete env[k];
@@ -157,7 +159,7 @@ test("the launch hook answers {} for claude in preview and real mode alike, and 
   const env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
   assert.deepEqual(runHook("launch", { ...env, OATS_LAUNCH_PREVIEW: "1" }), {});
   assert.ok(!existsSync(join(h, ".claude")), "the preview created nothing");
-  assert.deepEqual(runHook("launch", env), {});
+  assert.deepEqual(runHook("launch", env), REPORTED);
   assert.ok(existsSync(settingsOf(h)), "the real pass wrote the settings");
   // A second preview on a written home answers the same and changes nothing.
   const before = readFileSync(settingsOf(h), "utf8");
@@ -175,7 +177,7 @@ test("codex and pi: the hook answers {} and writes nothing, at spawn and at laun
 
 test("the real pass writes settings.json 0600 with absolute, single-quoted commands that end in `; exit 0`, timeout 5", () => {
   const h = home();
-  assert.deepEqual(runHook("spawn", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS }), {});
+  assert.deepEqual(runHook("spawn", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS }), REPORTED);
   assert.equal(statSync(settingsOf(h)).mode & 0o777, 0o600);
   const settings = readJson(settingsOf(h));
   assert.deepEqual(Object.keys(settings), ["hooks"]);
@@ -237,7 +239,7 @@ test("merge by marker: unrelated keys and hooks stay, in order; a second run is 
   };
   writeFileSync(settingsOf(h), JSON.stringify(existing));
   const env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
-  assert.deepEqual(runHook("launch", env), {});
+  assert.deepEqual(runHook("launch", env), REPORTED);
   const merged = readJson(settingsOf(h));
   assert.deepEqual(Object.keys(merged), ["model", "permissions", "hooks", "env"], "top-level keys keep their order");
   assert.equal(merged.model, "opus");
@@ -253,7 +255,7 @@ test("merge by marker: unrelated keys and hooks stay, in order; a second run is 
   // Second run: no write at all.
   const before = readFileSync(settingsOf(h), "utf8");
   const mtime = statSync(settingsOf(h)).mtimeMs;
-  assert.deepEqual(runHook("launch", env), {});
+  assert.deepEqual(runHook("launch", env), REPORTED);
   assert.equal(readFileSync(settingsOf(h), "utf8"), before);
   assert.equal(statSync(settingsOf(h)).mtimeMs, mtime, "unchanged content is not rewritten");
 });
@@ -318,7 +320,7 @@ function nodesOf(h, cli = FAKE_CLI_ABS) {
 test("the commands name OATS_NODE_BIN, the node the kernel hands a hook for what outlives it (awebai/oats#997)", () => {
   const h = home(), opt = "/opt/homebrew/opt/node/bin/node";
   for (const event of ["spawn", "launch"]) {
-    assert.deepEqual(runHook(event, { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: opt }), {}, event);
+    assert.deepEqual(runHook(event, { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: opt }), REPORTED, event);
     assert.deepEqual(nodesOf(h), [opt], `${event}: every command names it, and none names this hook's own node`);
   }
   // A preview writes nothing, with the variable as without it.
@@ -330,7 +332,7 @@ test("the commands name OATS_NODE_BIN, the node the kernel hands a hook for what
 test("no OATS_NODE_BIN (an older kernel), an empty or a relative one: this hook's own node, and no warning", () => {
   for (const given of [undefined, "", "node", "bin/node", "./opt/node/bin/node"]) {
     const h = home();
-    assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: given }), {}, `${JSON.stringify(given)}: the hook answers as before`);
+    assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: given }), REPORTED, `${JSON.stringify(given)}: the hook answers as before`);
     assert.deepEqual(nodesOf(h), [process.execPath], JSON.stringify(given));
   }
 });
@@ -339,7 +341,7 @@ test("StopFailure is written only for the executable the kernel hands the hook, 
   const env = (version) => ({ OATS_HARNESS: "claude", OATS_CLI_BIN: FAKE_CLI_ABS, FAKE_CLAUDE_VERSION: version });
   for (const [version, takes] of [["2.1.308", true], ["2.1.78", true], ["2.1.100", true], ["2.2.0", true], ["3.0.0", true], ["2.1.77", false], ["2.1.9", false], ["2.0.99", false], ["1.9.200", false], ["fail", false], ["not a version", false]]) {
     const h = home();
-    assert.deepEqual(runHook("launch", { ...env(version), OATS_INSTANCE_HOME: h }), {}, version);
+    assert.deepEqual(runHook("launch", { ...env(version), OATS_INSTANCE_HOME: h }), takes ? REPORTED : {}, version);
     const { hooks } = readJson(settingsOf(h));
     assert.equal(Object.hasOwn(hooks, "StopFailure"), takes, version);
     assert.equal(allEntries({ hooks }).length, takes ? 10 : 9, version);
@@ -373,7 +375,7 @@ test("hooks that name an old node path are rewritten by the next launch pass, in
   const env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
   runHook("spawn", { ...env, OATS_NODE_BIN: keg });
   assert.deepEqual(nodesOf(h), [keg]);
-  assert.deepEqual(runHook("launch", { ...env, OATS_NODE_BIN: opt }), {});
+  assert.deepEqual(runHook("launch", { ...env, OATS_NODE_BIN: opt }), REPORTED);
   assert.deepEqual(nodesOf(h), [opt]);
   assert.equal(allEntries(readJson(settingsOf(h))).length, 10, "the old entries were replaced, not kept beside the new");
   assert.ok(!readFileSync(settingsOf(h), "utf8").includes("Cellar"));
@@ -995,7 +997,7 @@ test("a temp file an interrupted write left in .claude is removed by the next pa
   const other = join(claude, ".settings.json.someone-else.tmp");
   for (const f of [stale, live, other]) writeFileSync(f, "{}");
   const before = readFileSync(settingsOf(h), "utf8");
-  assert.deepEqual(runHook("launch", env), {});
+  assert.deepEqual(runHook("launch", env), REPORTED);
   assert.equal(readFileSync(settingsOf(h), "utf8"), before, "nothing else changed");
   assert.ok(!existsSync(stale), "the dead writer's temp file is gone");
   assert.ok(existsSync(live), "a live writer's is kept");
@@ -1005,7 +1007,7 @@ test("a temp file an interrupted write left in .claude is removed by the next pa
 test("end to end: a command the hook wrote, run as Claude Code runs it, reaches the CLI", () => {
   const h = home();
   const log = join(base, `e2e-${n}.log`);
-  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI }), {});
+  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI }), REPORTED);
   const settings = readJson(settingsOf(h));
   const set = settings.hooks.Notification[0].hooks[0].command;
   const r = spawnSync("/bin/sh", ["-c", set], { encoding: "utf8", env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE_HOME: h, FAKE_LOG: log }) });
@@ -1024,7 +1026,7 @@ function realHomes() {
   const make = (name) => {
     const h = join(root, "dev", "instances", name); mkdirSync(h, { recursive: true });
     writeFileSync(join(h, "instance.json"), JSON.stringify({ agent: "dev", instance: name, createdAt: "2026-10-01T00:00:00.000Z" }));
-    assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: REAL_CLI }), {});
+    assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: REAL_CLI }), REPORTED);
     return h;
   };
   const clock = join(dep, "clock"); writeFileSync(clock, "1000\n");
@@ -1120,7 +1122,7 @@ test("real script, real CLI: the home through a symlink spelling is the same hom
   fire(a, "SessionEnd", 0, { OATS_INSTANCE_HOME: lexical });
   assert.equal(claimOf(a), null);
   // The launch hook, given the lexical spelling: the same settings file, the real path baked, the same marker.
-  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: lexical, OATS_CLI_BIN: REAL_CLI }), {});
+  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: lexical, OATS_CLI_BIN: REAL_CLI }), REPORTED);
   for (const e of allEntries(readJson(settingsOf(a)))) assert.ok(e.command.endsWith(` ${shq(REAL_CLI)} ${shq(markerOf(a))} ${shq(a)} >/dev/null 2>&1; exit 0`), e.command);
   assert.equal(intentOf(a), null, "and it reset that marker");
   fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a });
@@ -1201,6 +1203,53 @@ test("a failed turn's reader can't undo what came after it: a later clear stays 
   writeFileSync(gate, "");
   await old;
   assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
+});
+
+test("real script, real CLI: a failed turn never replaces an open dialog's claim, whatever its class", { timeout: 120000 }, () => {
+  const { a, fire } = realHomes();
+  const env = { OATS_INSTANCE_HOME: a };
+  const failed = (error) => JSON.stringify({ hook_event_name: "StopFailure", error, last_assistant_message: "API Error: x" });
+  const prompt = notification("permission_prompt", "Claude needs your permission to use Bash");
+  const permission = { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" };
+  for (const error of ["unknown", "rate_limit"]) {
+    fire(a, "Notification", 0, env, prompt);
+    const rows = logOf(a);
+    fire(a, "StopFailure", 0, env, failed(error));
+    assert.deepEqual(claimOf(a), permission, `${error}: an attention here would let a wake type into the dialog`);
+    assert.equal(logOf(a), rows);
+    assert.equal(intentOf(a), "permission");
+    fire(a, "Stop", 0, env);
+  }
+
+  fire(a, "PreToolUse", 0, env, askUser("Which branch?"));
+  fire(a, "StopFailure", 0, env, failed("unknown"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "Which branch?" });
+  fire(a, "Stop", 0, env);
+
+  fire(a, "StopFailure", 0, env, failed("rate_limit"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "Turn failed: API Error: x" }, "nothing open: a failed turn sets as before");
+});
+
+test("real script, real CLI: an event that yields to an open dialog's intent still applies it when that set's own call failed", { timeout: 120000 }, () => {
+  const { a, b, fire } = realHomes();
+  // The set wrote its intent and its text, and its CLI call failed: no claim, and the cache says unknown.
+  const failedSet = (h, reason, message) => { writeFileSync(markerOf(h), `${reason}\n1-1\n`); writeFileSync(`${markerOf(h)}.text-1-1`, `${message}\n`); writeFileSync(`${markerOf(h)}.applied`, "unknown\n"); };
+  const failed = (error) => JSON.stringify({ hook_event_name: "StopFailure", error, last_assistant_message: "API Error: x" });
+  for (const error of ["rate_limit", "unknown"]) {
+    failedSet(a, "permission", "Claude needs your permission to use Bash");
+    assert.equal(claimOf(a), null);
+    fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, failed(error));
+    assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" }, error);
+    assert.equal(intentOf(a), "permission");
+    fire(a, "Stop", 0, { OATS_INSTANCE_HOME: a });
+  }
+  failedSet(b, "question", "Which branch?");
+  fire(b, "StopFailure", 0, { OATS_INSTANCE_HOME: b }, failed("unknown"));
+  assert.deepEqual(claimOf(b), { producer: "oats.core", reason: "question", message: "Which branch?" });
+  fire(b, "Stop", 0, { OATS_INSTANCE_HOME: b });
+  failedSet(b, "question", "Which branch?");
+  fire(b, "Notification", 0, { OATS_INSTANCE_HOME: b }, notification("permission_prompt", "Claude needs your permission to use AskUserQuestion"));
+  assert.deepEqual(claimOf(b), { producer: "oats.core", reason: "question", message: "Which branch?" }, "a permission prompt yields the same way");
 });
 
 test("the claim's text for a turn an API error ended: the error's words, else its class, never empty (#1667)", () => {

@@ -378,12 +378,23 @@ if [ -z "$marker" ]; then
   exit 0
 fi
 
+# This event yields to the open claim, and is still an event: if that claim's own set failed, this
+# is a chance to apply it, and with nothing recorded a wake would type.
+yield_to_intent() {
+  began=$(date +%s)
+  reconcile
+  exit 0
+}
+
 intent=$(state_of "$marker")
 if [ "$action" = set ]; then
   # An open AskUserQuestion is shown through Claude's permission dialog, so its own
   # permission_prompt follows the question's set: a permission prompt never relabels an
   # open question.
-  [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
+  [ "$reason" = permission ] && [ "$intent" = question ] && yield_to_intent
+  # A turn that failed with a dialog open (a background subagent's) leaves that dialog's claim:
+  # an `attention` in its place would let a wake type into the dialog.
+  [ "$reason" = failed-turn ] && { [ "$intent" = permission ] || [ "$intent" = question ]; } && yield_to_intent
   began=$(date +%s)
   # The intent first, so this event is ordered before anything later; its text after. A failed
   # turn's reason goes beside its text, so a later event always wins.

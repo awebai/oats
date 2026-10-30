@@ -658,6 +658,24 @@ launch hook** may also return an `env` object for the launched process;
 returning `env` from a retire or [worktree](#the-worktree-event) hook is an
 explicit contract error.
 
+A **spawn or launch hook** may also answer `dialogClaims`: `"reported"` (this
+session's dialogs become `permission` or `question` claims) or `"none"` (this
+harness has no dialog an Enter can answer). Any other value is a warning and
+reads as no answer. The kernel names no harness. It records
+`instance.json.dialogClaims`, one entry per capability, for example
+`{"oats.core":"reported"}`, and reads it as
+[`wakeHold`](execution-targets.md#inspect-input-and-attach). Only real runs
+count: a preview's answer is never recorded. Every capability whose hook really
+ran at this spawn or start gets its entry replaced: an answer sets it, no answer
+removes it, and a failed hook removes it, so a harness switch or a downgrade
+leaves no `reported` behind. A capability whose hook didn't run keeps its entry,
+and a start whose preparation fails changes nothing. An answer is about the
+program its hook was handed: a launch that [runs another](#commands-and-hooks)
+drops the answers of the hooks that ran, as if they had answered nothing. The
+answer is no part of a launch contribution, so it may differ from the preview's.
+Answer `reported` only when the claims will really fire, and `none` only if you
+can vouch for every dialog the session can open, extensions included.
+
 A **launch hook** runs at every start and restart of a home for each provider
 recorded at spawn (under its recorded settings). Its `launch` arguments and
 `env` replace that provider's previous contribution whole. Its `meta`, when
@@ -1080,8 +1098,11 @@ oats.core (since 2.4.0, which needs kernel 0.40.0; 2.8.0 needs 0.49.0, as
 when an instance is waiting on a human, in two independent ways. Each shows
 on `oats status` and in `oats instance events`. The verbs' contract
 (`oats instance waiting`, `oats instance attention`, the `waiting` event) is
-in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). Claims are
-display-only: nothing in the kernel acts on them.
+in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). A claim authorizes
+nothing; it may only withhold an automated keystroke: a scheduled wake holds on
+a live `permission`, `question` or unknown-reason claim ([A held
+wake](schedules.md#a-held-wake)). `attention` never marks a screen an Enter
+answers: a producer that wants one uses `question`, and review catches that.
 
 **The agent's own claim.** The oats.core inject and `/oats-operate` teach
 every instance this protocol. Whenever it needs anything from a human (a
@@ -1145,7 +1166,9 @@ or at a session boundary.
   every other class, a new one included, and an input it cannot read, because
   none of them is known to be free of a dialog. An API-key home has no such menu, but its `rate_limit` still
   reads `question`. Choosing "Stop and wait" in the menu fires no hook, so the
-  claim stays until the next prompt.
+  claim stays until the next prompt. A turn that fails with a dialog open, a
+  background subagent's say, leaves that dialog's claim in place: an `attention`
+  over it would let a wake type into the dialog.
 
   **A claim doesn't cover every Claude dialog.** The limit menu fires no hook of
   its own, and `/pro-trial-expired` opens the same way at startup with no failed
@@ -1156,6 +1179,20 @@ or at a session boundary.
   0.80.4 has no `agent_settled` and reports nothing.
 - **Codex:** not reported. A provider error fires neither its `Stop` hook nor
   `notify` (Codex 0.160.0), so nothing can observe the turn from outside it.
+
+**Whether a home is covered** (oats.core 2.11.0). Spawn and launch hooks answer
+[`dialogClaims: "reported"`](#commands-and-hooks), so the home reads `wakeHold:
+"on-claims"`, only when they wrote these settings and the Claude Code this launch
+runs fires them: the same `OATS_HARNESS_EXECUTABLE --version` answer as
+`StopFailure` above, 2.1.78 or later. Otherwise they answer nothing and the home
+reads `unknown`: an older Claude Code, no executable handed, a failed or
+unreadable `--version`, a settings file oats.core left alone, or a launch that
+runs another program than the hooks were handed. An earlier
+`reported` doesn't survive that, and a preview answers nothing. Every other
+harness answers nothing too. A pi home reads `unknown`: an extension can open its
+own dialog, and the kernel can't see which load. `reported` doesn't mean every
+dialog: [What a hold leaves open](schedules.md#what-a-hold-leaves-open) names what
+it can't see, the Claude dialogs that fire no hook among them.
 
 **One home per settings file.** The launch hook bakes the home it writes the
 settings for into every command, as its real path (oats.core 2.4.1). The

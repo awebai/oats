@@ -1,0 +1,18 @@
+## Upgrade
+
+- **Until a deployment runs this kernel, run no wake jobs on a home that can open an approval or question dialog.** A wake's Enter can approve a command or answer a question nobody saw. This release holds those wakes where claims exist; it doesn't reach the gaps listed under Fixed, so the same care applies to them afterwards.
+
+## Fixed
+
+- **A scheduled wake holds while a permission prompt or a question is known to be open.** A wake's Enter could approve a prompt or answer a question nobody saw. A wake reaches a running session as a paste and an Enter, and an open dialog took that Enter: the message never reached the model, and the schedule recorded `delivered`. A wake now reads the home's claims immediately before it types, and sends no key while the home has a live `permission`, `question` or unknown-reason claim, or while the claims can't be read and trusted. An `attention` claim alone holds nothing. A held wake stays pending and tries again at every tick until nothing holds it, then delivers once. It takes no slot, and it has no expiry: the kernel never sends a key, and never drops the message, because a hold ran long. `lastRun` shows `reason: "waiting-on-you"`, `pending: true` and `held: {since, claimReason, producer, unreadable?}`, and one `wake-held` event marks the start of a hold ([A held wake](../schedules.md#a-held-wake); [awebai/oats#1670](https://github.com/awebai/oats/issues/1670)). `delivered` keeps its value and is now documented for what it means: submitted, which doesn't mean the model received the message. The kernel's rule changes with this: a claim authorizes nothing, and it may only withhold an automated keystroke. `oats session input` is unchanged.
+
+  What this leaves open ([What a hold leaves open](../schedules.md#what-a-hold-leaves-open)):
+  - Harnesses with no claims stay exposed. pi homes read `unknown`: an extension can open its own dialog, and the kernel can't see which load.
+  - A dialog that opens before the Enter is still answered, whether it opens between the read and the Enter or in the lag between a dialog opening and its claim being written.
+  - A dialog that fires no hook has no claim, so claims can't cover every Claude dialog: the `/rate-limit-options` menu fires no hook of its own (measured on Claude Code 2.1.308), and `pro-trial-expired` opens the same way at startup, with no failed turn behind it.
+  - `oats session input` run by a script or an agent can answer a dialog. Don't run it at a session that may show one.
+  - The aweb host wake broker types on its own path, joined teams included, and isn't held.
+
+## Added
+
+- **`wakeHold` on `oats session inspect --json` says whether this home is covered.** Feature `wake-hold` says the kernel holds; `wakeHold` says whether this home's dialogs become claims: `on-claims`, `not-exposed`, or `unknown`, which a waiter treats as not covered. It's on every successful result, a stopped, never-launched or missing home included, and it covers the kernel's wake delivery only, not mail ([Inspect, input and attach](../execution-targets.md#inspect-input-and-attach)). A spawn or launch hook gives the answer as `dialogClaims: "reported" | "none"`, recorded per capability as `instance.json.dialogClaims`; the kernel names no harness, and a hook that runs and answers nothing removes its entry ([Commands and hooks](../capabilities.md#commands-and-hooks)). oats.core 2.11.0 answers `reported` only when it wrote its hooks and the Claude Code this launch runs fires them. An older kernel ignores the key, and a home on an older oats.core reads `unknown` until it's upgraded or respawned.
