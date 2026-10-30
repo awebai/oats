@@ -630,16 +630,16 @@ function printWorkspaceInspect(doc) {
   }
 }
 
-/** `{ teams, defaultTeam, teamsSource }` for a session start of a workspace home: its teams read
- *  live (the workspace host + oats-local.yaml), which the launch hook re-checks joined memberships
- *  against — or the spawn record, marked `recorded`, when the read cannot answer. Anything that is not a readable workspace home gets nothing here — the start
- *  itself refuses it. */
 /** Whether an upgrade holds the lifecycle claim of `home` and is not established gone: read only,
  *  for the order of a start's refusals (the start's own claim decides). */
 function upgradeHoldsClaim(home) {
   const held = homeClaimHolder(home);
   return held?.action === "upgrade" && held.state !== "gone";
 }
+/** `{ teams, defaultTeam, teamsSource }` for a session start of a workspace home: its teams read
+ *  live (the workspace host + oats-local.yaml), which the launch hook re-checks joined memberships
+ *  against — or the spawn record, marked `recorded`, when the read cannot answer. Anything that is not a readable workspace home gets nothing here — the start
+ *  itself refuses it. */
 async function homeLiveTeams(home) {
   let meta;
   try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch { return {}; }

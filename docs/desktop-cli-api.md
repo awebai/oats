@@ -4974,7 +4974,7 @@ The `instance-upgrade` pairs use the same home's lifecycle claim:
 | the holder of the claim is gone | `oats instance upgrade` apply | not refused after claim takeover checks |
 | an upgrade apply is running | `oats retire` or `oats instance stop --apply` | `E_LIFECYCLE_BUSY` |
 | an upgrade apply is running | `oats worktree add` | not refused |
-| an upgrade apply is running | `oats session start` or restart, a scheduled start included | `E_LIFECYCLE_BUSY` (from feature `lifecycle-claim-start`; before it, `E_SESSION_START_BUSY` at the upgrade's start mutex) |
+| an upgrade apply is running | `oats session start` or restart, a scheduled start included | `E_LIFECYCLE_BUSY` (feature `lifecycle-claim-start`) |
 
 <a id="resume-lifecycle-pairs"></a>
 `oats session start --resume` (OATS 0.69.2, #1559) holds the same claim for
@@ -5043,7 +5043,9 @@ answers. The following stop/retire notes describe the original table.
 - **Two starts** (a start or a restart arriving beside a start or a resume,
   and a resume arriving beside a start) answer `E_SESSION_START_BUSY`, with
   no `details`, as they did at the start lock before starts took the claim;
-  the message begins `another start of <name> is in progress`. A resume
+  the message begins `another start of <name> is in progress`, or `another
+  start of <name> may be in progress` when the holder's liveness cannot be
+  read. A resume
   beside a resume stays `E_LIFECYCLE_BUSY`. The resume sweep reports the
   first `start-busy`, the second `lifecycle-busy`, as before.
 - **A kernel without `lifecycle-claim-start`** reads a claim whose verb is
