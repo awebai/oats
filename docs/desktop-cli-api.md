@@ -293,6 +293,7 @@ string for this: to support older kernels, use the spaced form.
 
 | Code | When |
 |---|---|
+| `E_NODE_UNSUPPORTED` | Node.js is older than 22: before every command, exit 1 with `details: {found: "<process.versions.node>", minimum: "22"}` and message `oats needs Node.js 22 or later; this is Node.js <found>`. With `--json` anywhere in argv, stdout is one failure envelope; otherwise the message is on stderr. This includes the `version --json` probe, whose success shape is not the envelope: on unsupported Node it answers this failure envelope with exit 1. Node 18 and 20 get this refusal; a Node too old to parse the entry can fail with a SyntaxError first |
 | `E_UNKNOWN_COMMAND` | No kernel command or capability namespace matches; an unknown capability subcommand; a [removed verb](#removed-verbs-and-flags) (`details: {removed, replacement}`) |
 | `E_CAPABILITY_INACTIVE` | In a home: the namespace's module is not one of the home's recorded capabilities |
 | `E_CAPABILITY_BLOCKED` | In a home: the manifest claiming the namespace is not a workspace module copy of that home. There is no package trust gate |

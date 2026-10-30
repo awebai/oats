@@ -237,7 +237,10 @@ export async function discover(io, probe) {
       } catch (e) {
         // Probe REJECTED (nonzero exit, timeout, spawn failure) — the
         // candidate is out even if it printed a plausible payload first.
-        tried.push({ path, source: src.source, reason: `probe failed: ${String(e.message || e).slice(0, 120)}` });
+        const failure = parseProbeStdout(e.stdout);
+        const reason = failure?.schemaVersion === 1 && failure.ok === false && typeof failure.error?.message === "string"
+          ? failure.error.message : `probe failed: ${String(e.message || e).slice(0, 120)}`;
+        tried.push({ path, source: src.source, reason });
         continue;
       }
       const a = acceptProbe(payload);

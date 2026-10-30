@@ -23,6 +23,11 @@ walking up to `oats-local.yaml`), or pass `--dir <deployment>`. Use `--json`
 when you parse output. Flags take `--flag value` or `--flag=value`. When a flag
 is not shown here, read `oats help`; never invent one.
 
+The CLI needs Node.js 22 or later. On Node 18 and 20, every command refuses
+with `E_NODE_UNSUPPORTED` before it runs; move to Node 22 or later. This
+includes `version`, the reader and capability commands. An older Node that
+cannot parse the entry may fail before it can print that refusal.
+
 ## Your two directories
 
 ```

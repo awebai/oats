@@ -1,3 +1,13 @@
+## Upgrade
+
+- **What users must do: move to Node.js 22 or later.** OATS now stops before
+  every command on older Node, including `version`, the reader and capability
+  commands. If you run OATS on Node 20 today, upgrade Node before continuing.
+  Node 18 and 20 receive `E_NODE_UNSUPPORTED` with exit 1, as one failure
+  envelope on stdout with `--json`, or a message on stderr without it. Remote
+  probes and Desktop discovery retain the host's refusal message. The npm
+  package also declares the Node 22 floor so installation warns about it.
+
 ## Added
 
 - **Doctor reports Git's cache support.** Text and JSON doctor output name
