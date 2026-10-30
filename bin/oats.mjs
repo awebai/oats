@@ -53,7 +53,7 @@ const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, writeSpawnRecord, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, writeHomeRecord, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } = await kernelImport("core", () => import("../lib/core.mjs"));
 const {
@@ -2936,10 +2936,10 @@ async function spawnCmd() {
     // K6e: record the wake outcome in the home so a same-key replay can report
     // it instead of leaving "saved or not?" to inference.
     if (r.spawnIdempotencyKey) {
-      try { const f = join(r.home, "instance.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.wake = { requested: true, saved: !wakeScheduleError, error: wakeScheduleError ?? null }; writeSpawnRecord(r.home, m); r.wake = m.wake; } catch { /* the receipt still says it */ }
+      try { const f = join(r.home, "instance.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.wake = { requested: true, saved: !wakeScheduleError, error: wakeScheduleError ?? null }; writeHomeRecord(r.home, m); r.wake = m.wake; } catch { /* the receipt still says it */ }
     }
   } else if (r.spawnIdempotencyKey && r.replayed !== true) {
-    try { const f = join(r.home, "instance.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.wake = { requested: false, saved: null, error: null }; writeSpawnRecord(r.home, m); r.wake = m.wake; } catch { /* nothing to record */ }
+    try { const f = join(r.home, "instance.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.wake = { requested: false, saved: null, error: null }; writeHomeRecord(r.home, m); r.wake = m.wake; } catch { /* nothing to record */ }
   }
   if (JSON_MODE) {
     // Desktop CLI API v1 spawn result — a FIXED shape (see docs/desktop-cli-api.md).
