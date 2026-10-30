@@ -42,8 +42,8 @@ test("a home entry false is a removed-key problem at that entry naming the key a
   assert.equal(p.reason, "removed-key");
   assert.match(p.message, /launchPromptAnswers/);
   assert.match(p.message, /awebDevelopmentChannel: false/);
-  assert.match(p.message, /settings\.oats\.aweb\.delivery: session/);
   assert.match(p.message, /settings\.oats\.aweb\.claudeChannelMode: approved/);
+  assert.doesNotMatch(p.message, /delivery: session/);
 });
 
 test("loading a deployment whose host file says false fails with E_WORKSPACE_SCHEMA", t => {
