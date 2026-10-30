@@ -113,8 +113,6 @@ channel delivery (approved route)". Writing the managed-settings file needs
 `sudo`, so the person runs it in their own terminal. Homes started before the
 change keep development mode until they are respawned.
 
-Never steer anyone to `delivery: session`.
-
 ## 5. Brief the person
 
 In the session, plainly:
