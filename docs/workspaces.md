@@ -353,6 +353,30 @@ named `<package>/<soul>` (a bare name when unique), resolved like any soul
 (`from: here` = their own package at the locked commit) and trusted as the
 package is. See [packages](packages.md#package-souls).
 
+### Moved repositories
+
+Seven repositories moved from the `awebai` organisation to `oats-project`:
+`oats`, `oats-okf`, `oats-engineering`, `oats-cloning`, `oats-authoring`,
+`oats-omarchy` and `oats-knowledge`. The kernel holds the table, and keeps it
+for good, because old `oats-local.yaml` files, locks and homes name the old
+keys.
+
+**The old and the new key of a moved repository are one repository, wherever
+a key is compared.** That covers the backlink check, `clones:`, a clone's
+remotes, the key a home recorded at spawn, `from:`, a `git:` package source in
+the lock, a server's `workspaceKey`, and the keys given to `--member`,
+`--repo` and `--workspace-key`. So a workspace and its members can change
+their strings in any order: a member naming the workspace by the other key
+stays confirmed, and a home recorded under the other key keeps its drift rows.
+
+**The kernel compares and never rewrites.** Every key stays as it was declared
+or recorded: in each JSON answer, in the cache directories, in the lock and in
+`instance.json`. A URL goes to Git as it is written; GitHub redirects the old
+one. A deployment that changes no string behaves as it did before.
+
+Only these seven are moved. Every other `awebai` repository keeps its key, and
+a key that differs only by letter case is still a different key.
+
 ## Member tier vs package tier: the non-collapse rule
 
 A repository may be a **member** (it completed the handshake; its `souls/*` and
