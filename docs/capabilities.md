@@ -1193,14 +1193,6 @@ or at a session boundary.
 - **Codex:** not reported. A provider error fires neither its `Stop` hook nor
   `notify` (Codex 0.160.0), so nothing can observe the turn from outside it.
 
-**A pi home with no provider** (oats.core 2.12.0). pi starts with no provider, takes
-its prompt and shows no error, so the home reads as running while nothing happens.
-On a real pass, spawn and launch hooks run `OATS_HARNESS_EXECUTABLE --list-models`,
-bounded at 3 s, and warn only when pi answers "No models available". The warning
-never refuses. No executable handed, a failed or slow probe, or any other answer
-says nothing. The hook's environment isn't the pane's, so a provider set only
-through a launch configuration's `env` can warn on a pi that does have one.
-
 **Whether a home is covered** (oats.core 2.11.0). Spawn and launch hooks answer
 [`dialogClaims: "reported"`](#commands-and-hooks), so the home reads `wakeHold:
 "on-claims"`, only when they wrote these settings and the Claude Code this launch
@@ -1214,6 +1206,15 @@ harness answers nothing too. A pi home reads `unknown`: an extension can open it
 own dialog, and the kernel can't see which load. `reported` doesn't mean every
 dialog: [What a hold leaves open](schedules.md#what-a-hold-leaves-open) names what
 it can't see, the Claude dialogs that fire no hook among them.
+
+**A pi home with no provider** (oats.core 2.12.0). pi starts with no provider, takes
+its prompt and shows no error, so the home reads as running while nothing happens.
+On a real pass, spawn and launch hooks run `OATS_HARNESS_EXECUTABLE --list-models`,
+bounded at 3 s, and warn only when pi answers "No models available". The warning
+never refuses. No executable handed, a failed or slow probe, or any other answer
+says nothing. The hook sees the calling process's environment, not the pane's, so
+a pi folder (`PI_CODING_AGENT_DIR`) or key that only the launch or the pane has can
+warn on a pi that works.
 
 **One home per settings file.** The launch hook bakes the home it writes the
 settings for into every command, as its real path (oats.core 2.4.1). The

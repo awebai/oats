@@ -20,6 +20,8 @@ const hookEnv = (executable, extra = {}) => ({ PATH: process.env.PATH, OATS_HARN
 for (const event of ["spawn", "launch"]) test(`a pi with no provider warns at ${event} and names the fix`, (t) => {
   const answer = runHook(event, hookEnv(fakePi(t, NONE)));
   assert.deepEqual(answer, { warning: PI_NO_PROVIDER_WARNING });
+  assert.match(PI_NO_PROVIDER_WARNING, /in the environment of this command, so this session may do nothing/);
+  assert.match(PI_NO_PROVIDER_WARNING, /PI_CODING_AGENT_DIR/);
   assert.match(answer.warning, /\/login/);
   assert.match(answer.warning, /oats soul launch set/);
 });

@@ -50,7 +50,7 @@ export const HOOK_TIMEOUT_SECONDS = 5;
 /** Claude Code's matcher for every tool. */
 const ALL_TOOLS = "*";
 
-export const PI_NO_PROVIDER_WARNING = "oats.core: pi has no provider on this machine, so this session will do nothing. Log in with /login in pi, or set a provider's API key, then restart it; or run this soul on another harness: oats soul launch set <soul> --harness <h>";
+export const PI_NO_PROVIDER_WARNING = "oats.core: pi found no provider in the environment of this command, so this session may do nothing. If the launch sets its own PI_CODING_AGENT_DIR or key, ignore this. Otherwise log in with /login in pi, or set a provider's API key, then restart it; or run this soul on another harness: oats soul launch set <soul> --harness <h>";
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
