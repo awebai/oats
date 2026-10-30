@@ -280,7 +280,7 @@ instance's terminal and press Enter yourself.
   saying to remove it;
 - any home entry `awebDevelopmentChannel: false`: refused (`E_WORKSPACE_SCHEMA`,
   reason `removed-key`, at that entry), because this kernel can no longer honour
-  that refusal. The message names the two settings above.
+  that refusal. The message says what to set instead.
 
 `launchPromptAnswers` remains refused in workspace and soul declarations.
 

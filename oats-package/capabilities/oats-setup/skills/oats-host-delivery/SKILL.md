@@ -51,7 +51,7 @@ joined team, runs Codex, or uses `delivery: session`**:
 its check:
 
 ```text
-Claude channel delivery: approved | development (chosen: <reason>) | session | no Claude seats here
+Claude channel delivery: approved | development (chosen: <reason>) | no Claude seats here
 Host wake broker: installed (<manager> unit, aw <version>) | not needed (<why>) | declined (<who> accepts wake-daemon-not-running and poll-only joined teams on <homes>)
 ```
 
@@ -59,7 +59,6 @@ Host wake broker: installed (<manager> unit, aw <version>) | not needed (<why>) 
 |---|---|
 | approved | the approved route's **Success** list below, then the nonce exchange |
 | development | the key is written in `oats-local.yaml` (from oats.aweb 1.28.0, readiness warns `claude-channel-mode-default` when it is not), and the home's readiness has neither `channel-dev-confirmation` (the last start recorded the confirmation `completed`) nor `claude-channels-unavailable`; then the nonce exchange |
-| session | Choice 2's **Check** |
 | broker installed | Choice 2's **Check** |
 | not needed, no Claude seats | nothing to check; revisit when the host gains such a home |
 | broker declined | the hand-back names the accepted readiness problem and who accepted it |
