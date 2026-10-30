@@ -101,6 +101,33 @@ test("an aborted run and a finished run raise nothing, and a run with no claim t
   assert.deepEqual(calls(), []);
 });
 
+test("an abort during a retry's backoff is not a failure: agent_settled says so, with no agent_end after the error", async (t) => {
+  const { home, all, calls } = recordingHome(t);
+  const fire = session(home);
+  await fire("agent_start");
+  await settle(() => all().length === 1);
+  await fire("agent_end", failed("503: overloaded"));
+  await fire("agent_settled", { aborted: true });
+  await fire("agent_settled", { aborted: false });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(calls(), [], "the error is dropped, not kept for a later settle");
+});
+
+test("a session that ends waits for its writes, so a /reload's next reporter cannot be overtaken", async (t) => {
+  const { home, all, calls } = recordingHome(t);
+  const shim = join(home, ".oats", "bin", "oats");
+  const fire = session(home);
+  await fire("agent_start");
+  await settle(() => all().length === 1);
+  writeFileSync(shim, `#!/bin/sh\nsleep 0.3\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(`${shim}.record`)} "$@"\n`);
+  writeFileSync(`${shim}.record`, `require("node:fs").appendFileSync(${JSON.stringify(join(home, "calls"))}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`);
+  await fire("agent_end", failed("422: refused"));
+  await fire("agent_settled", { aborted: false });
+  assert.deepEqual(calls(), [], "the set is still under way");
+  await fire("session_shutdown");
+  assert.deepEqual(calls(), [setArgv(home, "Turn failed: 422: refused")]);
+});
+
 test("the first run of a process clears what an earlier pi in the session left, once", async (t) => {
   const { home, all } = recordingHome(t);
   const fire = session(home);

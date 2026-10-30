@@ -8,7 +8,8 @@
  * after it, and each attempt has its own agent_end. Only agent_settled (pi 0.80.4
  * and later) says pi will not go on, and a pi without it reports nothing. The last
  * run decides: a retry that worked leaves nothing to report, and an abort is not an
- * error. The next run clears the claim. This process cannot know what an earlier pi
+ * error, even one that cancels a retry's backoff, where no agent_end follows the
+ * error it was retrying. The next run clears the claim. This process cannot know what an earlier pi
  * in the session claimed (a /reload, a pi started again in the pane), so its first run
  * clears too; after that, a run with no claim to clear starts no process.
  */
@@ -30,8 +31,10 @@ export function failedTurnMessage(error) {
   return points.length > MESSAGE_MAX ? `${points.slice(0, MESSAGE_MAX - 1).join("")}…` : points.join("");
 }
 
-/** Writes run one at a time, so a clear cannot pass the set it answers. A failed
- *  write is dropped: reporting must never break a session. */
+/** Writes run one at a time, so a clear cannot pass the set it answers, and a session
+ *  that ends waits for them: a /reload's next reporter starts its own queue, and a set
+ *  still under way would land after its clear. A write is bounded by its timeout, and
+ *  a failed one is dropped: reporting must never break a session. */
 export function reportFailedTurn(pi, home) {
   let failure;
   let claimed = true;
@@ -52,10 +55,12 @@ export function reportFailedTurn(pi, home) {
     const last = event.messages.findLast((message) => message.role === "assistant");
     failure = last?.stopReason === "error" ? failedTurnMessage(last.errorMessage) : undefined;
   });
-  pi.on("agent_settled", () => {
-    if (failure === undefined) return;
-    claimed = true;
-    waiting("set", "--reason", "attention", `--message=${failure}`);
+  pi.on("agent_settled", (event) => {
+    const reported = event.aborted ? undefined : failure;
     failure = undefined;
+    if (reported === undefined) return;
+    claimed = true;
+    waiting("set", "--reason", "attention", `--message=${reported}`);
   });
+  pi.on("session_shutdown", () => writes);
 }
