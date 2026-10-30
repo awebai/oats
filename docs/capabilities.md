@@ -613,6 +613,18 @@ When the program has changed, the launch runs the new one and says so: a warning
 in the answer and a `launch-warning` event in the home, both naming the path the
 hooks were given and the path it runs.
 
+A spawn or launch hook also gets `OATS_YOLO=1` when the kernel's resolved `yolo`
+for this launch is true, and the same in a preview. Otherwise it is absent,
+never `0`, and absent means not known. `launch.yolo` in `instance.json` can't
+answer this: it is the previous launch's, and a spawn has none. It is reserved
+like `OATS_HARNESS_EXECUTABLE`: a launch configuration cannot set it, and an
+inherited value is dropped. Neither name reaches the harness's pane, even from
+an existing server's environment.
+
+It reports this launch's flag and nothing more. A `yolo` home can still show a
+question dialog, and a bypass set through `args` or a harness's own settings
+reads as absent.
+
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
 
@@ -657,6 +669,24 @@ launch hook's preview answer may add `volatileEnv` (below). A **spawn or
 launch hook** may also return an `env` object for the launched process;
 returning `env` from a retire or [worktree](#the-worktree-event) hook is an
 explicit contract error.
+
+A **spawn or launch hook** may also answer `dialogClaims`: `"reported"` (this
+session's dialogs become `permission` or `question` claims) or `"none"` (this
+harness has no dialog an Enter can answer). Any other value is a warning and
+reads as no answer. The kernel names no harness. It records
+`instance.json.dialogClaims`, one entry per capability, for example
+`{"oats.core":"reported"}`, and reads it as
+[`wakeHold`](execution-targets.md#inspect-input-and-attach). Only real runs
+count: a preview's answer is never recorded. Every capability whose hook really
+ran at this spawn or start gets its entry replaced: an answer sets it, no answer
+removes it, and a failed hook removes it, so a harness switch or a downgrade
+leaves no `reported` behind. A capability whose hook didn't run keeps its entry,
+and a start whose preparation fails changes nothing. An answer is about the
+program its hook was handed: a launch that [runs another](#commands-and-hooks)
+drops the answers of the hooks that ran, as if they had answered nothing. The
+answer is no part of a launch contribution, so it may differ from the preview's.
+Answer `reported` only when the claims will really fire, and `none` only if you
+can vouch for every dialog the session can open, extensions included.
 
 A **launch hook** runs at every start and restart of a home for each provider
 recorded at spawn (under its recorded settings). Its `launch` arguments and
@@ -1080,8 +1110,11 @@ oats.core (since 2.4.0, which needs kernel 0.40.0; 2.8.0 needs 0.49.0, as
 when an instance is waiting on a human, in two independent ways. Each shows
 on `oats status` and in `oats instance events`. The verbs' contract
 (`oats instance waiting`, `oats instance attention`, the `waiting` event) is
-in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). Claims are
-display-only: nothing in the kernel acts on them.
+in [desktop-cli-api.md](desktop-cli-api.md#waiting-on-you). A claim authorizes
+nothing; it may only withhold an automated keystroke: a scheduled wake holds on
+a live `permission`, `question` or unknown-reason claim ([A held
+wake](schedules.md#a-held-wake)). `attention` never marks a screen an Enter
+answers: a producer that wants one uses `question`, and review catches that.
 
 **The agent's own claim.** The oats.core inject and `/oats-operate` teach
 every instance this protocol. Whenever it needs anything from a human (a
@@ -1108,6 +1141,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | --- | --- | --- |
 | `Notification` | `permission_prompt` | set `permission` |
 | `Notification` | `elicitation_dialog` | set `question` |
+| `PermissionRequest` | `*` | set `permission` (see "As a dialog opens" below) |
 | `PreToolUse` | `AskUserQuestion` | set `question` |
 | `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear, unless a subagent made the call |
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
@@ -1145,7 +1179,9 @@ or at a session boundary.
   every other class, a new one included, and an input it cannot read, because
   none of them is known to be free of a dialog. An API-key home has no such menu, but its `rate_limit` still
   reads `question`. Choosing "Stop and wait" in the menu fires no hook, so the
-  claim stays until the next prompt.
+  claim stays until the next prompt. A turn that fails with a dialog open, a
+  background subagent's say, leaves that dialog's claim in place: an `attention`
+  over it would let a wake type into the dialog.
 
   **A claim doesn't cover every Claude dialog.** The limit menu fires no hook of
   its own, and `/pro-trial-expired` opens the same way at startup with no failed
@@ -1156,6 +1192,20 @@ or at a session boundary.
   0.80.4 has no `agent_settled` and reports nothing.
 - **Codex:** not reported. A provider error fires neither its `Stop` hook nor
   `notify` (Codex 0.160.0), so nothing can observe the turn from outside it.
+
+**Whether a home is covered** (oats.core 2.11.0). Spawn and launch hooks answer
+[`dialogClaims: "reported"`](#commands-and-hooks), so the home reads `wakeHold:
+"on-claims"`, only when they wrote these settings and the Claude Code this launch
+runs fires them: the same `OATS_HARNESS_EXECUTABLE --version` answer as
+`StopFailure` above, 2.1.78 or later. Otherwise they answer nothing and the home
+reads `unknown`: an older Claude Code, no executable handed, a failed or
+unreadable `--version`, a settings file oats.core left alone, or a launch that
+runs another program than the hooks were handed. An earlier
+`reported` doesn't survive that, and a preview answers nothing. Every other
+harness answers nothing too. A pi home reads `unknown`: an extension can open its
+own dialog, and the kernel can't see which load. `reported` doesn't mean every
+dialog: [What a hold leaves open](schedules.md#what-a-hold-leaves-open) names what
+it can't see, the Claude dialogs that fire no hook among them.
 
 **One home per settings file.** The launch hook bakes the home it writes the
 settings for into every command, as its real path (oats.core 2.4.1). The
@@ -1177,9 +1227,12 @@ Claude Code 2.1.300:
 - an `AskUserQuestion` gives its first question's own words
   (`tool_input.questions[0].question`), with `(+N more)` when it asks
   several;
+- a `PermissionRequest` carries no words, so it gives "Claude needs your
+  permission to use <tool>", from `tool_name`, and no text without one;
 - a `Notification` gives its `message`: "Claude needs your permission to use
-  Bash" for a permission prompt, "Claude Code needs your input" for an
-  elicitation dialog.
+  Bash" or, on 2.1.308, the bare "Claude needs your permission" for a
+  permission prompt, "Claude Code needs your input" for an elicitation dialog;
+- a `StopFailure` gives `Turn failed: <the error>`.
 
 The text is made one line, the kernel's refused characters are replaced with
 U+FFFD, and it is cut to 200 code points with `…`, so the kernel accepts it.
@@ -1190,10 +1243,26 @@ the latest event's text is ever applied. So a clear or a question that comes
 while an earlier set is still reading stands, and the earlier text never
 lands over it.
 
+**As a dialog opens** (oats.core 2.11.0). `PermissionRequest` fires as a
+permission dialog opens and only when one shows, so its claim lands with the
+dialog, where `Notification` alone comes seconds later. It's written under the
+check `StopFailure` takes, at each spawn and start, so `on-claims` means the same
+hooks on every home. `Notification` stays: it's the set on a Claude below that
+check, and above it a second chance that adds nothing once the claim has landed,
+even in words that name no tool. The hook only withholds. It doesn't hold the
+dialog back, so the claim lands after the dialog opens, and it can't answer one:
+this is the hook whose output could approve a dialog, and the script writes
+nothing to stdout and exits 0 whatever the CLI does (measured on 2.1.308 with a
+CLI that failed and printed an approval: the dialog stayed open).
+
 Claude Code shows an AskUserQuestion through its permission dialog, so that
-dialog's own `permission_prompt` follows the question's set: the script keeps
-the current reason in its marker (and the text beside it), and a permission
-prompt never relabels an open question or replaces its text. A granted tool that fails fires `PostToolUseFailure`, not
+dialog's own `PermissionRequest` and `permission_prompt` follow the question's
+set: the script keeps the current reason in its marker (and the text beside it),
+and a permission set never relabels an open question or replaces its text. A
+dialog over a failed turn's claim does replace it, whatever its reason: both
+reasons hold a wake, and the dialog is what a person can act on. With no usable
+marker every event just calls the CLI, so there the later set replaces the
+earlier one, either way. A granted tool that fails fires `PostToolUseFailure`, not
 `PostToolUse`, so that clears too.
 
 **Subagents' tool calls do not clear.** Background and parallel subagents
@@ -1207,14 +1276,18 @@ the first `"hook_event_name"`: a string value escapes its quotes, so that
 text holds top-level keys only. Anything else (no key, an input cut short,
 another key order, nothing read) means the main thread, and the clear goes
 ahead. A permission `Notification` carries no `agent_id` and no tool id,
-even when a subagent asked, so a claim never knows who set it.
+even when a subagent asked, so a claim never knows who set it. `PermissionRequest`
+sets whoever asked: a dialog is a dialog.
 
-**A refused permission prompt is not observable.** On Claude Code 2.1.288,
-answering "No" at a permission prompt interrupts the turn and fires no hook
-(no `PostToolUse`, `PostToolUseFailure`, `PostToolBatch` or `Stop`; probed).
-Claude then waits for the human ("What should Claude do instead?"), and the
-claim stays, still labelled `permission`, until the human's next prompt
-clears it.
+**A refused permission prompt is not observable.** On Claude Code 2.1.308,
+Esc and "No" at a permission prompt each interrupt the turn and fire no hook at
+all (no `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `PostToolBatch`
+or `Stop`; measured with a logger on every event). Claude then waits for the
+human ("What should Claude do instead?"), and the claim stays, still labelled
+`permission`, until the next prompt clears it. A claim now exists for every
+dialog, so every refused one leaves it, and on an idle home a scheduled wake
+holds behind it. A person sends a prompt in that session, or runs `oats instance
+waiting clear --producer oats.core --home <home>` from anywhere.
 
 - **Its own entries only.** oats.core marks its entries by the absolute
   path of its `claude-waiting.sh`. Each run removes only the entries that
@@ -1379,7 +1452,8 @@ again" permission rules there.
   The notification carries no tool id, so there is no cheap fix. Not
   observed on Claude Code 2.1.288: a parallel `Read` and a backgrounded
   `Agent` call each finished before the notification (which came several
-  seconds after the dialog appeared), and the claim stayed.
+  seconds after the dialog appeared), and the claim stayed. Where
+  `PermissionRequest` is written, that notification sets the claim again.
 - If the marker and the claim disagree (someone deleted the marker by hand,
   say), a stale claim can remain until the turn ends, or the next set or
   clear or session boundary.
@@ -1390,7 +1464,8 @@ again" permission rules there.
   `Stop` or the human's prompt. A foreground subagent holds the main thread
   until it finishes, so after its prompt is approved the claim can last the
   whole subagent run. That shows "needs input" too long, never hides a real
-  block.
+  block. `PermissionRequest` makes it more common: every such dialog now sets
+  a claim, not only one left open for seconds.
 - A `Stop` or `UserPromptSubmit` always clears, even one the main thread
   produces while a subagent's prompt is open (a background subagent's
   completion is submitted as a prompt).

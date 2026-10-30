@@ -6,8 +6,9 @@
  * prints as `--message` to `oats instance waiting set`. It reads what Claude Code 2.1.300 sends:
  * a PreToolUse of AskUserQuestion carries the question itself (`tool_input.questions[].question`),
  * and a Notification its own words (`message`, "Claude needs your permission to use Bash"). A
- * StopFailure (2.1.308) carries the error's text (`last_assistant_message`, "API Error: 400 …")
- * and its class (`error`, "rate_limit", "unknown").
+ * PermissionRequest (2.1.308) carries no words, only `tool_name`, and gets those of a Notification
+ * that names its tool. A StopFailure (2.1.308) carries the error's text (`last_assistant_message`,
+ * "API Error: 400 …") and its class (`error`, "rate_limit", "unknown").
  *
  * What it prints is one message the kernel accepts (lib/instance-events.mjs validWaitingMessage):
  * one line, the kernel's refused characters replaced with U+FFFD, at most 200 code points. Nothing
@@ -43,6 +44,7 @@ function wordsOf(input) {
     const error = [input.last_assistant_message, input.error].find(said);
     return error === undefined ? "Turn failed" : `Turn failed: ${error}`;
   }
+  if (input.hook_event_name === "PermissionRequest") return said(input.tool_name) ? `Claude needs your permission to use ${input.tool_name}` : null;
   if (input.hook_event_name === "PreToolUse") {
     if (input.tool_name !== "AskUserQuestion" || !isObject(input.tool_input) || !Array.isArray(input.tool_input.questions)) return null;
     const questions = input.tool_input.questions;

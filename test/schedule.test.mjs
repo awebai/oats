@@ -31,7 +31,7 @@ function workspace() {
   writeFileSync(join(ws, "oats-local.yaml"), LOCAL);
   return ws;
 }
-function home(ws, name) { const h = join(ws, "agents", "dev", "instances", name); mkdirSync(h, { recursive: true }); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: name, home: h, agent: "dev" })); return h; }
+function home(ws, name) { const h = join(ws, "agents", "dev", "instances", name); mkdirSync(h, { recursive: true }); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: name, home: h, agent: "dev", createdAt: "2026-01-01T00:00:00.000Z" })); return h; }
 const at = (iso) => new Date(iso);
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 

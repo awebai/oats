@@ -170,7 +170,7 @@ other than the one the window is on.
 |---|---|---|
 | each agent window it creates | `window-style default`, `window-active-style default`, `cursor-colour default` | that window (`set-option -w`), by window id |
 | each agent window, and the `hq` window of a session it creates | `window-size latest`, `aggressive-resize on` | that window |
-| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
+| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG`, `OATS_HARNESS_EXECUTABLE` or `OATS_YOLO` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
 
 So an agent pane takes the colours of the terminal that views it, whatever
 the server's own defaults say, and on tmux 3.1 or later the window follows
@@ -683,7 +683,7 @@ with: `COLORFGBG`, `TMUX`, `TMUX_PANE`; the launch identity and roots
 operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 `OATS_LEVEL`, `OATS_META`, `OATS_DEPLOYMENT`, `OATS_RESOLUTION`,
 `OATS_OPERATION`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`, `OATS_KIND`,
-`OATS_TASK`, `OATS_HARNESS`, `OATS_HARNESS_EXECUTABLE`,
+`OATS_TASK`, `OATS_HARNESS`, `OATS_HARNESS_EXECUTABLE`, `OATS_YOLO`,
 `OATS_PREVIOUS_HARNESS`, `OATS_RUNTIME`,
 `OATS_PREVIOUS_RUNTIME`, `OATS_LAUNCH_PREVIEW`, `OATS_RETIRE_INTENT`,
 `OATS_TRIGGER_EVENT_FILE`, `OATS_TEST_LOGIN_SHELL` (a test seam that replaces
@@ -1504,6 +1504,20 @@ oats session attach --home /abs/home --detach-key 'C-\'
   inspect is unknown, never stopped.
   `session inspect --server <id> --home <home> --json` relays the execution
   host's `running`, or its absence, as the host answered.
+  With feature `wake-hold`, every successful result also carries `wakeHold`, a
+  stopped, never-launched or missing home included. It reads the home's record
+  ([`dialogClaims`](capabilities.md#commands-and-hooks)): `on-claims` when any
+  capability answered `reported` (this home's dialogs become the claims a wake
+  holds on); otherwise `not-exposed` when any answered `none` (a capability
+  vouches that this harness has no dialog an Enter can answer); otherwise
+  `unknown`, which covers no record and an unreadable one, and which a waiter
+  treats as not covered. Its scope is the kernel's wake delivery only: the aweb
+  host wake broker types on its own path, joined teams included, so `on-claims`
+  doesn't cover mail. The value is `on-claims`, not "protected", because a
+  dialog can still take the Enter ([What a hold leaves
+  open](schedules.md#what-a-hold-leaves-open)). The hold itself never reads this
+  field: it reads claims, always. Remote inspect relays the host's field, or its
+  absence, as the host answered.
   A home whose `instance.json` disagrees with its session receipt is refused
   with `E_RUNTIME_AUTHORITY_MISMATCH` before any pane or process is read; the
   same refusal from any other session command, or in the answer of
@@ -1524,6 +1538,11 @@ oats session attach --home /abs/home --detach-key 'C-\'
   stopped-session checks, and a window where OATS cannot tell which pane is
   the agent's, still refuse before input. The text goes to the agent's pane
   (`paneId`), even when the person's focus is in another pane of the window.
+
+  Input takes no hold: it types whether or not a claim is set, and its Enter
+  can answer an open dialog, so don't run it from a script or an agent at a
+  session that may show one ([A held wake](schedules.md#a-held-wake) is the
+  scheduled path's).
 
   Before Enter, a size-based floor (200 ms plus 3 ms per KiB) and read-only
   settling polls share one **monotonic 2-second observation budget**, starting

@@ -21,7 +21,8 @@
  * (absent under a kernel older than the variable) and, for a launch preview,
  * OATS_LAUNCH_PREVIEW=1. The manifest declares `launchPreview:
  * true`: a preview writes nothing, and every pass answers the same contribution
- * (`{}`, never launch args or env), apart from a warning. The hooks are
+ * (`{}`, never launch args or env), apart from a warning and, on a real pass,
+ * `dialogClaims`, which is no contribution (runHook). The hooks are
  * advisory (string form): this script never throws and ends with a JSON last
  * line, exiting 0 for spawn and launch; upgrade() says when upgrade exits 1.
  *
@@ -139,12 +140,17 @@ export function claudeWaitingSettings({ script, node, cli, marker = "", home = "
   const group = (matcher, ...args) => ({ ...(matcher === undefined ? {} : { matcher }), hooks: [entry(...args)] });
   return {
     hooks: {
-      Notification: [group("permission_prompt", "set", "permission"), group("elicitation_dialog", "set", "question")],
+      // Where PermissionRequest is written the Notification is its second chance, seconds later.
+      Notification: [group("permission_prompt", stopFailure ? "set-late" : "set", "permission"), group("elicitation_dialog", "set", "question")],
+      // Fires as a permission dialog opens. Under the check StopFailure takes, so `reported` means
+      // the same hooks on every home. No matcher: an AskUserQuestion fires it too, and the
+      // script's guard keeps a `permission` from relabelling an open question.
+      ...(stopFailure ? { PermissionRequest: [group(ALL_TOOLS, "set", "permission")] } : {}),
       // Tool clears are `clear-tool`: skipped when a subagent made the call.
       PreToolUse: [group("AskUserQuestion", "set", "question"), group("^(?!AskUserQuestion$).*", "clear-tool")],
       PostToolUse: [group(ALL_TOOLS, "clear-tool")],
-      // A granted tool that failed: no PostToolUse follows it. (A tool the human refused at
-      // the prompt fires no hook at all in Claude Code 2.1.288; the next prompt clears.)
+      // A granted tool that failed: no PostToolUse follows it. (A tool the human refused at the
+      // prompt, by Esc or "No", fires no hook at all in Claude Code 2.1.308; the next prompt clears.)
       PostToolUseFailure: [group(ALL_TOOLS, "clear-tool")],
       UserPromptSubmit: [group(undefined, "clear")],
       Stop: [group(undefined, "clear")],
@@ -272,8 +278,15 @@ export function runHook(event, env = process.env) {
   // (OATS_NODE_BIN, a path that survives a Node upgrade), else this process's own, as written
   // before the kernel set it. Never a warning: an older kernel is not a defect.
   const node = typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
-  const warning = writeClaudeSettings({ home: real, script, node, cli, marker, stopFailure: takesStopFailure(env) });
-  return warning ? { warning } : {};
+  // One probe answers for the settings and for `dialogClaims`. `reported` only when these hooks were
+  // written (every warning of writeClaudeSettings means they were not) and this Claude fires them: the
+  // same version rule, so an older Claude, an unknown executable or a failed --version answers nothing
+  // and the home reads `unknown`, never covered. Replacement includes absence: the kernel drops an
+  // earlier `reported` when this hook answers nothing.
+  const stopFailure = takesStopFailure(env);
+  const warning = writeClaudeSettings({ home: real, script, node, cli, marker, stopFailure });
+  if (warning) return { warning };
+  return stopFailure ? { dialogClaims: "reported" } : {};
 }
 
 /** The upgrade hook's answer for its phase (OATS_UPGRADE_PHASE) and the exit status it
