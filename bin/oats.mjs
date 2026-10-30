@@ -50,7 +50,7 @@ const { assertNoPartialUpgrade } = await kernelImport("upgrade-state", () => imp
 const { runtimeNameWarning, noteRuntimeName } = await kernelImport("deprecation", () => import("../lib/deprecation.mjs"));
 const { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } = await kernelImport("errors", () => import("../lib/errors.mjs"));
 const {
-  LAYERS, OATS_PACKAGE_NAME, OATS_VERSION, manifestOperations, upgradeHomeMeta,
+  LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
   findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, writeHomeRecord, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
@@ -70,6 +70,7 @@ const { qualifiedSoulName, soulCandidates, soulsOffered } = await kernelImport("
 const { parseConfigData } = await kernelImport("config-data", () => import("../lib/config-data.mjs"));
 const remoteModule = await kernelImport("remote", () => import("../lib/remote.mjs"));
 const { sameRepo } = await kernelImport("repo-moves", () => import("../lib/repo-moves.mjs"));
+const { OATS_PACKAGE_NAME } = await kernelImport("version", () => import("../lib/version.mjs"));
 const { activateLocalInputs, localRevision } = await kernelImport("local-inputs", () => import("../lib/local-inputs.mjs"));
 const { default: YAML } = await kernelImport("yaml", () => import("yaml"));
 const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await kernelImport("servers", () => import("../lib/servers.mjs"));
@@ -3703,7 +3704,7 @@ async function onboardCmd() {
   // works IN it — there is no special "workspace clone" (discovery reads the host over the remote).
   const cloneDirOf = (m) => join(dir, m.name === "agents" ? "agents-repo" : m.name);
   const clonePresent = (m, cloneDir) => {
-    const declared = ctx.local?.clones && typeof ctx.local.clones === "object" ? ctx.local.clones[Object.keys(ctx.local.clones).find((key) => sameRepo(key, m.key))] : undefined;
+    const declared = ctx.local?.clones && typeof ctx.local.clones === "object" ? Object.entries(ctx.local.clones).find(([written]) => sameRepo(written, m.key))?.[1] : undefined;
     const candidate = typeof declared === "string" && declared.trim() ? resolve(dir, declared) : cloneDir;
     return existsSync(join(candidate, ".git")) ? candidate : null;
   };

@@ -146,6 +146,9 @@ test("a soul or a capability named by the full key answers to either spelling", 
   assert.equal(soulNameMatches(`${OLD_OKF}/keeper`, { name: "keeper", repoKey: NEW_OKF }), true);
   assert.equal(soulNameMatches(`${NEW_OKF}/keeper`, { name: "keeper", repoKey: OLD_OKF }), true);
   assert.equal(soulNameMatches("github.com/acme/oats-okf/keeper", { name: "keeper", repoKey: NEW_OKF }), false);
+  const external = { external: [{ source: `git:${OLD_OKF}@main`, soul: { name: "keeper", repoKey: OLD_OKF } }] };
+  assert.equal(findSoulEntry(external, `${NEW_OKF}/keeper`).repoKey, OLD_OKF, "an external soul by the other spelling");
+  assert.equal(findSoulEntry(external, `${OLD_OKF}/keeper`).repoKey, OLD_OKF);
   const rows = [{ name: "cap", kind: "member", repoKey: NEW_OKF }];
   assert.equal(selectCapabilityRow(rows, "cap", { member: OLD_OKF }), rows[0]);
 });
