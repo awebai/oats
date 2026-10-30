@@ -182,7 +182,7 @@ test("status rows read the attributed human through the messaging slot; the labe
   });
 });
 
-test("remote rows relay a host's attributedHuman under the same read rule", async (t) => {
+test("remote rows relay a host's attributedHuman and spawnedBy under the local rows' read rules", async (t) => {
   const d = v2Deployment({ t });
   const remoteHome = fixtureBase("o-");
   t.after(() => rmSync(remoteHome, { recursive: true, force: true }));
@@ -194,6 +194,8 @@ test("remote rows relay a host's attributedHuman under the same read rule", asyn
       { instance: "unlabelled", attributedHuman: null },
       { instance: "hostile", attributedHuman: "Ada\u001b]8;;x" },
       { instance: "older-host" },
+      { instance: "spawned", spawnedBy: { instance: "boss", home: "/remote/agents/dev/instances/boss" } },
+      { instance: "spawned-malformed", spawnedBy: { instance: "boss", home: "/remote/agents/dev/instances/boss", extra: 1 } },
     ];
     const result = await rosterGroups({ io: { execFileAsync: async () => JSON.stringify({ root: "/remote/agents", agents: [{ name: "dev", instances }] }) } });
     const relayed = Object.fromEntries(result.groups[0].instances.map((i) => [i.instance, i]));
@@ -201,7 +203,35 @@ test("remote rows relay a host's attributedHuman under the same read rule", asyn
     assert.equal(relayed.unlabelled.attributedHuman, null);
     assert.equal(relayed.hostile.attributedHuman, null);
     assert.equal(relayed["older-host"].attributedHuman, null, "a host whose kernel predates the feature reads null, as every row fact does");
+    assert.deepEqual(relayed.spawned.spawnedBy, { instance: "boss", home: "/remote/agents/dev/instances/boss" });
+    assert.equal(relayed["spawned-malformed"].spawnedBy, null, "the local row's reader, again on this side");
+    assert.equal(relayed["older-host"].spawnedBy, null);
   });
+});
+
+test("spawnedBy on a row is the record's only in its shape: {instance, home}, nothing else; a home spawned before the feature has no key", async (t) => {
+  const handEdited = (name, value) => {
+    const { home } = spawn(fx, name);
+    const meta = record(home);
+    if (value === undefined) delete meta.spawnedBy; else meta.spawnedBy = value;
+    writeFileSync(join(home, "instance.json"), JSON.stringify(meta, null, 2) + "\n");
+  };
+  const good = { instance: "boss", home: "/srv/agents/dev/instances/boss" };
+  const cases = [
+    ["sb-good", good, good],
+    ["sb-null", null, null],
+    ["sb-extra-key", { ...good, human: "Mallory" }, null],
+    ["sb-relative-home", { instance: "boss", home: "dev/instances/boss" }, null],
+    ["sb-bad-name", { instance: "Boss Man", home: good.home }, null],
+    ["sb-name-only", { instance: "boss" }, null],
+    ["sb-string", "boss", null],
+    ["sb-array", [good], null],
+  ];
+  for (const [name, value] of cases) handEdited(name, value);
+  handEdited("sb-older", undefined);
+  const status = rows(fx);
+  for (const [name, , expected] of cases) await t.test(name, () => assert.deepEqual(status[name].spawnedBy, expected));
+  await t.test("sb-older", () => assert.equal(Object.hasOwn(status["sb-older"], "spawnedBy"), false));
 });
 
 test("version --json lists the spawn-attribution feature", () => {
