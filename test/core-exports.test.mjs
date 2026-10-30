@@ -55,7 +55,7 @@ const NAMES = [
   "unestablishedNote", "upgradeHoldsClaim", "upgradeHomeMeta", "upgradeLaunchRecipe", "validateLaunchConfig",
   "validateLaunchConfigDefaults", "withConfigFile", "withLaunchModel", "withSafeTaskPrompt", "workspaceOf",
   "workspaceSoulId", "worktreeBytes", "worktreeDigests", "worktreeGitPaths", "writeKernelShim",
-  "writeRetirementBaseline"
+  "writeRetirementBaseline", "writeSpawnRecord"
 ];
 const ASYNC = ["attachInstanceSession", "spawnInstanceAsync", "suggestSpawnName"];
 
