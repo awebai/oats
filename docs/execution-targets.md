@@ -1504,6 +1504,20 @@ oats session attach --home /abs/home --detach-key 'C-\'
   inspect is unknown, never stopped.
   `session inspect --server <id> --home <home> --json` relays the execution
   host's `running`, or its absence, as the host answered.
+  With feature `wake-hold`, every successful result also carries `wakeHold`, a
+  stopped, never-launched or missing home included. It reads the home's record
+  ([`dialogClaims`](capabilities.md#commands-and-hooks)): `on-claims` when any
+  capability answered `reported` (this home's dialogs become the claims a wake
+  holds on); otherwise `not-exposed` when any answered `none` (a capability
+  vouches that this harness has no dialog an Enter can answer); otherwise
+  `unknown`, which covers no record and an unreadable one, and which a waiter
+  treats as not covered. Its scope is the kernel's wake delivery only: the aweb
+  host wake broker types on its own path, joined teams included, so `on-claims`
+  doesn't cover mail. The value is `on-claims`, not "protected", because a
+  dialog can still take the Enter ([What a hold leaves
+  open](schedules.md#what-a-hold-leaves-open)). The hold itself never reads this
+  field: it reads claims, always. Remote inspect relays the host's field, or its
+  absence, as the host answered.
   A home whose `instance.json` disagrees with its session receipt is refused
   with `E_RUNTIME_AUTHORITY_MISMATCH` before any pane or process is read; the
   same refusal from any other session command, or in the answer of
@@ -1524,6 +1538,11 @@ oats session attach --home /abs/home --detach-key 'C-\'
   stopped-session checks, and a window where OATS cannot tell which pane is
   the agent's, still refuse before input. The text goes to the agent's pane
   (`paneId`), even when the person's focus is in another pane of the window.
+
+  Input takes no hold: it types whether or not a claim is set, and its Enter
+  can answer an open dialog, so don't run it from a script or an agent at a
+  session that may show one ([A held wake](schedules.md#a-held-wake) is the
+  scheduled path's).
 
   Before Enter, a size-based floor (200 ms plus 3 ms per KiB) and read-only
   settling polls share one **monotonic 2-second observation budget**, starting

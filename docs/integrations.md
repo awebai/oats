@@ -111,9 +111,8 @@ operations in full.
   The start reports that decision (`channel-dev-confirmation`); readiness
   becomes quiet after the kernel records a completed confirmation. If Claude
   ignored the flag, readiness reports `claude-channels-unavailable`.
-  `settings.oats.aweb.delivery: session` or
-  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt. Which one a
-  host uses, and its host wake broker, are the operator's choices in
+  `settings.oats.aweb.claudeChannelMode: approved` stops the prompt. That
+  setting and the host's wake broker are the operator's choices in
   oats.setup's `/oats-host-delivery`. `oats aweb roster` lists the team:
   its membership certificates and workspaces, one entry per alias with its
   sources, status and kind (global identities first), and says when either
