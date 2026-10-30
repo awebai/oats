@@ -130,6 +130,9 @@ export function claudeWaitingSettings({ script, node, cli, marker = "", home = "
       PostToolUseFailure: [group(ALL_TOOLS, "clear-tool")],
       UserPromptSubmit: [group(undefined, "clear")],
       Stop: [group(undefined, "clear")],
+      // An API error ended the turn, past Claude's own retries: fires instead of Stop, and
+      // nothing runs after it, so only this hook can say the session is stuck (#1667).
+      StopFailure: [group(undefined, "set", "attention")],
       SessionEnd: [group(undefined, "clear")],
     },
   };

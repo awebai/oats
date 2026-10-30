@@ -1098,6 +1098,23 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
+| `StopFailure` | none | set `attention`, the error as its message (see "A failed turn" below) |
+
+**A failed turn** (oats.core 2.10.0,
+[#1667](https://github.com/awebai/oats/issues/1667)). A turn that ends in a
+provider error stops the session with nothing left to run an instruction, so
+the harness adapter reports it. The claim is reason `attention` with the
+message `Turn failed: <the error>`, cut to fit. It clears on that instance's
+next turn or at a session boundary.
+- **Claude Code:** `StopFailure` fires in place of `Stop` once Claude's own
+  retries have run out (Claude Code 2.1.308). The message comes from the
+  hook's `last_assistant_message`, else its `error` class.
+- **pi:** the `@awebai/oats-pi` bridge reports it as producer `oats.pi`, from
+  `agent_settled`, once pi has stopped retrying and recovering. A transient
+  error pi retried away raises nothing, and neither does an abort. A pi before
+  0.80.4 has no `agent_settled` and reports nothing.
+- **Codex:** not reported. A provider error fires neither its `Stop` hook nor
+  `notify` (Codex 0.160.0), so nothing can observe the turn from outside it.
 
 **One home per settings file.** The launch hook bakes the home it writes the
 settings for into every command, as its real path (oats.core 2.4.1). The

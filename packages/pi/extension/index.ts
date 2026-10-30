@@ -8,6 +8,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { appendLogEntry, PACKAGED_SKILLS_DIR } from "./core-loader.mjs";
+import { reportFailedTurn } from "./failed-turn.mjs";
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -26,6 +27,7 @@ export default function (pi: ExtensionAPI) {
 
   if (isInstance) {
     holdOpeningTask(pi);
+    reportFailedTurn(pi, agentHome!);
 
     pi.on("session_compact", async (event) => {
       if (!existsSync(join(agentHome!, "STATE.md"))) return;
