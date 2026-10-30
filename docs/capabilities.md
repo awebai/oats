@@ -1193,6 +1193,14 @@ or at a session boundary.
 - **Codex:** not reported. A provider error fires neither its `Stop` hook nor
   `notify` (Codex 0.160.0), so nothing can observe the turn from outside it.
 
+**A pi home with no provider** (oats.core 2.12.0). pi starts with no provider, takes
+its prompt and shows no error, so the home reads as running while nothing happens.
+On a real pass, spawn and launch hooks run `OATS_HARNESS_EXECUTABLE --list-models`,
+bounded at 3 s, and warn only when pi answers "No models available". The warning
+never refuses. No executable handed, a failed or slow probe, or any other answer
+says nothing. The hook's environment isn't the pane's, so a provider set only
+through a launch configuration's `env` can warn on a pi that does have one.
+
 **Whether a home is covered** (oats.core 2.11.0). Spawn and launch hooks answer
 [`dialogClaims: "reported"`](#commands-and-hooks), so the home reads `wakeHold:
 "on-claims"`, only when they wrote these settings and the Claude Code this launch

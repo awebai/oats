@@ -31,6 +31,8 @@
  * baked node and CLI paths follow the kernel the home now runs with. The hook
  * that runs is this module copy in the home, whatever oats.core is current.
  *
+ * For a pi instance, spawn and launch only warn when pi says it has no provider (piHasNoProvider).
+ *
  * The upgrade hook (`oats instance upgrade`, a stopped home) adopts a home whose
  * oats.core moves: spawn and launch answer no meta, so the only state oats.core
  * keeps is those settings entries, which name the module copy's fixed path and
@@ -47,6 +49,8 @@ export const WAITING_SCRIPT = "claude-waiting.sh";
 export const HOOK_TIMEOUT_SECONDS = 5;
 /** Claude Code's matcher for every tool. */
 const ALL_TOOLS = "*";
+
+export const PI_NO_PROVIDER_WARNING = "oats.core: pi has no provider on this machine, so this session will do nothing. Log in with /login in pi, or set a provider's API key, then restart it; or run this soul on another harness: oats soul launch set <soul> --harness <h>";
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -252,11 +256,24 @@ export function writeClaudeSettings({ home, script, node, cli, marker = "", stop
   return null;
 }
 
+/** Whether this pi says it has no model at all. A pi with no provider starts, takes its prompt and
+ *  shows no error, so its home reads as running while nothing happens. Bounded, and only pi's own
+ *  words count: no executable handed, a failed or slow probe, or any other answer is `false`. */
+export function piHasNoProvider(env) {
+  const executable = env.OATS_HARNESS_EXECUTABLE;
+  if (typeof executable !== "string" || !isAbsolute(executable)) return false;
+  try {
+    const said = execFileSync(executable, ["--list-models"], { env, encoding: "utf8", timeout: 3000, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "ignore"] });
+    return said.trimStart().startsWith("No models available");
+  } catch { return false; }
+}
+
 /** The hook's answer for one event, given its environment. Never throws. */
 export function runHook(event, env = process.env) {
   if (event !== "spawn" && event !== "launch") return {};
-  if (env.OATS_HARNESS !== "claude") return {};
   if (env.OATS_LAUNCH_PREVIEW === "1") return {};
+  if (env.OATS_HARNESS === "pi") return piHasNoProvider(env) ? { warning: PI_NO_PROVIDER_WARNING } : {};
+  if (env.OATS_HARNESS !== "claude") return {};
   const home = env.OATS_INSTANCE_HOME;
   if (typeof home !== "string" || !isAbsolute(home)) return { warning: "oats.core: OATS_INSTANCE_HOME is not an absolute path; the Claude Code waiting hooks were not written" };
   const cli = env.OATS_CLI_BIN;
