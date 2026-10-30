@@ -6,9 +6,9 @@
 // server here is a socket inside the fixture. A terminal is a session of that server whose pane
 // runs an interactive shell; the command is typed at it, keys are sent as a terminal sends them,
 // the screen is what `capture-pane` prints, and the shell records the exit status. A signal goes
-// only to a pid the command's own wrapper wrote down. Every wait is on what a pane shows or on a
-// file, and the file has a budget: once it is spent every further wait fails at once, so a
-// program that hangs cannot hold a shard.
+// only to a pid the command's own wrapper wrote down. Every wait is on what a pane shows, on a
+// file or on the process table, and the file has a budget: once it is spent every further wait
+// fails at once, so a program that hangs cannot hold a shard.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -32,7 +32,7 @@ const REAL_TMUX = hostTool("tmux");
 /** Outside CI a host without tmux skips the terminal tests; in CI test/tmux-in-ci.test.mjs fails. */
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui` in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const STTY = REAL_TMUX ? systemExecutable("stty") : null; // not one of the fixture's tools: called by its path
-const PS = REAL_TMUX ? systemExecutable("ps") : null; // the same: front/tmux asks it who started it
+const PS = REAL_TMUX ? systemExecutable("ps") : null; // the same: front/tmux asks it who started it, addingToList what a TUI's children run
 const base = fixtureBase("oats-tui-"); // short: a socket path lives in it
 const restoreEnvironment = REAL_TMUX ? isolateSessionEnvironment(base) : () => {};
 const TERM = join(base, "term.sock");
@@ -173,6 +173,21 @@ function groupOf(pid) {
     const text = stat !== null ? stat.slice(stat.lastIndexOf(")") + 2).split(" ")[2] : execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8", timeout: 10000 }).trim();
     return /^[0-9]+$/.test(text ?? "") ? Number(text) : null;
   } catch { return null; }
+}
+
+/** What keeps the process `pid` from having heard the end of the add of its deployment to this
+ *  computer's list, as rows of `ps`, none once it has: a child runs `oats deployments add`, or a
+ *  child is on its way out and not yet reaped. The TUI takes a change off its list where it reaps
+ *  the child, and a child stops showing what it ran before that: first its arguments go, and `ps`
+ *  prints its name in brackets (in parentheses on macOS) with the process still running, and then
+ *  it is a zombie. One `-o` a column, since BSD's `ps` reads a comma after `=` as more of the
+ *  heading; `-ww`, since its width is not lifted for a pipe. */
+function addingToList(pid) {
+  const rows = lines(execFileSync(PS, ["-ww", "-A", "-o", "ppid=", "-o", "stat=", "-o", "args="], { encoding: "utf8", timeout: 10000 }));
+  return rows.filter((row) => {
+    const [, parent, state, args] = row.match(/^\s*(\d+)\s+(\S+)\s*(.*)$/) ?? [];
+    return Number(parent) === pid && (state.startsWith("Z") || /^[[(]/.test(args) || args.includes("/bin/oats.mjs deployments add "));
+  });
 }
 
 test.after(() => {
@@ -599,6 +614,13 @@ async function tui(term, given = {}, { record = true, world = WORLD, args = `--d
       if (own !== null) for (const pid of pids) { const group = groupOf(pid); assert.ok(group !== null && group !== own, `what holds the roster read (${pid}, in the process group ${group}) is in a group, and not in the TUI's (${own}), ${why}`); }
       return pids;
     },
+    /** The add of the deployment this run started in is over, and the TUI knows: a run in a
+     *  deployment starts it before it can take the answer of a read, so it has begun once a read's
+     *  rows are on the screen, and a run that started in the switcher has none. Nothing on the screen
+     *  says so (docs/tui.md, "Opening a deployment lists it"). */
+    async added(why) {
+      await until(term, () => addingToList(run.pid).length === 0, `the add to this computer's list to be over ${why}`, () => addingToList(run.pid));
+    },
     /** The children of a read that was in flight are gone. Left alone, what held the read would
      *  run for half a minute, far longer than any wait of this file: the TUI ended its group. */
     async childrenGone(pids, why) {
@@ -778,6 +800,12 @@ async function leavesTheTerminalIntact(t, { how, status, world = WORLD, env = {}
   assertRunningModes(term, `while it runs, before ${how}`);
   assert.deepEqual(everything(), mine, "the TUI made no session, window or pane");
 
+  // The TUI names a change to the list still running in one line above the prompt as it leaves, on
+  // every way out (docs/tui.md), and the add it starts with is one. What is read below is a leave
+  // with no such line, so that row is the command line; packages/tui/test/main.test.mjs reads the
+  // line itself.
+  // Waited for first: the reads `arrive` holds are held for as long as a row needs them, no longer.
+  await run.added(`before ${how}`);
   const reading = await arrive(term, run);
   await leave(term, run);
   await run.childrenGone(reading, `after ${how}`);
@@ -1085,6 +1113,8 @@ test("Ctrl+Z, the deployment removed, fg: the view returns and says, in the shar
   const world = await deployment(t); // its own: this test removes it
   const term = await terminal(t, { world });
   const run = await tui(term, {}, { world, record: false });
+  // An add that came to the folder after it was gone would fail, and the TUI would say so under the title.
+  await run.added("before the deployment is removed");
   term.press("C-z");
   await until(term, () => term.flags().alternate_on === "0" && term.atPrompt(), "the shell's prompt on its own screen after Ctrl+Z");
   renameSync(world.dep, `${world.dep}-gone`);
