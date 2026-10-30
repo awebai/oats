@@ -63,10 +63,11 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       if (line) { says = doc.createElement("p"); says.className = "start-kernel-says"; const text = doc.createElement("bdi"); text.textContent = line; says.append("OATS says: ", text); }
       outcome.replaceChildren(...[differed, says].filter(Boolean)); outcome.hidden = !outcome.children.length;
     };
-    // A refusal the Desktop has a sentence for (start-messages.mjs): the sentence is the status, and under it
-    // the kernel's message, attributed and filtered by the shared rule (kernel-lines.mjs kernelLines), one <p>
-    // for each line it answers. No name stands before a text that is not shown. The message is the answer's
-    // own (`answered`, views/common.mjs), never the transport's stand-in for an answer without one.
+    // A refusal the Desktop has a sentence for (start-messages.mjs, or the start rule's `startedNothing` the route
+    // answers): the sentence is the status, and under it the kernel's message, attributed and filtered by the
+    // shared rule (kernel-lines.mjs kernelLines), one <p> for each line it answers. No name stands before a text
+    // that is not shown. The message is the answer's own (`answered`, views/common.mjs), never the transport's
+    // stand-in for an answer without one.
     const showRefused = (sentence, error) => {
       status.textContent = sentence;
       outcome.replaceChildren(...kernelLines(error.answered, null, DESKTOP_TERMS).map(line => { const says = doc.createElement("p"); says.className = "start-kernel-says"; says.textContent = line; return says; }));
@@ -201,7 +202,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         if (!owns()) return;
         // A start that stopped at a launch prompt says what happened in the Desktop's words, and so does a
         // refusal the Desktop has a sentence for; any other refusal shows the server's message, as before.
-        const sentence = startRefusalSentence(error.code);
+        const sentence = error.startedNothing ?? startRefusalSentence(error.code);
         if (error.incomplete) showRetained(error); else if (sentence) showRefused(sentence, error); else status.textContent = error.message;
         // A timeout may have happened after launch, and a retained session is still there. Recheck before
         // offering another start.
