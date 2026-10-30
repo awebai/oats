@@ -1,6 +1,6 @@
 ## Upgrade
 
-- **Keep `@awebai/oats` installed: this release installs over it, under the same name.** OATS is moving to the `oats-project` organisation in stages, and this release is the bridge. Nothing asks you to change a string, and a deployment that changes none behaves as before. `npm rm -g @awebai/oats` leaves running sessions without their kernel until they restart, when a start rewrites each home's `.oats/bin/oats` and hooks, and the host's schedule unit stays on the old path until `oats schedule host install` runs ([The move to the oats-project organisation](../upgrading.md#the-move-to-the-oats-project-organisation)).
+- **Keep `@awebai/oats` installed: this release installs over it, under the same name.** OATS is moving to the `oats-project` organisation in stages, and this release is the bridge. Nothing asks you to change a string, and a deployment that changes none behaves as before. `npm rm -g @awebai/oats` leaves running sessions without their kernel until they restart, when a start rewrites each home's `.oats/bin/oats` and hooks, and the host's schedule unit stays on the old path until `oats schedule host install` runs ([The move to the oats-project organisation](../upgrading.md#the-move-to-the-oats-project-organisation)). Installing the other name with `--force` and then removing the old one also deletes the `oats` command.
 
 ## Added
 
