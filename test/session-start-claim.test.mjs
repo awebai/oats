@@ -17,7 +17,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnChild, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { retireClaimPath, startInstanceSession } from "../lib/core.mjs";
 import { resumeSessions } from "../lib/session-resume.mjs";
@@ -256,4 +256,29 @@ test("a scheduled start refused at the home's claim is a skip: its reason names 
   const next = (await tick("2026-10-28T12:02:00Z")).find((r) => r.id === "wake-w1");
   assert.equal(next.action, "started", JSON.stringify(next));
   await waitUntil(() => f.launches(i.name).length === 2, "the scheduled start's harness to run", 30000);
+});
+
+test("a start of a home given through a link answers what a start of the home answers beside a partial upgrade: E_UPGRADE_PARTIAL while no upgrade holds the claim, and E_LIFECYCLE_BUSY naming the upgrade while one does, from the CLI and the kernel, before any effect", TMUX, async (t) => {
+  const f = fixture(t);
+  const i = await f.lostHome("w1");
+  mkdirSync(join(i.home, ".oats"), { recursive: true });
+  writeFileSync(join(i.home, ".oats", "upgrade-receipt.retry-upgrade.json"), JSON.stringify({ action: "upgrade", status: "partial", instance: i.name, idempotencyKey: "retry-upgrade", planRevision: "revision-partial" }));
+  // Outside the instances directory: the link's own spelling names no claim and no receipt of H.
+  const link = join(f.fx.base, "link-to-w1");
+  symlinkSync(i.home, link);
+  const kernel = (home) => f.fx.inEnv(() => { try { startInstanceSession(home); return null; } catch (e) { return e; } });
+  for (const home of [i.home, link]) {
+    assert.equal(f.start(home).error.code, "E_UPGRADE_PARTIAL", `the CLI, through ${home}`);
+    assert.equal((await kernel(home))?.code, "E_UPGRADE_PARTIAL", `the kernel, through ${home}`);
+  }
+  await f.claim(i, "upgrade");
+  const claimed = readFileSync(i.lock, "utf8");
+  for (const home of [i.home, link]) {
+    const cli = f.start(home);
+    assert.deepEqual([cli.error.code, cli.error.details?.action], ["E_LIFECYCLE_BUSY", "upgrade"], `the CLI, through ${home}: ${JSON.stringify(cli)}`);
+    const e = await kernel(home);
+    assert.deepEqual([e?.code, e?.details?.action], ["E_LIFECYCLE_BUSY", "upgrade"], `the kernel, through ${home}: ${e?.message}`);
+  }
+  assert.equal(readFileSync(i.lock, "utf8"), claimed, "the upgrade's claim is untouched");
+  assert.equal(f.launches(i.name).length, 1, "nothing was started");
 });
