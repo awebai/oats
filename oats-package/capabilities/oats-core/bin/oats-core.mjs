@@ -140,12 +140,17 @@ export function claudeWaitingSettings({ script, node, cli, marker = "", home = "
   const group = (matcher, ...args) => ({ ...(matcher === undefined ? {} : { matcher }), hooks: [entry(...args)] });
   return {
     hooks: {
-      Notification: [group("permission_prompt", "set", "permission"), group("elicitation_dialog", "set", "question")],
+      // Where PermissionRequest is written the Notification is its second chance, seconds later.
+      Notification: [group("permission_prompt", stopFailure ? "set-late" : "set", "permission"), group("elicitation_dialog", "set", "question")],
+      // Fires as a permission dialog opens. Under the check StopFailure takes, so `reported` means
+      // the same hooks on every home. No matcher: an AskUserQuestion fires it too, and the
+      // script's guard keeps a `permission` from relabelling an open question.
+      ...(stopFailure ? { PermissionRequest: [group(ALL_TOOLS, "set", "permission")] } : {}),
       // Tool clears are `clear-tool`: skipped when a subagent made the call.
       PreToolUse: [group("AskUserQuestion", "set", "question"), group("^(?!AskUserQuestion$).*", "clear-tool")],
       PostToolUse: [group(ALL_TOOLS, "clear-tool")],
-      // A granted tool that failed: no PostToolUse follows it. (A tool the human refused at
-      // the prompt fires no hook at all in Claude Code 2.1.288; the next prompt clears.)
+      // A granted tool that failed: no PostToolUse follows it. (A tool the human refused at the
+      // prompt, by Esc or "No", fires no hook at all in Claude Code 2.1.308; the next prompt clears.)
       PostToolUseFailure: [group(ALL_TOOLS, "clear-tool")],
       UserPromptSubmit: [group(undefined, "clear")],
       Stop: [group(undefined, "clear")],

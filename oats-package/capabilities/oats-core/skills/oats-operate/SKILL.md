@@ -294,6 +294,11 @@ claim is written, and claims can't cover every Claude dialog: the rate-limit men
 fires no hook of its own, and `pro-trial-expired` opens the same way at startup.
 It says nothing about mail either: the aweb host wake broker types on its own path.
 
+A hold that runs long is a reason to look, because a claim can outlive its dialog.
+Claude Code fires no hook on Esc or "No" at a dialog, so a refused one's claim stays
+until the next prompt. Send a prompt in that session, or run `oats instance waiting
+clear --producer oats.core --home <home>`.
+
 `oats session inspect --home <abs-home> --json` reports the current window's
 `size: { cols, rows }` in cells when `present` is true and the kernel advertises
 `session-inspect-size` in `oats version --json`. Size is absent otherwise.

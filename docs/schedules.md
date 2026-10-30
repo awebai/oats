@@ -895,6 +895,13 @@ wake happens, and only someone outside it can act: clear a stale claim
 (`oats instance waiting clear --producer <producer> --home <home>`), answer the
 dialog, or restart the session.
 
+**A claim can outlive its dialog.** There's no expiry, and a stale claim holds like
+a live one, so a long hold is a reason to look. A refused dialog is the usual
+case: Claude Code fires no hook on Esc or "No" (measured on 2.1.308), so the
+claim stays until the next prompt. Send a prompt in that session, or run the clear
+above. An approved subagent's dialog can leave its claim until the main thread's
+next event.
+
 | Hold | A person sees | The waiter's parent sees |
 | --- | --- | --- |
 | A live claim, a stale one included | the needs-input marker and `! needs input` in `oats status`: the claim doing the holding is the one displayed | at its own checkpoint, the event or the schedule's record |
@@ -916,7 +923,14 @@ more than that:
   dialog, and the kernel can't see which load.
 - **A dialog that opens before the Enter is still answered.** That covers one that
   opens between the read and the Enter, and the lag between a dialog opening and
-  its claim being written.
+  its claim being written. A claim lands after its dialog: a `permission` claim
+  took 395 to 514 ms, median 433 ms over 10 samples, end to end from the dialog on
+  screen to the claim written, on Claude Code 2.1.308 on one host. That's against
+  about 6.5 s from `Notification` alone, the only hook on a Claude Code older than
+  2.1.78. It's a window that still exists: the claim lands after the dialog opens,
+  and a wake's input settles for at least 200 ms before its Enter, with no second
+  read. Lag for an `elicitation_dialog` question isn't measured, and neither is
+  any other Claude Code version, or a subagent's dialog.
 - **A dialog that fires no hook has no claim.** Claims can't cover every Claude
   dialog: the `/rate-limit-options` menu fires no hook of its own (measured on
   Claude Code 2.1.308), and `pro-trial-expired` opens the same way at startup,

@@ -1,6 +1,7 @@
 #!/bin/sh
 # oats.core: Claude Code waiting emitter.
 #   claude-waiting.sh set <permission|question|attention|failed-turn> <node> <cli> <marker> <home>
+#   claude-waiting.sh set-late <permission> <node> <cli> <marker> <home>   (a Notification where PermissionRequest is written: a second chance, not a second set)
 #   claude-waiting.sh clear <node> <cli> <marker> <home>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; not debounced)
 #   claude-waiting.sh clear-tool <node> <cli> <marker> <home>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
 # <marker> is the debounce marker's path, from the launch hook, or '' for none.
@@ -10,10 +11,11 @@
 # It reports through `oats instance waiting set|clear --producer oats.core` that the
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
 # A set carries the text of what the session waits on, as claude-waiting-message.mjs (beside
-# this script) reads it from the hook's input: an AskUserQuestion's question, a Notification's
-# own words, or the error of a turn that failed. `failed-turn` (StopFailure) is no reason of its
-# own: it reads as question, and the reader can make it attention, for an error class known to
-# open no dialog. No text (none in the input, or the reader failed) sets the claim without one.
+# this script) reads it from the hook's input: an AskUserQuestion's question, a PermissionRequest's
+# tool, a Notification's own words, or the error of a turn that failed. `failed-turn` (StopFailure)
+# is no reason of its own: it reads as question, and the reader can make it attention, for an error
+# class known to open no dialog. No text (none in the input, or the reader failed) sets the claim
+# without one.
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, never waits
@@ -65,8 +67,11 @@ if [ -e /dev/fd/0 ]; then exec 3<&0; else exec 3</dev/null; fi
 exec </dev/null
 
 action=$1
+late=
 case "$action" in
-  set)
+  set|set-late)
+    [ "$action" = set ] || late=1
+    action=set
     reason=$2; node=$3; cli=$4; marker=${5:-}; home=${6:-}
     case "$reason" in permission|question|attention|failed-turn) ;; *) exit 0 ;; esac
     ;;
@@ -395,6 +400,9 @@ if [ "$action" = set ]; then
   # A turn that failed with a dialog open (a background subagent's) leaves that dialog's claim:
   # an `attention` in its place would let a wake type into the dialog.
   [ "$reason" = failed-turn ] && { [ "$intent" = permission ] || [ "$intent" = question ]; } && yield_to_intent
+  # PermissionRequest named the tool and its claim landed: a Notification seconds later, whose own
+  # words may name none, adds nothing. If it didn't land, this is the set that puts it right.
+  [ -n "$late" ] && [ "$intent" = permission ] && [ "$(applied_of)" = permission ] && exit 0
   began=$(date +%s)
   # The intent first, so this event is ordered before anything later; its text after. A failed
   # turn's reason goes beside its text, so a later event always wins.

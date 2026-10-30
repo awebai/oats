@@ -8,10 +8,14 @@
 
   What this leaves open ([What a hold leaves open](../schedules.md#what-a-hold-leaves-open)):
   - Harnesses with no claims stay exposed. pi homes read `unknown`: an extension can open its own dialog, and the kernel can't see which load.
-  - A dialog that opens before the Enter is still answered, whether it opens between the read and the Enter or in the lag between a dialog opening and its claim being written.
+  - A dialog that opens before the Enter is still answered, whether it opens between the read and the Enter or in the lag between a dialog opening and its claim being written. A `permission` claim took 395 to 514 ms from the dialog on screen, median 433 ms over 10 samples, on Claude Code 2.1.308 on one host, against about 6.5 s from `Notification` alone. It's a window that still exists. Lag for an `elicitation_dialog` question, a subagent's dialog and other Claude Code versions isn't measured.
   - A dialog that fires no hook has no claim, so claims can't cover every Claude dialog: the `/rate-limit-options` menu fires no hook of its own (measured on Claude Code 2.1.308), and `pro-trial-expired` opens the same way at startup, with no failed turn behind it.
   - `oats session input` run by a script or an agent can answer a dialog. Don't run it at a session that may show one.
   - The aweb host wake broker types on its own path, joined teams included, and isn't held.
+
+  A claim can also outlive its dialog, and there's no expiry. Claude Code fires no hook on Esc or "No" (measured on 2.1.308), so a refused dialog's claim stays until the next prompt, and on an idle home a wake holds behind it. A long hold is a reason to look: send a prompt in that session, or run `oats instance waiting clear --producer oats.core --home <home>`. An approved subagent's dialog can leave its claim until the main thread's next event.
+
+  oats.core 2.11.0 also sets the `permission` claim from Claude Code's `PermissionRequest` as the dialog opens, where `StopFailure` is written too. `Notification` stays as the fallback.
 
 ## Added
 

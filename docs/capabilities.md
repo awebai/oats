@@ -1129,6 +1129,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | --- | --- | --- |
 | `Notification` | `permission_prompt` | set `permission` |
 | `Notification` | `elicitation_dialog` | set `question` |
+| `PermissionRequest` | `*` | set `permission` (see "As a dialog opens" below) |
 | `PreToolUse` | `AskUserQuestion` | set `question` |
 | `PreToolUse` | `^(?!AskUserQuestion$).*` (every other tool) | clear, unless a subagent made the call |
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
@@ -1214,9 +1215,12 @@ Claude Code 2.1.300:
 - an `AskUserQuestion` gives its first question's own words
   (`tool_input.questions[0].question`), with `(+N more)` when it asks
   several;
+- a `PermissionRequest` carries no words, so it gives "Claude needs your
+  permission to use <tool>", from `tool_name`, and no text without one;
 - a `Notification` gives its `message`: "Claude needs your permission to use
-  Bash" for a permission prompt, "Claude Code needs your input" for an
-  elicitation dialog.
+  Bash" or, on 2.1.308, the bare "Claude needs your permission" for a
+  permission prompt, "Claude Code needs your input" for an elicitation dialog;
+- a `StopFailure` gives `Turn failed: <the error>`.
 
 The text is made one line, the kernel's refused characters are replaced with
 U+FFFD, and it is cut to 200 code points with `…`, so the kernel accepts it.
@@ -1227,10 +1231,26 @@ the latest event's text is ever applied. So a clear or a question that comes
 while an earlier set is still reading stands, and the earlier text never
 lands over it.
 
+**As a dialog opens** (oats.core 2.11.0). `PermissionRequest` fires as a
+permission dialog opens and only when one shows, so its claim lands with the
+dialog, where `Notification` alone comes seconds later. It's written under the
+check `StopFailure` takes, at each spawn and start, so `on-claims` means the same
+hooks on every home. `Notification` stays: it's the set on a Claude below that
+check, and above it a second chance that adds nothing once the claim has landed,
+even in words that name no tool. The hook only withholds. It doesn't hold the
+dialog back, so the claim lands after the dialog opens, and it can't answer one:
+this is the hook whose output could approve a dialog, and the script writes
+nothing to stdout and exits 0 whatever the CLI does (measured on 2.1.308 with a
+CLI that failed and printed an approval: the dialog stayed open).
+
 Claude Code shows an AskUserQuestion through its permission dialog, so that
-dialog's own `permission_prompt` follows the question's set: the script keeps
-the current reason in its marker (and the text beside it), and a permission
-prompt never relabels an open question or replaces its text. A granted tool that fails fires `PostToolUseFailure`, not
+dialog's own `PermissionRequest` and `permission_prompt` follow the question's
+set: the script keeps the current reason in its marker (and the text beside it),
+and a permission set never relabels an open question or replaces its text. A
+dialog over a failed turn's claim does replace it, whatever its reason: both
+reasons hold a wake, and the dialog is what a person can act on. With no usable
+marker every event just calls the CLI, so there the later set replaces the
+earlier one, either way. A granted tool that fails fires `PostToolUseFailure`, not
 `PostToolUse`, so that clears too.
 
 **Subagents' tool calls do not clear.** Background and parallel subagents
@@ -1244,14 +1264,18 @@ the first `"hook_event_name"`: a string value escapes its quotes, so that
 text holds top-level keys only. Anything else (no key, an input cut short,
 another key order, nothing read) means the main thread, and the clear goes
 ahead. A permission `Notification` carries no `agent_id` and no tool id,
-even when a subagent asked, so a claim never knows who set it.
+even when a subagent asked, so a claim never knows who set it. `PermissionRequest`
+sets whoever asked: a dialog is a dialog.
 
-**A refused permission prompt is not observable.** On Claude Code 2.1.288,
-answering "No" at a permission prompt interrupts the turn and fires no hook
-(no `PostToolUse`, `PostToolUseFailure`, `PostToolBatch` or `Stop`; probed).
-Claude then waits for the human ("What should Claude do instead?"), and the
-claim stays, still labelled `permission`, until the human's next prompt
-clears it.
+**A refused permission prompt is not observable.** On Claude Code 2.1.308,
+Esc and "No" at a permission prompt each interrupt the turn and fire no hook at
+all (no `PostToolUse`, `PostToolUseFailure`, `PermissionDenied`, `PostToolBatch`
+or `Stop`; measured with a logger on every event). Claude then waits for the
+human ("What should Claude do instead?"), and the claim stays, still labelled
+`permission`, until the next prompt clears it. A claim now exists for every
+dialog, so every refused one leaves it, and on an idle home a scheduled wake
+holds behind it. A person sends a prompt in that session, or runs `oats instance
+waiting clear --producer oats.core --home <home>` from anywhere.
 
 - **Its own entries only.** oats.core marks its entries by the absolute
   path of its `claude-waiting.sh`. Each run removes only the entries that
@@ -1416,7 +1440,8 @@ again" permission rules there.
   The notification carries no tool id, so there is no cheap fix. Not
   observed on Claude Code 2.1.288: a parallel `Read` and a backgrounded
   `Agent` call each finished before the notification (which came several
-  seconds after the dialog appeared), and the claim stayed.
+  seconds after the dialog appeared), and the claim stayed. Where
+  `PermissionRequest` is written, that notification sets the claim again.
 - If the marker and the claim disagree (someone deleted the marker by hand,
   say), a stale claim can remain until the turn ends, or the next set or
   clear or session boundary.
@@ -1427,7 +1452,8 @@ again" permission rules there.
   `Stop` or the human's prompt. A foreground subagent holds the main thread
   until it finishes, so after its prompt is approved the claim can last the
   whole subagent run. That shows "needs input" too long, never hides a real
-  block.
+  block. `PermissionRequest` makes it more common: every such dialog now sets
+  a claim, not only one left open for seconds.
 - A `Stop` or `UserPromptSubmit` always clears, even one the main thread
   produces while a subagent's prompt is open (a background subagent's
   completion is submitted as a prompt).
