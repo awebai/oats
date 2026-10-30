@@ -168,6 +168,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `status-liveness` | the local liveness on `oats status --json` instance rows is complete: `running` and `runtimeState` are read live at every call, from the row's recorded tmux server under the pane and shell-descendant rule, with `false` for a shell only on positive evidence and `null` when the reading is inconclusive ([The roster](#the-roster-oats-status---json)). A client needs no liveness probe of its own beside the roster where the probe lists it, whether the read goes through the warm reader or the CLI. Independent of `warm-reader` | |
 | `wake-hold` | a scheduled wake sends no key while the home has a live `permission`, `question` or unknown-reason claim, or a claims read that can't be trusted: the run is `skipped`, `reason: "waiting-on-you"`, `pending: true`, with `held` ([A held wake](schedules.md#a-held-wake)); the `wake-held` event ([the event kinds](#events)); `wakeHold` on every successful `session inspect --json` ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)), from the hook answer `dialogClaims` ([Commands and hooks](capabilities.md#commands-and-hooks)). Gate on the feature, then on `wakeHold`: the feature says this kernel holds, `wakeHold` whether this home's dialogs become claims, and `unknown` is not covered | |
 | `lifecycle-claim-start` | every `oats session start` and `oats session restart`, and a scheduled start, holds the home's lifecycle claim for the whole start (#1602), as `details.action: "start"`: a retire, a stop apply or an upgrade apply that arrives while it runs is refused `E_LIFECYCLE_BUSY` with `details.action: "start"`; the start or restart is refused `E_INSTANCE_RETIRING` beside a retire and `E_LIFECYCLE_BUSY` (with `details.holder` and `details.action`) beside a stop or an upgrade, before any effect; two starts still answer `E_SESSION_START_BUSY` ([Commands that meet on one home](#lifecycle-pairs)). A restart holds one claim across its stop and its launch. A kernel without it takes no claim for these, and reads a `start` holder as a retire | |
+| `spawn-attribution` | the kernel validates who spawned an instance: `spawnedBy` (`{instance, home}` or `null`) in `instance.json`, on the `spawned` event and on `oats status --json` rows, and `OATS_SPAWNER_HOME` for spawn hooks ([Spawned by](#spawned-by)); `attributedHuman` on `oats status --json` rows, local and remote ([Attributed human](#attributed-human)). Absent: no `spawnedBy` and no `attributedHuman`, and a capability must not read a missing `OATS_SPAWNER_HOME` as a person's spawn | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2969,6 +2970,39 @@ Idempotent spawn replay returns the recorded value. Remote rows relay the
 host's value unchanged, including historical values, and use `null` when the
 host does not supply one. Consumers must allow for those historical meanings.
 
+<a id="spawned-by"></a>
+### Spawned by
+
+From feature `spawn-attribution`, every new home records `spawnedBy`: the
+instance whose live session ran the spawn, `{instance, home}` (the canonical
+absolute home), or `null`. It is a kernel fact, apart from `spawnOrigin` and
+from lineage: `parentInstance`, `relation` and `relativeTo` say nothing about
+it, and a spawn with `--relation unrelated` from an instance still has a
+spawner. `instance.json`, the `spawned` event's `data` and the `oats status
+--json` row carry it unchanged; a home spawned before the feature has no key.
+
+The spawner counts only when all of these hold, and anything else is `null`,
+never a refusal:
+
+- The caller's inherited `OATS_INSTANCE_HOME` is set. A name alone
+  (`OATS_INSTANCE`) never names a spawner.
+- It is a home of the deployment being spawned into, by the rules of
+  [Spawn origin](#spawn-origin): absolute, resolving canonically to a home
+  under this agents root, with a readable `instance.json` whose name agrees
+  with its directory, and with any `OATS_INSTANCE` agreeing with it.
+- Its session runs its harness now, by the kernel's own liveness read: the
+  `running` of `oats session inspect` (feature `session-inspect-running`) and
+  of status rows. An error in that read is `null`.
+
+So a person's shell, the Desktop, an automation (a scheduled job's
+environment carries no instance), a script left running from an ended
+instance's shell, and a home of another deployment all give `null`. A
+`--server` spawn sends no caller environment to the host, so its spawner is
+`null` unless the caller is a live home on that host.
+
+Spawn hooks get it as `OATS_SPAWNER_HOME` when it is not `null`
+([capabilities.md](capabilities.md#commands-and-hooks)).
+
 <a id="spawn-errors"></a>
 ### Spawn errors
 
@@ -3335,7 +3369,7 @@ its absence.
   read** (OATS 0.52.0) is listed like every other, and one such home never
   fails the listing. Its row has the fields of a home with no `instance.json`
   and nothing from the record: `instance`, `home`, the Desktop facts
-  (`startedAt`, `identityAddress`, `modelFrom`, each `null`), `waitingOnYou:
+  (`startedAt`, `identityAddress`, `modelFrom`, `attributedHuman`, each `null`), `waitingOnYou:
   null`, `rollbackIncomplete` and `retirePending` when present, and `running:
   null` with `runtimeState: "unreachable"` and `runtimeError:
   "E_UNIDENTIFIED_INSTANCE_HOME: <home>/instance.json cannot be read
@@ -3553,6 +3587,24 @@ restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
 `"harness-default"`, or `null` for an older home. `identityAddress` is the
 messaging identity's `address` (else `alias`), or `null`.
 
+<a id="attributed-human"></a>
+**Attributed human** (feature `spawn-attribution`): `attributedHuman` is on
+every instance row, the label of the human the instance's messaging identity
+is attributed to, or `null`. The messaging capability may record an optional
+`attribution` in the served identity it records (`identity`):
+`{mode: "human"|"none"|"unknown", human: {id, label}|null, parent: {id}|null}`,
+with opaque strings the kernel never interprets. The row reads it by slot,
+never by name: only the identity of the capability whose layer is `messaging`
+counts. It is the `label` when `mode` is `"human"`, else `null`; an absent
+`attribution` is `null` too, never shown as "none". The label is untrusted
+text, read with a waiting claim's `message` rule ([Waiting on you](#waiting-on-you)):
+one line of at most 200 characters, cut with `…` when longer, and `null` when
+it holds a refused character (a control character, a line break, a bidi
+control). A malformed `attribution` (an unknown `mode`, a `human` without a
+string `id` and `label`, a `parent` without a string `id`) reads as absent and
+never fails the row. `identity` on the row and in `oats inspect` carries the
+`attribution` as recorded.
+
 <a id="the-remote-roster-oats-server-roster---json"></a>
 ### The remote roster (`oats server roster --json`)
 
@@ -3645,6 +3697,10 @@ route target:
   `producer`) is `null`, and an unknown `reason` or an invalid `message` is
   `null` inside a claim that still counts. As on a local row, the host
   reports a claim only for a running instance.
+- **`attributedHuman`** (feature `spawn-attribution`) is on a row only when
+  the host's row has the key, as `waitingOnYou` is: absent means "not
+  reported". When present it is the host's label passed through the
+  [local row's](#attributed-human) read rule again on this side, or `null`.
 - <a id="remote-row-retire"></a>**`retire`** (feature `status-retire-state`, OATS 0.59.0) is on a row only
   when the host's row has the key: a host whose kernel predates the feature,
   and a saved route the host did not list, carry none. When present it is

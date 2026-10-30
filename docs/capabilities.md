@@ -614,6 +614,33 @@ When the program has changed, the launch runs the new one and says so: a warning
 in the answer and a `launch-warning` event in the home, both naming the path the
 hooks were given and the path it runs.
 
+A spawn hook also gets `OATS_SPAWNER_HOME` (feature `spawn-attribution`): the
+absolute home of the instance whose live session ran the spawn, as the kernel
+validated it and recorded it in `instance.json` `spawnedBy`
+([Spawned by](desktop-cli-api.md#spawned-by)). The hook's own
+`OATS_INSTANCE_HOME` is the new instance's, so this is how a provider learns
+who spawned it. It is set only for a spawn hook, and only when there is a
+spawner: it is absent when a person spawned (a shell, the Desktop, an
+automation), when the caller's home is an ended instance's or another
+deployment's, and for a `--server` spawn whose caller is not a live home on
+that host. It is independent of `--relation` and of `parentInstance`. It is
+reserved like `OATS_HARNESS_EXECUTABLE`: an inherited value is always dropped,
+and a launch configuration, a trigger or a hook's `env` cannot set it.
+
+Read its absence as a person's spawn only when the kernel lists
+`spawn-attribution` (`oats version --json` `features`): an older kernel never
+sets it, so there absence says nothing. A provider gates the behaviour that
+depends on it on that feature at run time, not with `compatibility.oats`,
+which would refuse every capability of the package on an older host.
+
+A messaging capability may record, in the served identity it records
+(`identity` in its hook meta), an optional `attribution: {mode:
+"human"|"none"|"unknown", human: {id, label}|null, parent: {id}|null}`. The
+kernel never interprets its strings; it shows the human's `label` as
+`attributedHuman` on status rows, read through the messaging slot under a
+waiting claim's message rule ([Attributed human](desktop-cli-api.md#attributed-human)).
+Absent means today's behaviour.
+
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
 
