@@ -197,6 +197,11 @@ oats doctor                  # this deployment's local file and lock, plus diagn
                              # and, from OATS 0.50.0, what retires left (recovery copies, retained worktrees)
 ```
 
+Doctor's `git-version:` information line reports the Git version and partial-cache
+support (in `information[]` with `--json`). Git before 2.45 works with whole-tree
+fetches; the line is not a warning or a refusal. A newer Git supports partial
+caches, while a remote or an existing whole-tree cache may still use whole trees.
+
 ## Spawn: preview, then apply
 
 Spawn only when your task, your human or your soul's capabilities say so: a

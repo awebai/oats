@@ -1553,6 +1553,14 @@ capabilities | package <id>'s capabilities> were not checked …`, never an
 empty list read as "no warning". Older kernels answer no such `warnings` key
 (inspect, readiness, show, doctor) and refuse the capability instead.
 
+`oats doctor --json` reports the Git version and whether it supports partial
+caches in an existing `information[]` line starting `git-version:` (text:
+`INFO: git-version: …`). Git before 2.45 uses the whole-tree fallback; this
+is information, never a warning or a refusal. A failed version probe reports
+unknown support. A newer Git supports partial caches, but a remote can
+require whole-tree fetches and an existing whole-tree cache keeps its mode
+([Git version failures](workspaces.md#membership-and-trust)).
+
 `oats doctor --json` also lists what retires left behind in `information[]`:
 one `retained-recovery:` and one `retained-worktree:` line per item, after a
 line that gives each kind's total, and at most 50 items per kind

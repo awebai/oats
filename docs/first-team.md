@@ -23,6 +23,10 @@ Node.js 22+, Git with read access to the repositories below (your own
 credential helpers; the kernel never prompts), tmux, and an authenticated
 harness (Pi, Claude or Codex).
 
+Git 2.45 or later recommended (partial caches); an older Git works, with
+whole-tree fetches. `oats doctor` reports the version and cache support as
+information, without refusing an older Git.
+
 ```bash
 npm install -g @awebai/oats@latest
 node --version && tmux -V && oats version --json   # features must list workspace-v2

@@ -1,3 +1,11 @@
+## Added
+
+- **Doctor reports Git's cache support.** Text and JSON doctor output name
+  the Git version and whether it supports partial caches or uses the
+  whole-tree fallback. This uses the existing `information[]` field, adds no
+  warning and refuses nothing. Git 2.45 or later is recommended for partial
+  caches; an older Git works with whole-tree fetches.
+
 ## Fixed
 
 - **Claude agent panes skip the fullscreen-renderer offer.** At spawn and
