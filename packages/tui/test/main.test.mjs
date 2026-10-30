@@ -2649,6 +2649,7 @@ test("a start runs the shared start rule once, over a change of this run: while 
   assert.equal(r.starts.length, 1);
   const [cli, row, choices, options] = r.starts[0];
   assert.deepEqual([cli, row.instance, choices, options.restart, options.localCwd], [ACTS_CLI, "acme-maintainer-ops", {}, false, DEPLOYMENT]);
+  assert.deepEqual([Object.hasOwn(options, "group"), options.group], [true, undefined], "the row's deployment's roster group, which a local deployment has none of (actContext)");
   assert.deepEqual(r.reader.changed[0].options.label, { verb: "start", name: "acme-maintainer-ops" });
   assert.match(screenOf(r), /Starting acme-maintainer-ops/);
   r.stdin.type("\x1b"); r.tick(50); r.timers.fire(); await settle();

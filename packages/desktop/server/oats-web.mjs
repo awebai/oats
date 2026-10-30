@@ -1624,7 +1624,8 @@ const server = createServer(async (req, res) => {
         // gate and never sends a start it has refused; this reads the row again and checks the home, so it may.
         const body = await readBody(req);
         const started = await startInstance(cliState, inst, { model: body.model, launchConfig: body.launchConfig, harness: body.harness, yolo: body.yolo },
-          { restart: hm[1] === "restart", localCwd: ctxs[0] ?? homedir(), verifyHome: verifiedLocalHome, start: adapter.cliStart, terms: DESKTOP_TERMS });
+          { restart: hm[1] === "restart", localCwd: ctxs[0] ?? homedir(), verifyHome: verifiedLocalHome, start: adapter.cliStart, terms: DESKTOP_TERMS,
+            group: deployments(held()).find((w) => w.id === url.searchParams.get("ws"))?.group });
         if (started.ok || started.ran) { observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot(); }
         if (started.ok) return send(res, 200, started.result);
         // The wait for the start ended and the start goes on (cli-adapter.mjs cliStart): the Desktop's own sentence.
@@ -1632,8 +1633,10 @@ const server = createServer(async (req, res) => {
         // A refusal before the CLI ran answers the rule's sentence. After it ran: the kernel's message, through the
         // display filter (`detail`), else the rule's sentence for the code. A start that stopped at a launch prompt
         // carries its retained outcome as `incomplete`, decoded, when it names the instance this route resolved
-        // (not the home: the kernel reports its real path).
+        // (not the home: the kernel reports its real path). A start refused for another lifecycle command on the
+        // home carries the rule's sentence as `startedNothing`, which the dialog shows over the kernel's message.
         return send(res, started.code === "E_BAD_ARGS" ? 400 : 409, { error: (started.ran ? started.detail ?? started.sentence : started.sentence) ?? "", code: started.code,
+          ...(started.atClaim ? { startedNothing: started.sentence } : {}),
           ...(started.incomplete ? { incomplete: started.incomplete } : {}) });
       }
       /* OATSWEB_START_END */

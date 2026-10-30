@@ -6,8 +6,9 @@
  *
  * A failed start is one of two outcomes, and the words are "nothing was started", never "nothing happened"
  * (a restart that lost the race has already run its own stop, and a start may have written its pending receipt):
- *   refused    this request started nothing: every refusal of the gate and of the home check, and the
- *              kernel's STARTED_NOTHING_CODES;
+ *   refused    this request started nothing: every refusal of the gate and of the home check, the kernel's
+ *              STARTED_NOTHING_CODES, and its CLAIM_STARTED_NOTHING_CODES from a kernel that holds the claim
+ *              for a start;
  *   uncertain  anything else: no envelope, any other code, and E_START_UNCONFIRMED, the end of the wait
  *              for a start that goes on (cli-adapter.mjs cliStart: no deadline, START_WAIT_MS). That code
  *              carries no sentence: each client words it (the Desktop: renderer/start-unconfirmed.mjs).
@@ -17,6 +18,7 @@ import { cliStart } from './cli-adapter.mjs';
 import { harnessFlag } from './harness-names.mjs';
 import { startGate } from './start-gate.mjs';
 import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
+import { answeringFeatures, busyHolder } from './lifecycle-contract.mjs';
 import { displayLine } from './display-text.mjs';
 import { requireTerms } from './client-terms.mjs';
 
@@ -30,6 +32,16 @@ export { startGate };
  * not nothing happened. A code joins only when every place the kernel raises it in a start launches nothing. */
 export const STARTED_NOTHING_CODES = Object.freeze(['E_SESSION_START_BUSY', 'E_SESSION_RUNNING']);
 
+/** The kernel feature from which a start or a restart holds the home's lifecycle claim (#1602). */
+const CLAIM_START_FEATURE = 'lifecycle-claim-start';
+/** The kernel's codes for a start refused for another lifecycle command on the home: a stop or an upgrade holds
+ * the claim (E_LIFECYCLE_BUSY), or a retirement holds it or has not finished (E_INSTANCE_RETIRING). A kernel
+ * raises both at the claim, or before the launch hooks and a restart's stop, so a restart refused this way
+ * stopped nothing too; a claim's takeover that ended something answers E_LIFECYCLE_FAILED instead. They read as
+ * STARTED_NOTHING_CODES only from a kernel that names CLAIM_START_FEATURE: the answering kernel's own list
+ * (lifecycle-contract.mjs answeringFeatures), never this computer's for a server's row. */
+export const CLAIM_STARTED_NOTHING_CODES = Object.freeze(['E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING']);
+
 /** The two kernel codes' own sentences, for a client that words by code. The kernel's message is the
  * answer's `detail`, through the display filter. E_SESSION_START_BUSY says no more than busy: the kernel answers
  * it for a start lock that is there, which a start that ended without removing it leaves behind too. */
@@ -37,6 +49,17 @@ const STARTED_NOTHING = Object.freeze({
   E_SESSION_START_BUSY: 'OATS refused this start as busy. Nothing was started.',
   E_SESSION_RUNNING: 'This instance is already running. Nothing was started.',
 });
+/** A CLAIM_STARTED_NOTHING_CODES refusal's sentence. E_LIFECYCLE_BUSY reads by who holds the claim (`holder`,
+ * lifecycle-contract.mjs busyHolder): only `running` promises that waiting ends it. E_INSTANCE_RETIRING is also
+ * the answer for a retirement that failed or was interrupted, so it says "hasn't finished", not "is running". */
+function claimRefusalSentence(code, holder, restart) {
+  const nothing = restart ? 'Nothing was stopped or started.' : 'Nothing was started.';
+  if (code === 'E_INSTANCE_RETIRING') return `This instance has a retirement that hasn't finished. ${nothing}`;
+  if (holder === 'running') return `Another OATS command is running on this instance. ${nothing} Wait for it to finish, then try again.`;
+  if (holder === 'unknown') return `${nothing} OATS can't tell whether another command is still running on this instance.`;
+  if (holder === 'none') return `${nothing} There is no other command to wait for.`;
+  return `OATS refused this ${restart ? 'restart' : 'start'} as busy. ${nothing}`;
+}
 const CLI_FAILED = 'The start could not be confirmed: the call to the OATS CLI failed. Refresh its status before starting it again.';
 
 /** The home a local start launches in, or null. It is DERIVED and VERIFIED, never trusted from roster data
@@ -67,12 +90,16 @@ export function verifiedLocalHome(row, deployments, realpath) {
  *             `deployments` and `realpath`
  *   start     the CLI call (cli-adapter.mjs cliStart, with its own session and its wait); `exec`, `after` and
  *             `wait` pass to it
- * -> { ok: true, result } | { ok: false, outcome, code, sentence, detail, ran, incomplete? }
+ *   group     the roster group of a server's row's deployment: its `probe` says which features the host answers
+ *             with (lifecycle-contract.mjs answeringFeatures)
+ * -> { ok: true, result } | { ok: false, outcome, code, sentence, detail, ran, atClaim?, incomplete? }
  * `ran`: whether the CLI was called (E_CLI_FAILED: the call was made and failed; whether the CLI began is not
  * known). `sentence` is null for a code the client words (E_START_UNCONFIRMED) and
  * for one it does not know: it then shows `detail`, the kernel's message through the display filter.
+ * `atClaim`: refused for another lifecycle command on the home (CLAIM_STARTED_NOTHING_CODES): `sentence` is this
+ * refusal's own, and a client shows it over `detail`.
  * `incomplete`: a start that stopped at a launch prompt (E_SPAWN_INCOMPLETE) and names this row, decoded. */
-export async function startInstance(cli, row, choices = {}, { restart = false, deployments = [], realpath, localCwd, verifyHome, start = cliStart, exec, after, wait, terms } = {}) {
+export async function startInstance(cli, row, choices = {}, { restart = false, deployments = [], realpath, localCwd, verifyHome, start = cliStart, exec, after, wait, group, terms } = {}) {
   requireTerms(terms, 'startInstance');
   const refused = (code, sentence, more = {}) => ({ ok: false, outcome: 'refused', code, sentence, detail: null, ran: false, ...more });
   const gate = startGate(cli, row, { restart, choices }, terms);
@@ -91,6 +118,11 @@ export async function startInstance(cli, row, choices = {}, { restart = false, d
   if (envelope?.ok === true) return { ok: true, result: envelope.result };
   const code = typeof envelope?.error?.code === 'string' ? envelope.error.code : 'E_CLI_PROTOCOL';
   const detail = displayLine(envelope?.error?.message);
+  if (CLAIM_STARTED_NOTHING_CODES.includes(code)) {
+    const features = answeringFeatures({ cli, routed: !local, group });
+    if (features?.includes(CLAIM_START_FEATURE))
+      return { ok: false, outcome: 'refused', code, sentence: claimRefusalSentence(code, busyHolder(code, envelope.error.details, features), restart), detail, ran: true, atClaim: true };
+  }
   const kept = code === 'E_SPAWN_INCOMPLETE' ? retainedSpawnDetails(envelope.error.details) : null;
   return { ok: false, outcome: STARTED_NOTHING_CODES.includes(code) ? 'refused' : 'uncertain', code,
     sentence: Object.hasOwn(STARTED_NOTHING, code) ? STARTED_NOTHING[code] : null, detail, ran: true,

@@ -10,6 +10,7 @@ import { LAUNCH_CONFIG_NONE } from '../../client/launch-contract.mjs';
 import { startRefusalSentence } from '../../client/start-messages.mjs';
 import { MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 import { MARKUP, CONTROL, DETAIL_WITHHELD } from './helpers/speaker-cases.mjs';
+import { httpError } from '../renderer/views/common.mjs';
 import { CODE, OTHER_CODE, LABEL, SENTENCE, PREVIEW_ONLY, SAID, LONG, PLACES, home, refusal, settle, http, dialog, refuse, refuseAsResponse, previewThroughRoute } from './helpers/start-dialog.mjs';
 
 /* ── The sentence ── */
@@ -81,6 +82,26 @@ for (const [hop, refused] of [['thrown by the shell', refuse], ['a response of t
       } finally { d.close(); }
     }
   });
+
+for (const [hop, refused] of [
+  ['thrown by the shell', (body) => () => { throw httpError({ status: 409, body }, '/api/the-route'); }],
+  ['a response of the route', (body) => () => ({ ok: false, status: 409, json: async () => body })],
+]) test(`a start refused for another lifecycle command (${hop}): the route's sentence is the status, and the kernel's message is quoted under it`, async () => {
+  const code = 'E_LIFECYCLE_BUSY', said = 'Another command is running. Nothing was started.';
+  const d = dialog({ start: refused({ error: SAID, code, startedNothing: said }) });
+  try {
+    await settle(); await d.submit();
+    assert.equal(d.q('.start-status').textContent, said);
+    assert.deepEqual([...d.q('.start-outcome').children].map(line => line.textContent), [`OATS says: ${SAID}`]);
+  } finally { d.close(); }
+  // The same code from a kernel without the feature carries no sentence: the kernel's message reads as before.
+  const plain = dialog({ start: refused({ error: SAID, code }) });
+  try {
+    await settle(); await plain.submit();
+    assert.equal(plain.q('.start-status').textContent, SAID);
+    assert.equal(plain.q('.start-outcome').hidden, true);
+  } finally { plain.close(); }
+});
 
 test('the exception is the launch-configs route\'s alone: a spawn on a server refused with the same code is cut at 300 as before', async () => {
   const spawned = await http({ spawnAgent: async () => { throw Object.assign(new Error(LONG), { code: CODE }); } })({ url: '/api/spawn', body: { agent: 'dev', agentsRoot: '/team/agents', serverId: 'host' } });

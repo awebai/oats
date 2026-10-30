@@ -5068,9 +5068,16 @@ answers. The following stop/retire notes describe the original table.
   by it.
 - `--plan` of either verb takes no claim and is never refused by one; a
   stop plan reports the holder (`retiring`, `stopPending`). `oats worktree
-  remove` does not read the home's claim. `oats session start` and `restart`
-  do not read it yet: they are refused only beside a scheduled self-retire
-  (`E_INSTANCE_RETIRING`). `oats status` does not show a held claim.
+  remove` does not read the home's claim. `oats status` does not show a
+  held claim.
+- **A start or restart refused here started nothing.** From a kernel with
+  `lifecycle-claim-start`, a client reads `E_LIFECYCLE_BUSY` and
+  `E_INSTANCE_RETIRING` from `oats session start` or `restart` as refused:
+  each is answered before the launch and before a restart's stop, and so is
+  each one a `--resume` answers. A takeover that ended a dead holder's step
+  answers `E_LIFECYCLE_FAILED` instead. For a kernel without the feature, the
+  same codes stay uncertain, and a routed start is judged by the host's
+  features, not this computer's.
 
 Several targets:
 
@@ -6040,9 +6047,9 @@ holder is gone, left by a retire that was killed after it removed the home.
 
 The claim orders the retires and the stops of a home (0.52.0, #866): `oats
 instance stop --apply` takes it, and `oats worktree add` reads it
-([Commands that meet on one home](#lifecycle-pairs)). `oats session start`
-and `restart` do not read it yet, and `oats status` does not show a held
-claim. Before 0.52.0 the claim ordered retires only: a stop was not refused
+([Commands that meet on one home](#lifecycle-pairs)), and from feature
+`lifecycle-claim-start` a session start or restart takes it too. `oats
+status` does not show a held claim. Before 0.52.0 the claim ordered retires only: a stop was not refused
 beside a retire in flight, and wrote into the home that the retire was
 inspecting or removing.
 

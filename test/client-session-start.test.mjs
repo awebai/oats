@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startGate, startInstance, verifiedLocalHome, STARTED_NOTHING_CODES } from '../packages/client/session-start.mjs';
+import { startGate, startInstance, verifiedLocalHome, STARTED_NOTHING_CODES, CLAIM_STARTED_NOTHING_CODES } from '../packages/client/session-start.mjs';
 import { clientTerms } from '../packages/client/client-terms.mjs';
 
 const terms = clientTerms({ name: 'the test client', self: 'this test client', selfInitial: 'This test client', update: 'Update the test client.', thisMachine: 'This machine' });
@@ -110,6 +110,43 @@ test('a failed start: refused only for the kernel\'s two codes; anything else, t
   }
   // Through the display filter: a control character never reaches a client.
   assert.equal((await answering({ code: 'E_SESSION_RUNNING', message: 'running\u001b[2J here' })).detail.includes('\u001b'), false);
+});
+
+test('a start refused for another lifecycle command: refused from a kernel that lists lifecycle-claim-start, by the answering kernel\'s list, in words for a start or a restart', async () => {
+  assert.deepEqual(CLAIM_STARTED_NOTHING_CODES, ['E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING']); assert.equal(Object.isFrozen(CLAIM_STARTED_NOTHING_CODES), true);
+  const CLAIMS = { ...CLI, features: [...CLI.features, 'lifecycle-claim-stop', 'lifecycle-claim-start', 'server-probe-features'] };
+  const answering = (cli, r, error, options = {}) => startInstance(cli, r, {}, { verifyHome: x => x.home, start: async () => ({ schemaVersion: 1, ok: false, error }), terms, ...options });
+  const busy = holder => ({ code: 'E_LIFECYCLE_BUSY', message: 'a stop of dev-1 is already running', details: { action: 'stop', ...(holder ? { holder } : {}) } });
+  const retiring = { code: 'E_INSTANCE_RETIRING', message: 'dev-1 is being retired', details: { action: 'retire' } };
+  // The sentence of each answer, for a start and for a restart: only a holder that runs is offered waiting.
+  for (const [error, started, restarted] of [
+    [busy('running'), 'Another OATS command is running on this instance. Nothing was started. Wait for it to finish, then try again.', 'Another OATS command is running on this instance. Nothing was stopped or started. Wait for it to finish, then try again.'],
+    [busy('unknown'), 'Nothing was started. OATS can\'t tell whether another command is still running on this instance.', 'Nothing was stopped or started. OATS can\'t tell whether another command is still running on this instance.'],
+    [busy('none'), 'Nothing was started. There is no other command to wait for.', 'Nothing was stopped or started. There is no other command to wait for.'],
+    [busy(), 'OATS refused this start as busy. Nothing was started.', 'OATS refused this restart as busy. Nothing was stopped or started.'],
+    [busy('a holder of another kernel'), 'OATS refused this start as busy. Nothing was started.', 'OATS refused this restart as busy. Nothing was stopped or started.'],
+    [retiring, 'This instance has a retirement that hasn\'t finished. Nothing was started.', 'This instance has a retirement that hasn\'t finished. Nothing was stopped or started.'],
+  ]) {
+    assert.deepEqual(await answering(CLAIMS, row(), error), { ok: false, outcome: 'refused', code: error.code, sentence: started, detail: error.message, ran: true, atClaim: true });
+    assert.equal((await answering(CLAIMS, row({ running: true }), error, { restart: true })).sentence, restarted);
+  }
+  // A kernel without the feature: uncertain, as before, with the kernel's message and no sentence of the rule's.
+  for (const error of [busy('running'), retiring])
+    assert.deepEqual(await answering(CLI, row(), error), { ok: false, outcome: 'uncertain', code: error.code, sentence: null, detail: error.message, ran: true });
+  // A server's row is judged by its host's list, never this computer's, and a host not known is no host that has it.
+  const group = (features, ok = true) => ({ probe: { ok, features } });
+  for (const [name, cli, options, outcome] of [
+    ['the host lists it, this computer does not', { ...CLI, features: [...CLI.features, 'server-probe-features'] }, { group: group(['lifecycle-claim-stop', 'lifecycle-claim-start']) }, 'refused'],
+    ['this computer lists it, the host does not', CLAIMS, { group: group(['lifecycle-claim-stop']) }, 'uncertain'],
+    ['the host\'s roster was not read', CLAIMS, { group: group(['lifecycle-claim-start'], false) }, 'uncertain'],
+    ['no roster group', CLAIMS, {}, 'uncertain'],
+    ['this computer relays no host\'s features', { ...CLI, features: [...CLI.features, 'lifecycle-claim-start'] }, { group: group(['lifecycle-claim-start']) }, 'uncertain'],
+  ]) assert.equal((await answering(cli, there(), busy('running'), options)).outcome, outcome, name);
+  // A group says nothing of a local row: this computer's kernel answers it.
+  assert.equal((await answering(CLI, row(), retiring, { group: group(['lifecycle-claim-start']) })).outcome, 'uncertain');
+  // Another code of a kernel with the feature is not read by this rule; a takeover's answer stays uncertain.
+  const failed = await answering(CLAIMS, row(), { code: 'E_LIFECYCLE_FAILED', message: 'a step was ended; after that: a stop is running', details: { holder: 'running' } });
+  assert.deepEqual([failed.outcome, failed.sentence, Object.hasOwn(failed, 'atClaim')], ['uncertain', null, false]);
 });
 
 test('a call that fails on its way is uncertain, in the rule\'s words, with no exception text: an exec that throws, a rejected call', async () => {

@@ -598,7 +598,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       return child;
     };
     Promise.resolve()
-      .then(() => effects.startInstance(probe.cli, row, {}, { restart: verb === "restart", deployments: localDeployments(state, clock()), realpath: effects.realpath, localCwd: actCwd(state), exec, terms: TERMS }))
+      .then(() => effects.startInstance(probe.cli, row, {}, { restart: verb === "restart", deployments: localDeployments(state, clock()), realpath: effects.realpath, localCwd: actCwd(state), exec, terms: TERMS, group: contextOf(row?.deployment?.id).workspace?.group }))
       .then((answer) => heard({ acted: { n, answer } }), () => heard({ acted: { n, answer: null } }));
   }
 

@@ -18,7 +18,7 @@ assert.ok(block);
 const routeFunction = (params, body) => new Function("startInstance", "DESKTOP_TERMS", `return function (${params.join(", ")}) { ${body} };`)(startInstance, DESKTOP_TERMS);
 const invoke = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence"], `return (async () => { const hm = [null, "start"], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
-   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
+   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") }, deployments = () => [], held = () => null;
    ${block} })();`);
 
 test("start route passes only resolved home/model to CLI, with containment and feature gates", async () => {
@@ -69,7 +69,7 @@ test("start route passes only resolved home/model to CLI, with containment and f
 // kernel head 881ecc1f (lib/core.mjs `retainedPromptError`, docs/desktop-cli-api.md "Launch prompt results").
 const invokeRetained = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "action"], `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
-   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
+   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") }, deployments = () => [], held = () => null;
    ${block} })();`);
 const kept = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents", running: false };
 const differed = { nearest: "aweb-dev-channel-confirmation-1", firstDifference: { index: 0, expected: "WARNING: Loading development channels --", found: "Do you trust the files in this folder?" } };
@@ -120,7 +120,7 @@ test("start route: every other failure, and an outcome that does not decode, ans
 // the route answers it in the Desktop's own words, never as a message of the kernel's.
 const invokeUnconfirmed = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "START_UNCONFIRMED"], `return (async () => { const hm = [null, "restart"], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
-   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
+   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") }, deployments = () => [], held = () => null;
    ${block} })();`);
 
 test("start route: a start whose wait ended answers the Desktop's sentence for E_START_UNCONFIRMED", async () => {
@@ -146,6 +146,29 @@ test("start route: E_SESSION_START_BUSY and E_SESSION_RUNNING answer the kernel'
   // A message the display filter withholds is withheld here too: the route answers the filter's line.
   const odd = await refused({ code: "E_SESSION_RUNNING", message: "agent\u001b[2J is running" })();
   assert.deepEqual(odd.body, { error: DETAIL_WITHHELD, code: "E_SESSION_RUNNING" });
+});
+
+// #1666: a start refused for another lifecycle command carries the rule's sentence for the dialog, beside the
+// kernel's message; a kernel without lifecycle-claim-start answers as before. A server's row reads by its host's
+// list, from the roster group of the deployment the request names.
+const invokeGrouped = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "deployments", "action"], `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
+   const send = (_, status, body) => ({ status, body });
+   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") }, held = () => null;
+   ${block} })();`);
+test("start route: a start refused at the home's lifecycle claim carries the rule's sentence where the answering kernel holds the claim", async () => {
+  const error = { code: "E_LIFECYCLE_BUSY", message: "a stop of agent is already running", details: { holder: "running", action: "stop" } };
+  const features = ["session-start", "session-restart", "server-probe-features"];
+  const route = (inst, cli, listed = [], action = "start") => invokeGrouped(inst, cli, async () => ({}), () => inst.home, { cliStart: async () => ({ schemaVersion: 1, ok: false, error }) },
+    { requireRemoteSupport }, dirname, harnessFlag, canAddressRemote, unaddressableSentence, retainedSpawnDetails, () => listed, action);
+  const local = { ok: true, bin: "/installed/oats", features: [...features, "lifecycle-claim-stop", "lifecycle-claim-start"] };
+  assert.deepEqual(await route(kept, local), { status: 409, body: { error: error.message, code: error.code, startedNothing: "Another OATS command is running on this instance. Nothing was started. Wait for it to finish, then try again." } });
+  assert.equal((await route({ ...kept, running: true }, local, [], "restart")).body.startedNothing, "Another OATS command is running on this instance. Nothing was stopped or started. Wait for it to finish, then try again.");
+  assert.deepEqual(await route(kept, { ...local, features }), { status: 409, body: { error: error.message, code: error.code } }, "a kernel without the feature");
+  // A server's row: the host's list, through the group of the deployment `ws` names, never another's.
+  const onHost = { ...kept, server: "host", addressable: true }, remote = { ...local, features, remote: ["session-start"] };
+  const group = (list) => ({ probe: { ok: true, features: list } });
+  assert.equal((await route(onHost, remote, [{ id: "/local", group: group(["lifecycle-claim-stop", "lifecycle-claim-start"]) }])).body.startedNothing, "Another OATS command is running on this instance. Nothing was started. Wait for it to finish, then try again.");
+  assert.equal((await route(onHost, remote, [{ id: "/elsewhere", group: group(["lifecycle-claim-stop", "lifecycle-claim-start"]) }])).body.startedNothing, undefined);
 });
 
 // 5a-2: the route decides through the start rule's gate as the dialog does, so its first three rules hold here too:
