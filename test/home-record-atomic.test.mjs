@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { readHomeRecord } from "../lib/core.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { waitUntil } from "./helpers/host-fixture.mjs";
-import { startGated } from "./helpers/fs-gate-preload.mjs";
+import { runFaulted, startGated } from "./helpers/fs-gate-preload.mjs";
 
 const HAS_TMUX = !spawnSync("tmux", ["-V"], { stdio: "ignore" }).error;
 const TMUX = { skip: !HAS_TMUX && "tmux is not installed" };
@@ -124,7 +124,7 @@ test("a record this process may not write refuses the repair as a write in place
   assert.deepEqual(privateFiles(home), []);
 });
 
-test("a home that refuses a private file beside a record this process may write is repaired in place, as it always was: the retire answers as it did", NOT_ROOT, (t) => {
+test("a home that refuses a private file beside a record this process may write is repaired in place, as it always was, the one write of a record that is not whole: the retire answers as it did", NOT_ROOT, (t) => {
   const f = fixture(t);
   const home = f.family("--no-launch");
   chmodSync(home, 0o555);
@@ -133,6 +133,43 @@ test("a home that refuses a private file beside a record this process may write 
   assert.equal(answer.retired, "pa", JSON.stringify(answer));
   assert.deepEqual(answer.relinked.map((e) => e.instance), ["ch"]);
   assert.equal(readJson(join(home, "instance.json")).parentInstance, undefined);
+  assert.deepEqual(privateFiles(home), []);
+});
+
+for (const [way, gate, code] of [
+  ["a rename refused with EACCES", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EACCES" }), "EACCES"],
+  ["a rename refused with EPERM", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EPERM" }), "EPERM"],
+  ["a private file refused with EIO", (prefix) => ({ name: "fault", fn: "writeFileSync", prefix, throws: "EIO" }), "EIO"],
+]) {
+  test(`only the home's refusal of the private file falls back to a write in place: ${way} is answered, and the record is as it was`, (t) => {
+    const f = fixture(t);
+    const home = f.family("--no-launch");
+    const record = join(home, "instance.json");
+    const before = readFileSync(record, "utf8");
+    const r = runFaulted([CLI, "retire", "pa", "--json"], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates"), gates: [gate(`${record}.tmp-`)] });
+    assert.deepEqual(r.fired, ["fault"], `fixture premise: the fault was met: ${r.stdout}${r.stderr}`);
+    const answer = r.json();
+    assert.equal(answer.error?.code, "E_LIFECYCLE_FAILED", JSON.stringify(answer));
+    assert.ok(answer.error.message.startsWith(`${code}:`), answer.error.message);
+    assert.equal(readFileSync(record, "utf8"), before, "no write in place");
+    assert.deepEqual(privateFiles(home), []);
+  });
+}
+
+test("a mode that cannot be read refuses the write: the record keeps its bytes and its mode, and no default takes its place", (t) => {
+  const f = fixture(t);
+  const home = f.spawn("w1", "--no-launch");
+  const record = join(home, "instance.json");
+  chmodSync(record, 0o600);
+  const before = readFileSync(record, "utf8");
+  const call = `import { writeHomeRecord } from ${JSON.stringify(new URL("../lib/core.mjs", import.meta.url).href)};
+try { writeHomeRecord(${JSON.stringify(home)}, { rewritten: true }); console.log(JSON.stringify({ threw: null })); }
+catch (e) { console.log(JSON.stringify({ threw: { code: e.code, syscall: e.syscall } })); }`;
+  const r = runFaulted(["--input-type=module", "-e", call], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates"), gates: [{ name: "fault", fn: "statSync", path: record, throws: "EIO" }] });
+  assert.deepEqual(r.fired, ["fault"], `fixture premise: the fault was met: ${r.stdout}${r.stderr}`);
+  assert.deepEqual(r.json().threw, { code: "EIO", syscall: "stat" });
+  assert.equal(readFileSync(record, "utf8"), before);
+  assert.equal(modeOf(record), "600");
   assert.deepEqual(privateFiles(home), []);
 });
 
