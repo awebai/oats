@@ -53,7 +53,7 @@ const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, writeHomeRecord, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, MAX_INSTANCE_NAME, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, writeHomeRecord, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } = await kernelImport("core", () => import("../lib/core.mjs"));
 const {
@@ -3695,8 +3695,9 @@ async function onboardCmd() {
   const { OPERATOR_CAPABILITY } = await import("../lib/operator-coverage.mjs");
   const wsName = standalone ? null : synced.discovery.workspace?.name;
   const conventional = typeof wsName === "string" && wsName ? `${wsName}-oats-setup-expert` : null;
-  const setupExpert = setupExpertOf(synced.discovery, { conventional, capability: OPERATOR_CAPABILITY });
-  const spawnHint = setupExpert ? `oats spawn ${setupExpert} --dir ${shortPath(dir)}` : null;
+  const chosenExpert = setupExpertOf(synced.discovery, { conventional, workspaceName: wsName, capability: OPERATOR_CAPABILITY });
+  const setupExpert = chosenExpert?.soul ?? null;
+  const spawnHint = setupExpert ? `oats spawn ${setupExpert} --dir ${shortPath(dir)}${chosenExpert.name ? ` --name ${chosenExpert.name}` : ""}` : null;
   const anySoulHint = `oats spawn <soul> --dir ${shortPath(dir)}${soulNames.length ? ` (e.g. ${soulNames.slice(0, 3).join(", ")})` : ""}`;
   // A member's clone goes beside oats-local.yaml under its repo name; `agents/` is the instance
   // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4). The HOST is
@@ -3746,18 +3747,24 @@ Next:
   3. ${setupExpert ? `Spawn ${setupExpert}, this workspace's OATS setup expert
      (it holds ${OPERATOR_CAPABILITY}), to guide the rest:` : `No soul here holds ${OPERATOR_CAPABILITY} — add a ${conventional ? `${conventional} soul` : "soul"} that declares it,
      or spawn any listed soul:`}
-       ${spawnHint ?? anySoulHint}`);
+       ${spawnHint ?? anySoulHint}${chosenExpert?.why ? `\n       (${chosenExpert.why})` : ""}`);
 }
 
-/** The soul `oats onboard` names as the workspace's OATS setup expert (awebai/oats#1314), among the
- *  souls a spawn can name (soulCandidates) whose own soul.yaml declares `capability` (oats.setup) with
- *  `{ from: … }`, from any source (`off` is no declaration): the one named `conventional`
- *  (`<workspace name>-oats-setup-expert`, null in a standalone view, which has no workspace name);
- *  else the first by name; else null. A soul is never chosen by its name alone. Only the soul's own declaration is read, never
- *  a resolution: oats.setup that reaches a soul through the workspace defaults alone is not seen. → the
- *  name to spawn it by: the bare name, else `<member>/<soul>` (`<package>/<soul>`), else
- *  `<member repo key>/<soul>`, the first that names this soul alone. */
-function setupExpertOf(discovery, { conventional, capability }) {
+/** The framework's package soul that sets up a workspace (awebai/oats#1665 D1). */
+const FRAMEWORK_SETUP_SOUL = { package: "oats.framework", name: "oats-setup-expert" };
+
+/** The soul `oats onboard` names as the workspace's OATS setup expert (awebai/oats#1314, #1665 D1), among
+ *  the souls a spawn can name (soulCandidates) whose own soul.yaml declares `capability` (oats.setup) with
+ *  `{ from: … }`, from any source (`off` is no declaration), in this order: the workspace's own soul named
+ *  `conventional` (`<workspace name>-oats-setup-expert`, null in a standalone view, which has no workspace
+ *  name); else oats.framework's package soul `oats-setup-expert`; else the first by name; else null. A soul
+ *  is never chosen by its name alone. Only the soul's own declaration is read, never a resolution:
+ *  oats.setup that reaches a soul through the workspace defaults alone is not seen.
+ *  → null, or { soul, name, why }: `soul` is the name to spawn it by (the bare name, else
+ *  `<member>/<soul>` (`<package>/<soul>`), else `<member repo key>/<soul>`, the first that names this soul
+ *  alone); `name` is the instance name for the package soul (packageInstanceName), else null; `why` says
+ *  why that name is not the conventional one, else null. */
+function setupExpertOf(discovery, { conventional, workspaceName, capability }) {
   const candidates = soulCandidates(discovery);
   const declares = (entry) => {
     const caps = entry.definition?.capabilities;
@@ -3766,13 +3773,35 @@ function setupExpertOf(discovery, { conventional, capability }) {
   };
   const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
   const entries = candidates.map((c) => c.entry).sort((a, b) => order(a.name, b.name) || order(qualifiedSoulName(a), qualifiedSoulName(b)));
-  const chosen = (conventional && entries.find((e) => e.name === conventional && declares(e))) || entries.find(declares);
+  const isFrameworkSoul = (e) => e.package === FRAMEWORK_SETUP_SOUL.package && e.name === FRAMEWORK_SETUP_SOUL.name;
+  const chosen = (conventional && entries.find((e) => e.name === conventional && typeof e.package !== "string" && declares(e)))
+    || entries.find((e) => isFrameworkSoul(e) && declares(e))
+    || entries.find(declares);
   if (!chosen) return null;
   // The shortest name a spawn resolves to exactly this soul: two members can share a repository
   // basename (github.com/a/agents, github.com/b/agents), so the last form is the full repo key.
   const forms = [chosen.name, qualifiedSoulName(chosen), ...(typeof chosen.package === "string" ? [] : [`${chosen.repoKey}/${chosen.name}`])];
   const only = (name) => { const hits = candidates.filter((c) => c.matches(name)); return hits.length === 1 && hits[0].entry === chosen; };
-  return forms.find(only) ?? forms[forms.length - 1];
+  const soul = forms.find(only) ?? forms[forms.length - 1];
+  return { soul, ...(isFrameworkSoul(chosen) && workspaceName ? packageInstanceName(discovery, workspaceName) : { name: null, why: null }) };
+}
+
+/** The instance name the framework's setup soul is spawned by, for the workspace `workspaceName`:
+ *  `<workspace>-oats-setup-expert`; `<workspace>-oats-setup` when a soul of this workspace already holds
+ *  that name (spawn refuses an instance name that is a soul's); else none, and spawn names it. A name
+ *  over the instance-name limit is none too: onboarding never refuses on a long workspace name.
+ *  → { name, why }, `why` null for the conventional name. */
+function packageInstanceName(discovery, workspaceName) {
+  const souls = new Set();
+  for (const m of discovery.members || []) for (const s of m.souls || []) if (typeof s?.name === "string") souls.add(s.name);
+  for (const x of discovery.external || []) if (typeof x?.soul?.name === "string") souls.add(x.soul.name);
+  for (const s of discovery.packageSouls || []) if (typeof s?.name === "string") souls.add(s.name);
+  const conventional = `${workspaceName}-oats-setup-expert`, fallback = `${workspaceName}-oats-setup`;
+  const shared = "and an instance may not share a soul's name";
+  if (conventional.length > MAX_INSTANCE_NAME) return { name: null, why: `no --name: ${conventional} would be ${conventional.length} characters, over the ${MAX_INSTANCE_NAME}-character instance-name limit; spawn names it` };
+  if (!souls.has(conventional)) return { name: conventional, why: null };
+  if (!souls.has(fallback)) return { name: fallback, why: `named ${fallback}: this workspace has a soul named ${conventional}, ${shared}` };
+  return { name: null, why: `no --name: this workspace has souls named ${conventional} and ${fallback}, ${shared}; spawn names it` };
 }
 
 /** `oats onboard <dir> [--workspace <ref>] --check`: what onboarding <dir> here would meet, read-only (the
