@@ -264,6 +264,10 @@ test("a start's hooks read its own yolo, in the preview and the real run, whatev
   const started = fx.cli(["session", "start", "--home", home, "--harness", "claude", "--no-yolo", "--json"], { env: { ...env, OATS_YOLO: "1" } });
   assert.equal(started.status, 0, started.stdout + started.stderr);
   assert.deepEqual(yoloRuns(home), [{ preview: true, yolo: null }, { preview: false, yolo: null }], "an inherited 1 on a non-yolo start reads absent");
+  const plain = spawned(fx.cli(["spawn", "racer", "--name", "yolo-plain", "--launch-config", "none", "--harness", "claude", "--no-launch", "--json"], { env })).home;
+  const inherited = fx.cli(["session", "start", "--home", plain, "--harness", "claude", "--json"], { env: { ...env, OATS_YOLO: "1" } });
+  assert.equal(inherited.status, 0, inherited.stdout + inherited.stderr);
+  assert.deepEqual(yoloRuns(plain), [{ preview: true, yolo: null }, { preview: false, yolo: null }], "nothing chose yolo: the caller's 1 is not the launch's");
   const other = spawned(fx.cli(["spawn", "racer", "--name", "yolo-on", "--launch-config", "none", "--harness", "claude", "--no-launch", "--json"], { env })).home;
   const on = fx.cli(["session", "start", "--home", other, "--harness", "claude", "--yolo", "--json"], { env });
   assert.equal(on.status, 0, on.stdout + on.stderr);
