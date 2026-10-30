@@ -52,7 +52,7 @@ export function reportFailedTurn(pi, home) {
     waiting("clear");
   });
   pi.on("agent_end", (event) => {
-    const last = event.messages.findLast((message) => message.role === "assistant");
+    const last = event.messages?.findLast((message) => message.role === "assistant");
     failure = last?.stopReason === "error" ? failedTurnMessage(last.errorMessage) : undefined;
   });
   pi.on("agent_settled", (event) => {

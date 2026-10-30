@@ -138,6 +138,17 @@ test("the first run of a process clears what an earlier pi in the session left, 
   assert.deepEqual(all(), [clearArgv(home)]);
 });
 
+test("an agent_end with no messages raises nothing and throws nothing", async (t) => {
+  const { home, all, calls } = recordingHome(t);
+  const fire = session(home);
+  await fire("agent_start");
+  await settle(() => all().length === 1);
+  await fire("agent_end");
+  await fire("agent_settled", {});
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(calls(), []);
+});
+
 test("a home with no shim, or a kernel that fails, never reaches the session", async (t) => {
   for (const shim of [null, `#!/bin/sh\necho boom >&2\nexit 3\n`]) {
     const { home } = recordingHome(t);
