@@ -86,7 +86,7 @@ go(() => setTimeout(() => {
 const SHIMS = join(base, "shims"); mkdirSync(SHIMS);
 // The `claude` the launch hook asks for its version: what FAKE_CLAUDE_VERSION says, 2.1.308 unset.
 const CLAUDE_BIN = join(base, "claude-bin"); mkdirSync(CLAUDE_BIN);
-writeFileSync(join(CLAUDE_BIN, "claude"), '#!/bin/sh\n[ "$FAKE_CLAUDE_VERSION" = fail ] && exit 1\nprintf "%s (Claude Code)\\n" "${FAKE_CLAUDE_VERSION:-2.1.308}"\n', { mode: 0o755 });
+writeFileSync(join(CLAUDE_BIN, "claude"), '#!/bin/sh\n[ "$FAKE_CLAUDE_VERSION" = fail ] && exit 1\nif [ "$FAKE_CLAUDE_VERSION" = hang ]; then trap "" TERM; sleep 8 & wait; exit 0; fi\nprintf "%s (Claude Code)\\n" "${FAKE_CLAUDE_VERSION:-2.1.308}"\n', { mode: 0o755 });
 writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1" = +%s ]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi\n', { mode: 0o755 });
 // `rm` holds the first call in a process run with FAKE_RM_GATE (a reaper's removal of the
 // stale lock's pid file) until the test creates go in that directory.
@@ -353,6 +353,16 @@ test("StopFailure is written only for a Claude Code seen to take it: an older on
   runHook("launch", { ...env("2.1.77"), OATS_INSTANCE_HOME: back });
   assert.equal(Object.hasOwn(readJson(settingsOf(back)).hooks, "StopFailure"), false);
   assert.equal(allEntries(readJson(settingsOf(back))).length, 9);
+});
+
+test("a claude that ignores SIGTERM and leaves a child on its stdout holds the hook for the probe's bound only, and the settings are written without StopFailure", () => {
+  const h = home();
+  const began = Date.now();
+  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_CLI_BIN: FAKE_CLI_ABS, FAKE_CLAUDE_VERSION: "hang", OATS_INSTANCE_HOME: h }), {});
+  assert.ok(Date.now() - began < 7000, `the hook took ${Date.now() - began} ms`);
+  const { hooks } = readJson(settingsOf(h));
+  assert.equal(Object.hasOwn(hooks, "StopFailure"), false);
+  assert.equal(allEntries({ hooks }).length, 9);
 });
 
 test("hooks that name an old node path are rewritten by the next launch pass, in place: the new path, ten entries", () => {

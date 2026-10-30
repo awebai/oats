@@ -122,7 +122,7 @@ export function resetMarker(marker) {
  *  hook's PATH: a launch configuration's own executable is not known here. */
 export function takesStopFailure(env) {
   try {
-    const said = execFileSync("claude", ["--version"], { env, encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] });
+    const said = execFileSync("claude", ["--version"], { env, encoding: "utf8", timeout: 3000, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "ignore"] });
     const version = /^(\d+)\.(\d+)\.(\d+)/.exec(said.trim());
     if (!version) return false;
     const [major, minor, patch] = version.slice(1).map(Number);
