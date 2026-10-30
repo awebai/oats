@@ -1108,7 +1108,13 @@ message `Turn failed: <the error>`, cut to fit. It clears on that instance's
 next turn or at a session boundary.
 - **Claude Code:** `StopFailure` fires in place of `Stop` once Claude's own
   retries have run out (Claude Code 2.1.308). The message comes from the
-  hook's `last_assistant_message`, else its `error` class.
+  hook's `last_assistant_message`, else its `error` class. The event came in
+  2.1.78. An older Claude Code skips a whole settings file that names it and
+  stops an interactive start at a Settings Error dialog, so oats.core writes
+  the entry only when `claude --version` on the hook's `PATH` says 2.1.78 or
+  later, at each spawn and start. Any other answer leaves it out, and that
+  home's failed turns go unreported. A launch configuration whose `executable`
+  is an older Claude Code than the one on `PATH` is not caught.
 - **pi:** the `@awebai/oats-pi` bridge reports it as producer `oats.pi`, from
   `agent_settled`, once pi has stopped retrying and recovering. A transient
   error pi retried away raises nothing, and neither does an abort. A pi before

@@ -115,8 +115,23 @@ export function resetMarker(marker) {
   for (const d of [`${marker}.lock`, `${marker}.lock.reap`]) { try { rmdirSync(d); } catch { /* absent */ } }
 }
 
+/** Whether this Claude Code takes a StopFailure hook, by its own `--version`. The event came in
+ *  2.1.78. An older one skips a whole settings file that names it and stops an interactive start
+ *  at a Settings Error dialog, measured on 2.1.61 and 2.1.77 (#1669), so an unknown answer means
+ *  no: a failed turn goes unreported, and no start can hang on it. `claude` is the one on the
+ *  hook's PATH: a launch configuration's own executable is not known here. */
+export function takesStopFailure(env) {
+  try {
+    const said = execFileSync("claude", ["--version"], { env, encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] });
+    const version = /^(\d+)\.(\d+)\.(\d+)/.exec(said.trim());
+    if (!version) return false;
+    const [major, minor, patch] = version.slice(1).map(Number);
+    return major > 2 || (major === 2 && (minor > 1 || (minor === 1 && patch >= 78)));
+  } catch { return false; }
+}
+
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */
-export function claudeWaitingSettings({ script, node, cli, marker = "", home = "" }) {
+export function claudeWaitingSettings({ script, node, cli, marker = "", home = "", stopFailure = false }) {
   const entry = (...args) => ({ type: "command", command: waitingCommand({ script, node, cli, marker, home }, args), timeout: HOOK_TIMEOUT_SECONDS });
   const group = (matcher, ...args) => ({ ...(matcher === undefined ? {} : { matcher }), hooks: [entry(...args)] });
   return {
@@ -132,7 +147,7 @@ export function claudeWaitingSettings({ script, node, cli, marker = "", home = "
       Stop: [group(undefined, "clear")],
       // An API error ended the turn, past Claude's own retries: fires instead of Stop, and
       // nothing runs after it, so only this hook can say the session is stuck (#1667).
-      StopFailure: [group(undefined, "set", "attention")],
+      ...(stopFailure ? { StopFailure: [group(undefined, "set", "attention")] } : {}),
       SessionEnd: [group(undefined, "clear")],
     },
   };
@@ -188,7 +203,7 @@ function removeStaleTemps(claudeDir) {
 
 /** The real pass: bring <home>/.claude/settings.json to the merged state, its commands
  *  baked for `home` (the real path). Returns a warning or null. */
-export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
+export function writeClaudeSettings({ home, script, node, cli, marker = "", stopFailure = false }) {
   const lose = "this Claude session will not report when it waits for input";
   const claudeDir = join(home, ".claude");
   const file = join(claudeDir, "settings.json");
@@ -211,7 +226,7 @@ export function writeClaudeSettings({ home, script, node, cli, marker = "" }) {
     try { existing = JSON.parse(text); } catch { return `oats.core: ${file} is not valid JSON; left it alone, so ${lose}`; }
     before = existing;
   }
-  const merged = mergeSettings(existing, claudeWaitingSettings({ script, node, cli, marker, home }), script);
+  const merged = mergeSettings(existing, claudeWaitingSettings({ script, node, cli, marker, home, stopFailure }), script);
   if (!merged.ok) return `oats.core: ${file} ${merged.problem}; left it alone, so ${lose}`;
   const content = serialize(merged.settings);
   if (before !== null && content === serialize(before)) return null;
@@ -253,7 +268,7 @@ export function runHook(event, env = process.env) {
   // (OATS_NODE_BIN, a path that survives a Node upgrade), else this process's own, as written
   // before the kernel set it. Never a warning: an older kernel is not a defect.
   const node = typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
-  const warning = writeClaudeSettings({ home: real, script, node, cli, marker });
+  const warning = writeClaudeSettings({ home: real, script, node, cli, marker, stopFailure: takesStopFailure(env) });
   return warning ? { warning } : {};
 }
 
