@@ -35,12 +35,15 @@ The [official catalog](docs/official-catalog.md) is the reviewed list of officia
 curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
 ```
 
-If you are a person, give your coding agent (Claude Code, Codex, pi or any other) this page and say "set up OATS for me". It then:
+If you are a person, give your coding agent (Claude Code, Codex, pi or any other) this page and say "set up OATS for this project". It then:
 
-- **Asks first, in one round:** your project, its repositories, the knowledge tools you use, and a username for agent messaging.
-- **Installs OATS and OATS Desktop,** then creates your workspace in one commit: the workspace, a messaging team, a setup expert and a first developer. Or it joins this machine to an existing workspace.
-- **Gives your agents identities and messaging:** one command signs up a hosted [aweb](https://aweb.ai) team for the new workspace, with no API key and no pull requests to merge.
-- **Hands over to the setup expert,** an OATS agent that sets up the rest with you. You type only passwords, logins and tokens.
+- **Asks first, in one round:** your project, its repositories and where the workspace should live, the knowledge tools you use, and how your agents message each other ([aweb](https://aweb.ai) by default).
+- **Installs OATS, OATS Desktop and the messaging CLI.**
+- **Creates your workspace's team:** you sign in to your aweb account in your browser, and one command creates the team, owned by your account, that every agent you spawn joins.
+- **Writes your workspace** in one commit, in your repository or a new private one: the workspace and its team, nothing else. Or it joins this machine to an existing workspace.
+- **Spawns the setup expert and opens the Desktop on it.** The setup expert is an OATS agent that turns OATS's defaults into your own coordination, knowledge and tasks capabilities, with you. You type only passwords, logins and tokens.
+
+On a machine where Homebrew, gh and a browser are already signed in, this takes under two minutes.
 
 Download the skill, don't web-fetch it: a tool that summarises pages would lose its exact commands.
 
