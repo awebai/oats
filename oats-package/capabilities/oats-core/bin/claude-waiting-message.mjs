@@ -5,7 +5,9 @@
  * claude-waiting.sh runs this on a `set`, with the hook's JSON input on stdin, and passes what it
  * prints as `--message` to `oats instance waiting set`. It reads what Claude Code 2.1.300 sends:
  * a PreToolUse of AskUserQuestion carries the question itself (`tool_input.questions[].question`),
- * and a Notification its own words (`message`, "Claude needs your permission to use Bash").
+ * and a Notification its own words (`message`, "Claude needs your permission to use Bash"). A
+ * StopFailure (2.1.308) carries the error's text (`last_assistant_message`, "API Error: 400 …")
+ * and its class (`error`, "rate_limit", "unknown").
  *
  * What it prints is one message the kernel accepts (lib/instance-events.mjs validWaitingMessage):
  * one line, the kernel's refused characters replaced with U+FFFD, at most 200 code points. Nothing
@@ -24,9 +26,15 @@ const MESSAGE_MAX = 200;
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
+const said = (v) => typeof v === "string" && v.trim() !== "";
+
 /** The words the input says the session waits on, before they are made one message, or null. */
 function wordsOf(input) {
   if (!isObject(input)) return null;
+  if (input.hook_event_name === "StopFailure") {
+    const error = [input.last_assistant_message, input.error].find(said);
+    return error === undefined ? "Turn failed" : `Turn failed: ${error}`;
+  }
   if (input.hook_event_name === "PreToolUse") {
     if (input.tool_name !== "AskUserQuestion" || !isObject(input.tool_input) || !Array.isArray(input.tool_input.questions)) return null;
     const questions = input.tool_input.questions;

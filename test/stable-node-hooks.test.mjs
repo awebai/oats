@@ -56,7 +56,7 @@ const unstable = (warnings) => (warnings || []).filter((w) => /not stable/.test(
 
 // A harness that records its pid, then idles (an `exec`ed sleep: the session never reads as a shell).
 const binDir = join(base, "bin");
-const probe = write(join(binDir, "probe"), `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`, 0o755);
+const probe = write(join(binDir, "probe"), `#!/bin/sh\n[ "$1" = --version ] && { echo '2.1.308 (Claude Code)'; exit 0; }\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`, 0o755);
 process.env.PATH = `${binDir}:${process.env.PATH}`;
 
 // oats.core as every copy before this change wrote it: the hook's own node, whatever the kernel hands it.
@@ -91,7 +91,7 @@ async function spawnHome(name, { launchConfig = "probe", ...opts } = {}) {
 /** The node and the CLI every waiting hook of a home names: `… <action> '<node>' '<cli>' '<marker>' '<home>' >/dev/null 2>&1; exit 0`. */
 function baked(home) {
   const commands = Object.values(readJson(join(home, ".claude", "settings.json")).hooks).flatMap((groups) => groups.flatMap((g) => g.hooks.map((e) => e.command)));
-  assert.equal(commands.length, 9, "oats.core's nine entries, and no second copy of any");
+  assert.equal(commands.length, 10, "oats.core's ten entries, and no second copy of any");
   const pairs = commands.map((c) => { const m = / '([^']+)' '([^']+)' '[^']*' '[^']*' >\/dev\/null 2>&1; exit 0$/.exec(c); assert.ok(m, c); return `${m[1]} ${m[2]}`; });
   assert.equal(new Set(pairs).size, 1, `every command names one node and one CLI: ${[...new Set(pairs)].join(" | ")}`);
   const [node, cli] = pairs[0].split(" ");

@@ -356,6 +356,13 @@ yours alone, and the emitter never clears it. A claim with text is shown over
 one without, so a later claim with no text does not hide your question. A later
 one with text, such as a permission prompt's, is shown in its place.
 
+A turn that ends in a provider error sets a claim the same way, because the
+error ends the turn and you can't: `Turn failed: <the error>`, from oats.core's
+hooks on Claude Code (from oats.core 2.10.0) and the `@awebai/oats-pi` bridge
+(producer `oats.pi`) on pi, after the harness's own retries. Your next turn
+clears it. Codex reports nothing, because no hook sees the failure. When you
+wait on a child, its row in `oats status --json` shows this as `waitingOnYou`.
+
 ## Spawned by a trigger
 
 If your `TASK.md` ends with a **"Triggered run"** block, an automation spawned

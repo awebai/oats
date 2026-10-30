@@ -23,6 +23,10 @@ from the same release tag). This bridge registers no operational tools. It only:
   streamingBehavior. @awebai/pi has no such handler. A session that shuts
   down (a reload, say) releases the hold, and pi then runs or refuses the
   task by its own rules;
+- reports a turn that ended in a provider error, once pi has stopped retrying
+  and recovering (`agent_settled`, pi 0.80.4 and later): a waiting claim
+  through `oats instance waiting`, producer `oats.pi`, cleared by the next run,
+  so the instance shows as needing input instead of idling unseen;
 - journals compaction summaries and sends resume nudges when the active
   knowledge capability created `STATE.md`/`log.md`. A startup gets the nudge
   only when pi kept an earlier session of the home (pi files a session once

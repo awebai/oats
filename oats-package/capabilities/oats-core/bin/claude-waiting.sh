@@ -1,6 +1,6 @@
 #!/bin/sh
 # oats.core: Claude Code waiting emitter.
-#   claude-waiting.sh set <permission|question> <node> <cli> <marker> <home>
+#   claude-waiting.sh set <permission|question|attention> <node> <cli> <marker> <home>
 #   claude-waiting.sh clear <node> <cli> <marker> <home>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; not debounced)
 #   claude-waiting.sh clear-tool <node> <cli> <marker> <home>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
 # <marker> is the debounce marker's path, from the launch hook, or '' for none.
@@ -10,9 +10,9 @@
 # It reports through `oats instance waiting set|clear --producer oats.core` that the
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
 # A set carries the text of what the session waits on, as claude-waiting-message.mjs (beside
-# this script) reads it from the hook's input: an AskUserQuestion's question, or a
-# Notification's own words. No text (none in the input, or the reader failed) sets the claim
-# without one.
+# this script) reads it from the hook's input: an AskUserQuestion's question, a Notification's
+# own words, or the error of a turn that failed (StopFailure, reason attention). No text (none
+# in the input, or the reader failed) sets the claim without one.
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, never waits
@@ -23,9 +23,10 @@
 # stdin.
 #
 # The protocol (with a marker; without one every event just calls the CLI):
-#   <marker>          the INTENT: the latest event's wish, "permission", "question" or
-#                     "clear", on its first line; a set's event id ("<pid>-<began>") on the
-#                     second. Every hook writes it first, before it reads anything.
+#   <marker>          the INTENT: the latest event's wish, "permission", "question",
+#                     "attention" or "clear", on its first line; a set's event id
+#                     ("<pid>-<began>") on the second. Every hook writes it first, before it
+#                     reads anything.
 #   <marker>.text-<event>  the text of the set whose event id that is, written once the set has
 #                     read it. Only the intent's own event's text is ever applied, so a set
 #                     still reading its text when a later event comes can never apply it.
@@ -65,7 +66,7 @@ action=$1
 case "$action" in
   set)
     reason=$2; node=$3; cli=$4; marker=${5:-}; home=${6:-}
-    case "$reason" in permission|question) ;; *) exit 0 ;; esac
+    case "$reason" in permission|question|attention) ;; *) exit 0 ;; esac
     ;;
   clear|clear-tool)
     node=$2; cli=$3; marker=${4:-}; home=${5:-}
@@ -191,11 +192,11 @@ run_cli() {
   return "$status"
 }
 
-# The intent: "permission", "question" or "clear"; absent or anything else is clear.
+# The intent: "permission", "question", "attention" or "clear"; absent or anything else is clear.
 state_of() {
   line=
   [ -f "$1" ] && IFS= read -r line < "$1"
-  case "$line" in permission|question) printf '%s' "$line" ;; *) printf clear ;; esac
+  case "$line" in permission|question|attention) printf '%s' "$line" ;; *) printf clear ;; esac
 }
 
 # What the CLI last recorded as the claim's text: the second line of the applied file, or empty.
@@ -210,7 +211,7 @@ applied_text() {
 read_intent() {
   want=clear text='' line='' event=''
   [ -f "$marker" ] && { IFS= read -r line; IFS= read -r event; } < "$marker"
-  case "$line" in permission|question) want=$line ;; *) return 0 ;; esac
+  case "$line" in permission|question|attention) want=$line ;; *) return 0 ;; esac
   case "$event" in ''|*[!0-9-]*) return 0 ;; esac
   [ -f "$marker.text-$event" ] && [ ! -L "$marker.text-$event" ] && IFS= read -r text < "$marker.text-$event"
   return 0
@@ -229,13 +230,13 @@ write_applied() {
 }
 
 # What the CLI last recorded: absent is clear (nothing recorded this session); anything
-# but "permission", "question" or "clear" (an "unknown", a torn write) is unknown, which
+# but "permission", "question", "attention" or "clear" (an "unknown", a torn write) is unknown, which
 # matches no intent, so the next event calls the CLI.
 applied_of() {
   [ -e "$applied" ] || { printf clear; return; }
   line=
   IFS= read -r line < "$applied"
-  case "$line" in permission|question|clear) printf '%s' "$line" ;; *) printf unknown ;; esac
+  case "$line" in permission|question|attention|clear) printf '%s' "$line" ;; *) printf unknown ;; esac
 }
 
 # Whether the lock still holds this hook's token.

@@ -4452,9 +4452,12 @@ oats instance attention [--message <text>] [--clear] --json
 - **Producers.**
   - `oats.core`: the Claude Code emitter oats.core installs in a Claude
     instance's `<home>/.claude/settings.json` (`permission` on a permission
-    prompt, `question` on AskUserQuestion or an MCP elicitation, cleared when
-    the session moves on). See [capabilities.md](capabilities.md), "oats.core:
-    needs input".
+    prompt, `question` on AskUserQuestion or an MCP elicitation, `attention`
+    on a turn an API error ended, cleared when the session moves on). See
+    [capabilities.md](capabilities.md), "oats.core: needs input".
+  - `oats.pi`: the `@awebai/oats-pi` bridge (`attention` on a turn a provider
+    error ended, once pi has stopped retrying, cleared by the next run). See
+    the same section, "A failed turn".
   - `agent`: the instance itself, through `oats instance attention`, and
     only through it: `oats instance waiting --producer agent` is
     `E_BAD_ARGS`. **Agent claims are cleared only by the agent (`--clear`)

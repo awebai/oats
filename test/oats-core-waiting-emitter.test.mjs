@@ -27,7 +27,7 @@ const TMP = join(base, "tmp"); mkdirSync(TMP);
 /** Where claude-waiting.sh keeps the debounce marker of home `h` under temp dir `tmp`. */
 // The per-user marker directory under TMPDIR (XDG_RUNTIME_DIR is unset in these runs).
 const WDIR = `oats-waiting-${process.getuid()}`;
-// What the CLI last recorded for a home ("permission", "question" or "clear"), or null.
+// What the CLI last recorded for a home ("permission", "question", "attention" or "clear"), or null.
 const appliedOf = (h, tmp = TMP) => { try { return readFileSync(`${markerOf(h, tmp)}.applied`, "utf8").trim(); } catch { return null; } };
 // Wait for a condition (an event under way), never for a fixed time.
 const until = async (cond, ms = 15000) => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error("timed out waiting for the race to be set up"); await new Promise((r) => setTimeout(r, 10)); } };
@@ -84,6 +84,9 @@ go(() => setTimeout(() => {
 // time budget and lock age are the test's to set, and the 2 s watchdog never fires on a call
 // the test holds at its gate. Everything else is the real command.
 const SHIMS = join(base, "shims"); mkdirSync(SHIMS);
+// The executable the kernel hands the hook, asked for its version: what FAKE_CLAUDE_VERSION says, 2.1.308 unset.
+const CLAUDE_BIN = join(base, "claude-bin"); mkdirSync(CLAUDE_BIN);
+writeFileSync(join(CLAUDE_BIN, "claude"), '#!/bin/sh\n[ "$FAKE_CLAUDE_VERSION" = fail ] && exit 1\nif [ "$FAKE_CLAUDE_VERSION" = hang ]; then trap "" TERM; sleep 8 & wait; exit 0; fi\nprintf "%s (Claude Code)\\n" "${FAKE_CLAUDE_VERSION:-2.1.308}"\n', { mode: 0o755 });
 writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1" = +%s ]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi\n', { mode: 0o755 });
 // `rm` holds the first call in a process run with FAKE_RM_GATE (a reaper's removal of the
 // stale lock's pid file) until the test creates go in that directory.
@@ -121,7 +124,7 @@ function cleanEnv(extra) {
   return env;
 }
 function runHook(event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, OATS_NODE_BIN: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_HARNESS_EXECUTABLE: join(CLAUDE_BIN, "claude"), OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, OATS_NODE_BIN: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   assert.equal(r.status, 0, r.stderr);
   const last = r.stdout.trim().split("\n").filter(Boolean).pop();
   return JSON.parse(last);
@@ -176,7 +179,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
   assert.equal(statSync(settingsOf(h)).mode & 0o777, 0o600);
   const settings = readJson(settingsOf(h));
   assert.deepEqual(Object.keys(settings), ["hooks"]);
-  assert.deepEqual(Object.keys(settings.hooks), ["Notification", "PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "SessionEnd"]);
+  assert.deepEqual(Object.keys(settings.hooks), ["Notification", "PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"]);
   const map = Object.entries(settings.hooks).flatMap(([event, groups]) => groups.map((g) => [event, g.matcher ?? null, g.hooks.map((e) => e.command.match(/claude-waiting\.sh' ((?:set \w+)|clear(?:-tool)?) /)[1])]));
   assert.deepEqual(map, [
     ["Notification", "permission_prompt", ["set permission"]],
@@ -187,6 +190,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     ["PostToolUseFailure", "*", ["clear-tool"]],
     ["UserPromptSubmit", null, ["clear"]],
     ["Stop", null, ["clear"]],
+    ["StopFailure", null, ["set attention"]],
     ["SessionEnd", null, ["clear"]],
   ]);
   const node = process.execPath;
@@ -239,12 +243,12 @@ test("merge by marker: unrelated keys and hooks stay, in order; a second run is 
   assert.equal(merged.model, "opus");
   assert.deepEqual(merged.permissions, existing.permissions);
   assert.deepEqual(merged.env, existing.env);
-  assert.deepEqual(Object.keys(merged.hooks), ["PreToolUse", "PostCompact", "Notification", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "SessionEnd"], "existing events keep their slots; Stop, emptied by the removal, is dropped and comes back with ours, appended");
+  assert.deepEqual(Object.keys(merged.hooks), ["PreToolUse", "PostCompact", "Notification", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"], "existing events keep their slots; Stop, emptied by the removal, is dropped and comes back with ours, appended");
   // The foreign groups survive in order; the group emptied of our stale entry is gone; a mixed group keeps its foreign entry.
   assert.deepEqual(merged.hooks.PreToolUse.slice(0, 2), [{ matcher: "Bash", hooks: [foreign] }, { matcher: "Edit", hooks: [foreign] }]);
   assert.deepEqual(merged.hooks.PostCompact, [], "an event array that was already empty is not ours to drop");
   const ours = allEntries(merged).filter((e) => e.command.includes(SCRIPT));
-  assert.equal(ours.length, 9, "exactly our nine entries, no stale one left");
+  assert.equal(ours.length, 10, "exactly our ten entries, no stale one left");
   assert.ok(!JSON.stringify(merged).includes("/old/node"));
   // Second run: no write at all.
   const before = readFileSync(settingsOf(h), "utf8");
@@ -331,14 +335,47 @@ test("no OATS_NODE_BIN (an older kernel), an empty or a relative one: this hook'
   }
 });
 
-test("hooks that name an old node path are rewritten by the next launch pass, in place: the new path, nine entries", () => {
+test("StopFailure is written only for the executable the kernel hands the hook, seen to take it: an older one refuses the whole file, so an unknown answer leaves it out (#1669)", () => {
+  const env = (version) => ({ OATS_HARNESS: "claude", OATS_CLI_BIN: FAKE_CLI_ABS, FAKE_CLAUDE_VERSION: version });
+  for (const [version, takes] of [["2.1.308", true], ["2.1.78", true], ["2.1.100", true], ["2.2.0", true], ["3.0.0", true], ["2.1.77", false], ["2.1.9", false], ["2.0.99", false], ["1.9.200", false], ["fail", false], ["not a version", false]]) {
+    const h = home();
+    assert.deepEqual(runHook("launch", { ...env(version), OATS_INSTANCE_HOME: h }), {}, version);
+    const { hooks } = readJson(settingsOf(h));
+    assert.equal(Object.hasOwn(hooks, "StopFailure"), takes, version);
+    assert.equal(allEntries({ hooks }).length, takes ? 10 : 9, version);
+  }
+  // No answer from the kernel: no key, whatever `claude` this hook's PATH would find. A relative path is no answer either.
+  for (const handed of [undefined, "", "claude", join(base, "no-such-claude")]) {
+    const none = home();
+    assert.deepEqual(runHook("launch", { ...env(undefined), OATS_INSTANCE_HOME: none, OATS_HARNESS_EXECUTABLE: handed, PATH: `${CLAUDE_BIN}:${process.env.PATH}` }), {}, String(handed));
+    assert.equal(Object.hasOwn(readJson(settingsOf(none)).hooks, "StopFailure"), false, String(handed));
+  }
+  // A Claude Code moved back: the next start takes the key out again.
+  const back = home();
+  runHook("launch", { ...env("2.1.308"), OATS_INSTANCE_HOME: back });
+  runHook("launch", { ...env("2.1.77"), OATS_INSTANCE_HOME: back });
+  assert.equal(Object.hasOwn(readJson(settingsOf(back)).hooks, "StopFailure"), false);
+  assert.equal(allEntries(readJson(settingsOf(back))).length, 9);
+});
+
+test("a claude that ignores SIGTERM and leaves a child on its stdout holds the hook for the probe's bound only, and the settings are written without StopFailure", () => {
+  const h = home();
+  const began = Date.now();
+  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_CLI_BIN: FAKE_CLI_ABS, FAKE_CLAUDE_VERSION: "hang", OATS_INSTANCE_HOME: h }), {});
+  assert.ok(Date.now() - began < 7000, `the hook took ${Date.now() - began} ms`);
+  const { hooks } = readJson(settingsOf(h));
+  assert.equal(Object.hasOwn(hooks, "StopFailure"), false);
+  assert.equal(allEntries({ hooks }).length, 9);
+});
+
+test("hooks that name an old node path are rewritten by the next launch pass, in place: the new path, ten entries", () => {
   const h = home(), keg = "/opt/homebrew/Cellar/node/26.10.0_2/bin/node", opt = "/opt/homebrew/opt/node/bin/node";
   const env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
   runHook("spawn", { ...env, OATS_NODE_BIN: keg });
   assert.deepEqual(nodesOf(h), [keg]);
   assert.deepEqual(runHook("launch", { ...env, OATS_NODE_BIN: opt }), {});
   assert.deepEqual(nodesOf(h), [opt]);
-  assert.equal(allEntries(readJson(settingsOf(h))).length, 9, "the old entries were replaced, not kept beside the new");
+  assert.equal(allEntries(readJson(settingsOf(h))).length, 10, "the old entries were replaced, not kept beside the new");
   assert.ok(!readFileSync(settingsOf(h), "utf8").includes("Cellar"));
 });
 
@@ -1000,7 +1037,7 @@ function realHomes() {
   };
   return { dep, a: make("dev-a"), b: make("dev-b"), fire };
 }
-const EVERY_HOOK = [["Notification", 0], ["Notification", 1], ["PreToolUse", 0], ["PreToolUse", 1], ["PostToolUse", 0], ["PostToolUseFailure", 0], ["UserPromptSubmit", 0], ["Stop", 0], ["SessionEnd", 0]];
+const EVERY_HOOK = [["Notification", 0], ["Notification", 1], ["PreToolUse", 0], ["PreToolUse", 1], ["PostToolUse", 0], ["PostToolUseFailure", 0], ["UserPromptSubmit", 0], ["Stop", 0], ["StopFailure", 0], ["SessionEnd", 0]];
 const logOf = (h) => { try { return readFileSync(join(h, ".oats-events.jsonl"), "utf8"); } catch { return null; } };
 const claimOf = (h) => { const w = liveWaiting(h); return w ? { producer: w.producer, reason: w.reason, message: w.message } : null; };
 // Everything the emitter keeps for a home in the marker directory, by name and content.
@@ -1020,6 +1057,18 @@ test("real script, real CLI: in its own home's session the emitter sets the clai
   const rows = logOf(a).trim().split("\n").map((l) => JSON.parse(l));
   assert.deepEqual(rows.map((r) => [r.kind, r.producer, r.home, r.data.waitingOnYou, r.data.reason ?? null]),
     [["waiting", "oats.core", a, true, "permission"], ["waiting", "oats.core", a, true, "question"], ["waiting", "oats.core", a, false, null]]);
+});
+
+test("real script, real CLI: a turn an API error ended shows as stuck until the next prompt (#1667)", { timeout: 120000 }, () => {
+  const { a, fire } = realHomes();
+  // Claude Code 2.1.308, a 400 from the provider: no Stop follows.
+  const failed = JSON.stringify({ session_id: "s", hook_event_name: "StopFailure", error: "unknown", last_assistant_message: "API Error: 400 refused by provider policy" });
+  fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, failed);
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "attention", message: "Turn failed: API Error: 400 refused by provider policy" });
+  assert.equal(intentOf(a), "attention");
+  fire(a, "UserPromptSubmit", 0, { OATS_INSTANCE_HOME: a });
+  assert.equal(claimOf(a), null, "the next prompt is the turn it was waiting for");
+  assert.equal(appliedOf(a), "clear");
 });
 
 test("real script, real CLI: a Claude process that loads home B's settings under home A's environment writes nothing for either home and leaves both markers as they were", { timeout: 120000 }, () => {
@@ -1075,6 +1124,16 @@ test("real script, real CLI: the home through a symlink spelling is the same hom
 // as Claude Code 2.1.300 sends it: a Notification's `message`, an AskUserQuestion's questions.
 const notification = (type, message) => JSON.stringify({ session_id: "s", transcript_path: "/t.jsonl", cwd: "/c", hook_event_name: "Notification", message, notification_type: type });
 const askUser = (...questions) => JSON.stringify({ session_id: "s", hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: questions.map((question) => ({ question, header: "H", options: [{ label: "a", description: "" }, { label: "b", description: "" }], multiSelect: false })) }, tool_use_id: "toolu_1" });
+
+test("the claim's text for a turn an API error ended: the error's words, else its class, never empty (#1667)", () => {
+  const stopFailure = (o) => JSON.stringify({ session_id: "s", hook_event_name: "StopFailure", ...o });
+  assert.equal(waitingMessageOf(stopFailure({ error: "rate_limit", last_assistant_message: "API Error: 429 rate limited" })), "Turn failed: API Error: 429 rate limited");
+  assert.equal(waitingMessageOf(stopFailure({ error: "billing_error" })), "Turn failed: billing_error");
+  assert.equal(waitingMessageOf(stopFailure({ error: "unknown", last_assistant_message: "  " })), "Turn failed: unknown");
+  assert.equal(waitingMessageOf(stopFailure({})), "Turn failed");
+  const long = waitingMessageOf(stopFailure({ error: "unknown", last_assistant_message: "x\ny".repeat(100) }));
+  assert.equal([...long].length, 200); assert.ok(long.endsWith("…")); assert.ok(validWaitingMessage(long));
+});
 
 test("the claim's text: an AskUserQuestion's first question (and how many more), else a Notification's message; one line, the kernel's refused characters replaced, at most 200 code points; nothing for anything else", () => {
   assert.equal(waitingMessageOf(notification("permission_prompt", "Claude needs your permission to use Bash")), "Claude needs your permission to use Bash");
