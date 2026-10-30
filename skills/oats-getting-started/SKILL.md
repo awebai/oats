@@ -342,15 +342,15 @@ npm install -g "@awebai/oats@V" && oats version
 pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
 ```
 
-**A new workspace needs `oats.framework` 1.17.0 or later,** the release
+**A new workspace needs `oats.framework` 1.18.0 or later,** the release
 that ships the setup expert soul. Read the installed CLI's catalog:
 
 ```bash
 node -e 'const c=require(process.argv[1]);console.log(c.packages["oats.framework"].ref,c.packages["oats.aweb"].ref)' "$(oats root)/package-catalog.json"
 ```
 
-It prints the two refs, for example `oats-framework/v1.17.0 v1.32.1`. If the
-framework's version (the part after the `/`) is below `1.17.0`, this OATS
+It prints the two refs, for example `oats-framework/v1.18.0 v1.32.1`. If the
+framework's version (the part after the `/`) is below `1.18.0`, this OATS
 release is older than this skill: stop, and tell the person to wait for the
 next OATS release. Never write a setup soul into the workspace in its place.
 
@@ -495,7 +495,7 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host; the setup expert adds the others
 packages:
-  oats.framework: v1.17.0             # the installed CLI's catalog versions (below)
+  oats.framework: v1.18.0             # the installed CLI's catalog versions (below)
   oats.aweb: v1.32.1                  # messaging: agent identities, mail and chat
   oats.machine: v0.1.1                # on a machine found-list only: the machine's steward
 defaults:
@@ -568,7 +568,7 @@ why. `S` is the soul it names.
   workspace that doesn't offer it: stop, and say that its owner adds
   `oats.machine` to its `packages:`.
 - **An existing workspace with no setup soul** (`next.spawn` is `null`): stop.
-  Say that its owner pins `oats.framework` 1.17.0 or later, which ships
+  Say that its owner pins `oats.framework` 1.18.0 or later, which ships
   `oats-setup-expert`. Once that is merged, run `oats sync --dir D` and look
   again.
 
