@@ -769,7 +769,7 @@ test("a stop plan's retiring and stopPending are read from the claim: the holder
   const garbage = refusal(d.apply(i.name, revision, "k-garbage"), "E_LIFECYCLE_BUSY", "a file that is no claim");
   const { plan: garbagePlan, ...garbageDetails } = garbage.details;
   assert.deepEqual(garbageDetails, { instance: i.name, home: i.home, lock: i.lock, holder: "unknown" });
-  assert.equal(garbage.message, `${i.lock} is not a readable claim; nothing was stopped — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`);
+  assert.equal(garbage.message, `${i.lock} is not a readable claim; nothing was stopped — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade, oats session start or oats session restart holds it, then retry`);
   assert.deepEqual([garbagePlan.instance, readFileSync(i.lock, "utf8"), claimFiles(i.home), stopFiles(i.home)], [i.name, "{not json", [`${i.name}.lock`], []], "the file is as it was, and nothing was written");
   // A holder that is gone (a file a killed command left), of either verb: nobody is shown, and the apply takes it over.
   for (const action of ["retire", "stop"]) {
@@ -799,7 +799,7 @@ test("the two refusals of a stop in which nobody is running say so (holder: \"no
   const left = readFileSync(i.lock, "utf8");
   assert.deepEqual(flags(d.plan(i.name)), [idle(i)], "its holder is gone: the plan shows nobody");
   assert.equal(nobody(d.apply(i.name, shown.planRevision, "k1"), { pid, since: AT, action: "stop" }, "a claim that cannot be taken over"),
-    `the process that held ${i.lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was stopped — inspect ${i.lock} and remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`);
+    `the process that held ${i.lock} (pid ${pid}) is gone, and this file is not a claim this kernel can take over (its nonce is not the 32 hexadecimal digits a claim carries); nothing was stopped — inspect ${i.lock} and remove it if no oats retire, oats instance stop, oats instance upgrade, oats session start or oats session restart holds it, then retry`);
   assert.equal(readFileSync(i.lock, "utf8"), left, "the file is as it was");
   rmSync(i.lock);
   // A host that does not say when this process started: the stop could not hold its claim verifiably.

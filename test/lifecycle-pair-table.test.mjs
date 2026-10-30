@@ -1,5 +1,6 @@
 // The pair table, walked (awebai/oats#866, feature `lifecycle-claim-stop`). A retire, a stop
-// apply and a `session start --resume` (#1559) hold the home's claim, and `oats worktree add` reads it; a stop apply that cannot WRITE
+// apply, a `session start --resume` (#1559) and every other session start and restart (#1602,
+// feature `lifecycle-claim-start`) hold the home's claim, and `oats worktree add` reads it; a stop apply that cannot WRITE
 // its claim reads it too (awebai/oats#946), and has a column of its own. What each of them answers
 // when it ARRIVES on a home that another command is on is one table, docs/desktop-cli-api.md
 // "Commands that meet on one home" (anchor `lifecycle-pairs`), which the kernel builds from one
@@ -15,7 +16,8 @@
 //     is byte for byte what it was, the instance's harness still runs, and the command already on
 //     the home is as it was and completes once it is let go;
 //   - `error.details` is what the docs say of a claim's refusal: the HOLDER's verb in `action`,
-//     and `holder` (lib/errors.mjs BUSY_HOLDERS) on every E_LIFECYCLE_BUSY and on no other code.
+//     and `holder` (lib/errors.mjs BUSY_HOLDERS) on every E_LIFECYCLE_BUSY and on no other code;
+//     two starts answer E_SESSION_START_BUSY, as they did at the start lock, with no details.
 // The table is the source of the cells; the setups are this file's. A row or a column the docs gain
 // breaks the first test until someone teaches this file its setup, and one they lose breaks it too.
 //
@@ -301,6 +303,20 @@ const ROWS = {
         if (i.harness) assert.equal(alive(i.harness), true, "the session it found runs as before");
       } };
     } },
+  "a start or restart is running": { key: "starting", holder: "running", action: "start", plan: { retiring: false, stopPending: false },
+    // An ordinary `session start` holds the claim for the whole start (#1602). Let go on a home whose
+    // session runs, it starts nothing.
+    setup: async (f, i) => {
+      const held = await heldOnClaim(f, i, ["session", "start", "--home", i.home, "--json"], "start");
+      return { ...held, complete: async () => {
+        held.run.release("claimed");
+        const r = await held.run.done;
+        assert.equal(r.timedOut.length, 0, r.stdout + r.stderr);
+        if (i.harness) assert.equal(JSON.parse(r.stdout).error?.code, "E_SESSION_RUNNING", `the start that was on the home ends once it is let go, starting nothing: ${r.stdout}${r.stderr}`);
+        assert.deepEqual(f.claimFiles(i), [], "and released its claim");
+        if (i.harness) assert.equal(alive(i.harness), true, "the session it found runs as before");
+      } };
+    } },
   "a retire whose liveness cannot be read holds the claim": { key: "retire-unread", holder: "unknown", action: "retire", plan: { retiring: true, stopPending: false },
     // A live pid with no recorded start: whether it is that retire cannot be compared. A record
     // without a verb is a retire's (a kernel before the feature wrote none): one of each.
@@ -310,6 +326,8 @@ const ROWS = {
     setup: (f, i) => writtenClaim(f, i, { action: "stop", pid: f.bystander }) },
   "a resume whose liveness cannot be read holds the claim": { key: "resume-unread", holder: "unknown", action: "resume", plan: { retiring: false, stopPending: false },
     setup: (f, i) => writtenClaim(f, i, { action: "resume", pid: f.bystander }) },
+  "a start whose liveness cannot be read holds the claim": { key: "start-unread", holder: "unknown", action: "start", plan: { retiring: false, stopPending: false },
+    setup: (f, i) => writtenClaim(f, i, { action: "start", pid: f.bystander }) },
   "the claim file is no readable claim": { key: "garbage", holder: "unknown", action: undefined, plan: { retiring: false, stopPending: false },
     setup: (f, i) => writtenClaim(f, i, null, "{not json") },
   "the holder of the claim is gone": { key: "gone", plan: { retiring: false, stopPending: false },
@@ -383,6 +401,20 @@ const ARRIVING = {
       assert.equal(git(f.fx.member, "branch", "--list", treeBranch(i)).includes(treeBranch(i)), true, "on its new branch of the clone");
       if (i.harness) assert.equal(alive(i.harness), true, "and the session was left alone: a tree does not depend on it");
     } },
+  // An ordinary start or restart (#1602): it takes the claim. A restart, so that one that is not
+  // refused does what it does on a home whose session runs: it stops that session and starts another.
+  "oats session start or restart": { key: "restart", verb: null, nothing: "nothing was started", takesClaim: true,
+    invocations: (i) => [{ label: "oats session restart", argv: ["session", "restart", "--home", i.home, "--stop-grace", "10", "--json"] }],
+    succeeded: async (f, i, a) => {
+      // Without tmux the walk's homes are not launched, and nothing can be started there: the
+      // restart is answered by its launch, never by a claim.
+      if (!i.harness) { assert.ok(!["E_LIFECYCLE_BUSY", "E_INSTANCE_RETIRING", "E_SESSION_START_BUSY"].includes(a.code), `a restart that is not refused is not answered by a claim: ${a.said}`); return; }
+      assert.equal(a.code, "ok", `a restart that is not refused restarts: ${a.said}`);
+      assert.equal(a.doc.result.stop?.exited, true, `it stopped the session there was: ${a.said}`);
+      await waitUntil(() => !alive(i.harness), `the harness of ${i.name} to be gone: the restart stopped it`);
+      const file = join(f.fx.base, "harness-pids", i.name);
+      await waitUntil(() => { const pid = Number(readFileSync(file, "utf8")); return pid !== i.harness && alive(pid); }, `the restarted harness of ${i.name} to run`, 30000);
+    } },
 };
 
 // ---- a refusal, held to what the docs say of it ----
@@ -413,7 +445,13 @@ function assertRefusal(a, { state, command, code, row, column, i, on }) {
   const named = row.action !== undefined;
   const plan = column.stop ? { plan: details?.plan } : {};
   let expected;
-  if (row.claim === false) {
+  if (code === "E_SESSION_START_BUSY") {
+    // Two starts: the answer of the start lock, which starts met before they took the claim. It
+    // carries no details; its message names the holder's pid and the way out.
+    expected = undefined;
+    assert.match(message, new RegExp(`^another start of ${i.name} (is|may be) in progress`), `two starts say what the start lock said: ${where}`);
+    assert.ok(message.includes(`pid ${on.pid}`) && message.includes(`remove ${on.lock}, then retry`), `the message names the pid to check and the way out: ${where}`);
+  } else if (row.claim === false) {
     // The pending marker is no claim. A retire reads it under the claim and names its completion;
     // a stop reads it in its plan; a worktree add reads that the file is there.
     expected = column.key === "retire" ? { instance: i.name, home: i.home, lock: on.lock, pid: on.pid, since: on.since, action: row.action, holder: row.holder }
@@ -431,7 +469,7 @@ function assertRefusal(a, { state, command, code, row, column, i, on }) {
   } else {
     assert.equal(details !== undefined && "holder" in details, false, `only E_LIFECYCLE_BUSY carries details.holder: ${where}`);
   }
-  if (row.claim !== false && named && row.holder === "unknown") {
+  if (row.claim !== false && named && row.holder === "unknown" && code !== "E_SESSION_START_BUSY") {
     assert.ok(typeof details.unknown === "string" && details.unknown.length > 0 && message.includes(details.unknown), `details.unknown is the reason the liveness cannot be read, and the message says it: ${where}`);
     assert.ok(message.includes(`pid ${on.pid}`) && message.includes(`remove ${on.lock}, then retry`), `the message names the pid to check and the way out: ${where}`);
   }
@@ -448,7 +486,7 @@ test("the pair table of docs/desktop-cli-api.md (\"Commands that meet on one hom
   assert.deepEqual(rows.map((row) => row.state), Object.keys(ROWS), "the states of the home, by the docs' own words and in the table's order: a row the docs gain or lose changes this file's ROWS with it");
   // The codes the table may name are the two of a held home; another one is a new kind of answer.
   const codes = new Set(rows.flatMap((row) => Object.values(row.cells)).filter(Boolean));
-  assert.deepEqual([...codes].sort(), ["E_INSTANCE_RETIRING", "E_LIFECYCLE_BUSY"], "the table's refusals are E_LIFECYCLE_BUSY and E_INSTANCE_RETIRING");
+  assert.deepEqual([...codes].sort(), ["E_INSTANCE_RETIRING", "E_LIFECYCLE_BUSY", "E_SESSION_START_BUSY"], "the table's refusals are E_LIFECYCLE_BUSY and E_INSTANCE_RETIRING, and E_SESSION_START_BUSY for two starts");
   // What the notes under the table say of whole rows and columns, read off the cells.
   const cell = (state, command) => rows.find((row) => row.state === state).cells[command];
   assert.deepEqual(Object.values(rows.find((row) => row.state === "the holder of the claim is gone").cells), columns.map(() => null), "a holder that is gone refuses nothing");
@@ -456,6 +494,9 @@ test("the pair table of docs/desktop-cli-api.md (\"Commands that meet on one hom
   assert.deepEqual(rows.map((row) => row.cells["oats instance stop --apply that cannot write its claim"]), rows.map((row) => row.cells["oats instance stop --apply"]), "a stop apply that cannot write its claim is answered as the stop that can, in every state");
   assert.deepEqual([cell("a stop apply is running", "oats worktree add"), cell("a stop whose liveness cannot be read holds the claim", "oats worktree add")], [null, null], "a stop does not refuse a worktree add");
   assert.deepEqual([cell("a resume is running", "oats worktree add"), cell("a resume whose liveness cannot be read holds the claim", "oats worktree add")], [null, null], "nor does a resume");
+  assert.deepEqual([cell("a start or restart is running", "oats worktree add"), cell("a start whose liveness cannot be read holds the claim", "oats worktree add")], [null, null], "nor does a start");
+  // Two starts are answered as the start lock answered them before starts took the claim.
+  assert.deepEqual(["a start or restart is running", "a start whose liveness cannot be read holds the claim", "a resume is running", "a resume whose liveness cannot be read holds the claim"].map((state) => cell(state, "oats session start or restart")), Array(4).fill("E_SESSION_START_BUSY"), "a start beside a start or a resume is E_SESSION_START_BUSY");
 });
 
 test("every cell of the pair table, through the real CLI in JSON mode: the arriving command is answered with the cell's code and nothing happened (the deployment is byte for byte what it was, the session runs, the command already on the home completes), or it is not refused and does what it does", async (t) => {

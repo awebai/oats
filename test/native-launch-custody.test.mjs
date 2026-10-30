@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { startInstanceSession, restartInstanceSession } from "../lib/core.mjs";
+import { retireClaimPath, startInstanceSession, restartInstanceSession } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { expectLoginFallback, leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
 
@@ -259,6 +259,39 @@ for (const restart of [false, true]) for (const backend of ['new-tmux', 'saved-t
       if (backend === 'pending') assert.equal(readJson(join(owned,'.oats-start-pending.json')).id,'earlier-start');
     });
   }
+}
+
+// #1602: a start takes the home's lifecycle claim on the home's path on disk. A directory home
+// exchanged for a link to ANOTHER valid home is still held to its own authority, on the path as it
+// was given: refused before any claim (the other home's included) and any backend call.
+// `restored`: the owned directory is put back the instant the start has resolved the link (the
+// native realpath of the home answers B, then A is A again), so every later read of A finds A as it
+// was: the start is still bound to A by A's receipt, and runs nothing at B.
+for (const restart of [false, true]) for (const restored of [false, true]) {
+  test(`${restart ? 'restart' : 'start'} custody: a directory home exchanged for a link to another valid home${restored ? ', restored once the link is resolved,' : ''} is refused on its own authority, taking neither home's claim`, async t => {
+    const f = fixture(t);
+    const logs = installBackend(f);
+    const a = await f.spawn('alpha'), b = await f.spawn('beta');
+    const bMeta = readFileSync(join(b.home, 'instance.json'), 'utf8');
+    renameSync(a.home, a.home + '.owned'); symlinkSync(b.home, a.home);
+    const native = realpathSync.native;
+    if (restored) {
+      let done = false;
+      realpathSync.native = (path, ...rest) => {
+        const answer = native(path, ...rest);
+        if (path === a.home && !done) { done = true; rmSync(a.home); renameSync(a.home + '.owned', a.home); }
+        return answer;
+      };
+      t.after(() => { realpathSync.native = native; });
+    }
+    const io = { exec: () => { throw new Error('UNEXPECTED BACKEND CALL'); }, kill: () => { throw new Error('UNEXPECTED KILL'); } };
+    try { assert.throws(() => (restart ? restartInstanceSession : startInstanceSession)(a.home, { io }), e => e.code === 'E_WORK_INSPECTION_FAILED'); }
+    finally { realpathSync.native = native; }
+    if (restored) assert.equal(lstatSync(a.home).isDirectory(), true, 'fixture premise: A was restored after the link was resolved');
+    assert.equal(existsSync(logs), false, 'no backend call');
+    for (const home of [a.home, b.home]) assert.equal(existsSync(retireClaimPath(home)), false, `no claim of ${home} was taken`);
+    assert.equal(readFileSync(join(b.home, 'instance.json'), 'utf8'), bMeta, 'the other home is as it was');
+  });
 }
 
 function emitter(f, harness) {

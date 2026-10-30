@@ -980,11 +980,23 @@ included, opens on [the OATS tmux server](#the-oats-tmux-server).
 - A state that cannot be established is refused (`E_SESSION_UNKNOWN`). Two
   starts of one home serialize (`E_SESSION_START_BUSY`). A home being retired
   is refused (`E_INSTANCE_RETIRING`).
+- Every start and restart, a scheduled start included, holds the home's
+  lifecycle claim for the whole start (#1602), the claim a retire, a stop and
+  an upgrade hold: none of them runs beside it, and it starts nothing beside
+  one of them. Beside a stop or an upgrade it is refused `E_LIFECYCLE_BUSY`,
+  before anything is stopped or started; a retire, a stop or an upgrade that
+  arrives while it runs is refused `E_LIFECYCLE_BUSY`, `details.action:
+  "start"` ([Commands that meet on one home](desktop-cli-api.md#lifecycle-pairs)).
+  A start that dies leaves a holder that is gone, which the next command takes
+  over. A spawn's own first launch takes no claim, and neither does a path with
+  no `instance.json` it can read, which writes nothing beside it.
 
 `session restart` takes the same flags. It sends SIGTERM to the harness and
 its children, the processes under the agent's pane, waits `--stop-grace <seconds>` (default 20, at most 300), then
 starts in place. It never escalates: a harness still running is reported
-(`E_SESSION_STOP_FAILED`) and nothing is launched.
+(`E_SESSION_STOP_FAILED`) and nothing is launched. It holds one lifecycle
+claim from before its stop to after its launch, so no retire runs between the
+two.
 
 ### Launch prompt outcomes
 
@@ -1184,8 +1196,8 @@ or an instance out of the sweep.
 
 **A home OATS is stopping, upgrading or retiring, or whose retire did not
 finish, is never resumed** (OATS 0.69.2). A resume holds the home's lifecycle
-claim for its whole start, the claim a retire, a stop and an upgrade hold, so
-it never runs beside one of them, and it reads under that claim whether the
+claim for its whole start, the claim a retire, a stop, an upgrade and every
+other start hold, so it never runs beside one of them, and it reads under that claim whether the
 home owes a retire and whether its session is still lost. The sweep reports
 such a home `skipped`, `lifecycle-busy`, and starts nothing; what OATS was
 doing decides what the home is next. A retire records the stop of the session

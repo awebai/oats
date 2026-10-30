@@ -686,11 +686,12 @@ test("the home's claim is taken for a verb that takes it and for no other: the o
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const home = join(root, "worker", "instances", "worker-1");
   mkdirSync(home, { recursive: true });
-  for (const verb of ["retire", "stop"]) {
+  for (const verb of ["retire", "stop", "upgrade", "resume", "start"]) {
     const held = claimHomeFor(verb, "worker-1", home);
     try { assert.equal(readClaim(retireClaimPath(home)).action, verb, "the claim names its verb"); } finally { releaseHomeClaim(held); }
   }
-  for (const verb of ["worktree add", "start", "Stop", "", undefined, null]) {
+  // A restart takes the claim as `start` (#1602): `restart` is no verb of its own.
+  for (const verb of ["worktree add", "restart", "Stop", "", undefined, null]) {
     assert.throws(() => claimHomeFor(verb, "worker-1", home), (e) => e instanceof TypeError && e.message.includes("retire, stop"), `${JSON.stringify(verb)} takes no claim`);
     assert.equal(existsSync(retireClaimPath(home)), false, "and nothing was written");
   }

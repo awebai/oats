@@ -205,7 +205,7 @@ test("oats worktree add beside a claim file that does not read as a claim is ref
       const where = `${which}, ${what}`;
       const error = refusal(w.add("p", [...more, "--json"]), `\`oats worktree ${what}\` beside a claim file that holds ${which}`);
       assert.deepEqual(error, { code: "E_LIFECYCLE_BUSY",
-        message: `${lock} is not a readable claim; no tree was made — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`,
+        message: `${lock} is not a readable claim; no tree was made — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade, oats session start or oats session restart holds it, then retry`,
         details: { instance: name, home, lock, holder: "unknown" } }, where);
       w.assertNothingMade("p", before, where);
       assert.equal(readFileSync(lock, "utf8"), bytes, `${where}: the file is byte for byte what it was`);
@@ -225,7 +225,7 @@ test("oats worktree add beside a dangling symbolic link where the home's claim b
   for (const [what, more] of [["add", []], ["add --preview", ["--preview"]]]) {
     const error = refusal(w.add("p", [...more, "--json"]), `\`oats worktree ${what}\` beside a dangling link at the claim's path`);
     assert.deepEqual(error, { code: "E_LIFECYCLE_BUSY",
-      message: `${lock} is not a readable claim; no tree was made — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade or oats session start --resume holds it, then retry`,
+      message: `${lock} is not a readable claim; no tree was made — inspect it and remove it if no oats retire, oats instance stop, oats instance upgrade, oats session start or oats session restart holds it, then retry`,
       details: { instance: name, home, lock, holder: "unknown" } }, what);
     w.assertNothingMade("p", before, what);
     assert.ok(lstatSync(lock).isSymbolicLink() && readlinkSync(lock) === nowhere, `${what}: the link is still there, and names what it named`);

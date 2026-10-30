@@ -52,7 +52,7 @@ const NAMES = [
   "skillEntriesIn", "slug", "soulHarnessField", "spawnInstance", "spawnInstanceAsync", "stableSoulId",
   "startInstanceSession", "statusDisagreement", "stillRunningOf", "stopHarness", "stopInstanceSession",
   "storedTreeDigest", "stripInternalAnnotations", "suggestSpawnName", "teamEnv", "tmuxWindows", "todayISO",
-  "unestablishedNote", "upgradeHomeMeta", "upgradeLaunchRecipe", "validateLaunchConfig",
+  "unestablishedNote", "upgradeHoldsClaim", "upgradeHomeMeta", "upgradeLaunchRecipe", "validateLaunchConfig",
   "validateLaunchConfigDefaults", "withConfigFile", "withLaunchModel", "withSafeTaskPrompt", "workspaceOf",
   "workspaceSoulId", "worktreeBytes", "worktreeDigests", "worktreeGitPaths", "writeKernelShim",
   "writeRetirementBaseline"
