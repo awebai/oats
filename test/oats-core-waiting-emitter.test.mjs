@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { liveWaiting, validWaitingMessage } from "../lib/instance-events.mjs";
 import { REFUSED_TEXT } from "../lib/refused-text.mjs";
-import { MESSAGE_REFUSED, waitingMessageOf } from "../oats-package/capabilities/oats-core/bin/claude-waiting-message.mjs";
+import { MESSAGE_REFUSED, failedTurnOf, waitingMessageOf } from "../oats-package/capabilities/oats-core/bin/claude-waiting-message.mjs";
 import { claudeWaitingSettings, markerDir, markerDirPath, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -180,7 +180,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
   const settings = readJson(settingsOf(h));
   assert.deepEqual(Object.keys(settings), ["hooks"]);
   assert.deepEqual(Object.keys(settings.hooks), ["Notification", "PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"]);
-  const map = Object.entries(settings.hooks).flatMap(([event, groups]) => groups.map((g) => [event, g.matcher ?? null, g.hooks.map((e) => e.command.match(/claude-waiting\.sh' ((?:set \w+)|clear(?:-tool)?) /)[1])]));
+  const map = Object.entries(settings.hooks).flatMap(([event, groups]) => groups.map((g) => [event, g.matcher ?? null, g.hooks.map((e) => e.command.match(/claude-waiting\.sh' ((?:set [\w-]+)|clear(?:-tool)?) /)[1])]));
   assert.deepEqual(map, [
     ["Notification", "permission_prompt", ["set permission"]],
     ["Notification", "elicitation_dialog", ["set question"]],
@@ -190,7 +190,7 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     ["PostToolUseFailure", "*", ["clear-tool"]],
     ["UserPromptSubmit", null, ["clear"]],
     ["Stop", null, ["clear"]],
-    ["StopFailure", null, ["set attention"]],
+    ["StopFailure", null, ["set failed-turn"]],
     ["SessionEnd", null, ["clear"]],
   ]);
   const node = process.execPath;
@@ -1065,10 +1065,19 @@ test("real script, real CLI: a turn an API error ended shows as stuck until the 
   const failed = JSON.stringify({ session_id: "s", hook_event_name: "StopFailure", error: "unknown", last_assistant_message: "API Error: 400 refused by provider policy" });
   fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, failed);
   assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "attention", message: "Turn failed: API Error: 400 refused by provider policy" });
-  assert.equal(intentOf(a), "attention");
+  assert.equal(appliedOf(a).split("\n")[0], "attention");
   fire(a, "UserPromptSubmit", 0, { OATS_INSTANCE_HOME: a });
   assert.equal(claimOf(a), null, "the next prompt is the turn it was waiting for");
   assert.equal(appliedOf(a), "clear");
+  // A permission prompt over a failed turn is a live dialog, and only an AskUserQuestion's own prompt
+  // defers to a question.
+  fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, failed);
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a }, notification("permission_prompt", "Claude needs your permission to use Bash"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
+  fire(a, "UserPromptSubmit", 0, { OATS_INSTANCE_HOME: a });
+  fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, JSON.stringify({ hook_event_name: "StopFailure", error: "rate_limit", last_assistant_message: "API Error: 429" }));
+  fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a }, notification("permission_prompt", "Claude needs your permission to use Bash"));
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
 });
 
 test("real script, real CLI: a Claude process that loads home B's settings under home A's environment writes nothing for either home and leaves both markers as they were", { timeout: 120000 }, () => {
@@ -1124,6 +1133,75 @@ test("real script, real CLI: the home through a symlink spelling is the same hom
 // as Claude Code 2.1.300 sends it: a Notification's `message`, an AskUserQuestion's questions.
 const notification = (type, message) => JSON.stringify({ session_id: "s", transcript_path: "/t.jsonl", cwd: "/c", hook_event_name: "Notification", message, notification_type: type });
 const askUser = (...questions) => JSON.stringify({ session_id: "s", hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: questions.map((question) => ({ question, header: "H", options: [{ label: "a", description: "" }, { label: "b", description: "" }], multiSelect: false })) }, tool_use_id: "toolu_1" });
+
+test("a failed turn's reason, by Claude's error class: question for one that can open a menu an Enter answers, and for anything not known not to (#1670)", () => {
+  const reasonOf = (input) => failedTurnOf(JSON.stringify({ hook_event_name: "StopFailure", ...input })).split(" ")[0];
+  for (const error of ["unknown", "invalid_request", "authentication_failed", "billing_error", "oauth_org_not_allowed", "model_not_found", "server_error", "max_output_tokens"]) assert.equal(reasonOf({ error }), "attention", error);
+  for (const error of ["rate_limit", "overloaded", "account_on_hold", "verification_required", "cloud_credential_error", "a_class_claude_adds_later", "UNKNOWN", "constructor", "", null, 0, ["unknown"]]) assert.equal(reasonOf({ error }), "question", String(error));
+  assert.equal(reasonOf({}), "question", "no class at all");
+  for (const text of ["", "not json", "[]", "null"]) assert.equal(failedTurnOf(text).split(" ")[0], "question", text);
+  assert.equal(failedTurnOf(JSON.stringify({ hook_event_name: "StopFailure", error: "rate_limit", last_assistant_message: "You've hit your limit" })), "question Turn failed: You've hit your limit");
+});
+
+test("StopFailure has no matcher: Claude 2.1.78 runs every entry for an empty class, so one entry decides, and the hook sets the reason the class gives, with or without a marker", () => {
+  assert.deepEqual(claudeWaitingSettings({ script: "/s", node: "/n", cli: "/c", stopFailure: true }).hooks.StopFailure.map((g) => Object.keys(g)), [["hooks"]]);
+  const { a, fire } = realHomes();
+  const failed = (error) => JSON.stringify({ hook_event_name: "StopFailure", ...(error === undefined ? {} : { error }), last_assistant_message: "API Error: x" });
+  const noMarker = waitingCommand({ script: SCRIPT, node: process.execPath, cli: REAL_CLI, marker: "", home: a }, ["set", "failed-turn"]);
+  const paths = [(input) => fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, input),
+    (input) => { const r = spawnSync("/bin/sh", ["-c", noMarker], { input, cwd: base, encoding: "utf8", timeout: 60000, env: cleanEnv({ OATS_INSTANCE_HOME: a, OATS_INSTANCE: undefined, OATS_HOME: undefined, OATS_ROOT: undefined, PI_AGENTS_ROOT: undefined, TMUX: undefined }) }); assert.equal(r.status, 0, r.stderr); }];
+  for (const run of paths) {
+    for (const [input, claim] of [[failed("unknown"), ["attention", "Turn failed: API Error: x"]], [failed("rate_limit"), ["question", "Turn failed: API Error: x"]], [failed(""), ["question", "Turn failed: API Error: x"]], [failed(undefined), ["question", "Turn failed: API Error: x"]], ["not json", ["question", null]]]) {
+      run(input);
+      const { reason, message } = claimOf(a);
+      assert.deepEqual([reason, message], claim, input);
+      fire(a, "Stop", 0, { OATS_INSTANCE_HOME: a });
+    }
+  }
+});
+
+test("a failed turn's reader can't undo what came after it: a later clear stays clear, a later question stays that question, and a later permission prompt shows (#1670)", async () => {
+  const { a, fire } = realHomes();
+  const env = { OATS_INSTANCE_HOME: a };
+  const gate = join(base, `failed-gate-${++n}`);
+  // The reader alone waits for the gate, inside its 1 s watchdog.
+  const slowNode = join(base, `slow-node-${n}`);
+  writeFileSync(slowNode, `#!/bin/sh\ncase "$1" in *claude-waiting-message.mjs) i=0; while [ ! -e ${shq(gate)} ] && [ $i -lt 16 ]; do sleep 0.05; i=$((i + 1)); done ;; esac\nexec ${shq(process.execPath)} "$@"\n`); chmodSync(slowNode, 0o755);
+  const stored = readJson(settingsOf(a)).hooks.StopFailure[0].hooks[0].command;
+  assert.ok(stored.includes(shq(process.execPath)));
+  const command = stored.replace(shq(process.execPath), shq(slowNode));
+  const failing = (error) => {
+    const child = spawn("/bin/sh", ["-c", command], { cwd: base, stdio: ["pipe", "ignore", "ignore"], env: cleanEnv({ TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, OATS_INSTANCE: undefined, OATS_HOME: undefined, OATS_ROOT: undefined, PI_AGENTS_ROOT: undefined, TMUX: undefined, ...env }) });
+    child.stdin.end(JSON.stringify({ hook_event_name: "StopFailure", error, last_assistant_message: "API Error: old" }));
+    return new Promise((done) => child.on("exit", done));
+  };
+  const published = () => until(() => { try { return readFileSync(markerOf(a), "utf8").startsWith("failed-turn\n"); } catch { return false; } });
+
+  let old = failing("rate_limit");
+  await published();
+  fire(a, "Stop", 0, env);
+  writeFileSync(gate, "");
+  await old;
+  assert.equal(claimOf(a), null);
+  assert.equal(intentOf(a), "clear");
+  rmSync(gate);
+
+  old = failing("unknown");
+  await published();
+  fire(a, "PreToolUse", 0, env, askUser("A new question?"));
+  writeFileSync(gate, "");
+  await old;
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "A new question?" });
+  fire(a, "Stop", 0, env);
+  rmSync(gate);
+
+  old = failing("unknown");
+  await published();
+  fire(a, "Notification", 0, env, notification("permission_prompt", "Claude needs your permission to use Bash"));
+  writeFileSync(gate, "");
+  await old;
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
+});
 
 test("the claim's text for a turn an API error ended: the error's words, else its class, never empty (#1667)", () => {
   const stopFailure = (o) => JSON.stringify({ session_id: "s", hook_event_name: "StopFailure", ...o });

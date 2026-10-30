@@ -1,6 +1,6 @@
 #!/bin/sh
 # oats.core: Claude Code waiting emitter.
-#   claude-waiting.sh set <permission|question|attention> <node> <cli> <marker> <home>
+#   claude-waiting.sh set <permission|question|attention|failed-turn> <node> <cli> <marker> <home>
 #   claude-waiting.sh clear <node> <cli> <marker> <home>        (a turn boundary: UserPromptSubmit, Stop, SessionEnd; not debounced)
 #   claude-waiting.sh clear-tool <node> <cli> <marker> <home>   (a PreToolUse/PostToolUse clear: debounced; skipped for a subagent's tool call)
 # <marker> is the debounce marker's path, from the launch hook, or '' for none.
@@ -11,8 +11,9 @@
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
 # A set carries the text of what the session waits on, as claude-waiting-message.mjs (beside
 # this script) reads it from the hook's input: an AskUserQuestion's question, a Notification's
-# own words, or the error of a turn that failed (StopFailure, reason attention). No text (none
-# in the input, or the reader failed) sets the claim without one.
+# own words, or the error of a turn that failed. `failed-turn` (StopFailure) is no reason of its
+# own: it reads as question, and the reader can make it attention, for an error class known to
+# open no dialog. No text (none in the input, or the reader failed) sets the claim without one.
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, never waits
@@ -24,12 +25,13 @@
 #
 # The protocol (with a marker; without one every event just calls the CLI):
 #   <marker>          the INTENT: the latest event's wish, "permission", "question",
-#                     "attention" or "clear", on its first line; a set's event id
+#                     "attention", "failed-turn" or "clear", on its first line; a set's event id
 #                     ("<pid>-<began>") on the second. Every hook writes it first, before it
 #                     reads anything.
 #   <marker>.text-<event>  the text of the set whose event id that is, written once the set has
 #                     read it. Only the intent's own event's text is ever applied, so a set
-#                     still reading its text when a later event comes can never apply it.
+#                     still reading its text when a later event comes can never apply it. A failed
+#                     turn's reason is the second line, under the same rule.
 #   <marker>.applied  what the CLI last RECORDED: the reason, and the text on a second line when
 #                     it had one; also "unknown" while a call is under way
 #                     or after one failed (it may have written the claim). Absent is clear
@@ -66,7 +68,7 @@ action=$1
 case "$action" in
   set)
     reason=$2; node=$3; cli=$4; marker=${5:-}; home=${6:-}
-    case "$reason" in permission|question|attention) ;; *) exit 0 ;; esac
+    case "$reason" in permission|question|attention|failed-turn) ;; *) exit 0 ;; esac
     ;;
   clear|clear-tool)
     node=$2; cli=$3; marker=${4:-}; home=${5:-}
@@ -149,13 +151,13 @@ read_input() {
 
 # The text of a set, from the hook's input, into $message: what claude-waiting-message.mjs
 # prints, under a 1 s watchdog; empty when it prints nothing, fails or is killed. Its output is
-# one line the kernel accepts as a --message.
+# one line the kernel accepts as a --message. Its arguments go to the reader.
 message_of() {
   message=
   read_input
   [ -n "$input" ] && [ -f "$helper" ] || return 0
   message=$(
-    printf '%s' "$input" | "$node" "$helper" &
+    printf '%s' "$input" | "$node" "$helper" "$@" &
     pid=$!
     start_watchdog "$pid" 1
     wait "$pid"
@@ -163,6 +165,14 @@ message_of() {
     kill "$watchdog"
     exit "$status"
   ) || message=
+}
+
+# A failed turn's reason and text, from the hook's input, into $resolved and $message.
+failed_turn_of() {
+  message_of failed-turn
+  resolved=question
+  [ "${message%% *}" = attention ] && resolved=attention
+  message=${message#* }
 }
 
 # Whether this hook's input is a subagent's tool event (a background or parallel subagent
@@ -192,11 +202,12 @@ run_cli() {
   return "$status"
 }
 
-# The intent: "permission", "question", "attention" or "clear"; absent or anything else is clear.
+# The intent: "permission", "question", "attention", "failed-turn" or "clear"; absent or anything
+# else is clear.
 state_of() {
   line=
   [ -f "$1" ] && IFS= read -r line < "$1"
-  case "$line" in permission|question|attention) printf '%s' "$line" ;; *) printf clear ;; esac
+  case "$line" in permission|question|attention|failed-turn) printf '%s' "$line" ;; *) printf clear ;; esac
 }
 
 # What the CLI last recorded as the claim's text: the second line of the applied file, or empty.
@@ -209,11 +220,12 @@ applied_text() {
 # The intent, read once into $want (as state_of) and $text: the text of the intent's own set,
 # from the file of its event id, or empty (a clear, a set with no text, or one still reading it).
 read_intent() {
-  want=clear text='' line='' event=''
+  want=clear text='' line='' event='' resolved=''
   [ -f "$marker" ] && { IFS= read -r line; IFS= read -r event; } < "$marker"
-  case "$line" in permission|question|attention) want=$line ;; *) return 0 ;; esac
+  case "$line" in permission|question|attention) want=$line ;; failed-turn) want=question ;; *) return 0 ;; esac
   case "$event" in ''|*[!0-9-]*) return 0 ;; esac
-  [ -f "$marker.text-$event" ] && [ ! -L "$marker.text-$event" ] && IFS= read -r text < "$marker.text-$event"
+  [ -f "$marker.text-$event" ] && [ ! -L "$marker.text-$event" ] && { IFS= read -r text; IFS= read -r resolved; } < "$marker.text-$event"
+  [ "$line" = failed-turn ] && [ "$resolved" = attention ] && want=attention
   return 0
 }
 
@@ -356,7 +368,7 @@ reconcile() {
 helper=${0%/*}/claude-waiting-message.mjs
 if [ -z "$marker" ]; then
   if [ "$action" = set ]; then
-    message_of
+    if [ "$reason" = failed-turn ]; then failed_turn_of; reason=$resolved; else message_of; fi
     if [ -n "$message" ]; then run_cli set --producer oats.core --reason "$reason" "--message=$message"
     else run_cli set --producer oats.core --reason "$reason"; fi
   else
@@ -373,11 +385,17 @@ if [ "$action" = set ]; then
   # open question.
   [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
   began=$(date +%s)
-  # The intent first, so this event is ordered before anything later; its text after.
+  # The intent first, so this event is ordered before anything later; its text after. A failed
+  # turn's reason goes beside its text, so a later event always wins.
   event="$$-$began"
   printf '%s\n%s\n' "$reason" "$event" > "$marker"
-  message_of
-  [ -n "$message" ] && printf '%s\n' "$message" > "$marker.text-$event"
+  if [ "$reason" = failed-turn ]; then
+    failed_turn_of
+    printf '%s\n%s\n' "$message" "$resolved" > "$marker.text-$event"
+  else
+    message_of
+    [ -n "$message" ] && printf '%s\n' "$message" > "$marker.text-$event"
+  fi
 elif [ "$action" = clear-tool ]; then
   # Nothing to clear (cleared and recorded so, no forced call due): no node process, no
   # input read. This is the hot path: every tool call runs it twice.

@@ -149,8 +149,9 @@ export function claudeWaitingSettings({ script, node, cli, marker = "", home = "
       UserPromptSubmit: [group(undefined, "clear")],
       Stop: [group(undefined, "clear")],
       // An API error ended the turn, past Claude's own retries: fires instead of Stop, and
-      // nothing runs after it, so only this hook can say the session is stuck (#1667).
-      ...(stopFailure ? { StopFailure: [group(undefined, "set", "attention")] } : {}),
+      // nothing runs after it, so only this hook can say the session is stuck (#1667). No matcher:
+      // Claude 2.1.78 runs every entry for an empty class, so the script reads the class (#1670).
+      ...(stopFailure ? { StopFailure: [group(undefined, "set", "failed-turn")] } : {}),
       SessionEnd: [group(undefined, "clear")],
     },
   };
