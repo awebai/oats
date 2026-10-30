@@ -1069,15 +1069,15 @@ test("real script, real CLI: a turn an API error ended shows as stuck until the 
   fire(a, "UserPromptSubmit", 0, { OATS_INSTANCE_HOME: a });
   assert.equal(claimOf(a), null, "the next prompt is the turn it was waiting for");
   assert.equal(appliedOf(a), "clear");
-  // A permission prompt over a failed turn: attention never holds a wake, so the prompt must show;
-  // a rate_limit's question already does, and a question isn't relabelled.
+  // A permission prompt over a failed turn is a live dialog, and only an AskUserQuestion's own prompt
+  // defers to a question.
   fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, failed);
   fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a }, notification("permission_prompt", "Claude needs your permission to use Bash"));
   assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
   fire(a, "UserPromptSubmit", 0, { OATS_INSTANCE_HOME: a });
   fire(a, "StopFailure", 0, { OATS_INSTANCE_HOME: a }, JSON.stringify({ hook_event_name: "StopFailure", error: "rate_limit", last_assistant_message: "API Error: 429" }));
   fire(a, "Notification", 0, { OATS_INSTANCE_HOME: a }, notification("permission_prompt", "Claude needs your permission to use Bash"));
-  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "Turn failed: API Error: 429" });
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
 });
 
 test("real script, real CLI: a Claude process that loads home B's settings under home A's environment writes nothing for either home and leaves both markers as they were", { timeout: 120000 }, () => {
@@ -1160,7 +1160,7 @@ test("StopFailure has no matcher: Claude 2.1.78 runs every entry for an empty cl
   }
 });
 
-test("a failed turn's reader can't undo what came after it: a later clear stays clear, and a later question stays that question (#1670)", async () => {
+test("a failed turn's reader can't undo what came after it: a later clear stays clear, a later question stays that question, and a later permission prompt shows (#1670)", async () => {
   const { a, fire } = realHomes();
   const env = { OATS_INSTANCE_HOME: a };
   const gate = join(base, `failed-gate-${++n}`);
@@ -1175,7 +1175,7 @@ test("a failed turn's reader can't undo what came after it: a later clear stays 
     child.stdin.end(JSON.stringify({ hook_event_name: "StopFailure", error, last_assistant_message: "API Error: old" }));
     return new Promise((done) => child.on("exit", done));
   };
-  const published = () => until(() => { try { return readFileSync(markerOf(a), "utf8").startsWith("question\n"); } catch { return false; } });
+  const published = () => until(() => { try { return readFileSync(markerOf(a), "utf8").startsWith("failed-turn\n"); } catch { return false; } });
 
   let old = failing("rate_limit");
   await published();
@@ -1192,6 +1192,15 @@ test("a failed turn's reader can't undo what came after it: a later clear stays 
   writeFileSync(gate, "");
   await old;
   assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "question", message: "A new question?" });
+  fire(a, "Stop", 0, env);
+  rmSync(gate);
+
+  old = failing("unknown");
+  await published();
+  fire(a, "Notification", 0, env, notification("permission_prompt", "Claude needs your permission to use Bash"));
+  writeFileSync(gate, "");
+  await old;
+  assert.deepEqual(claimOf(a), { producer: "oats.core", reason: "permission", message: "Claude needs your permission to use Bash" });
 });
 
 test("the claim's text for a turn an API error ended: the error's words, else its class, never empty (#1667)", () => {

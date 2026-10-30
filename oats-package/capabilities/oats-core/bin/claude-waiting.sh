@@ -12,7 +12,7 @@
 # A set carries the text of what the session waits on, as claude-waiting-message.mjs (beside
 # this script) reads it from the hook's input: an AskUserQuestion's question, a Notification's
 # own words, or the error of a turn that failed. `failed-turn` (StopFailure) is no reason of its
-# own: it starts as question, and the reader can make it attention, for an error class known to
+# own: it reads as question, and the reader can make it attention, for an error class known to
 # open no dialog. No text (none in the input, or the reader failed) sets the claim without one.
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
@@ -25,7 +25,7 @@
 #
 # The protocol (with a marker; without one every event just calls the CLI):
 #   <marker>          the INTENT: the latest event's wish, "permission", "question",
-#                     "attention" or "clear", on its first line; a set's event id
+#                     "attention", "failed-turn" or "clear", on its first line; a set's event id
 #                     ("<pid>-<began>") on the second. Every hook writes it first, before it
 #                     reads anything.
 #   <marker>.text-<event>  the text of the set whose event id that is, written once the set has
@@ -202,11 +202,12 @@ run_cli() {
   return "$status"
 }
 
-# The intent: "permission", "question", "attention" or "clear"; absent or anything else is clear.
+# The intent: "permission", "question", "attention", "failed-turn" or "clear"; absent or anything
+# else is clear.
 state_of() {
   line=
   [ -f "$1" ] && IFS= read -r line < "$1"
-  case "$line" in permission|question|attention) printf '%s' "$line" ;; *) printf clear ;; esac
+  case "$line" in permission|question|attention|failed-turn) printf '%s' "$line" ;; *) printf clear ;; esac
 }
 
 # What the CLI last recorded as the claim's text: the second line of the applied file, or empty.
@@ -221,10 +222,10 @@ applied_text() {
 read_intent() {
   want=clear text='' line='' event='' resolved=''
   [ -f "$marker" ] && { IFS= read -r line; IFS= read -r event; } < "$marker"
-  case "$line" in permission|question|attention) want=$line ;; *) return 0 ;; esac
+  case "$line" in permission|question|attention) want=$line ;; failed-turn) want=question ;; *) return 0 ;; esac
   case "$event" in ''|*[!0-9-]*) return 0 ;; esac
   [ -f "$marker.text-$event" ] && [ ! -L "$marker.text-$event" ] && { IFS= read -r text; IFS= read -r resolved; } < "$marker.text-$event"
-  [ "$want" = question ] && [ "$resolved" = attention ] && want=attention
+  [ "$line" = failed-turn ] && [ "$resolved" = attention ] && want=attention
   return 0
 }
 
@@ -382,20 +383,16 @@ if [ "$action" = set ]; then
   # An open AskUserQuestion is shown through Claude's permission dialog, so its own
   # permission_prompt follows the question's set: a permission prompt never relabels an
   # open question.
-  if [ "$reason" = permission ]; then
-    read_intent
-    [ "$want" = question ] && exit 0
-  fi
+  [ "$reason" = permission ] && [ "$intent" = question ] && exit 0
   began=$(date +%s)
   # The intent first, so this event is ordered before anything later; its text after. A failed
-  # turn starts as question and its reason goes beside its text, so a later event always wins.
+  # turn's reason goes beside its text, so a later event always wins.
   event="$$-$began"
+  printf '%s\n%s\n' "$reason" "$event" > "$marker"
   if [ "$reason" = failed-turn ]; then
-    printf 'question\n%s\n' "$event" > "$marker"
     failed_turn_of
     printf '%s\n%s\n' "$message" "$resolved" > "$marker.text-$event"
   else
-    printf '%s\n%s\n' "$reason" "$event" > "$marker"
     message_of
     [ -n "$message" ] && printf '%s\n' "$message" > "$marker.text-$event"
   fi
