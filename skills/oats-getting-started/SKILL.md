@@ -421,9 +421,9 @@ aw auth status --json && rm -f "$HOME/.oats-aw-login.txt"
 `account.id` is the account `ACCOUNT`; `account.handle` is its name, to tell
 the person.
 
-**Create the team, with its root in `D/.aw`.** `D/.aw` must not exist yet:
-if it does, stop, and ask the person what it is. Then, with `D`, `K`, the
-workspace name and `ACCOUNT` written in:
+**Create the team, with its root in `D/.aw`.** On a first run `D/.aw` must
+not exist yet: if it does and this skill did not make it, stop, and ask the
+person what it is. With `D`, `K`, the workspace name and `ACCOUNT` written in:
 
 ```bash
 mkdir -p "D" && test ! -e "D/.aw" && cd "D" && aw --identity-home "D/.aw" team ensure --workspace-key "K" --label "<workspace>" --expect-account "ACCOUNT" --json
@@ -442,7 +442,15 @@ mkdir -p "D" && test ! -e "D/.aw" && cd "D" && aw --identity-home "D/.aw" team e
     person.
   - `unsupported-server`, or anything else: stop and tell the person what it
     printed.
-- **Rerun** the same line after an interrupted run: it continues it.
+- **After an interrupted run** (killed, timed out, or its answer lost),
+  `D/.aw` exists, and the first-run line stops at its check. Run the same
+  call without that check, with exactly the same `D`, `K`, workspace name and
+  `ACCOUNT`: aw continues its own run, or answers `identity-home-occupied`
+  for anything else. Never remove or edit `D/.aw`.
+
+  ```bash
+  cd "D" && aw --identity-home "D/.aw" team ensure --workspace-key "K" --label "<workspace>" --expect-account "ACCOUNT" --json
+  ```
 
 Tell the person the team exists, owned by their aweb account `<handle>`.
 
@@ -455,13 +463,13 @@ Tell the person the team exists, owned by their aweb account `<handle>`.
   files would end up in the first commit.
 
   ```bash
-  cd "D" && test ! -e "<repo>" && gh repo create "<owner>/<repo>" --private --clone && ls -a "<repo>"
+  mkdir -p "D" && cd "D" && test ! -e "<repo>" && gh repo create "<owner>/<repo>" --private --clone && ls -a "<repo>"
   ```
 - **A monorepo:** clone it into `D`, so the setup expert's tools find it
   there. If `D/<repo>` already holds a clone of it, use that clone.
 
   ```bash
-  cd "D" && test ! -e "<repo>" && gh repo clone "<owner>/<repo>" "<repo>" && git -C "<repo>" status --short --branch
+  mkdir -p "D" && cd "D" && test ! -e "<repo>" && gh repo clone "<owner>/<repo>" "<repo>" && git -C "<repo>" status --short --branch
   ```
 
   Its root must not hold `oats-workspace.yaml` or `oats-membership.yaml`
