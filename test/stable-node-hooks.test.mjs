@@ -56,10 +56,8 @@ const unstable = (warnings) => (warnings || []).filter((w) => /not stable/.test(
 
 // A harness that records its pid, then idles (an `exec`ed sleep: the session never reads as a shell).
 const binDir = join(base, "bin");
-const probe = write(join(binDir, "probe"), `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`, 0o755);
+const probe = write(join(binDir, "probe"), `#!/bin/sh\n[ "$1" = --version ] && { echo '2.1.308 (Claude Code)'; exit 0; }\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nexec sleep 86400\n`, 0o755);
 process.env.PATH = `${binDir}:${process.env.PATH}`;
-// The `claude` oats.core's launch hook asks for its version.
-writeFileSync(join(binDir, "claude"), "#!/bin/sh\necho '2.1.308 (Claude Code)'\n", { mode: 0o755 });
 
 // oats.core as every copy before this change wrote it: the hook's own node, whatever the kernel hands it.
 const current = readFileSync(join(CAP, "bin", "oats-core.mjs"), "utf8");

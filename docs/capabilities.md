@@ -598,6 +598,21 @@ preview (only a preview-aware hook does, below); on a real run
 `OATS_LAUNCH_PREVIEW` is not set. A worktree hook also gets the tree
 variables of [The worktree event](#the-worktree-event).
 
+A spawn or launch hook also gets `OATS_HARNESS_EXECUTABLE`, for every harness
+and the same way in a preview: the absolute real path of the executable the
+pane will run, found the way the pane finds it. It is reserved, so a launch
+configuration's `env` or a trigger cannot set it, and an inherited value is
+dropped. Where that lookup has no answer the variable is absent, never
+guessed: a bare harness name on a spawn with `--no-launch`, or before the pane's
+`PATH` is known. A hook should read its absence as "unknown".
+
+It holds the answer at the moment the hook runs. A declared path and a frozen
+recipe stay as they are, but a bare name is looked up again on the session the
+launch gets, because a hook, or another creator, can create that session with a
+different `PATH`. When that lookup moves the executable, the launch runs the new
+one and says so: a warning in the answer and a `launch-warning` event in the
+home, both naming the path the hooks were given and the path it runs.
+
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
 
@@ -1111,10 +1126,13 @@ next turn or at a session boundary.
   hook's `last_assistant_message`, else its `error` class. The event came in
   2.1.78. An older Claude Code skips a whole settings file that names it and
   stops an interactive start at a Settings Error dialog, so oats.core writes
-  the entry only when `claude --version` on the hook's `PATH` says 2.1.78 or
-  later, at each spawn and start. Any other answer leaves it out, and that
-  home's failed turns go unreported. A launch configuration whose `executable`
-  is an older Claude Code than the one on `PATH` is not caught.
+  the entry only when `OATS_HARNESS_EXECUTABLE --version` says 2.1.78 or later,
+  at each spawn and start. It runs that path alone, with a short limit. A
+  missing variable, a failure, a timeout or output it cannot read all leave the
+  entry out, never refuse the launch, and that home's failed turns go
+  unreported until a start with an answer: a spawn with `--no-launch` and a
+  bare name gets the entry at its first start, and a kernel without the
+  variable never does.
 - **pi:** the `@awebai/oats-pi` bridge reports it as producer `oats.pi`, from
   `agent_settled`, once pi has stopped retrying and recovering. A transient
   error pi retried away raises nothing, and neither does an abort. A pi before

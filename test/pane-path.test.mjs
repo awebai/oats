@@ -57,7 +57,11 @@ const fx = v2Deployment({
   souls: { dev: {}, racer: { soul: { capabilities: { "test.racer": { from: "here" } } } } },
   // A spawn hook that, when asked, creates the spawn's session first, with its own PATH: another
   // creator that wins the race between the spawn's plan and its creation.
-  capabilities: { "test.racer": { manifest: { layer: "knowledge", hooks: { spawn: "spawn.mjs" } }, files: { "spawn.mjs": `import { execFileSync } from "node:child_process";
+  capabilities: { "test.racer": { manifest: { layer: "knowledge", launchPreview: true, hooks: { spawn: "spawn.mjs", launch: "spawn.mjs" } }, files: { "spawn.mjs": `import { execFileSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+appendFileSync(join(process.env.OATS_INSTANCE_HOME, "handed"), JSON.stringify({ event: process.env.OATS_EVENT, preview: process.env.OATS_LAUNCH_PREVIEW === "1", executable: process.env.OATS_HARNESS_EXECUTABLE ?? null }) + "\\n");
+if (process.env.OATS_LAUNCH_PREVIEW === "1") { process.stdout.write("{}\\n"); process.exit(0); }
 if (process.env.RACE_KILL) execFileSync(${JSON.stringify(TMUX)}, ["-L", "oats", "kill-server"], { env: { HOME: process.env.HOME, TMUX_TMPDIR: process.env.TMUX_TMPDIR, LANG: "C.UTF-8" }, stdio: "ignore", timeout: 10000 });
 if (process.env.RACE_SESSION) execFileSync(${JSON.stringify(TMUX)}, ["-L", "oats", "new-session", "-d", "-s", process.env.RACE_SESSION, "-n", "hq"], { env: { HOME: process.env.HOME, TMUX_TMPDIR: process.env.TMUX_TMPDIR, PATH: process.env.RACE_PATH, SHELL: "/bin/sh", LANG: "C.UTF-8" }, stdio: "ignore", timeout: 10000 });
 process.stdout.write("{}\\n");
@@ -92,6 +96,15 @@ const shimOf = (home) => join(home, ".oats", "bin");
 const executableOf = (home) => readJson(join(home, "instance.json")).launch.executable;
 const runs = (home) => { try { return lines(readFileSync(join(home, "runs"), "utf8")).length; } catch { return 0; } };
 const homeOf = (name) => join(fx.root, "dev", "instances", name);
+/** What the racer's hook was handed, each run. */
+const handed = (home) => lines(readFileSync(join(home, "handed"), "utf8")).map((line) => JSON.parse(line));
+/** The replacement warning, in the answer's warnings and as one launch-warning row in the home, naming both real paths. */
+function assertReplaced(warnings, home, was, now) {
+  const message = `the harness executable changed after the hooks ran, on the session this launch got: hooks were given ${was}, this launch runs ${now}`;
+  assert.ok(warnings.includes(message), JSON.stringify(warnings));
+  const rows = lines(readFileSync(join(home, ".oats-events.jsonl"), "utf8")).map((line) => JSON.parse(line)).filter((row) => row.kind === "launch-warning" && row.data?.message === message);
+  assert.equal(rows.length, 1, "kept in the home once");
+}
 /** A refused spawn: its code, nothing left behind, and none of the PATH values in what it printed. */
 function refused(r, name, code = "E_HARNESS_UNAVAILABLE") {
   assert.notEqual(r.status, 0, r.stdout);
@@ -201,6 +214,9 @@ test("two creators with different plans: the spawn that loses the server's creat
   assert.ok(readJson(join(child.home, "instance.json")).command.includes(PROBE_EXE), "and in the command");
   assert.equal(existsSync(join(child.home, "decoy-ran")), false, "the decoy the plan found never ran");
   assert.equal(paneEnv(child.home).PATH, `${shimOf(child.home)}:${SERVER_PATH}`);
+  // The spawn hook had the plan's pane-side answer; the launch ran another: both named, in the answer and in the home.
+  assert.deepEqual(handed(child.home), [{ event: "spawn", preview: false, executable: join(decoyBin, "claude") }]);
+  assertReplaced(child.warnings, child.home, join(decoyBin, "claude"), PROBE_EXE);
   // The winner's PATH holds no harness: refused after the session was created, and the spawn is undone.
   await killServer();
   r = fx.cli(["spawn", "racer", "--name", "race-none", "--launch-config", "none", "--harness", "claude", "--json"], { env: { OATS_TMUX_SESSION: "race", PI_AGENTS_TMUX_SESSION: "race", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}`, RACE_SESSION: "race", RACE_PATH: SYSTEM } });
@@ -210,6 +226,27 @@ test("two creators with different plans: the spawn that loses the server's creat
   assert.match(r.json().error.message, /spawn rolled back/);
   assert.equal(existsSync(join(fx.root, "racer", "instances", "race-none")), false, "the home was removed");
   assert.deepEqual(lines(tmuxOn("list-windows", "-t", "=race", "-F", "#{window_name}")), ["hq"], "no window was left");
+});
+
+test("a start's hooks are handed the executable it looked up, the same in the preview and the real run; a start that loses the server's creation warns, in the answer and the home", async () => {
+  await startServer(SERVER_PATH);
+  const unlaunched = (name) => spawned(fx.cli(["spawn", "racer", "--name", name, "--launch-config", "none", "--harness", "claude", "--no-launch", "--json"], { env: { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}` } }));
+  // A spawn with no launch has no pane-side answer: nothing is handed, whatever this process's PATH found.
+  const quiet = unlaunched("handed-start");
+  assert.deepEqual(handed(quiet.home), [{ event: "spawn", preview: false, executable: null }]);
+  const r = fx.cli(["session", "start", "--home", quiet.home, "--harness", "claude", "--json"], { env: { LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}` } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  await ready(quiet.home);
+  assert.deepEqual(handed(quiet.home).slice(1), [{ event: "launch", preview: true, executable: PROBE_EXE }, { event: "launch", preview: false, executable: PROBE_EXE }], "the pane's, not this process's");
+  // The real hook creates the session with another PATH: the look on the session the start gets finds that one's.
+  await killServer();
+  const raced = spawned(fx.cli(["spawn", "racer", "--name", "handed-race", "--launch-config", "none", "--harness", "claude", "--no-launch", "--json"], { env: { OATS_TMUX_SESSION: "startrace", PI_AGENTS_TMUX_SESSION: "startrace", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}` } }));
+  const again = fx.cli(["session", "start", "--home", raced.home, "--harness", "claude", "--json"], { env: { OATS_TMUX_SESSION: "startrace", PI_AGENTS_TMUX_SESSION: "startrace", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}`, RACE_SESSION: "startrace", RACE_PATH: SERVER_PATH } });
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  const answer = again.json().result;
+  await ready(raced.home);
+  assert.equal(executableOf(raced.home), PROBE_EXE);
+  assertReplaced(answer.warnings, raced.home, join(decoyBin, "claude"), PROBE_EXE);
 });
 
 test("a session whose environment overrides PATH: the pane takes the session's PATH, and the harness is looked up there", async () => {

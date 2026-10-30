@@ -115,14 +115,17 @@ export function resetMarker(marker) {
   for (const d of [`${marker}.lock`, `${marker}.lock.reap`]) { try { rmdirSync(d); } catch { /* absent */ } }
 }
 
-/** Whether this Claude Code takes a StopFailure hook, by its own `--version`. The event came in
- *  2.1.78. An older one skips a whole settings file that names it and stops an interactive start
- *  at a Settings Error dialog, measured on 2.1.61 and 2.1.77 (#1669), so an unknown answer means
- *  no: a failed turn goes unreported, and no start can hang on it. `claude` is the one on the
- *  hook's PATH: a launch configuration's own executable is not known here. */
+/** Whether the Claude Code this launch runs takes a StopFailure hook, by its own `--version`. The
+ *  event came in 2.1.78. An older one skips a whole settings file that names it and stops an
+ *  interactive start at a Settings Error dialog, measured on 2.1.61 and 2.1.77 (#1669), so only a
+ *  yes writes the key. OATS_HARNESS_EXECUTABLE is the kernel's pane-side answer; absent (an older
+ *  kernel, a spawn with no launch), a failure, a timeout or anything unreadable is no: a failed turn
+ *  goes unreported, and the launch goes on. `--version` alone: no launch configuration's arguments. */
 export function takesStopFailure(env) {
+  const executable = env.OATS_HARNESS_EXECUTABLE;
+  if (typeof executable !== "string" || !isAbsolute(executable)) return false;
   try {
-    const said = execFileSync("claude", ["--version"], { env, encoding: "utf8", timeout: 3000, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "ignore"] });
+    const said = execFileSync(executable, ["--version"], { env, encoding: "utf8", timeout: 3000, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "ignore"] });
     const version = /^(\d+)\.(\d+)\.(\d+)/.exec(said.trim());
     if (!version) return false;
     const [major, minor, patch] = version.slice(1).map(Number);

@@ -84,7 +84,7 @@ go(() => setTimeout(() => {
 // time budget and lock age are the test's to set, and the 2 s watchdog never fires on a call
 // the test holds at its gate. Everything else is the real command.
 const SHIMS = join(base, "shims"); mkdirSync(SHIMS);
-// The `claude` the launch hook asks for its version: what FAKE_CLAUDE_VERSION says, 2.1.308 unset.
+// The executable the kernel hands the hook, asked for its version: what FAKE_CLAUDE_VERSION says, 2.1.308 unset.
 const CLAUDE_BIN = join(base, "claude-bin"); mkdirSync(CLAUDE_BIN);
 writeFileSync(join(CLAUDE_BIN, "claude"), '#!/bin/sh\n[ "$FAKE_CLAUDE_VERSION" = fail ] && exit 1\nif [ "$FAKE_CLAUDE_VERSION" = hang ]; then trap "" TERM; sleep 8 & wait; exit 0; fi\nprintf "%s (Claude Code)\\n" "${FAKE_CLAUDE_VERSION:-2.1.308}"\n', { mode: 0o755 });
 writeFileSync(join(SHIMS, "date"), '#!/bin/sh\nif [ -n "$FAKE_CLOCK" ] && [ "$1" = +%s ]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi\n', { mode: 0o755 });
@@ -124,7 +124,7 @@ function cleanEnv(extra) {
   return env;
 }
 function runHook(event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ PATH: `${CLAUDE_BIN}:${process.env.PATH}`, OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, OATS_NODE_BIN: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_HARNESS_EXECUTABLE: join(CLAUDE_BIN, "claude"), OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, OATS_NODE_BIN: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   assert.equal(r.status, 0, r.stderr);
   const last = r.stdout.trim().split("\n").filter(Boolean).pop();
   return JSON.parse(last);
@@ -335,7 +335,7 @@ test("no OATS_NODE_BIN (an older kernel), an empty or a relative one: this hook'
   }
 });
 
-test("StopFailure is written only for a Claude Code seen to take it: an older one refuses the whole file, so an unknown answer leaves it out (#1669)", () => {
+test("StopFailure is written only for the executable the kernel hands the hook, seen to take it: an older one refuses the whole file, so an unknown answer leaves it out (#1669)", () => {
   const env = (version) => ({ OATS_HARNESS: "claude", OATS_CLI_BIN: FAKE_CLI_ABS, FAKE_CLAUDE_VERSION: version });
   for (const [version, takes] of [["2.1.308", true], ["2.1.78", true], ["2.1.100", true], ["2.2.0", true], ["3.0.0", true], ["2.1.77", false], ["2.1.9", false], ["2.0.99", false], ["1.9.200", false], ["fail", false], ["not a version", false]]) {
     const h = home();
@@ -344,9 +344,12 @@ test("StopFailure is written only for a Claude Code seen to take it: an older on
     assert.equal(Object.hasOwn(hooks, "StopFailure"), takes, version);
     assert.equal(allEntries({ hooks }).length, takes ? 10 : 9, version);
   }
-  const none = home();
-  assert.deepEqual(runHook("launch", { ...env(undefined), OATS_INSTANCE_HOME: none, PATH: join(base, "no-such-dir") }), {}, "no claude on PATH");
-  assert.equal(Object.hasOwn(readJson(settingsOf(none)).hooks, "StopFailure"), false);
+  // No answer from the kernel: no key, whatever `claude` this hook's PATH would find. A relative path is no answer either.
+  for (const handed of [undefined, "", "claude", join(base, "no-such-claude")]) {
+    const none = home();
+    assert.deepEqual(runHook("launch", { ...env(undefined), OATS_INSTANCE_HOME: none, OATS_HARNESS_EXECUTABLE: handed, PATH: `${CLAUDE_BIN}:${process.env.PATH}` }), {}, String(handed));
+    assert.equal(Object.hasOwn(readJson(settingsOf(none)).hooks, "StopFailure"), false, String(handed));
+  }
   // A Claude Code moved back: the next start takes the key out again.
   const back = home();
   runHook("launch", { ...env("2.1.308"), OATS_INSTANCE_HOME: back });
