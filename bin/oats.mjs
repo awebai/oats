@@ -53,7 +53,7 @@ const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } = await kernelImport("core", () => import("../lib/core.mjs"));
 const {
@@ -3474,10 +3474,11 @@ async function sessionCmd() {
         const chosen = ["--launch-config", "--harness", "--model", "--yolo", "--no-yolo", "--reselect-launch"].filter((f) => args.some((a) => a === f || a.startsWith(`${f}=`)));
         if (chosen.length) bad(`--resume runs the launch this home recorded; it cannot be combined with ${chosen.join(", ")}; nothing was read or started`);
       }
-      // Refuse before launch selection or live-team discovery can prepare this home. A resume is
-      // refused under the home's lifecycle claim instead (lib/core.mjs startInstanceSession): beside
-      // an upgrade that runs, it is busy, not a partial upgrade.
-      if (!resume) assertNoPartialUpgrade(home);
+      // Refuse before launch selection or live-team discovery can prepare this home. Every start
+      // reads it again under the home's lifecycle claim (lib/core.mjs startClaimed), so beside an
+      // upgrade that runs (it holds the claim) the start is busy, not a partial upgrade: that one is
+      // left to the claim. A resume is always refused under the claim.
+      if (!resume && !upgradeHoldsClaim(home)) assertNoPartialUpgrade(home);
       const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), ...(reselectLaunch ? { reselectLaunch: true, launchOffered: await homeLaunchOffered(home, { named: harness !== undefined }) } : {}), ...(resume ? { resume: true } : {}), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");
