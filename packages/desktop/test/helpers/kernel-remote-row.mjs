@@ -9,7 +9,7 @@ const AT = "2026-10-11T12:00:00.000Z";
 
 const AGENTS_ROOT = "/remote/project/agents";
 const REMOTE_ROW_FACTS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState",
-  "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin", "work", "repo", "branch", "modelFrom", "soul", "modules", "color"];
+  "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin", "work", "repo", "branch", "modelFrom", "soul", "modules", "color", "attributedHuman"];
 
 /** A row the host listed: running in tmux unless `extra` says otherwise. */
 export const kernelRemoteRow = (name = "dev-one", extra = {}) => ({

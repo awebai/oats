@@ -627,9 +627,11 @@ shell, the Desktop, an automation), when the caller's session was found gone,
 when the caller's home is another deployment's, and for a `--server` spawn
 whose caller is not a live home on that host. A spawner whose session cannot
 be read is kept. It is independent of `--relation` and of `parentInstance`.
-It is reserved like `OATS_HARNESS_EXECUTABLE`: an inherited value is always
-dropped, and a launch configuration, a trigger or a hook's `env` cannot set
-it. The kernel reads the caller from its environment only, so a harness that
+It is reserved: a launch configuration, a trigger or a hook's `env` cannot
+set it, and an inherited value is dropped from every hook's environment, from
+the environment a launch or a tmux server starts with, and from a scheduled
+job's. A harness's pane is the exception: the kernel never puts it there, but
+does not unset one the pane would inherit. The kernel reads the caller from its environment only, so a harness that
 strips its session's environment reads as a person's spawn: that changes the
 recorded parent, never the human.
 

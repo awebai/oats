@@ -3007,6 +3007,10 @@ Limits:
 - It reads the environment only, so a harness that strips its session's
   environment reads as a person's spawn. That changes the recorded parent,
   never the human.
+- The caller is read from an unauthenticated environment, so any process of
+  the same OS user can name a live instance as its spawner. That is accepted
+  under the custody answer: a convention under the same OS user, not a
+  boundary.
 - `spawnedBy` and the messaging identity's `attribution`
   ([Attributed human](#attributed-human)) report, and no kernel decision
   reads them.
