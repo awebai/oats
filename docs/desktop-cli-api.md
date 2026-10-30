@@ -4747,8 +4747,8 @@ that leaves a session running because it could not write a file protects
 nobody. So `oats instance stop --apply`, and it alone, reads a claim it
 cannot write, for a reason that stops every other writer of this user as
 well, and goes on when nobody holds it. It holds nothing for that target,
-and says so on stderr. A retire, and a retire's stop of a recorded child,
-need their claim as before.
+and says so on stderr. A retire, a start and a restart, and a retire's stop
+of a recorded child, need their claim.
 
 The reasons are five codes of the system's, met at one of the claim's
 writes (its directory, its file, and the same two of a takeover's own
@@ -4944,7 +4944,11 @@ the two. A spawn's own first launch takes no claim (a retire already handles
 a spawn in progress). A path with no `instance.json` it can read is no home to
 hold: a start or a resume of it takes no claim, writes nothing beside it and
 answers `E_RUNTIME_ENDPOINT_UNKNOWN`, or `E_UNIDENTIFIED_INSTANCE_HOME` for a
-record that cannot be read.
+record that cannot be read. A start or restart whose claim cannot be written
+is refused `E_LIFECYCLE_FAILED` before any effect, where it used to go on: the
+answer names the claim and the reason, nothing is stopped or started, and the
+remedy is to make the claims directory writable (only a stop
+[goes on without its claim](#stop-claim-write)).
 This table covers the commands that arrive on a home; the upgrade pairs and
 the resume pairs follow separately.
 Each cell is the answer of the command that **arrives**. It is given at once
