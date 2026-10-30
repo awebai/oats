@@ -53,7 +53,7 @@ const {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upgradeHoldsClaim, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, suggestSpawnName, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, machineLaunchConfigs, machineLaunchConfigsFile, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, homeClaimHolder, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } = await kernelImport("core", () => import("../lib/core.mjs"));
 const {
@@ -630,6 +630,15 @@ function printWorkspaceInspect(doc) {
   }
 }
 
+/** Whether an upgrade holds the lifecycle claim of `home`, through a link to the home too (the
+ *  start claims the home on disk), and is not established gone: read only, for the order of a
+ *  start's refusals (the start's own claim decides; lib/core.mjs reads it the same way). */
+function upgradeHoldsClaim(home) {
+  let real = home;
+  try { real = realpathSync.native(home); } catch { /* not there: the start answers that */ }
+  const held = homeClaimHolder(real);
+  return held?.action === "upgrade" && held.state !== "gone";
+}
 /** `{ teams, defaultTeam, teamsSource }` for a session start of a workspace home: its teams read
  *  live (the workspace host + oats-local.yaml), which the launch hook re-checks joined memberships
  *  against — or the spawn record, marked `recorded`, when the read cannot answer. Anything that is not a readable workspace home gets nothing here — the start
