@@ -17,7 +17,13 @@ const run = (args) => spawnSync(process.execPath, [cli, ...args], {
   env: { HOME: base, PATH: process.env.PATH, OATS_HOME_DIR: oatsHome },
 });
 try {
-  for (const args of [["version", "--json"], ["--json", "status"], ["reader", "--stdio", "--json"], ["fixture-capability", "ping", "--json"]]) {
+  for (const args of [
+    ["version", "--json"],
+    ["status", "--json"], // The non-version hot-read form, before argv normalization.
+    ["--json", "status"], // The flag also works anywhere in argv.
+    ["reader", "--stdio", "--json"],
+    ["fixture-capability", "ping", "--json"],
+  ]) {
     const child = run(args);
     assert.equal(child.status, 1, JSON.stringify(child));
     assert.equal(child.stderr, "");
