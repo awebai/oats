@@ -72,7 +72,6 @@ Pick one for the host's Claude seats:
 |---|---|---|
 | **approved** (default for unattended hosts) | `claudeChannelMode: approved` | Use it whenever a human admin can write the managed-settings file, or the organization admin can set its two keys. [Steps below](#claude-channel-delivery-approved-route). |
 | **development** (fallback) | `claudeChannelMode: development`, written explicitly | When the approved route is not available yet. Know its costs: [the development fallback](#the-development-fallback). |
-| **session** | `delivery: session` | When Claude should be woken like Codex, by the broker typing into its terminal. It uses no plugin and shows no prompt, and it needs [Choice 2](#choice-2-the-host-wake-broker). `claudeChannelMode` is then unused. |
 
 For approved or development, write `claudeChannelMode`. A missing key is not
 a choice: it is how hosts end up in development mode by accident. From

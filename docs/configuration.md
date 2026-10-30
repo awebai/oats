@@ -260,12 +260,11 @@ but answers nothing: the home records `launchPrompts.status: "blocked"`, and
 Claude waits at its development-channel prompt for a person, as after any
 blocked start. Close the other pane before the restart.
 
-**The two settings that stop it.** OATS confirms the prompt only because the
-deployment launches Claude with the development-channel flag. To keep the prompt
-for a person, stop launching that way: `settings.oats.aweb.delivery: session`
-(the host wake broker instead of the channel), or `settings.oats.aweb.claudeChannelMode:
-approved` ([the approved route](#claude-channel-delivery-the-approved-route), no
-prompt at all). Both are captured at spawn, so respawn a home to change it. Every
+**The setting that stops it.** OATS confirms the prompt only because the
+deployment launches Claude with the development-channel flag. To stop that, use
+`settings.oats.aweb.claudeChannelMode: approved`
+([the approved route](#claude-channel-delivery-the-approved-route), no prompt at
+all). It is captured at spawn, so respawn a home to change it. Every
 start that engages the confirmation says so in its output (`launch-config preview`,
 the spawn's warnings, `session start|restart`). `spawn --preview` cannot say it
 yet: the argv comes from the provider's spawn hook, which a preview does not run.
