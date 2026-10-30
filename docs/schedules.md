@@ -112,7 +112,8 @@ refuses the key on a trigger.
   scheduler keeps the unknown attempt and its slot until reconciliation.
 - **wake** `{…, home, message}` — every due minute inspects the instance at
   `home`. Running: `message` is delivered once as terminal input (bracketed
-  paste plus Enter), never an interrupt. Not running (its harness exited, or
+  paste plus Enter), never an interrupt, unless a live claim holds it
+  ([A held wake](#a-held-wake)). Not running (its harness exited, or
   its tmux server is gone after a reboot): the home is started with
   `session start` and the message becomes the job's one pending delivery,
   completed on a later tick once the session is active; the home is started
@@ -753,6 +754,12 @@ home whose retirement is pending still counts), `ended` (its home is gone),
 you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
 `skipped`. The kernel never claims a task succeeded.
 
+`delivered` means submitted: the paste and the Enter reached the terminal. It
+does not mean the model received the message. An Enter that lands on an open
+dialog answers the dialog, the message never reaches the model, and the run
+still says `delivered`. [A held wake](#a-held-wake) narrows that and doesn't close
+it: [What a hold leaves open](#what-a-hold-leaves-open) says what stays.
+
 A home whose recorded tmux server is gone, after a reboot or a crash, is
 `stopped` too, with the note `its tmux server is gone`. Gone means that no
 server listens on its socket, or that its socket file is missing and no
@@ -843,6 +850,96 @@ only `cron`, `tz`, `enabled` and `description` can change. `remove` refuses whil
 instance is tracked or its effects are unresolved (`--force` forgets the job
 without stopping anything). Retiring an instance removes the wake jobs bound
 to its home.
+
+### A held wake
+
+A wake's Enter answers whatever the session is showing, so an open permission
+prompt or question would be approved or answered by a message nobody saw. With
+feature `wake-hold`, every wake reads the home's claims immediately before it
+types ([Waiting on you](desktop-cli-api.md#waiting-on-you)). A running session
+holds the wake, and no key is sent, while the home has:
+
+- a live claim with reason `permission` or `question`, from any producer;
+- a live claim whose stored reason can't be read;
+- a claims read that can't be trusted: no readable `instance.json`, an events
+  log that is refused, a log past 4 MiB whose tail holds no session boundary of
+  this instance, or a torn row after a log's last boundary.
+
+An `attention` claim alone holds nothing, and a session boundary (a start, a
+restart or a stop) voids the claims before it.
+
+A held wake stays pending and tries again at every tick until nothing holds it,
+then delivers once. It takes no slot. It has no timeout and no expiry: the kernel
+never sends a key, and never drops the message, because a hold ran long.
+
+**Reading a hold.** `lastRun`, the run's `recentRuns` row and the tick's
+`considered` row (where the outcome is `action`) carry it:
+
+```json
+{"outcome": "skipped", "reason": "waiting-on-you", "pending": true,
+ "held": {"since": "2026-09-07T10:00:00.000Z", "claimReason": "permission", "producer": "oats.core"}}
+```
+
+Read it as "held since `since` (`claimReason`)". `since` is the first skip's time
+and stays while the wake is held; `claimReason` and `producer` follow the claim
+that holds it now. When the read can't be trusted, both are `null` and
+`unreadable` says why. The start of a hold also writes one `wake-held` event to
+the home ([the event kinds](desktop-cli-api.md#events)), never one per
+tick, so a waiter can tell held from lost. A delivered or started run after a
+hold carries neither `held` nor that `reason`. A run that isn't a hold (the
+session stopped, for example) ends it: a later hold has its own `since` and its
+own event.
+
+**Who sees a long hold.** A held instance is idle, so nothing it would do on a
+wake happens, and only someone outside it can act: clear a stale claim
+(`oats instance waiting clear --producer <producer> --home <home>`), answer the
+dialog, or restart the session.
+
+**A claim can outlive its dialog.** There's no expiry, and a stale claim holds like
+a live one, so a long hold is a reason to look. A refused dialog is the usual
+case: Claude Code fires no hook on Esc or "No" (measured on 2.1.308), so the
+claim stays until the next prompt. Send a prompt in that session, or run the clear
+above. An approved subagent's dialog can leave its claim until the main thread's
+next event.
+
+| Hold | A person sees | The waiter's parent sees |
+| --- | --- | --- |
+| A live claim, a stale one included | the needs-input marker and `! needs input` in `oats status`: the claim doing the holding is the one displayed | at its own checkpoint, the event or the schedule's record |
+| Claims can't be read | nothing on the roster | the same two records, if the event could be written |
+
+So a waiter reads the record; it never relies on the roster alone.
+
+**Whether a home is covered.** Check the feature `wake-hold`, then
+[`wakeHold`](execution-targets.md#inspect-input-and-attach) on
+`oats session inspect --json`. `unknown` is not covered.
+
+### What a hold leaves open
+
+A hold reads claims, so it can only be as good as they are. `on-claims` says no
+more than that:
+
+- **Harnesses with no claims stay exposed.** No claim is ever written there, so
+  every wake types. pi homes read `unknown`: an extension can open its own
+  dialog, and the kernel can't see which load.
+- **A dialog that opens before the Enter is still answered.** That covers one that
+  opens between the read and the Enter, and the lag between a dialog opening and
+  its claim being written. A claim lands after its dialog: a `permission` claim
+  took 395 to 514 ms, median 433 ms over 10 samples, end to end from the dialog on
+  screen to the claim written, on Claude Code 2.1.308 on one host. That's against
+  about 6.5 s from `Notification` alone, the only hook on a Claude Code older than
+  2.1.78. It's a window that still exists: the claim lands after the dialog opens,
+  and a wake's input settles for at least 200 ms before its Enter, with no second
+  read. Lag for an `elicitation_dialog` question isn't measured, and neither is
+  any other Claude Code version, or a subagent's dialog.
+- **A dialog that fires no hook has no claim.** Claims can't cover every Claude
+  dialog: the `/rate-limit-options` menu fires no hook of its own (measured on
+  Claude Code 2.1.308), and `pro-trial-expired` opens the same way at startup,
+  with no failed turn behind it. A setting that disables Claude's hooks isn't
+  seen either.
+- **`oats session input` takes no hold.** Run by a script or an agent at a session
+  showing a dialog, its Enter answers it.
+- **The aweb host wake broker types on its own path,** joined teams included. A
+  hold covers the kernel's wake delivery only, not mail.
 
 ## Wake at spawn
 

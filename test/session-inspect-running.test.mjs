@@ -175,7 +175,7 @@ for (const h of HARNESSES) {
       const seen = observing({ panes: pane(state.command), ps });
       return { result: inspectInstanceSession(home, { io: seen.io }), calls: seen.calls };
     };
-    const liveShape = (result, state) => ({ home, backend: "tmux", present: true, state, paneId: "%7", size: { cols: 120, rows: 40 }, running: state === "unknown", waitingOnYou: result.waitingOnYou });
+    const liveShape = (result, state) => ({ home, backend: "tmux", present: true, state, paneId: "%7", size: { cols: 120, rows: 40 }, running: state === "unknown", waitingOnYou: result.waitingOnYou, wakeHold: "unknown" });
 
     // The harness is the pane's own process: no process scan.
     let { result, calls } = live({ command: h.command });
@@ -201,10 +201,10 @@ for (const h of HARNESSES) {
 
     // A retained dead pane: stopped, not present, no size.
     const dead = observing({ panes: pane(h.command, "1") });
-    assert.deepEqual(inspectInstanceSession(home, { io: dead.io }), { home, backend: "tmux", present: false, state: "stopped", paneId: "%7", running: false, waitingOnYou: null });
+    assert.deepEqual(inspectInstanceSession(home, { io: dead.io }), { home, backend: "tmux", present: false, state: "stopped", paneId: "%7", running: false, waitingOnYou: null, wakeHold: "unknown" });
     // The window is gone from a reachable server: stopped.
     const absent = observing({ panes: tmuxError(`can't find window: run-${h.harness}`) });
-    assert.deepEqual(inspectInstanceSession(home, { io: absent.io }), { home, backend: "tmux", present: false, state: "stopped", running: false, waitingOnYou: null });
+    assert.deepEqual(inspectInstanceSession(home, { io: absent.io }), { home, backend: "tmux", present: false, state: "stopped", running: false, waitingOnYou: null, wakeHold: "unknown" });
   });
 }
 
@@ -243,9 +243,9 @@ test("1569: a split window is observed through the agent's pane alone", async ()
 
 test("a home that never launched, and a home that is gone, are not running and are never observed", async () => {
   const { home } = await recordedHome("never", { harness: "claude" }, { launched: false });
-  assert.deepEqual(inspectInstanceSession(home, { io: NOTHING_OBSERVED }), { home, backend: null, present: false, state: "not-launched", running: false, waitingOnYou: null });
+  assert.deepEqual(inspectInstanceSession(home, { io: NOTHING_OBSERVED }), { home, backend: null, present: false, state: "not-launched", running: false, waitingOnYou: null, wakeHold: "unknown" });
   const gone = join(fx.base, "no-such-home");
-  assert.deepEqual(inspectInstanceSession(gone, { io: NOTHING_OBSERVED }), { home: gone, backend: null, present: false, state: "stopped", running: false, waitingOnYou: null });
+  assert.deepEqual(inspectInstanceSession(gone, { io: NOTHING_OBSERVED }), { home: gone, backend: null, present: false, state: "stopped", running: false, waitingOnYou: null, wakeHold: "unknown" });
 });
 
 // ---- E_RUNTIME_AUTHORITY_MISMATCH details.fields -------------------------------------------------

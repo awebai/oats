@@ -162,6 +162,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `session-resume` | sessions come back after a shutdown, OATS 0.69 (#1559): `sessionEnd` on `oats status --json` instance rows ([`sessionEnd`](#row-session-end)); `oats session start --resume --home <abs>` and its `resume` answer ([Resume a lost session](#resume-a-lost-session---resume)); the machine sweep `oats session resume [--deployment <dir>] [--plan] --json` ([`oats session resume`](#the-machine-sweep-oats-session-resume)); `E_RESUME_BUSY`, `E_RESUME_NOT_LOST`. Local only: `--server` is `E_BAD_ARGS`. Gate a client's resume-on-open on the probe: a kernel without it has no `session resume` | |
 | `warm-reader` | `oats reader --stdio`, the warm reader: a child process a client starts, which answers `oats status --json` and `oats workspace status --json` on its stdin and stdout, many times, with the CLI's own answers ([The warm reader](#the-warm-reader)). Gate on the probe, never by trying: a kernel without it has no `oats reader` | `readerApi: 1` |
 | `status-liveness` | the local liveness on `oats status --json` instance rows is complete: `running` and `runtimeState` are read live at every call, from the row's recorded tmux server under the pane and shell-descendant rule, with `false` for a shell only on positive evidence and `null` when the reading is inconclusive ([The roster](#the-roster-oats-status---json)). A client needs no liveness probe of its own beside the roster where the probe lists it, whether the read goes through the warm reader or the CLI. Independent of `warm-reader` | |
+| `wake-hold` | a scheduled wake sends no key while the home has a live `permission`, `question` or unknown-reason claim, or a claims read that can't be trusted: the run is `skipped`, `reason: "waiting-on-you"`, `pending: true`, with `held` ([A held wake](schedules.md#a-held-wake)); the `wake-held` event ([the event kinds](#events)); `wakeHold` on every successful `session inspect --json` ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)), from the hook answer `dialogClaims` ([Commands and hooks](capabilities.md#commands-and-hooks)). Gate on the feature, then on `wakeHold`: the feature says this kernel holds, `wakeHold` whether this home's dialogs become claims, and `unknown` is not covered | |
 | `lifecycle-claim-start` | every `oats session start` and `oats session restart`, and a scheduled start, holds the home's lifecycle claim for the whole start (#1602), as `details.action: "start"`: a retire, a stop apply or an upgrade apply that arrives while it runs is refused `E_LIFECYCLE_BUSY` with `details.action: "start"`; the start or restart is refused `E_INSTANCE_RETIRING` beside a retire and `E_LIFECYCLE_BUSY` (with `details.holder` and `details.action`) beside a stop or an upgrade, before any effect; two starts still answer `E_SESSION_START_BUSY` ([Commands that meet on one home](#lifecycle-pairs)). A restart holds one claim across its stop and its launch. A kernel without it takes no claim for these, and reads a `start` holder as a retire | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
@@ -4241,7 +4242,12 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
-  [Waiting on you](#waiting-on-you)), `worktree-added` (0.49.0, feature
+  [Waiting on you](#waiting-on-you)), `wake-held` (feature `wake-hold`: a
+  scheduled wake began to hold, one row per hold, `data: {schedule, since,
+  claimReason, producer, unreadable?}` as in [A held
+  wake](schedules.md#a-held-wake); it carries no `waitingOnYou` and is never a
+  claim, and a retiring home's row goes to the workspace log only),
+  `worktree-added` (0.49.0, feature
   `worktree-event`: `oats worktree add` made an extra tree, `data: {purpose,
   path, branch, base, baseOid, remote, member, hooks}`, `remote` without
   credentials, `member` a key or `null`, `hooks` the `worktree` hooks'
@@ -4377,9 +4383,13 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 
 Feature `waiting-on-you` (OATS 0.40.0): an instance waiting on a human (a
 permission prompt, a question, an agent asking for an answer) says so through
-a producer's claim. **Claims are display-only:** nothing in the kernel acts
-on `waitingOnYou`. In particular `oats session input` behaves exactly as
-before whether or not a claim is set.
+a producer's claim. **A claim authorizes nothing; it may only withhold an
+automated keystroke.** A scheduled wake holds while the home has a live
+`permission`, `question` or unknown-reason claim ([A held
+wake](schedules.md#a-held-wake), feature `wake-hold`), and nothing else in the
+kernel acts on a claim. In particular `oats session input` behaves exactly as
+before whether or not a claim is set. `attention` never marks a screen an Enter
+answers: a producer that wants one uses `question`, and review catches that.
 
 ```text
 oats instance waiting <set|clear> --producer <id> [--reason permission|question|attention] [--message <text>] [--home <abs>] [--dir <d>] --json
@@ -6413,6 +6423,11 @@ on the execution host, including when the wake broker invokes it there;
 `--server` is not supported for input. The adapter sends one literal
 bracketed paste and one Enter after the existing input/authority/target checks.
 
+**Session input takes no hold.** It types whether or not a claim is set, and
+its Enter can answer an open dialog, so don't run it from a script or an agent
+at a session that may show one. A person who can see the screen is its intended
+caller.
+
 `submitted` means terminal-operation success, **not model acceptance or
 processing**. `verified` is display observation only: `true` means a bounded
 look changed, possibly because of unrelated output or a dialog; `false` means
@@ -6986,6 +7001,11 @@ oats schedule update <id> --description=<text> [--dir <d>] --json
     was started inside the tick's systemd service
     ([execution targets](execution-targets.md#a-server-started-from-inside-a-systemd-service)).
     A later run of the same record never keeps an earlier run's.
+  - `held?` (feature `wake-hold`): on a wake held by a claim, `{since,
+    claimReason, producer, unreadable?}`, beside `reason: "waiting-on-you"`
+    and `pending: true`. `pendingWake` then carries `heldSince`. A later run of
+    the same record that isn't held keeps neither `held` nor that `reason`
+    ([A held wake](schedules.md#a-held-wake)).
 - `nextDue` is "when it next runs" in every row (`null` when another host
   runs it); a schedule row also keeps `nextRun`.
 - **Integrity.** `oats-schedules.json` and `.agents/schedules/state.json` are
