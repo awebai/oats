@@ -199,9 +199,9 @@ mode.
   - `oats retire` and `oats instance stop` without `--plan`.
   - The operator acts: `oats sync`, `oats onboard`, `oats aweb …`,
     `oats harness trust`, `oats launch-config set`, `oats teams …`,
-    `oats schedule …` other than a wake job on the instance's own home,
-    `oats trigger …`, `oats session input`. Installing the host's timer stays
-    the operator's.
+    `oats schedule …` apart from its two reads and a wake job on the
+    instance's own home, `oats trigger …`, `oats session input`. Installing
+    the host's timer stays the operator's.
   - `aw` identity and team acts.
 - **`ask`, always a prompt even in auto mode:** what the workspace says needs
   a person, for example `"ask": ["Bash(gh pr merge *)", "Bash(gh release *)"]`.
