@@ -13,6 +13,8 @@
  * one line, the kernel's refused characters replaced with U+FFFD, at most 200 code points. Nothing
  * for an input that says nothing it can use, and nothing at all on any failure: the claim is then
  * set without a text. It always exits 0.
+ *
+ * With the argument `failed-turn` it prints the reason first, then a space, then that message.
  */
 import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -23,6 +25,12 @@ export const MESSAGE_REFUSED = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069\u2
 const MESSAGE_REFUSED_ALL = new RegExp(MESSAGE_REFUSED.source, "gu");
 /** The kernel's longest message, in code points (lib/instance-events.mjs WAITING_MESSAGE_MAX). */
 const MESSAGE_MAX = 200;
+
+/** The StopFailure `error` classes known to open nothing an Enter answers (#1670). Claude's limit
+ *  menu opens from a usage-limit text, which only `rate_limit` carries; these were failed in a real
+ *  pane, on an API key, and a paste and an Enter then reached the model. Every other class, a new one
+ *  included, takes `question`, so a wake holds rather than answer what nobody saw. */
+const NO_DIALOG_FAILURES = new Set(["unknown", "invalid_request", "authentication_failed", "billing_error", "oauth_org_not_allowed", "model_not_found", "server_error", "max_output_tokens"]);
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -56,7 +64,18 @@ export function waitingMessageOf(text) {
   return points.length > MESSAGE_MAX ? `${points.slice(0, MESSAGE_MAX - 1).join("")}…` : line;
 }
 
+/** A failed turn's claim for a hook's JSON input (a string): its reason, a space, its message.
+ *  Only a class known to open no dialog is `attention`; an input that names none is `question`. */
+export function failedTurnOf(text) {
+  let input;
+  try { input = JSON.parse(text); } catch { return "question "; }
+  return `${isObject(input) && NO_DIALOG_FAILURES.has(input.error) ? "attention" : "question"} ${waitingMessageOf(text)}`;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
-  try { process.stdout.write(waitingMessageOf(readFileSync(0, "utf8"))); } catch { /* no text */ }
+  try {
+    const read = process.argv[2] === "failed-turn" ? failedTurnOf : waitingMessageOf;
+    process.stdout.write(read(readFileSync(0, "utf8")));
+  } catch { /* no text */ }
   process.exitCode = 0;
 }

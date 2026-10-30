@@ -1113,8 +1113,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
-| `StopFailure` | the error classes known to open no dialog | set `attention`, the error as its message (see "A failed turn" below) |
-| `StopFailure` | every other error class | set `question`, the error as its message |
+| `StopFailure` | none | set `attention` or `question` by the error's class, the error as its message (see "A failed turn" below) |
 
 **A failed turn** (oats.core 2.10.0,
 [#1667](https://github.com/awebai/oats/issues/1667)). A turn that ends in a
@@ -1138,13 +1137,13 @@ or at a session boundary.
 
   Claude's usage-limit screen is a menu an Enter answers, so `attention`, which
   never marks such a screen, can't report it
-  ([#1670](https://github.com/awebai/oats/issues/1670)). The hook's matchers
-  read the `error` class. `unknown`, `invalid_request`,
+  ([#1670](https://github.com/awebai/oats/issues/1670)). The hook reads the
+  `error` class from its input. `unknown`, `invalid_request`,
   `authentication_failed`, `billing_error`, `oauth_org_not_allowed`,
   `model_not_found`, `server_error` and `max_output_tokens` take `attention`:
   a provider's refusal is `unknown`. `rate_limit` takes `question`, and so does
-  every other class, a new one included, because none of them is known to be
-  free of a dialog. An API-key home has no such menu, but its `rate_limit` still
+  every other class, a new one included, and an input it cannot read, because
+  none of them is known to be free of a dialog. An API-key home has no such menu, but its `rate_limit` still
   reads `question`. Choosing "Stop and wait" in the menu fires no hook, so the
   claim stays until the next prompt.
 
