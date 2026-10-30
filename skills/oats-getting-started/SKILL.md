@@ -602,8 +602,9 @@ stop if its readiness still reports a problem.
    cd "D" && oats aweb setup --soul S --check-only --json
    ```
 
-   Its `aw.status` must be `ok`; stop on anything else and tell the person
-   why. Its `defaultTeam.label` is `L`, the setup expert's team.
+   Its `aw.status` must be `ok`. If `aw` is missing, install it and the
+   harness's channel as step 4 says, then check again; stop on anything else
+   and tell the person why. Its `defaultTeam.label` is `L`, the setup expert's team.
    - **A new workspace** expects `"member": true` here: step 5 installed the
      root. Then this step is done.
 2. **Machine found-list: sign up its aweb account and team,** with `N` and
