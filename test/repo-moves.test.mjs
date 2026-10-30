@@ -15,7 +15,7 @@ import { parseRepoRef } from "../lib/remote.mjs";
 import { currentRepoKey, sameRepo } from "../lib/repo-moves.mjs";
 import { discoverWorkspace, memberRowByKey, standaloneRepo } from "../lib/workspace.mjs";
 import { memberRef } from "../lib/resolve.mjs";
-import { findSoulEntry, soulNameMatches } from "../lib/instance-resolution.mjs";
+import { findSoulEntry, homeSoulMatches, soulNameMatches } from "../lib/instance-resolution.mjs";
 import { memberCloneOf, verifyMemberClone } from "../lib/member-clone.mjs";
 import { driftOf, soulDriftOf } from "../lib/drift.mjs";
 import { sameSource } from "../lib/packages.mjs";
@@ -211,6 +211,23 @@ test("a git: lock source is one source under either spelling at one ref; a catal
   assert.equal(sameSource("catalog:oats.okf", "catalog:oats.other"), false);
 });
 
+test("a soul named <org>/<repo>/<soul> answers to either spelling at either key, and nothing widens for a key not in the table", () => {
+  for (const repoKey of [OLD_OKF, NEW_OKF]) {
+    for (const name of ["awebai/oats-okf/keeper", "oats-project/oats-okf/keeper", "oats-okf/keeper"]) {
+      assert.equal(soulNameMatches(name, { name: "keeper", repoKey }), true, `${name} at ${repoKey}`);
+      assert.equal(homeSoulMatches(name, { agent: "keeper", workspace: { soul: { repoKey } } }), true, `${name}, a home at ${repoKey}`);
+    }
+    assert.equal(soulNameMatches("acme/oats-okf/keeper", { name: "keeper", repoKey }), false);
+    assert.equal(soulNameMatches("oats-project/oats/keeper", { name: "keeper", repoKey }), false);
+    assert.equal(soulNameMatches("awebai/oats-okf/other", { name: "keeper", repoKey }), false);
+  }
+  const stayer = "github.com/awebai/aweb";
+  assert.equal(soulNameMatches("awebai/aweb/keeper", { name: "keeper", repoKey: stayer }), true);
+  assert.equal(soulNameMatches("oats-project/aweb/keeper", { name: "keeper", repoKey: stayer }), false);
+  assert.equal(soulNameMatches("awebai/oats-okf/keeper", { name: "keeper", repoKey: "gitlab.com/awebai/oats-okf" }), true, "a suffix, as before");
+  assert.equal(soulNameMatches("oats-project/oats-okf/keeper", { name: "keeper", repoKey: "gitlab.com/awebai/oats-okf" }), false);
+});
+
 test("E_SOUL_UNKNOWN names the unconfirmed members, their reasons and details and what to do; it keeps its details and adds one", async () => {
   const d = await discoverWorkspace(`git:${NEW}`, { remote: workspace({ backlink: "github.com/acme/oats", plainOwn: false }) });
   const e = (() => { try { findSoulEntry(d, "ghost"); } catch (x) { return x; } })();
@@ -222,8 +239,8 @@ test("E_SOUL_UNKNOWN names the unconfirmed members, their reasons and details an
   assert.match(e.message, /^no soul "ghost" among the confirmed members/);
   assert.match(e.message, /2 members are not confirmed/);
   for (const m of e.details.unconfirmed) { assert.ok(e.message.includes(m.key), m.key); assert.ok(e.message.includes(m.detail), m.detail); }
-  assert.ok(e.message.includes(`npm install -g ${OATS_PACKAGE_NAME}@latest`), e.message);
-  assert.ok(e.message.includes("`workspace:` line of oats-local.yaml"), e.message);
+  assert.ok(e.message.includes("for backlink-elsewhere: correct the `workspace:` line of oats-local.yaml, or of that repository's oats-membership.yaml"), e.message);
+  assert.equal(e.message.includes("npm install"), false, e.message);
   assert.ok(e.message.includes("oats-membership.yaml"), e.message);
 });
 
@@ -259,7 +276,7 @@ test("a clone with a remote of either spelling is the moved member's clone, by c
   assert.equal(e.code, "E_CLONE_MISMATCH");
   assert.deepEqual(e.details, { path: wrong, expected: NEW_OKF, found: ["github.com/acme/elsewhere"], via: null });
   const url = `https://${NEW_OKF}.git`;
-  assert.ok(e.message.includes(`git -C ${wrong} remote set-url origin ${url}`), e.message);
+  assert.ok(e.message.includes(`if this is a clone of it, run: git -C ${wrong} remote set-url origin ${url}`), e.message);
   assert.match(e.message, /second remote/);
   execFileSync("sh", ["-c", `git -C ${wrong} remote set-url origin ${url}`]);
   assert.equal(verifyMemberClone(wrong, NEW_OKF), wrong, "the remedy passes");
@@ -270,7 +287,7 @@ test("a clone with a remote of either spelling is the moved member's clone, by c
 
   const bare = repo("no-remote");
   e = mismatch(bare);
-  assert.ok(e.message.includes(`git -C ${bare} remote add origin ${url}`), e.message);
+  assert.ok(e.message.includes(`if this is a clone of it, run: git -C ${bare} remote add origin ${url}`), e.message);
   const noOrigin = repo("no-origin");
   git(noOrigin, "remote", "add", "upstream", "https://github.com/acme/elsewhere.git");
   assert.ok(mismatch(noOrigin).message.includes(`git -C ${noOrigin} remote add origin ${url}`));

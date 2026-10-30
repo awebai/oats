@@ -11,4 +11,4 @@
 ## Changed
 
 - **`E_SOUL_UNKNOWN` names the members it could not confirm:** how many, each key with its reason and detail, and what to do. `details` gains `unconfirmed`, only when there are any.
-- **`E_CLONE_MISMATCH` gives the fix** for a Git repository with the wrong remotes: the `git remote` command to run, and that a second remote passes too.
+- **`E_CLONE_MISMATCH` gives the fix** for a Git repository with the wrong remotes, if it is a clone of that member: the `git remote` command to run, and that a second remote passes too.

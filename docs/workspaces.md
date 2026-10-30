@@ -364,8 +364,9 @@ keys.
 **The old and the new key of a moved repository are one repository, wherever
 a key is compared.** That covers the backlink check, `clones:`, a clone's
 remotes, the key a home recorded at spawn, `from:`, a `git:` package source in
-the lock, a server's `workspaceKey`, and the keys given to `--member`,
-`--repo` and `--workspace-key`. The Desktop and the release lane's mirror check
+the lock, a server's `workspaceKey`, the keys given to `--member`, `--repo` and
+`--workspace-key`, and a member's soul named `awebai/<repo>/<soul>` or
+`oats-project/<repo>/<soul>`. The Desktop and the release lane's mirror check
 compare the same way. So a workspace and its members can change
 their strings in any order: a member naming the workspace by the other key
 stays confirmed, and a home recorded under the other key keeps its drift rows.
