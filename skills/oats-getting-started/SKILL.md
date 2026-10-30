@@ -770,6 +770,10 @@ In the fallback, or without messaging, leave out both `--provider` options.
   hand-over file: the home has its copy as `TASK.md`.
 - **`E_SPAWN_INCOMPLETE`:** don't spawn again. Run `oats session inspect
   --home H --json` and tell the person what it shows.
+- **`E_INSTANCE_NAME_TAKEN`** (the preview or the spawn): the setup expert
+  already exists, so don't spawn another. Its home `H` is in the error. It
+  is opened in the Desktop below; if it is stopped, start it with
+  `oats session start --home H`.
 
 **The Desktop**, if installed, opens on the new deployment:
 - **macOS:**
