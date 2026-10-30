@@ -11,8 +11,9 @@
 # session waits on the human, and never touches producer `agent` (the agent's own claim).
 # A set carries the text of what the session waits on, as claude-waiting-message.mjs (beside
 # this script) reads it from the hook's input: an AskUserQuestion's question, a Notification's
-# own words, or the error of a turn that failed (StopFailure, reason attention). No text (none
-# in the input, or the reader failed) sets the claim without one.
+# own words, or the error of a turn that failed (StopFailure, reason attention, or question for
+# an error class that can open a menu). No text (none in the input, or the reader failed) sets
+# the claim without one.
 #
 # It can NEVER hurt the Claude session: Claude reads a hook's stdout and exit code as
 # decisions, so this script writes nothing anywhere visible, always exits 0, never waits

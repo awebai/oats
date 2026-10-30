@@ -133,6 +133,12 @@ export function takesStopFailure(env) {
   } catch { return false; }
 }
 
+/** The StopFailure `error` classes known to open nothing an Enter answers (#1670). Claude's limit
+ *  menu opens from a usage-limit text, which only `rate_limit` carries; these were failed in a real
+ *  pane, on an API key, and a paste and an Enter then reached the model. Every other class, a new one
+ *  included, takes `question`, so a wake holds rather than answer what nobody saw. */
+const NO_DIALOG_FAILURES = "unknown|invalid_request|authentication_failed|billing_error|oauth_org_not_allowed|model_not_found|server_error|max_output_tokens";
+
 /** oats.core's Claude Code settings: only `hooks`, keyed by Claude Code event. */
 export function claudeWaitingSettings({ script, node, cli, marker = "", home = "", stopFailure = false }) {
   const entry = (...args) => ({ type: "command", command: waitingCommand({ script, node, cli, marker, home }, args), timeout: HOOK_TIMEOUT_SECONDS });
@@ -150,7 +156,7 @@ export function claudeWaitingSettings({ script, node, cli, marker = "", home = "
       Stop: [group(undefined, "clear")],
       // An API error ended the turn, past Claude's own retries: fires instead of Stop, and
       // nothing runs after it, so only this hook can say the session is stuck (#1667).
-      ...(stopFailure ? { StopFailure: [group(undefined, "set", "attention")] } : {}),
+      ...(stopFailure ? { StopFailure: [group(`^(?:${NO_DIALOG_FAILURES})$`, "set", "attention"), group(`^(?!(?:${NO_DIALOG_FAILURES})$).*`, "set", "question")] } : {}),
       SessionEnd: [group(undefined, "clear")],
     },
   };

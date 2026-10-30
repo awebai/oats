@@ -17,6 +17,8 @@ import { MESSAGE_REFUSED, waitingMessageOf } from "../oats-package/capabilities/
 import { claudeWaitingSettings, markerDir, markerDirPath, markerPath, mergeSettings, shq, waitingCommand } from "../oats-package/capabilities/oats-core/bin/oats-core.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const NO_DIALOG_CLASSES = "unknown|invalid_request|authentication_failed|billing_error|oauth_org_not_allowed|model_not_found|server_error|max_output_tokens";
+const NO_DIALOG = `^(?:${NO_DIALOG_CLASSES})$`, ANY_OTHER = `^(?!(?:${NO_DIALOG_CLASSES})$).*`;
 const CAP = join(ROOT, "oats-package", "capabilities", "oats-core");
 const HOOK = join(CAP, "bin", "oats-core.mjs");
 const SCRIPT = realpathSync(join(CAP, "bin", "claude-waiting.sh"));
@@ -190,7 +192,8 @@ test("the real pass writes settings.json 0600 with absolute, single-quoted comma
     ["PostToolUseFailure", "*", ["clear-tool"]],
     ["UserPromptSubmit", null, ["clear"]],
     ["Stop", null, ["clear"]],
-    ["StopFailure", null, ["set attention"]],
+    ["StopFailure", NO_DIALOG, ["set attention"]],
+    ["StopFailure", ANY_OTHER, ["set question"]],
     ["SessionEnd", null, ["clear"]],
   ]);
   const node = process.execPath;
@@ -248,7 +251,7 @@ test("merge by marker: unrelated keys and hooks stay, in order; a second run is 
   assert.deepEqual(merged.hooks.PreToolUse.slice(0, 2), [{ matcher: "Bash", hooks: [foreign] }, { matcher: "Edit", hooks: [foreign] }]);
   assert.deepEqual(merged.hooks.PostCompact, [], "an event array that was already empty is not ours to drop");
   const ours = allEntries(merged).filter((e) => e.command.includes(SCRIPT));
-  assert.equal(ours.length, 10, "exactly our ten entries, no stale one left");
+  assert.equal(ours.length, 11, "exactly our eleven entries, no stale one left");
   assert.ok(!JSON.stringify(merged).includes("/old/node"));
   // Second run: no write at all.
   const before = readFileSync(settingsOf(h), "utf8");
@@ -342,7 +345,7 @@ test("StopFailure is written only for the executable the kernel hands the hook, 
     assert.deepEqual(runHook("launch", { ...env(version), OATS_INSTANCE_HOME: h }), {}, version);
     const { hooks } = readJson(settingsOf(h));
     assert.equal(Object.hasOwn(hooks, "StopFailure"), takes, version);
-    assert.equal(allEntries({ hooks }).length, takes ? 10 : 9, version);
+    assert.equal(allEntries({ hooks }).length, takes ? 11 : 9, version);
   }
   // No answer from the kernel: no key, whatever `claude` this hook's PATH would find. A relative path is no answer either.
   for (const handed of [undefined, "", "claude", join(base, "no-such-claude")]) {
@@ -368,14 +371,14 @@ test("a claude that ignores SIGTERM and leaves a child on its stdout holds the h
   assert.equal(allEntries({ hooks }).length, 9);
 });
 
-test("hooks that name an old node path are rewritten by the next launch pass, in place: the new path, ten entries", () => {
+test("hooks that name an old node path are rewritten by the next launch pass, in place: the new path, eleven entries", () => {
   const h = home(), keg = "/opt/homebrew/Cellar/node/26.10.0_2/bin/node", opt = "/opt/homebrew/opt/node/bin/node";
   const env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
   runHook("spawn", { ...env, OATS_NODE_BIN: keg });
   assert.deepEqual(nodesOf(h), [keg]);
   assert.deepEqual(runHook("launch", { ...env, OATS_NODE_BIN: opt }), {});
   assert.deepEqual(nodesOf(h), [opt]);
-  assert.equal(allEntries(readJson(settingsOf(h))).length, 10, "the old entries were replaced, not kept beside the new");
+  assert.equal(allEntries(readJson(settingsOf(h))).length, 11, "the old entries were replaced, not kept beside the new");
   assert.ok(!readFileSync(settingsOf(h), "utf8").includes("Cellar"));
 });
 
@@ -1037,7 +1040,7 @@ function realHomes() {
   };
   return { dep, a: make("dev-a"), b: make("dev-b"), fire };
 }
-const EVERY_HOOK = [["Notification", 0], ["Notification", 1], ["PreToolUse", 0], ["PreToolUse", 1], ["PostToolUse", 0], ["PostToolUseFailure", 0], ["UserPromptSubmit", 0], ["Stop", 0], ["StopFailure", 0], ["SessionEnd", 0]];
+const EVERY_HOOK = [["Notification", 0], ["Notification", 1], ["PreToolUse", 0], ["PreToolUse", 1], ["PostToolUse", 0], ["PostToolUseFailure", 0], ["UserPromptSubmit", 0], ["Stop", 0], ["StopFailure", 0], ["StopFailure", 1], ["SessionEnd", 0]];
 const logOf = (h) => { try { return readFileSync(join(h, ".oats-events.jsonl"), "utf8"); } catch { return null; } };
 const claimOf = (h) => { const w = liveWaiting(h); return w ? { producer: w.producer, reason: w.reason, message: w.message } : null; };
 // Everything the emitter keeps for a home in the marker directory, by name and content.
@@ -1124,6 +1127,18 @@ test("real script, real CLI: the home through a symlink spelling is the same hom
 // as Claude Code 2.1.300 sends it: a Notification's `message`, an AskUserQuestion's questions.
 const notification = (type, message) => JSON.stringify({ session_id: "s", transcript_path: "/t.jsonl", cwd: "/c", hook_event_name: "Notification", message, notification_type: type });
 const askUser = (...questions) => JSON.stringify({ session_id: "s", hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: questions.map((question) => ({ question, header: "H", options: [{ label: "a", description: "" }, { label: "b", description: "" }], multiSelect: false })) }, tool_use_id: "toolu_1" });
+
+test("a failed turn's reason, by Claude's error class: question for one that can open a menu an Enter answers, and for any class not known not to (#1670)", () => {
+  const paths = { script: "/s", node: "/n", cli: "/c", marker: "", home: "/h" };
+  const groups = claudeWaitingSettings({ ...paths, stopFailure: true }).hooks.StopFailure;
+  const reasonOf = (error) => {
+    const hit = groups.filter((g) => new RegExp(g.matcher).test(error));
+    assert.equal(hit.length, 1, `one entry answers ${JSON.stringify(error)}`);
+    return ["attention", "question"].find((reason) => hit[0].hooks[0].command === waitingCommand(paths, ["set", reason]));
+  };
+  for (const error of ["unknown", "invalid_request", "authentication_failed", "billing_error", "oauth_org_not_allowed", "model_not_found", "server_error", "max_output_tokens"]) assert.equal(reasonOf(error), "attention", error);
+  for (const error of ["rate_limit", "overloaded", "account_on_hold", "verification_required", "cloud_credential_error", "a_class_claude_adds_later", "unknown_more", "not_unknown", ""]) assert.equal(reasonOf(error), "question", error);
+});
 
 test("the claim's text for a turn an API error ended: the error's words, else its class, never empty (#1667)", () => {
   const stopFailure = (o) => JSON.stringify({ session_id: "s", hook_event_name: "StopFailure", ...o });

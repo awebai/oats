@@ -4453,7 +4453,8 @@ oats instance attention [--message <text>] [--clear] --json
   - `oats.core`: the Claude Code emitter oats.core installs in a Claude
     instance's `<home>/.claude/settings.json` (`permission` on a permission
     prompt, `question` on AskUserQuestion or an MCP elicitation, `attention`
-    on a turn an API error ended, cleared when the session moves on). See
+    on a turn an API error ended, or `question` for an error class that can
+    open a menu, cleared when the session moves on). See
     [capabilities.md](capabilities.md), "oats.core: needs input".
   - `oats.pi`: the `@awebai/oats-pi` bridge (`attention` on a turn a provider
     error ended, once pi has stopped retrying, cleared by the next run). See

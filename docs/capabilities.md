@@ -1113,14 +1113,16 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `PostToolUse` | `*` | clear, unless a subagent made the call |
 | `PostToolUseFailure` | `*` | clear, unless a subagent made the call |
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
-| `StopFailure` | none | set `attention`, the error as its message (see "A failed turn" below) |
+| `StopFailure` | the error classes known to open no dialog | set `attention`, the error as its message (see "A failed turn" below) |
+| `StopFailure` | every other error class | set `question`, the error as its message |
 
 **A failed turn** (oats.core 2.10.0,
 [#1667](https://github.com/awebai/oats/issues/1667)). A turn that ends in a
 provider error stops the session with nothing left to run an instruction, so
-the harness adapter reports it. The claim is reason `attention` with the
-message `Turn failed: <the error>`, cut to fit. It clears on that instance's
-next turn or at a session boundary.
+the harness adapter reports it. The claim is reason `attention`, or `question`
+where the screen may be one an Enter answers (below), with the message
+`Turn failed: <the error>`, cut to fit. It clears on that instance's next turn
+or at a session boundary.
 - **Claude Code:** `StopFailure` fires in place of `Stop` once Claude's own
   retries have run out (Claude Code 2.1.308). The message comes from the
   hook's `last_assistant_message`, else its `error` class. The event came in
@@ -1133,6 +1135,22 @@ next turn or at a session boundary.
   unreported until a start with an answer: a spawn with `--no-launch` and a
   bare name gets the entry at its first start, and a kernel without the
   variable never does.
+
+  Claude's usage-limit screen is a menu an Enter answers, so `attention`, which
+  never marks such a screen, can't report it
+  ([#1670](https://github.com/awebai/oats/issues/1670)). The hook's matchers
+  read the `error` class. `unknown`, `invalid_request`,
+  `authentication_failed`, `billing_error`, `oauth_org_not_allowed`,
+  `model_not_found`, `server_error` and `max_output_tokens` take `attention`:
+  a provider's refusal is `unknown`. `rate_limit` takes `question`, and so does
+  every other class, a new one included, because none of them is known to be
+  free of a dialog. An API-key home has no such menu, but its `rate_limit` still
+  reads `question`. Choosing "Stop and wait" in the menu fires no hook, so the
+  claim stays until the next prompt.
+
+  **A claim doesn't cover every Claude dialog.** The limit menu fires no hook of
+  its own, and `/pro-trial-expired` opens the same way at startup with no failed
+  turn behind it.
 - **pi:** the `@awebai/oats-pi` bridge reports it as producer `oats.pi`, from
   `agent_settled`, once pi has stopped retrying and recovering. A transient
   error pi retried away raises nothing, and neither does an abort. A pi before
