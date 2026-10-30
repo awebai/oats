@@ -156,6 +156,25 @@ for (const [way, gate, code] of [
   });
 }
 
+test("a private file that cannot be made for any other reason of the system's is answered too: a real open failing EISDIR, and no write in place", async (t) => {
+  const f = fixture(t);
+  const home = f.family("--no-launch");
+  const record = join(home, "instance.json");
+  const before = readFileSync(record, "utf8");
+  // Held where the repair opens the record: the child's pid names its private file from here on.
+  const run = startGated([CLI, "retire", "pa", "--json"], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates"), gates: [{ name: "open", fn: "openSync", path: record, waitMs: 60000 }] });
+  f.fx.beforeCleanup(() => { run.child.kill("SIGKILL"); });
+  await run.waitGate("open");
+  mkdirSync(`${record}.tmp-${run.child.pid}`);
+  run.release("open");
+  const r = await run.done;
+  assert.deepEqual(r.timedOut, []);
+  const answer = JSON.parse(r.stdout);
+  assert.equal(answer.error?.code, "E_LIFECYCLE_FAILED", r.stdout);
+  assert.ok(answer.error.message.startsWith("EISDIR:"), answer.error.message);
+  assert.equal(readFileSync(record, "utf8"), before, "no write in place");
+});
+
 test("a mode that cannot be read refuses the write: the record keeps its bytes and its mode, and no default takes its place", (t) => {
   const f = fixture(t);
   const home = f.spawn("w1", "--no-launch");
