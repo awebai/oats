@@ -54,8 +54,8 @@ const NAMES = [
   "storedTreeDigest", "stripInternalAnnotations", "suggestSpawnName", "teamEnv", "tmuxWindows", "todayISO",
   "unestablishedNote", "upgradeHoldsClaim", "upgradeHomeMeta", "upgradeLaunchRecipe", "validateLaunchConfig",
   "validateLaunchConfigDefaults", "withConfigFile", "withLaunchModel", "withSafeTaskPrompt", "workspaceOf",
-  "workspaceSoulId", "worktreeBytes", "worktreeDigests", "worktreeGitPaths", "writeKernelShim",
-  "writeRetirementBaseline", "writeSpawnRecord"
+  "workspaceSoulId", "worktreeBytes", "worktreeDigests", "worktreeGitPaths", "writeHomeRecord", "writeKernelShim",
+  "writeRetirementBaseline"
 ];
 const ASYNC = ["attachInstanceSession", "spawnInstanceAsync", "suggestSpawnName"];
 

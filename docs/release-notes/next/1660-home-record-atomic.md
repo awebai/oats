@@ -1,0 +1,3 @@
+## Fixed
+
+- **A retire no longer leaves another home's `instance.json` half written for a moment.** A retire's lineage repair rewrote the records of the retiree's orphans in place, and a sibling's session may be running, so a status, a Desktop listing or a start reading the record at that moment could report the home as unreadable. It now replaces the record whole, and a record that cannot be written refuses the retire with the same answer as before. Every kernel write of a home's record now keeps that record's mode: under a umask of 002 a start or a restart no longer moves it from 0644 to 0664 ([awebai/oats#1660](https://github.com/awebai/oats/issues/1660)).
