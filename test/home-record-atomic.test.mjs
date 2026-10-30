@@ -124,7 +124,7 @@ test("a record this process may not write refuses the repair as a write in place
   assert.deepEqual(privateFiles(home), []);
 });
 
-test("a home that refuses a private file beside a record this process may write is repaired in place, as it always was, the one write of a record that is not whole: the retire answers as it did", NOT_ROOT, (t) => {
+test("a home that refuses a private file beside a record this process may write is repaired in place, as it always was: the retire answers as it did", NOT_ROOT, (t) => {
   const f = fixture(t);
   const home = f.family("--no-launch");
   chmodSync(home, 0o555);
@@ -136,43 +136,43 @@ test("a home that refuses a private file beside a record this process may write 
   assert.deepEqual(privateFiles(home), []);
 });
 
-for (const [way, gate, code] of [
-  ["a rename refused with EACCES", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EACCES" }), "EACCES"],
-  ["a rename refused with EPERM", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EPERM" }), "EPERM"],
-  ["a private file refused with EIO", (prefix) => ({ name: "fault", fn: "writeFileSync", prefix, throws: "EIO" }), "EIO"],
+for (const [way, gate] of [
+  ["a full disk at the private file's write", (prefix) => ({ name: "fault", fn: "writeFileSync", prefix, when: "after", throws: "ENOSPC" })],
+  ["a private file that cannot be made", (prefix) => ({ name: "fault", fn: "writeFileSync", prefix, throws: "EIO" })],
+  ["a rename refused with EACCES", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EACCES" })],
+  ["a rename refused with EPERM", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EPERM" })],
+  ["a rename failing EIO", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EIO" })],
 ]) {
-  test(`only the home's refusal of the private file falls back to a write in place: ${way} is answered, and the record is as it was`, (t) => {
+  test(`any failure of the atomic write leaves the repair to a write in place, so the retire answers as it did: ${way}`, (t) => {
     const f = fixture(t);
     const home = f.family("--no-launch");
     const record = join(home, "instance.json");
-    const before = readFileSync(record, "utf8");
     const r = runFaulted([CLI, "retire", "pa", "--json"], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates"), gates: [gate(`${record}.tmp-`)] });
     assert.deepEqual(r.fired, ["fault"], `fixture premise: the fault was met: ${r.stdout}${r.stderr}`);
-    const answer = r.json();
-    assert.equal(answer.error?.code, "E_LIFECYCLE_FAILED", JSON.stringify(answer));
-    assert.ok(answer.error.message.startsWith(`${code}:`), answer.error.message);
-    assert.equal(readFileSync(record, "utf8"), before, "no write in place");
-    assert.deepEqual(privateFiles(home), []);
+    const answer = JSON.parse(r.stdout);
+    assert.equal(answer.retired, "pa", r.stdout);
+    assert.deepEqual(answer.relinked.map((e) => e.instance), ["ch"]);
+    assert.equal(readJson(record).parentInstance, undefined, "the repair was written");
+    assert.deepEqual(privateFiles(home), [], "no private file is left");
   });
 }
 
-test("a private file that cannot be made for any other reason of the system's is answered too: a real open failing EISDIR, and no write in place", async (t) => {
+test("the write in place's own failure is the answer, as it always was: the atomic write failed too, and no private file is left", (t) => {
   const f = fixture(t);
   const home = f.family("--no-launch");
   const record = join(home, "instance.json");
   const before = readFileSync(record, "utf8");
-  // Held where the repair opens the record: the child's pid names its private file from here on.
-  const run = startGated([CLI, "retire", "pa", "--json"], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates"), gates: [{ name: "open", fn: "openSync", path: record, waitMs: 60000 }] });
-  f.fx.beforeCleanup(() => { run.child.kill("SIGKILL"); });
-  await run.waitGate("open");
-  mkdirSync(`${record}.tmp-${run.child.pid}`);
-  run.release("open");
-  const r = await run.done;
-  assert.deepEqual(r.timedOut, []);
+  const r = runFaulted([CLI, "retire", "pa", "--json"], { cwd: f.fx.dep, env: f.fx.env, gateDir: join(f.fx.base, "gates"), gates: [
+    { name: "rename", fn: "renameSync", prefix: `${record}.tmp-`, throws: "EIO" },
+    { name: "in-place", fn: "writeFileSync", path: record, throws: "ENOSPC" },
+  ] });
+  assert.deepEqual(r.fired, ["rename", "in-place"], `fixture premise: both faults were met: ${r.stdout}${r.stderr}`);
   const answer = JSON.parse(r.stdout);
   assert.equal(answer.error?.code, "E_LIFECYCLE_FAILED", r.stdout);
-  assert.ok(answer.error.message.startsWith("EISDIR:"), answer.error.message);
-  assert.equal(readFileSync(record, "utf8"), before, "no write in place");
+  assert.ok(answer.error.message.startsWith("ENOSPC:"), answer.error.message);
+  assert.equal(answer.error.details.reached.home, "kept");
+  assert.equal(readFileSync(record, "utf8"), before);
+  assert.deepEqual(privateFiles(home), []);
 });
 
 test("a mode that cannot be read refuses the write: the record keeps its bytes and its mode, and no default takes its place", (t) => {
