@@ -602,7 +602,8 @@ A spawn or launch hook also gets `OATS_HARNESS_EXECUTABLE`, for every harness
 and the same way in a preview: the absolute real path of the executable the
 pane will run, found the way the pane finds it. It is reserved, so a launch
 configuration's `env` or a trigger cannot set it, and an inherited value is
-dropped. Where that lookup has no answer the variable is absent, never
+dropped. It doesn't reach the harness's pane, even from an existing server's
+environment. Where that lookup has no answer the variable is absent, never
 guessed: a bare harness name on a spawn with `--no-launch`, or before the pane's
 `PATH` is known. A hook should read its absence as "unknown".
 
@@ -612,18 +613,6 @@ that session with a different `PATH`, and a symlink can move under any path.
 When the program has changed, the launch runs the new one and says so: a warning
 in the answer and a `launch-warning` event in the home, both naming the path the
 hooks were given and the path it runs.
-
-A spawn or launch hook also gets `OATS_YOLO=1` when the kernel's resolved `yolo`
-for this launch is true, and the same in a preview. Otherwise it is absent,
-never `0`, and absent means not known. `launch.yolo` in `instance.json` can't
-answer this: it is the previous launch's, and a spawn has none. It is reserved
-like `OATS_HARNESS_EXECUTABLE`: a launch configuration cannot set it, and an
-inherited value is dropped. Neither name reaches the harness's pane, even from
-an existing server's environment.
-
-It reports this launch's flag and nothing more. A `yolo` home can still show a
-question dialog, and a bypass set through `args` or a harness's own settings
-reads as absent.
 
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
