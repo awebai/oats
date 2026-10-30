@@ -180,7 +180,7 @@ test("server roster: instance rows carry the remote status facts, null where the
     startedAt: "2026-09-29T10:00:00.000Z", createdAt: "2026-09-29T09:00:00.000Z", model: "opus", runtimeState: "working",
     parentInstance: "boss", siblingInstance: "dev-b", relation: "child", relativeTo: "boss", spawnOrigin: "instance",
     // #675: the host's work record and its own drift observation, relayed as it answered them.
-    work: "worktree", repo: "/srv/ws/repo", branch: "agents/dev-a", modelFrom: "soul", color: "sage", background: true, sameWork: true,
+    work: "worktree", repo: "/srv/ws/repo", branch: "agents/dev-a", modelFrom: "soul", color: "sage", background: true, sameWork: true, attributedHuman: "Ada Lovelace",
     soul: { repoKey: "github.com/acme/agents", commit: "1111111111111111111111111111111111111111", current: "2222222222222222222222222222222222222222", status: "moved" },
     modules: [
       { name: "acme.x", from: { kind: "member", repoKey: "github.com/acme/agents", commit: "3333333333333333333333333333333333333333" }, commit: "3333333333333333333333333333333333333333", current: { commit: "4444444444444444444444444444444444444444", version: "1.1.0" }, status: "moved" },
@@ -197,7 +197,7 @@ test("server roster: instance rows carry the remote status facts, null where the
   const out = await rosterGroups({ io: { execFileAsync: async (...call) => exec(...call) } });
   const rows = out.groups[0].instances;
   const FIELDS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState", "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin",
-    "work", "repo", "branch", "modelFrom", "soul", "modules", "color"];
+    "work", "repo", "branch", "modelFrom", "soul", "modules", "color", "attributedHuman"];
   const a = rows.find((r) => r.instance === "dev-a");
   assert.equal(rows.find((r) => r.instance === "dev-c").color, null, "a colour outside the palette is relayed as null");
   assert.equal(rows.find((r) => r.instance === "dev-a").background, true, "background is relayed");
