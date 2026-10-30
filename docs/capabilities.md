@@ -606,12 +606,12 @@ dropped. Where that lookup has no answer the variable is absent, never
 guessed: a bare harness name on a spawn with `--no-launch`, or before the pane's
 `PATH` is known. A hook should read its absence as "unknown".
 
-It holds the answer at the moment the hook runs. A declared path and a frozen
-recipe stay as they are, but a bare name is looked up again on the session the
-launch gets, because a hook, or another creator, can create that session with a
-different `PATH`. When that lookup moves the executable, the launch runs the new
-one and says so: a warning in the answer and a `launch-warning` event in the
-home, both naming the path the hooks were given and the path it runs.
+It holds the answer at the moment the hook runs. A bare name is looked up again
+on the session the launch gets, because a hook, or another creator, can create
+that session with a different `PATH`, and a symlink can move under any path.
+When the program has changed, the launch runs the new one and says so: a warning
+in the answer and a `launch-warning` event in the home, both naming the path the
+hooks were given and the path it runs.
 
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:

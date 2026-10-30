@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isolateSessionEnvironment, oatsSocket, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
@@ -51,6 +51,10 @@ c=0; while read -r _; do c=$((c+1)); done < "$OATS_INSTANCE_HOME/runs"
 exec claude "$@"
 ` });
 const WRAPPER = join(wrapBin, "claude"), PROBE_EXE = join(probeBin, "claude");
+/** A pathname whose program a hook can change: a version manager's symlink. */
+const linkBin = bin("link-bin", {}), LINK = join(linkBin, "claude");
+const linkToDecoy = () => { rmSync(LINK, { force: true }); symlinkSync(join(decoyBin, "claude"), LINK); };
+linkToDecoy();
 const SERVER_PATH = `${probeBin}:${SYSTEM}`;
 
 const fx = v2Deployment({
@@ -58,16 +62,18 @@ const fx = v2Deployment({
   // A spawn hook that, when asked, creates the spawn's session first, with its own PATH: another
   // creator that wins the race between the spawn's plan and its creation.
   capabilities: { "test.racer": { manifest: { layer: "knowledge", launchPreview: true, hooks: { spawn: "spawn.mjs", launch: "spawn.mjs" } }, files: { "spawn.mjs": `import { execFileSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 appendFileSync(join(process.env.OATS_INSTANCE_HOME, "handed"), JSON.stringify({ event: process.env.OATS_EVENT, preview: process.env.OATS_LAUNCH_PREVIEW === "1", executable: process.env.OATS_HARNESS_EXECUTABLE ?? null }) + "\\n");
 if (process.env.OATS_LAUNCH_PREVIEW === "1") { process.stdout.write("{}\\n"); process.exit(0); }
+if (process.env.RACE_RELINK) { rmSync(${JSON.stringify(LINK)}); symlinkSync(${JSON.stringify(PROBE_EXE)}, ${JSON.stringify(LINK)}); }
 if (process.env.RACE_KILL) execFileSync(${JSON.stringify(TMUX)}, ["-L", "oats", "kill-server"], { env: { HOME: process.env.HOME, TMUX_TMPDIR: process.env.TMUX_TMPDIR, LANG: "C.UTF-8" }, stdio: "ignore", timeout: 10000 });
 if (process.env.RACE_SESSION) execFileSync(${JSON.stringify(TMUX)}, ["-L", "oats", "new-session", "-d", "-s", process.env.RACE_SESSION, "-n", "hq"], { env: { HOME: process.env.HOME, TMUX_TMPDIR: process.env.TMUX_TMPDIR, PATH: process.env.RACE_PATH, SHELL: "/bin/sh", LANG: "C.UTF-8" }, stdio: "ignore", timeout: 10000 });
 process.stdout.write("{}\\n");
 ` } } },
   local: { "launch-configs": {
     abs: { harness: "claude", executable: PROBE_EXE },
+    linked: { harness: "claude", executable: LINK },
     wrapped: { harness: "claude", executable: WRAPPER },
     withpath: { harness: "claude", env: { PATH: SERVER_PATH } },
     frompath: { harness: "claude", env: { PATH: { fromEnv: "FIXTURE_LAUNCH_PATH" } } },
@@ -100,7 +106,7 @@ const homeOf = (name) => join(fx.root, "dev", "instances", name);
 const handed = (home) => lines(readFileSync(join(home, "handed"), "utf8")).map((line) => JSON.parse(line));
 /** The replacement warning, in the answer's warnings and as one launch-warning row in the home, naming both real paths. */
 function assertReplaced(warnings, home, was, now) {
-  const message = `the harness executable changed after the hooks ran, on the session this launch got: hooks were given ${was}, this launch runs ${now}`;
+  const message = `the harness executable changed after the hooks ran: hooks were given ${was}, this launch runs ${now}`;
   assert.ok(warnings.includes(message), JSON.stringify(warnings));
   const rows = lines(readFileSync(join(home, ".oats-events.jsonl"), "utf8")).map((line) => JSON.parse(line)).filter((row) => row.kind === "launch-warning" && row.data?.message === message);
   assert.equal(rows.length, 1, "kept in the home once");
@@ -247,6 +253,25 @@ test("a start's hooks are handed the executable it looked up, the same in the pr
   await ready(raced.home);
   assert.equal(executableOf(raced.home), PROBE_EXE);
   assertReplaced(answer.warnings, raced.home, join(decoyBin, "claude"), PROBE_EXE);
+});
+
+test("the same pathname can be another program by the launch: a symlink moved while the hooks ran warns, for a declared path at spawn and start and for a bare name", async () => {
+  await startServer(`${linkBin}:${SERVER_PATH}`);
+  const env = { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}`, RACE_RELINK: "1" };
+  const decoy = join(decoyBin, "claude");
+  const declared = spawned(fx.cli(["spawn", "racer", "--name", "relink-declared", "--launch-config", "linked", "--json"], { env }));
+  assert.deepEqual(handed(declared.home), [{ event: "spawn", preview: false, executable: decoy }]);
+  assertReplaced(declared.warnings, declared.home, decoy, PROBE_EXE);
+  linkToDecoy();
+  const bare = spawned(fx.cli(["spawn", "racer", "--name", "relink-bare", "--launch-config", "none", "--harness", "claude", "--json"], { env }));
+  assert.deepEqual(handed(bare.home), [{ event: "spawn", preview: false, executable: decoy }]);
+  assertReplaced(bare.warnings, bare.home, decoy, PROBE_EXE);
+  linkToDecoy();
+  const { RACE_RELINK: _none, ...quiet } = env;
+  const later = spawned(fx.cli(["spawn", "racer", "--name", "relink-start", "--launch-config", "linked", "--no-launch", "--json"], { env: quiet }));
+  const r = fx.cli(["session", "start", "--home", later.home, "--launch-config", "linked", "--json"], { env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assertReplaced(r.json().result.warnings, later.home, decoy, PROBE_EXE);
 });
 
 test("a session whose environment overrides PATH: the pane takes the session's PATH, and the harness is looked up there", async () => {

@@ -7,6 +7,7 @@ import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { childEnv } from "../lib/automation-scope.mjs";
+import { validateLaunchConfig } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-harness-executable-")));
@@ -51,6 +52,10 @@ test("a spawn with no launch names a bare harness on this process's PATH: no ans
   writeFileSync(join(base, "pi"), "#!/bin/sh\nexit 0\n"); chmodSync(join(base, "pi"), 0o755);
   spawn(["--launch-config", "none", "--harness", "pi"], { PATH: `${base}:${process.env.PATH}`, OATS_HARNESS_EXECUTABLE: "/ambient/harness" });
   assert.deepEqual(lastRun(), { event: "spawn", preview: false, executable: null });
+});
+
+test("a launch configuration cannot set it: the kernel's lookup, never a launch's to name", () => {
+  assert.throws(() => validateLaunchConfig("forged", { harness: "claude", env: { OATS_HARNESS_EXECUTABLE: "/config/forged" } }), (e) => e.code === "E_LAUNCH_CONFIG_INVALID" && e.message.includes("OATS_HARNESS_EXECUTABLE"));
 });
 
 test("an automation's child drops an inherited OATS_HARNESS_EXECUTABLE, as it does OATS_HARNESS", () => {
