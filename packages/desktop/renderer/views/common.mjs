@@ -52,6 +52,7 @@ export async function apiJson(ctx, pathname, opts) {
     if (reason) err.reason = reason;
     const incomplete = retainedOutcome(d); // a start that stopped at a launch prompt, only once re-validated
     if (incomplete) err.incomplete = incomplete;
+    if (typeof d.startedNothing === "string") err.startedNothing = d.startedNothing; // a start refused because of something else on the home
     throw err;
   }
   return d;
@@ -78,6 +79,8 @@ export function httpError(r, pathname) {
   // A start that stopped at a launch prompt (server → main → renderer): its retained outcome, decoded again here.
   const incomplete = retainedOutcome(r.body);
   if (incomplete) err.incomplete = incomplete;
+  // A start refused because of something else on the home: the start rule's sentence.
+  if (typeof r.body?.startedNothing === "string") err.startedNothing = r.body.startedNothing;
   // A window's refusal for a workspace not served carries the served choices (#481).
   if (Array.isArray(r.body?.workspaces)) err.workspaces = r.body.workspaces;
   return err;

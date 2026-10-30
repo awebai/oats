@@ -89,7 +89,7 @@ test('the start route passes the word to the adapter as given, for a home here a
   const routeFunction = (params, body) => new Function('startInstance', 'DESKTOP_TERMS', `return function (${params.join(', ')}) { ${body} };`)(startInstance, DESKTOP_TERMS);
   const invoke = routeFunction(['inst', 'cliState', 'readBody', 'verifiedLocalHome', 'adapter', 'locator', 'dirname', 'harnessFlag', 'canAddressRemote', 'unaddressableSentence', 'retainedSpawnDetails', 'action'], `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
      const send = (_, status, body) => ({ status, body });
-     const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/team") };
+     const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/team") }, deployments = () => [], held = () => null;
      ${block} })();`);
   const here = { instance: 'dev-one', home, agentsRoot: '/team/agents', running: false }, there = { ...here, server: 'host', addressable: true };
   for (const inst of [here, there]) for (const action of ['start', 'restart']) for (const body of [{ launchConfig: LAUNCH_CONFIG_NONE }, { launchConfig: LAUNCH_CONFIG_NONE, harness: 'codex' }]) {
