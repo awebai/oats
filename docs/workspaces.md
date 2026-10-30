@@ -378,6 +378,15 @@ one. A deployment that changes no string behaves as it did before.
 Only these seven are moved. Every other `awebai` repository keeps its key, and
 a key that differs only by letter case is still a different key.
 
+**The seven old names in `awebai` are never reused, and nothing is created at
+them.** A repository at an old name, even one that only says "moved", ends
+GitHub's redirect for that name for good, and the kernel would treat it as the
+moved repository.
+
+**The table is closed.** It has these seven entries, and there is no general
+setting for moved repositories. An eighth entry needs a contract answer from
+both sides of the move.
+
 ## Member tier vs package tier: the non-collapse rule
 
 A repository may be a **member** (it completed the handshake; its `souls/*` and
