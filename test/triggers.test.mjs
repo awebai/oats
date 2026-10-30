@@ -44,12 +44,12 @@ echo "unexpected gh $*" >&2; exit 2
   return gh;
 }
 
-/** `msg`: more of the messaging capability (`manifest`, `files`). */
-function fixture({ soul = {}, local = {}, msg = {} } = {}) {
+/** `capabilities`: more member capabilities ({ <id>: { manifest, files } }), each one the soul's too. */
+function fixture({ soul = {}, local = {}, capabilities = {} } = {}) {
   const fx = v2Deployment({
     name: "acme",
-    souls: { reviewer: { soul: { capabilities: { "acme-msg": { from: "here" } }, ...soul } } },
-    capabilities: { "acme-msg": { manifest: { layer: "messaging", settings: { join: { description: "team labels to join" } }, ...msg.manifest }, files: msg.files } },
+    souls: { reviewer: { soul: { capabilities: { "acme-msg": { from: "here" }, ...Object.fromEntries(Object.keys(capabilities).map((id) => [id, { from: "here" }])) }, ...soul } } },
+    capabilities: { "acme-msg": { manifest: { layer: "messaging", settings: { join: { description: "team labels to join" } } } }, ...capabilities },
     workspace: { teams: { global: { description: "Fixture" }, okf: { description: "Knowledge operations" } } },
     local,
   });
@@ -175,12 +175,12 @@ test("a failed spawn is retried on the next poll, and its key is recorded only o
 });
 
 test("a spawn its required spawn hook refuses leaves the event pending, and is retried once the hook admits it", async (t) => {
-  // The messaging capability's own refusal (a revoked spawner chain, missing evidence) reaches a trigger as this.
-  // The hook admits a spawn once <the fixture's private HOME>/admit exists.
+  // A capability's own refusal (a messaging capability's revoked spawner chain, missing evidence) reaches a
+  // trigger as this. The hook admits a spawn once <the fixture's private HOME>/admit exists.
   const hook = `import { existsSync } from "node:fs";
 if (!existsSync(process.env.HOME + "/admit")) { process.stderr.write("spawner chain refused\\n"); process.exit(1); }
 console.log("{}");`;
-  const fx = fixture({ msg: { manifest: { hooks: { spawn: { command: "hook.mjs", required: true } } }, files: { "hook.mjs": hook } } });
+  const fx = fixture({ capabilities: { "acme.gate": { manifest: { hooks: { spawn: { command: "hook.mjs", required: true } } }, files: { "hook.mjs": hook } } } });
   t.after(fx.cleanup);
   ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ spawn: { ...definition().spawn, teams: [] } })), "--json"]), "trigger add");
   fx.gh.pulls([pr(7)]);
