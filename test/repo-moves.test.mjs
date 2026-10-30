@@ -25,6 +25,7 @@ import { kernelLookup, PI_BRIDGE, planCliUpdate } from "../lib/pi-bridge.mjs";
 import { sameRepo as clientSameRepo } from "../packages/client/repo-moves.mjs";
 import { capabilityGroup, composes } from "../packages/client/capability-rows.mjs";
 import { sameSelector } from "../packages/client/capability-show-contract.mjs";
+import { observeIdentities } from "../packages/client/remote-identity-memory.mjs";
 import { repositoryIdentity } from "../scripts/check-okf-mirror.mjs";
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -92,6 +93,16 @@ test("the clients compare a moved repository by either spelling, and keep a key 
   assert.equal(capabilityGroup({ ...row, repoKey: "github.com/acme/a" }, new Map(), OLD_OKF).rank, 1);
   assert.equal(sameSelector({ name: "cap", kind: "member", repoKey: OLD_OKF }, row), true);
   assert.equal(sameSelector({ name: "cap", kind: "member", repoKey: "github.com/acme/a" }, row), false);
+});
+
+test("a host that changed its workspace string has not moved to another workspace; one that changed repository has", () => {
+  const workspace = (key) => ({ key, ref: `git:${key}`, keyFrom: "workspace", standalone: false, defaultTeam: { label: "oats", team: "oats:aweb.ai" }, teams: { oats: "oats:aweb.ai" }, teamsFrom: "observed" });
+  const group = (key) => ({ id: "altair:abc", server: "altair", label: "altair", target: { workspace: "/srv/oats" }, probe: { ok: true }, workspace: workspace(key) });
+  const at = "2026-10-30T10:00:00.000Z";
+  const held = observeIdentities({ memory: new Map(), notes: new Map() }, [group(OLD)], at);
+  assert.equal(held.memory.size, 1);
+  assert.equal(observeIdentities(held, [group(NEW)], at).notes.size, 0);
+  assert.equal(observeIdentities(held, [group("github.com/acme/oats")], at).notes.size, 1);
 });
 
 test("the mirror check knows the okf repository by either owner, in the transports it knows, and by nothing else", () => {
