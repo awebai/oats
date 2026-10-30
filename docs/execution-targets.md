@@ -170,7 +170,7 @@ other than the one the window is on.
 |---|---|---|
 | each agent window it creates | `window-style default`, `window-active-style default`, `cursor-colour default` | that window (`set-option -w`), by window id |
 | each agent window, and the `hq` window of a session it creates | `window-size latest`, `aggressive-resize on` | that window |
-| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
+| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG`, `OATS_HARNESS_EXECUTABLE` or `OATS_YOLO` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
 
 So an agent pane takes the colours of the terminal that views it, whatever
 the server's own defaults say, and on tmux 3.1 or later the window follows
@@ -683,7 +683,7 @@ with: `COLORFGBG`, `TMUX`, `TMUX_PANE`; the launch identity and roots
 operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 `OATS_LEVEL`, `OATS_META`, `OATS_DEPLOYMENT`, `OATS_RESOLUTION`,
 `OATS_OPERATION`, `OATS_REPO`, `OATS_BRANCH`, `OATS_WORK`, `OATS_KIND`,
-`OATS_TASK`, `OATS_HARNESS`, `OATS_HARNESS_EXECUTABLE`,
+`OATS_TASK`, `OATS_HARNESS`, `OATS_HARNESS_EXECUTABLE`, `OATS_YOLO`,
 `OATS_PREVIOUS_HARNESS`, `OATS_RUNTIME`,
 `OATS_PREVIOUS_RUNTIME`, `OATS_LAUNCH_PREVIEW`, `OATS_RETIRE_INTENT`,
 `OATS_TRIGGER_EVENT_FILE`, `OATS_TEST_LOGIN_SHELL` (a test seam that replaces
