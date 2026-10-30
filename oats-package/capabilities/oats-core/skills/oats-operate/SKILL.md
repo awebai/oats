@@ -276,7 +276,7 @@ exactly-once delivery; command errors may be uncertain after partial effects.
 Its Enter can answer an open dialog, and it takes no hold: don't run it from a
 script or an agent at a session that may show a permission prompt or a question.
 
-A scheduled wake holds, and sends no key, while the home has a live `permission`,
+From OATS 0.69.7, a scheduled wake holds, and sends no key, while the home has a live `permission`,
 `question` or unknown-reason claim (feature `wake-hold` in `oats version --json`).
 It stays pending with no expiry, and `lastRun.held` says held since `held.since`
 (`held.claimReason`). Before you rely on a wake to reach a child, check the
@@ -383,8 +383,9 @@ one with text, such as a permission prompt's, is shown in its place.
 
 A turn that ends in a provider error sets a claim the same way, because the
 error ends the turn and you can't: `Turn failed: <the error>`, from oats.core's
-hooks on Claude Code (from oats.core 2.10.0) and the `@awebai/oats-pi` bridge
-(producer `oats.pi`) on pi, after the harness's own retries. Your next turn
+hooks on Claude Code (from oats.core 2.10.0) and, from OATS 0.69.7, the
+`@awebai/oats-pi` bridge (producer `oats.pi`) on pi, after the harness's own
+retries. Your next turn
 clears it. Codex reports nothing, because no hook sees the failure. When you
 wait on a child, its row in `oats status --json` shows this as `waitingOnYou`.
 
