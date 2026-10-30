@@ -385,6 +385,11 @@ for (const [label, mutate, pattern] of [
     f.git("config", `url.${opts.repository}.insteadOf`, "https://github.com/awebai/oats-okf.git");
     delete opts.repository;
   }, /origin does not match expected repository/],
+  ["moved URL rewritten to a fixture", (f, opts) => {
+    f.git("remote", "set-url", "origin", "https://github.com/oats-project/oats-okf.git");
+    f.git("config", `url.${opts.repository}.insteadOf`, "https://github.com/oats-project/oats-okf.git");
+    delete opts.repository;
+  }, /origin does not match expected repository/],
 ]) {
   test(`finalization rejects ${label} without altering mirror or provenance`, (t) => {
     const base = temp(t);

@@ -22,6 +22,10 @@ import { sameSource } from "../lib/packages.mjs";
 import { selectCapabilityRow } from "../lib/capability-show.mjs";
 import { OATS_PACKAGE_NAME } from "../lib/version.mjs";
 import { kernelLookup, PI_BRIDGE, planCliUpdate } from "../lib/pi-bridge.mjs";
+import { sameRepo as clientSameRepo } from "../packages/client/repo-moves.mjs";
+import { capabilityGroup, composes } from "../packages/client/capability-rows.mjs";
+import { sameSelector } from "../packages/client/capability-show-contract.mjs";
+import { repositoryIdentity } from "../scripts/check-okf-mirror.mjs";
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const OLD = "github.com/awebai/oats", NEW = "github.com/oats-project/oats";
@@ -72,6 +76,32 @@ test("the table: exactly the seven moved repositories, each old key to its new k
     assert.equal(currentRepoKey(`github.com/awebai/${stayer}`), `github.com/awebai/${stayer}`);
   }
   for (const other of ["__proto__", "constructor", "toString", "github.com/AwebAI/oats", "local//tmp/oats", "", null, undefined]) assert.equal(currentRepoKey(other), other);
+});
+
+test("the kernel's table and the clients' are the same bytes: they may not import each other, so this test keeps them one", () => {
+  assert.equal(readFileSync(join(REPO, "packages", "client", "repo-moves.mjs"), "utf8"), readFileSync(join(REPO, "lib", "repo-moves.mjs"), "utf8"));
+  assert.equal(clientSameRepo(OLD, NEW), true);
+});
+
+test("the clients compare a moved repository by either spelling, and keep a key as it came", () => {
+  const row = { name: "cap", kind: "member", repoKey: NEW_OKF };
+  assert.equal(composes({ name: "cap", kind: "member", repoKey: OLD_OKF }, row), true);
+  assert.equal(composes({ name: "cap", kind: "member", repoKey: "github.com/acme/oats-okf" }, row), false);
+  const group = capabilityGroup(row, new Map(), OLD_OKF);
+  assert.deepEqual([group.rank, group.note], [0, "member repo · host"], "the host under the other spelling is still the host");
+  assert.equal(capabilityGroup({ ...row, repoKey: "github.com/acme/a" }, new Map(), OLD_OKF).rank, 1);
+  assert.equal(sameSelector({ name: "cap", kind: "member", repoKey: OLD_OKF }, row), true);
+  assert.equal(sameSelector({ name: "cap", kind: "member", repoKey: "github.com/acme/a" }, row), false);
+});
+
+test("the mirror check knows the okf repository by either owner, in the transports it knows, and by nothing else", () => {
+  const canonical = "https://github.com/awebai/oats-okf.git";
+  for (const owner of ["awebai", "oats-project"]) {
+    for (const url of [`https://github.com/${owner}/oats-okf.git`, `https://github.com/${owner}/oats-okf`, `git@github.com:${owner}/oats-okf.git`, `git@github.com:${owner}/oats-okf`, `ssh://git@github.com/${owner}/oats-okf.git`, `ssh://git@github.com/${owner}/oats-okf`]) {
+      assert.equal(repositoryIdentity(url), canonical, url);
+    }
+  }
+  for (const url of ["https://github.com/acme/oats-okf.git", "https://github.com/oats-project/oats.git", "http://github.com/oats-project/oats-okf.git", "git@github.com/oats-project/oats-okf.git", "/tmp/oats-okf.git"]) assert.equal(repositoryIdentity(url), url);
 });
 
 test("sameRepo: the two spellings match either way round, and nothing else does", () => {

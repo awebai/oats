@@ -33,6 +33,20 @@ function fakeAdapter(rows) {
 }
 const settle = () => new Promise(r => setImmediate(r));
 
+test('a machine registered under the other spelling of a moved workspace is a machine of this workspace, and keeps the key it recorded', async () => {
+  const OLD = 'github.com/awebai/oats', NEW = 'github.com/oats-project/oats';
+  for (const [window, recorded] of [[OLD, NEW], [NEW, OLD]]) {
+    const adapter = fakeAdapter([reg('altair-oats', recorded), reg('altair-tsm', OTHER)]);
+    const machines = createMachines({ adapter, cli: () => CLI, backfill: false });
+    const scope = { ...SCOPE, key: window };
+    const listed = await machines.forScope(scope);
+    assert.deepEqual(listed.servers.map(s => [s.id, s.workspaceKey]), [['altair-oats', recorded]]);
+    assert.equal(listed.key, window);
+    assert.equal((await machines.check(scope, 'altair-oats')).id, 'altair-oats');
+    await assert.rejects(() => machines.check(scope, 'altair-tsm'), e => e.code === 'E_SERVER_OTHER_WORKSPACE');
+  }
+});
+
 test('Where to run lists only the registrations whose key is the window\'s: another workspace and an unknown key are not offered', async () => {
   const adapter = fakeAdapter([reg('altair-aweb', KEY), reg('altair-tsm', OTHER), reg('vega-x', null)]);
   const machines = createMachines({ adapter, cli: () => CLI });
