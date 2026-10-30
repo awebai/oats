@@ -14,44 +14,58 @@ const creation = between("// A launch's --instance (launch-focus.mjs): its row i
 const subscription = between('// A launch asks this window to select an instance', '/** Another window took `workspace` over.');
 const row = (instance) => ({ instance, home: `/d/acme/agents/x/instances/${instance}`, deployment: { id: '/d/acme' } });
 
-function shell({ shown = null } = {}) {
+const fn = (name) => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
+
+/** The shipped launch focus, its subscription and showInRoster, over fakes: `rows` are the rows painted now (their
+ * list elements too), `shown` the newest read's record, `gen` the roster generation. Every selection, roster read
+ * and forbidden act is recorded. */
+function shell({ shown = null, rows = shown?.instances ?? [], gen = shown?.gen ?? 0, workspace = 'ws:acme' } = {}) {
   const calls = [];
-  let subscriber = null, ticket = 0;
+  let subscriber = null, ticket = 0, pointer = 0;
   const forbidden = (name) => () => { throw new Error(`${name} must not run for a launch's --instance`); };
+  const element = (i) => ({ dataset: { treeInstance: i.home } });
   const c = {
     createLaunchFocus, calls,
-    tabOpenIntents: { watch: () => { const mine = ticket; return () => mine === ticket; } },
-    operator: { input: () => 0, pointer: () => 0 },
-    showInRoster: async (r) => { calls.push(['showInRoster', r.instance]); return true; },
+    tabOpenIntents: { watch: () => { const mine = ticket; return () => mine === ticket; }, invalidate: () => { ticket++; } },
+    operator: { input: () => 0, pointer: () => pointer },
     notifications: { notify: (text) => calls.push(['notify', text]) },
     window: { addEventListener() {} },
     desktopBridge: { onLaunchFocus: (fn) => { subscriber = fn; } },
-    shownRoster: shown, currentWorkspace: () => 'ws:acme',
+    shownRoster: shown, contextRosterGen: gen, contextWorkspace: workspace, contextInstances: rows,
+    currentWorkspace: () => workspace,
+    contextRosterEl: { querySelector: () => ({ querySelectorAll: () => c.contextInstances.map(element) }) },
+    refreshContextRoster: async () => { calls.push(['read']); },
+    backgroundPlacement: () => new Set(), backgroundShown: () => false, backgroundOpen: new Set(),
+    rosterParentId: () => null, collapsedInstances: new Set(), collapseKey: (ws, id) => `${ws}\n${id}`,
+    instanceId: (i) => i.home, renderContextRoster() {},
+    setRovingRow: (_list, target) => calls.push(['select', target.dataset.treeInstance.split('/').at(-1)]),
     openTerminalTab: forbidden('openTerminalTab'), openInstanceStart: forbidden('openInstanceStart'), api: forbidden('api'),
   };
-  runInNewContext(`${creation}\n${subscription}\nglobalThis.launchFocus = launchFocus;`, c);
-  return { c, ask: (m) => subscriber(m), choose: () => { ticket++; } };
+  runInNewContext(`${fn('showInRoster')}\n${creation}\n${subscription}\nglobalThis.launchFocus = launchFocus;`, c);
+  // A person's choice is a press that selects something: both generations move on.
+  return { c, ask: (m) => subscriber(m), choose: () => { pointer++; ticket++; } };
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 test("second launch on a window already showing the row: selected at once through showInRoster, and nothing else", async () => {
-  const s = shell({ shown: { ws: 'ws:acme', instances: [row('dev-1'), row('dev-2')] } });
+  const s = shell({ shown: { gen: 3, ws: 'ws:acme', instances: [row('dev-1'), row('dev-2')] } });
   s.ask({ deployment: '/d/acme', name: 'dev-2' });
   await settle();
-  assert.deepEqual(s.c.calls, [['showInRoster', 'dev-2']]);
+  assert.deepEqual(s.c.calls, [['select', 'dev-2']]);
 });
 
 test('first launch: the ask waits for the first roster read, which selects the row', async () => {
   const s = shell();
   s.ask({ deployment: '/d/acme', name: 'dev-2' });
   assert.equal(s.c.launchFocus.pending(), true);
-  s.c.launchFocus.observe([row('dev-2')]);
+  s.c.contextInstances = [row('dev-2')]; // the first read's rows, painted
+  s.c.launchFocus.observe(s.c.contextInstances);
   await settle();
-  assert.deepEqual(s.c.calls, [['showInRoster', 'dev-2']]);
+  assert.deepEqual(s.c.calls, [['select', 'dev-2']]);
 });
 
 test('rows of another workspace do not answer an ask', async () => {
-  const s = shell({ shown: { ws: 'ws:other', instances: [row('dev-2')] } });
+  const s = shell({ shown: { gen: 3, ws: 'ws:other', instances: [row('dev-2')] } });
   s.ask({ deployment: '/d/acme', name: 'dev-2' });
   await settle();
   assert.deepEqual(s.c.calls, []);
@@ -59,7 +73,7 @@ test('rows of another workspace do not answer an ask', async () => {
 });
 
 test('an invalid value is said in the window as text, without the value', async () => {
-  const s = shell({ shown: { ws: 'ws:acme', instances: [row('dev-1')] } });
+  const s = shell({ shown: { gen: 3, ws: 'ws:acme', instances: [row('dev-1')] } });
   s.ask({ invalid: true });
   assert.deepEqual(s.c.calls, [['notify', "The instance named at launch isn't a valid instance name."]]);
 });
@@ -72,6 +86,28 @@ test("a person's selection before the next read drops a pending ask", async () =
   s.c.launchFocus.observe([row('dev-2')]);
   await settle();
   assert.deepEqual(s.c.calls, []);
+});
+
+test("an earlier visit's rows never answer an ask: back on a workspace whose new read has not landed, nothing is selected or read", async () => {
+  // Shown A with dev-2, switched away and back: the switch moved the roster generation on and cleared the rows.
+  const s = shell({ shown: { gen: 1, ws: 'ws:acme', instances: [row('dev-2')] }, rows: [], gen: 2 });
+  s.ask({ deployment: '/d/acme', name: 'dev-2' });
+  await settle();
+  assert.deepEqual(s.c.calls, [], 'no selection and no roster read of its own');
+  assert.equal(s.c.launchFocus.pending(), true, 'it waits for the new read');
+  s.choose(); // the person picks something else before that read lands
+  s.c.contextInstances = [row('dev-2')];
+  s.c.launchFocus.observe(s.c.contextInstances);
+  await settle();
+  assert.deepEqual(s.c.calls, [], "the person's choice won");
+});
+
+test('the launch selects only rows painted now: a row the window does not show is not read for, and nothing is selected later', async () => {
+  const s = shell({ rows: [] });
+  s.ask({ deployment: '/d/acme', name: 'dev-2' });
+  s.c.launchFocus.observe([row('dev-2')]); // a read lists it, but those rows are not the ones painted
+  await settle();
+  assert.deepEqual(s.c.calls, [], 'showInRoster read nothing and selected nothing');
 });
 
 test('the shell feeds the launch focus only observed reads of this computer\'s rows, after the paint', () => {
