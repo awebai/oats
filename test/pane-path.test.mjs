@@ -258,6 +258,7 @@ test("a start's hooks are handed the executable it looked up, the same in the pr
 test("a name only a hook is handed never reaches the harness, even from a server that already holds it, at a spawn and at a start", async () => {
   await startServer(SERVER_PATH);
   tmuxOn("set-environment", "-g", "OATS_HARNESS_EXECUTABLE", "/server/harness");
+  tmuxOn("set-environment", "-g", "OATS_SPAWNER_HOME", "/server/spawner");
   const env = { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: SERVER_PATH };
   const spawnedHome = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-spawn", "--launch-config", "abs", "--json"], { env })).home;
   await ready(spawnedHome);
@@ -268,6 +269,7 @@ test("a name only a hook is handed never reaches the harness, even from a server
   for (const home of [spawnedHome, quiet]) {
     const pane = paneEnv(home);
     assert.equal("OATS_HARNESS_EXECUTABLE" in pane, false, home);
+    assert.equal("OATS_SPAWNER_HOME" in pane, false, home);
   }
 });
 
