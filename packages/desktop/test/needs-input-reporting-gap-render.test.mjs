@@ -8,8 +8,8 @@ const row = (version = '1.5.9', extra = {}) => ({
   instance: 'test-agent', agent: 'dev', home: '/synthetic/agent', harness: 'claude', running: true,
   modules: [{ name: 'oats.core', from: { kind: 'package', package: 'oats.framework', version } }], ...extra,
 });
-const HOVER = "Can't be reported: its oats.core is older than 2.4.0";
-const note = version => `This agent can't report needs input: its oats.core (oats.framework ${version}) is older than 2.4.0. Upgrade or respawn it to get the marker.`;
+const HOVER = "Claude's questions and permission requests aren't reported: its oats.core is older than 2.4.0";
+const note = version => `This agent's Claude questions and permission requests don't show as needs input: its oats.core (oats.framework ${version}) is older than 2.4.0. Upgrade or respawn it to report them.`;
 
 function fixture(t) {
   const dom = new JSDOM('<!doctype html><body><button id="row">test-agent</button><aside id="context-panel"></aside></body>');
@@ -61,4 +61,27 @@ test('both explanations clear on upgrade or selection and stay absent without th
     assert.equal(message.hidden, true);
     assert.equal(message.textContent, '', 'no stale or malformed version remains in the DOM');
   }
+});
+
+test('a live attention claim and the Claude dialog reporting explanation coexist independently', t => {
+  const u = fixture(t);
+  const waitingOnYou = { since: '2026-10-01T12:00:00.000Z', producer: 'agent', reason: 'attention', message: 'Please choose the next step.' };
+  const fact = label => [...u.document.querySelectorAll('.ctx-tip-fact')].find(el => el.querySelector('dt').textContent === label);
+  u.select(row('1.5.9', { waitingOnYou }));
+  assert.equal(u.hoverFact().querySelector('dd').textContent, HOVER);
+  assert.match(fact('Waiting').querySelector('dd').textContent, /^Asked for your attention · /);
+  assert.equal(fact('Message').querySelector('dd').textContent, waitingOnYou.message);
+  assert.equal(fact('Waiting').parentElement, u.hoverFact().parentElement, 'both facts are in the same card');
+  assert.equal(u.root.querySelector('.context-panel-session-note').hidden, false);
+  assert.equal(u.root.querySelector('.context-panel-session-note').textContent, note('1.5.9'));
+
+  u.select(row('1.6.0', { waitingOnYou }));
+  assert.equal(u.hoverFact(), undefined, 'upgrading clears only the dialog explanation');
+  assert.ok(fact('Waiting'), 'the live claim stays visible');
+  assert.equal(u.root.querySelector('.context-panel-session-note').hidden, true);
+
+  u.select(row('1.5.9', { waitingOnYou: null }));
+  assert.equal(fact('Waiting'), undefined, 'clearing a claim does not suppress the standing explanation');
+  assert.equal(u.hoverFact().querySelector('dd').textContent, HOVER);
+  assert.equal(u.root.querySelector('.context-panel-session-note').hidden, false);
 });

@@ -45,7 +45,7 @@ export function rosterTipFacts(instance, why = '', pr = null, { below = [], now 
       ['Harness', text(instance.harness) ? { harness: instance.harness, model: text(instance.model) } : null],
       // The row's own text is said with who made it (speaker-line.mjs), as one display line.
       ['Status', held ?? [state === 'unknown' ? 'status unknown' : state, runtimeErrorLine(instance)].filter(Boolean).join(' · ')],
-      ['Needs input', needsInputReportingGap(instance) ? "Can't be reported: its oats.core is older than 2.4.0" : null],
+      ['Needs input', needsInputReportingGap(instance) ? "Claude's questions and permission requests aren't reported: its oats.core is older than 2.4.0" : null],
       ['Waiting', claim ? `${waitingLabel(claim)} · ${waitedText(claim.since, now)} (since ${waitingClock(claim.since, now)})` : null],
       // Text only (the card sets textContent): never parsed, never linkified.
       ['Message', claim?.message ?? null],

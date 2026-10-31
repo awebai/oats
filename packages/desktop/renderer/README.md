@@ -662,11 +662,13 @@ split into sections) is `packages/client/roster-sections.mjs`.
   palette's label and match, tabs, dialogs and copies. The `.ctx-name` rule (ellipsis, one line) is unchanged.
 - **Needs-input reporting coverage** (`packages/client/needs-input-reporting-gap.mjs`): a Claude row whose
   recorded `oats.core` comes from package `oats.framework` below `1.6.0` gets a hover-card fact on the
-  same grid: **Needs input** · "Can't be reported: its oats.core is older than 2.4.0". The reader accepts
-  the drift-row array and the recorded map, local and remote, and uses `from.version`, never the current
+  same grid: **Needs input** · "Claude's questions and permission requests aren't reported: its oats.core
+  is older than 2.4.0". The reader accepts the drift-row array and the recorded map, local and remote,
+  and uses `from.version`, never the current
   lock version. A prerelease of `1.6.0` sorts below it. Other harnesses, sources or packages, missing
   facts and malformed versions show nothing. This standing fact changes no row label or live-claim
-  mark, and adds nothing to the terminal pane.
+  mark, and adds nothing to the terminal pane. A live Waiting fact from the agent's own
+  `oats instance attention` claim can appear alongside it; neither fact suppresses the other.
 - **The Machines tab** (the Workspace page's, before Setup; the Deployments page until 2026-10-26, and the Active
   overview before that; stage `hierarchy` opens it): tabs from
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
@@ -1999,10 +2001,10 @@ matches the exact workspace/terminal identity and never selects or focuses a
 panel; a missing or ambiguous observation makes session state unknown.
 
 The **Session** card keeps its harness, model and session-age lines together. Under them, a muted
-DOM-text note uses the same needs-input coverage reader as the hover card: "This agent can't report
-needs input: its oats.core (oats.framework <from.version>) is older than 2.4.0. Upgrade or respawn it to
-get the marker." The version is inserted as text. The note clears on the roster refresh after an
-upgrade or respawn moves the home's recorded version to a supporting release. It uses `--muted` on
+DOM-text note uses the same needs-input coverage reader as the hover card: "This agent's Claude questions
+and permission requests don't show as needs input: its oats.core (oats.framework `<version>`) is older than
+2.4.0. Upgrade or respawn it to report them." The version is inserted as text. The note clears on the
+roster refresh after an upgrade or respawn moves the home's recorded version to a supporting release. It uses `--muted` on
 `--surface`, held to WCAG AA by the contrast inventory and computed theme tests.
 
 Workspace projects its actual selected-soul inspector into that same region.

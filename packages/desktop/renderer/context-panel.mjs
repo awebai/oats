@@ -627,7 +627,7 @@ export function createContextPanel({
     }
     // Session card: the harness mark and name, the model, the terminal session.
     const reportingGap = needsInputReportingGap(instance);
-    sessionNote.textContent = reportingGap ? `This agent can't report needs input: its oats.core (oats.framework ${reportingGap}) is older than 2.4.0. Upgrade or respawn it to get the marker.` : '';
+    sessionNote.textContent = reportingGap ? `This agent's Claude questions and permission requests don't show as needs input: its oats.core (oats.framework ${reportingGap}) is older than 2.4.0. Upgrade or respawn it to report them.` : '';
     sessionNote.hidden = !reportingGap;
     const harness = typeof instance.harness === 'string' && instance.harness ? instance.harness : null;
     if (sessionBadge.dataset.harness !== (harness ?? '')) { sessionBadge.dataset.harness = harness ?? ''; sessionBadge.replaceChildren(...(harness ? [createRuntimeBadge(document, harness)] : [])); }

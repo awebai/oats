@@ -2,7 +2,7 @@
 // the first Claude needs-input hooks. Compare the home's recorded version, never the lock.
 const NEEDS_INPUT_FRAMEWORK_MIN = Object.freeze([1, 6, 0]);
 
-/** The recorded framework version when this row cannot report needs input, else null.
+/** The recorded framework version when Claude dialogs cannot be reported as needs input, else null.
  * Both local and remote rows carry drift rows, or a recorded map when the workspace
  * wasn't read. Missing evidence says nothing about reporting coverage. */
 export function needsInputReportingGap(row) {
