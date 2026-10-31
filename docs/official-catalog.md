@@ -12,7 +12,7 @@ or workspace membership alone does not make a package official.
 | `oats.framework` | `oats-framework/v1.18.0` (this repository) | `oats.core`, `oats.setup`, `oats.onboarding`, `oats.support`, `oats.knowledge-theory` | `knowledge-theory-expert`, `oats-setup-expert` |
 | `oats.okf` | `v5.7.0` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
 | `oats.aweb` | `v1.32.1` | `oats.aweb` (messaging), `oats.aweb-tasks` (tasks) | |
-| `oats.engineering` | `v1.18.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review`, `oats.maintainer` | `code-reviewer` |
+| `oats.engineering` | `v1.17.2` | `oats.engineering-expert`, `oats.developer`, `oats.code-review`, `oats.maintainer` | `code-reviewer` |
 | `oats.authoring` | `v1.0.3` | `oats.authoring` | |
 | `oats.cloning` | `v1.1.0` | `oats.cloning` | `cloner` |
 | `oats.jira` | `v1.0.1` | `oats.jira` (tasks) | |

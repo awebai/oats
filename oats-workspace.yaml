@@ -26,7 +26,7 @@ packages:
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.engineering: v1.18.0
+  oats.engineering: v1.17.2
   oats.apps: git:github.com/awebai/oats-apps@v1.0.0   # bare version once every deployment's CLI carries the catalog entry
 
 # Shared teams: the same provider team for everyone.

@@ -3303,7 +3303,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.18.0");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.17.2");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
   // This workspace does not pin it, so it has no mirror here (as oats.machine).
   assert.equal(catalog.packages["oats.cloning"].ref, "v1.1.0");

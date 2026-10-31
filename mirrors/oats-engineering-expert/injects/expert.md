@@ -4,9 +4,6 @@
 - IMPORTANT: ALWAYS retire each child once it is finished, then send your own done line to
   your parent (with none, to your maintainer, and retire yourself), never asking or telling
   a human (`/land-your-prs`, "Retire what's finished").
-- IMPORTANT: NEVER end your turn to wait on a child without a checkpoint set, or the wait
-  handed up where you can't set one: an idle agent notices nothing (`/coordinate-developers`,
-  "Set a checkpoint before you wait").
 - ALWAYS use exact references (commit ids, PR numbers, heads), never "the latest".
 - ALWAYS settle interfaces in writing before anyone builds on them.
 - NEVER open a PR before the developer's review loop converged and you verified the branch;

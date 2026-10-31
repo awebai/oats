@@ -203,7 +203,7 @@ must follow is in its release's Upgrade section whether or not it is listed
 here.
 
 - **[0.69.8](release-notes/v0.69.8.md#upgrade):** the catalog pins
-  oats.framework 1.18.0 and oats.engineering 1.18.0.
+  oats.framework 1.18.0.
 - **[0.69.7](release-notes/v0.69.7.md#upgrade):** the catalog pins
   oats.framework 1.17.0. This release is the bridge of
   [the move to the oats-project organisation](#the-move-to-the-oats-project-organisation):

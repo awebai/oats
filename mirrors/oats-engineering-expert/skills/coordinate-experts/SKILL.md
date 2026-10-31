@@ -20,9 +20,7 @@ description: Lead or join work across domains, where one expert coordinates and 
    before producers that emit it), tell experts when to rebase, rework or hold their PRs,
    and check the combined result end to end.
 5. **Keep one shared status** (who owns what, what's blocked, what's merged) all can see.
-6. **Wait on each expert you launched** as on a developer: with a checkpoint set
-   (`/coordinate-developers`, "Set a checkpoint before you wait").
-7. **Retire each expert you launched** once it is finished: its PRs merged and green, or
+6. **Retire each expert you launched** once it is finished: its PRs merged and green, or
    closed, and its done line sent (`/land-your-prs`, "Retire what's finished").
 
 You own the overall plan, the interfaces between domains, the order and the integration;

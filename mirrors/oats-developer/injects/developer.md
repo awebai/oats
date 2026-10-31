@@ -4,9 +4,6 @@
   before you implement.
 - IMPORTANT: once you learn your PR is merged and green, or closed, finish and send your
   expert your done line unprompted; it retires you, with no human (`/run-the-review-loop`).
-- IMPORTANT: NEVER end your turn to wait for your reviewer without a checkpoint set, or the
-  wait handed to your expert where you can't set one: an idle agent notices nothing
-  (`/run-the-review-loop`, "Set a checkpoint before you wait").
 - NEVER open a PR to get a review. No PR until your code-reviewer approves and your expert
   accepts the branch; then your expert opens it (`/land-your-prs`) unless it asks you to.
 - NEVER skip the adversarial review because the change is small, unless your expert said so.
