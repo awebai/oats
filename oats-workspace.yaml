@@ -20,13 +20,13 @@ members:
 # (package-catalog.json in this repository). Declaring a package here is the
 # decision to trust it; oats-lock.json records its commit and integrity.
 packages:
-  oats.framework: v1.17.0
+  oats.framework: v1.18.0
   oats.okf: v5.7.0
   oats.aweb: v1.32.1
   oats.jira: v1.0.1
   oats.linear: v1.0.1
   oats.authoring: v1.0.3
-  oats.engineering: v1.17.2
+  oats.engineering: v1.18.0
   oats.apps: git:github.com/awebai/oats-apps@v1.0.0   # bare version once every deployment's CLI carries the catalog entry
 
 # Shared teams: the same provider team for everyone.
