@@ -69,6 +69,8 @@ const { terminalText } = await kernelImport("refused-text", () => import("../lib
 const { qualifiedSoulName, soulCandidates, soulsOffered } = await kernelImport("instance-resolution", () => import("../lib/instance-resolution.mjs"));
 const { parseConfigData } = await kernelImport("config-data", () => import("../lib/config-data.mjs"));
 const remoteModule = await kernelImport("remote", () => import("../lib/remote.mjs"));
+const { sameRepo } = await kernelImport("repo-moves", () => import("../lib/repo-moves.mjs"));
+const { OATS_PACKAGE_NAME } = await kernelImport("version", () => import("../lib/version.mjs"));
 const { activateLocalInputs, localRevision } = await kernelImport("local-inputs", () => import("../lib/local-inputs.mjs"));
 const { default: YAML } = await kernelImport("yaml", () => import("yaml"));
 const { attachArgv, checkRemote, connectServer, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, learnWorkspaceKey, readServers, redactArgv, reportedWorkspaceKey, rosterGroups, routeCapability, routeCommand, runRemote, serverFlagOf, targetOf, updateServers, validateServer, workspaceKeyOfStatus, workspaceMismatch, SERVERS_FILE } = await kernelImport("servers", () => import("../lib/servers.mjs"));
@@ -1985,7 +1987,7 @@ async function addWorkspaceAutomation(desc, { id, body, description }) {
   if (!A.parseOwner(owner)) bail("E_BAD_ARGS", "--owner <host>/<login>: the GitHub account it acts as, e.g. github.com/acme-kb-bot");
   const ctx = workspaceContext(bail);
   const discovery = await discoverForCli(ctx, bail);
-  const row = (discovery.members || []).find((m) => m.confirmed && (memberLabel(m.key) === member || m.key === member));
+  const row = (discovery.members || []).find((m) => m.confirmed && (memberLabel(m.key) === member || sameRepo(m.key, member)));
   if (!row) bail("E_AUTOMATION_MEMBER", `${member} is not a confirmed member of this workspace (members: ${(discovery.members || []).filter((m) => m.confirmed).map((m) => memberLabel(m.key)).join(", ") || "none"})`, { member });
   const name = memberLabel(row.key);
   const content = A.automationFileText(desc, { id, description: description || undefined, runsOn, owner, body });
@@ -1994,8 +1996,8 @@ async function addWorkspaceAutomation(desc, { id, body, description }) {
   const def = await desc.expand(parsed.entry);
   // A capability source's trigger means something only against its soul's resolution: checked before the file is written.
   if (desc.kind === "trigger") await (await import("../lib/triggers.mjs")).checkAddMeaning(ctx.deploymentDir, def, { remoteOptions: ctx.remoteOptions });
-  const sameRepo = (url) => { try { return remoteModule.parseRepoRef(url).key === row.key; } catch { return false; } };
-  const at = A.memberCheckoutFor(dirFlag(), desc, id, { sameRepo });
+  const namesRow = (url) => { try { return sameRepo(remoteModule.parseRepoRef(url).key, row.key); } catch { return false; } };
+  const at = A.memberCheckoutFor(dirFlag(), desc, id, { sameRepo: namesRow });
   const file = { member: name, repoKey: row.key, path: `${desc.folder}/${id}.yaml`, content };
   if (!at) return { file, written: false, id: `${name}/${id}` };
   if (existsSync(at.file)) bail(desc.kind === "trigger" ? "E_TRIGGER_EXISTS" : "E_SCHEDULE_EXISTS", `${at.file} already exists; edit it in place`, { path: at.file });
@@ -2421,7 +2423,7 @@ async function capabilityShowCmd(bail) {
   const { ctx, discovery, lock, items } = await catalogRows("capabilities", bail);
   // --member takes the repo key a row shows, or any ref spelling of it (compared on the canonical key).
   let member = memberArg ?? null;
-  if (member !== null && !items.some((r) => r.repoKey === member)) { try { member = remoteModule.parseRepoRef(member).key; } catch { /* matches no row */ } }
+  if (member !== null && !items.some((r) => sameRepo(r.repoKey, member))) { try { member = remoteModule.parseRepoRef(member).key; } catch { /* matches no row */ } }
   const remote = memoizedRemote(remoteModule);
   const catalog = (() => { try { return officialPackageCatalog(); } catch { return null; } })();
   let doc;
@@ -2759,7 +2761,7 @@ async function spawnCmd() {
         const stampFile = join(root, soulName, ".oats-soul-source.json");
         const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
         soulDir = await ensureWorkspaceSoul(wsPrepared, root);
-        soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
+        soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || !sameRepo(stampBefore.repoKey, wsPrepared.soulEntry.repoKey);
         if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
       }
       if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
@@ -3702,20 +3704,20 @@ async function onboardCmd() {
   // works IN it — there is no special "workspace clone" (discovery reads the host over the remote).
   const cloneDirOf = (m) => join(dir, m.name === "agents" ? "agents-repo" : m.name);
   const clonePresent = (m, cloneDir) => {
-    const declared = ctx.local?.clones && typeof ctx.local.clones === "object" ? ctx.local.clones[m.key] : undefined;
+    const declared = ctx.local?.clones && typeof ctx.local.clones === "object" ? Object.entries(ctx.local.clones).find(([written]) => sameRepo(written, m.key))?.[1] : undefined;
     const candidate = typeof declared === "string" && declared.trim() ? resolve(dir, declared) : cloneDir;
     return existsSync(join(candidate, ".git")) ? candidate : null;
   };
   const clones = members.filter((m) => m.confirmed || (standalone && m.key === synced.discovery.key)).map((m) => {
     const cloneDir = cloneDirOf(m);
     const present = clonePresent(m, cloneDir);
-    return { key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: present ?? cloneDir, present: present !== null, host: m.key === synced.discovery.key };
+    return { key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: present ?? cloneDir, present: present !== null, host: sameRepo(m.key, synced.discovery.key) };
   });
   // Decision 26: the host publishes the member list to whoever can read it. When the host is
   // itself a member (the common `agents` shape) that is fine for an all-private or all-public
   // organisation; a mixed one needs a private host that is NOT a public member. The kernel
   // cannot see forge visibility, so it states the rule rather than judging.
-  const hostIsMember = members.some((m) => m.key === synced.discovery.key);
+  const hostIsMember = members.some((m) => sameRepo(m.key, synced.discovery.key));
   const hosting = { host: synced.discovery.key, hostIsMember, rule: "If any member is private, host oats-workspace.yaml in a private repo that is not a public member (a dedicated <org>/workspace repo); public contributors then use the standalone case (from: here capabilities + oats.core)." };
   // This computer's deployments list gains what was created (awebai/oats#1390); a failed add never
   // fails the onboard, it is answered in `listed`.
@@ -3809,9 +3811,9 @@ async function onboardCheck(dirArg, workspaceRef, bail) {
  *  standalone, the one repo oats-local.yaml named). */
 function memberUrlOf(discovery, key) {
   for (const ref of discovery.workspace?.members || []) {
-    try { const parsed = remoteModule.parseRepoRef(ref); if (parsed.key === key) return parsed.url; } catch { /* schema already validated */ }
+    try { const parsed = remoteModule.parseRepoRef(ref); if (sameRepo(parsed.key, key)) return parsed.url; } catch { /* schema already validated */ }
   }
-  if (discovery.standalone === true && discovery.key === key) return discovery.url ?? null;
+  if (discovery.standalone === true && sameRepo(discovery.key, key)) return discovery.url ?? null;
   return null;
 }
 
@@ -4065,7 +4067,7 @@ function updateCmd() {
   const asked = kernelLookup();
   const { version: latest, problem: notChecked } = kernelLookupResult(spawnSync(asked[0], asked.slice(1), { encoding: "utf8", timeout: 30000 }));
   if (notChecked) fail(notChecked);
-  console.log(`@awebai/oats  installed: ${OATS_VERSION}  latest: ${latest}`);
+  console.log(`${OATS_PACKAGE_NAME}  installed: ${OATS_VERSION}  latest: ${latest}`);
   // Forward only: the CLI moves to a newer version of the registry, never back to an older one.
   // `target` is the version the kernel has after the run, which the bridges are brought to.
   const cli = planCliUpdate(OATS_VERSION, latest), { target } = cli;
@@ -4137,10 +4139,10 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: KERNEL_FEATURES, automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1, readerApi: READER_API, sessionViewer: readSessionViewer() }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: KERNEL_FEATURES, automationsApi: A.AUTOMATIONS_API, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capabilityShowApi: 1, readerApi: READER_API, sessionViewer: readSessionViewer(), package: OATS_PACKAGE_NAME }));
     return;
   }
-  console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
+  console.log(`${OATS_PACKAGE_NAME} ${OATS_VERSION} (desktop API v1)`);
 }
 
 // ---------- the record (core) and experimental tools over it ----------
@@ -4252,7 +4254,7 @@ async function serverCmd() {
       let key;
       try { key = remoteModule.parseRepoRef(ref).key; } catch (e) { bail(e.code || "E_REPO_REF", e.message, e.details); }
       unknownWorkspace = rows.filter((r) => r.workspaceKey === null).map((r) => r.id);
-      rows = rows.filter((r) => r.workspaceKey === key);
+      rows = rows.filter((r) => sameRepo(r.workspaceKey, key));
     }
     if (JSON_MODE) { jsonOk({ file: SERVERS_FILE(), servers: rows, ...(unknownWorkspace ? { unknownWorkspace } : {}) }); return; }
     if (unknownWorkspace?.length) console.log(`  (workspace not known yet for ${unknownWorkspace.join(", ")}: oats server check <id> learns it)`);

@@ -48,7 +48,7 @@ import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
-import { startSingleInstance, launchDirectory, createLaunchOpener, createVersionHandoff, ownLaunch } from "./single-instance.mjs";
+import { startSingleInstance, launchDirectory, launchInstance, createLaunchOpener, createVersionHandoff, ownLaunch } from "./single-instance.mjs";
 import { createActivityNotifier, createViewsNotifier } from "./window-activity.mjs";
 import { createHostThemeSource, installHostThemeHandlers, omarchyHost, OMARCHY_ARG } from "./host-theme.mjs";
 import { createChordFamilySource, installChordFamilyHandlers } from "./chord-family.mjs";
@@ -1036,6 +1036,21 @@ function createWindow(workspaceId, record = null) {
   return win;
 }
 
+// A launch's --instance (single-instance.mjs launchInstance), first or repeated: the window of its --dir
+// deployment is asked to select that instance (renderer/launch-focus.mjs), with the deployment's id and the
+// validated name, or only that the value was not a name. It only selects: main starts, attaches and writes nothing
+// for it. A window still loading is asked once its page has loaded (the preload keeps an ask the shell has not
+// subscribed to yet).
+function selectLaunchInstance(win, instance, dir) {
+  let deployment = null;
+  try { deployment = wsValidate(realpathSync(dir))?.id ?? null; } catch { /* gone since */ }
+  if (!deployment || !win || win.isDestroyed()) return;
+  const message = instance.ok ? { deployment, name: instance.name } : { invalid: true };
+  const send = () => { if (!win.isDestroyed()) win.webContents.send("window:focus-instance", message); };
+  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+  else send();
+}
+
 // A repeated launch (single-instance.mjs): its --dir, or a working directory that is a deployment, is
 // admitted through the validated add path and its workspace's window opened or focused.
 const openLaunch = createLaunchOpener({
@@ -1047,6 +1062,7 @@ const openLaunch = createLaunchOpener({
   },
   open: (key) => openWorkspaceWindow(key).win,
   focusRecent: () => windows.focusRecent(),
+  select: selectLaunchInstance,
 });
 // A repeated launch of another version (an installer replaced while this app runs): after its window is
 // opened or focused, a box over that window says so and offers to restart into the launched copy.
@@ -1058,7 +1074,7 @@ const offerVersionRestart = createVersionHandoff({
   quit: () => app.quit(),
 });
 
-const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {
+const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory), launchInstance(argv)), async () => {
   await applyLoginPath(); // first: everything below may spawn
   installAppMenu();
   let savedWindows = "[]";
@@ -1109,6 +1125,9 @@ const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => ope
   let launchKey = null;
   try { if (startupIsDeployment) launchKey = resolveView(realpathSync(WORKSPACE), servedViews); } catch { /* gone since */ }
   restoreWindows(launchKey);
+  // Its --instance, beside a --dir that is a deployment, is selected in that deployment's window.
+  const startupInstance = launchInstance(process.argv);
+  if (startupInstance && launchKey) selectLaunchInstance(windows.windowOf(launchKey), startupInstance, WORKSPACE);
   // Contract re-probe trigger "app focus": notify the renderer, which calls
   // POST /api/cli/reprobe (the server owns probe state and rate semantics).
   app.on("browser-window-focus", () => {
