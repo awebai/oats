@@ -1,0 +1,3 @@
+## Changed
+
+- **Getting started stops when this machine's messaging root is not a member of the workspace's team.** In step 9, when `oats aweb setup --check-only` answers `"member": false`, the skill spawns nothing and names the fix. With no root (`"root": null`), step 5's team creation did not finish in the deployment's `.aw`, and its line for an interrupted run continues it. With a root, the workspace file's team id is not step 5's `canonical_team_id`, so it is corrected, committed and synced. After a found-list signup or an invited join, it stops and reports what the check shows, without rerunning them ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).

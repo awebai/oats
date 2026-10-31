@@ -103,3 +103,15 @@ test("the steward's harness is recorded before readiness and harness trust read 
   assert.ok(apply < skill.indexOf("oats readiness --soul S --dir D --json"), "before readiness");
   assert.ok(apply < skill.indexOf("oats spawn S --dir D --task-file D/.oats-handover.md --name R"), "before the spawn, which then takes no --harness");
 });
+
+test("a root that is not a member of the team stops step 9 before the spawn, with its fix", () => {
+  // The fields the stop reads are the ones `oats aweb setup --check-only` prints.
+  const provider = read("mirrors/oats-aweb/bin/oats-aweb.mjs");
+  assert.match(provider, /console\.log\(JSON\.stringify\(\{ aw, defaultTeam: label \|\| team \? \{ label, team \} : null, member, root: teamRoot \}\)\)/);
+  const stop = skill.indexOf("**`\"member\": false` on a new workspace:** stop, spawn nothing");
+  assert.ok(stop > skill.indexOf("## 9. Messaging on this machine") && stop < skill.indexOf("## 10. Spawn the setup expert"), "in step 9, before the spawn");
+  const fix = skill.slice(stop, skill.indexOf("\n2. ", stop));
+  assert.match(fix, /With `"root": null`, there is no root in\s+`D\/\.aw`: step 5's team creation did not finish there, so run its line\s+for an interrupted run, then check again\./);
+  assert.match(fix, /the team id step 7 wrote must be\s+step 5's `canonical_team_id` exactly/);
+  assert.match(skill, /expect `"member": true`\.\n\s+On `"member": false`, stop and spawn nothing/);
+});
