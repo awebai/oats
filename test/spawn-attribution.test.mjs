@@ -5,32 +5,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
-import { findRetirementBaseline } from "../lib/session-inspect.mjs";
+import { findRetirementBaseline, inspectInstanceSession } from "../lib/session-inspect.mjs";
+import { sessionServerGone } from "../lib/core.mjs";
+import { tmuxServerAbsence } from "../lib/instance-listing.mjs";
 import { childEnv } from "../lib/automation-scope.mjs";
 import { rosterGroups, writeServers } from "../lib/servers.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-spawner-")));
-const sock = join(base, "agents.sock"), lockedSock = join(base, "locked.sock");
+const sock = join(base, "agents.sock"), unreadableSock = join(base, "unreadable.sock");
 const tmuxOn = (socket, ...args) => execFileSync("tmux", ["-f", "/dev/null", "-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const tmux = (...args) => tmuxOn(sock, ...args);
 
-// A spawn hook that records the spawner it was handed, in the new home.
+// Each hook records whether it was handed a spawner, in the new home.
 const probe = `import { writeFileSync } from "node:fs";
-writeFileSync(process.env.OATS_INSTANCE_HOME + "/spawner-seen.json", JSON.stringify({ spawner: process.env.OATS_SPAWNER_HOME ?? null }));
+writeFileSync(process.env.OATS_INSTANCE_HOME + "/" + process.env.OATS_EVENT + "-spawner-seen.json", JSON.stringify({ present: Object.hasOwn(process.env, "OATS_SPAWNER_HOME"), spawner: process.env.OATS_SPAWNER_HOME ?? null }));
 console.log("{}");`;
 const deployment = () => v2Deployment({
   souls: { dev: { soul: { capabilities: { "acme.probe": { from: "here" } } } } },
-  capabilities: { "acme.probe": { manifest: { hooks: { spawn: "hook.mjs" } }, files: { "hook.mjs": probe } } },
+  capabilities: { "acme.probe": { manifest: { launchPreview: true, hooks: { spawn: "hook.mjs", launch: "hook.mjs", worktree: "hook.mjs" } }, files: { "hook.mjs": probe } } },
 });
 const fx = deployment(), foreign = deployment();
 test.after(() => {
   try { tmux("kill-server"); } catch { /* gone */ }
-  try { chmodSync(lockedSock, 0o700); tmuxOn(lockedSock, "kill-server"); } catch { /* gone */ }
   rmSync(base, { recursive: true, force: true }); fx.cleanup(); foreign.cleanup(); });
 
 const read = (file) => JSON.parse(readFileSync(file, "utf8"));
@@ -62,21 +63,23 @@ function spawner(d, child) {
   assert.ok(Object.hasOwn(meta, "spawnedBy"), "instance.json always records spawnedBy");
   assert.deepEqual(spawnedEvent(child.home).data.spawnedBy, meta.spawnedBy, "the spawned event carries the record's spawnedBy");
   assert.deepEqual(rows(d)[child.instance].spawnedBy, meta.spawnedBy, "the status row carries the record's spawnedBy");
-  assert.equal(read(join(child.home, "spawner-seen.json")).spawner, meta.spawnedBy?.home ?? null, "the spawn hook's OATS_SPAWNER_HOME is the recorded spawner's home");
+  assert.deepEqual(read(join(child.home, "spawn-spawner-seen.json")), { present: meta.spawnedBy !== null, spawner: meta.spawnedBy?.home ?? null }, "the spawn hook's OATS_SPAWNER_HOME is the recorded spawner's home, or absent");
   return meta.spawnedBy;
 }
 
 test("the spawner is callerSpawnOrigin's instance unless its session is found gone; a read that cannot tell keeps it", async (t) => {
   tmux("new-session", "-d", "-s", "oats-agents", "-n", "live", "sleep 600");
   tmux("new-window", "-t", "=oats-agents", "-n", "elsewhere", "sleep 600");
-  tmuxOn(lockedSock, "new-session", "-d", "-s", "oats-agents", "-n", "locked", "sleep 600");
   const live = spawn(fx, "live"), ended = spawn(fx, "ended"), never = spawn(fx, "never"), serverGone = spawn(fx, "server-gone");
-  const locked = spawn(fx, "locked"), noReceipt = spawn(fx, "no-receipt");
+  const unreadable = spawn(fx, "unreadable"), noReceipt = spawn(fx, "no-receipt");
   recordLaunched(live.home, "live");
   recordLaunched(ended.home, "ended"); // its window is gone: the instance's session ended
-  recordLaunched(serverGone.home, "server-gone", join(base, "gone.sock")); // its tmux server is gone, socket and all
-  recordLaunched(locked.home, "locked", lockedSock);
-  chmodSync(lockedSock, 0o000); // its server runs, but cannot be read
+  recordLaunched(serverGone.home, "server-gone", join(base, "gone.sock")); // missing socket plus no process in this home: found gone
+  recordLaunched(unreadable.home, "unreadable", unreadableSock);
+  // A self-referential symlink makes connect fail with ELOOP even for uid 0: root cannot
+  // bypass the filesystem's symlink resolution limit. tmuxServerAbsence returns null,
+  // so callerSpawner's E_SESSION_UNAVAILABLE catch keeps the caller (cannot tell).
+  symlinkSync("unreadable.sock", unreadableSock);
   recordLaunched(noReceipt.home, "no-receipt");
   rmSync(findRetirementBaseline(noReceipt.home)); // its session receipt is gone: where its session is cannot be told
   const elsewhere = spawn(foreign, "elsewhere");
@@ -95,7 +98,16 @@ test("the spawner is callerSpawnOrigin's instance unless its session is found go
     assert.deepEqual(spawner(fx, spawn(fx, "home-only", { OATS_INSTANCE_HOME: live.home })), as(live));
     assert.deepEqual(spawner(fx, spawn(fx, "name-only", { OATS_INSTANCE: "live" })), as(live));
   });
-  for (const [name, r, why] of [["locked", locked, "its tmux server cannot be read"], ["no-receipt", noReceipt, "its session receipt cannot be used"]]) {
+  await t.test("the socket symlink loop reaches the inconclusive liveness branch, never found gone", () => fx.inEnv(() => {
+    assert.throws(() => inspectInstanceSession(unreadable.home), (e) => {
+      assert.equal(e.code, "E_SESSION_UNAVAILABLE");
+      assert.match(String(e.cause?.stderr), /Too many levels of symbolic links|Symbolic link loop/i);
+      assert.equal(tmuxServerAbsence(e.cause), null);
+      assert.deepEqual(sessionServerGone(unreadable.home, e.cause), { gone: false, why: null });
+      return true;
+    });
+  }));
+  for (const [name, r, why] of [["unreadable", unreadable, "its tmux server cannot be read"], ["no-receipt", noReceipt, "its session receipt cannot be used"]]) {
     await t.test(`kept, never refused: ${why}`, () => assert.deepEqual(spawner(fx, spawn(fx, `kept-${name}`, caller(r))), as(r)));
   }
   for (const [name, r, why] of [["ended", ended, "a script left running from an ended instance's shell (its window is gone)"], ["server-gone", serverGone, "its tmux server is gone"], ["never", never, "a home that never launched"]]) {
@@ -127,6 +139,14 @@ test("the spawner is callerSpawnOrigin's instance unless its session is found go
   await t.test("an inherited OATS_SPAWNER_HOME is dropped: never handed on, never trusted", () => {
     assert.equal(spawner(fx, spawn(fx, "inherited-alone", { OATS_SPAWNER_HOME: live.home })), null);
     assert.deepEqual(spawner(fx, spawn(fx, "inherited-overridden", { ...caller(live), OATS_SPAWNER_HOME: ended.home })), as(live));
+  });
+  await t.test("only the spawn hook gets OATS_SPAWNER_HOME: launch and worktree hooks drop it even for a live caller", () => {
+    const env = { ...caller(live), OATS_SPAWNER_HOME: ended.home };
+    const child = spawn(fx, "hook-environments", env, ["--work", "worktree", "--repo", fx.member, "--harness", "pi", "--launch-config", "none"]);
+    assert.deepEqual(spawner(fx, child), as(live), "the same fixture's spawn hook gets the validated live caller");
+    assert.deepEqual(read(join(child.home, "worktree-spawner-seen.json")), { present: false, spawner: null });
+    cli(fx, ["launch-config", "preview", "--home", child.home], env);
+    assert.deepEqual(read(join(child.home, "launch-spawner-seen.json")), { present: false, spawner: null });
   });
 });
 
