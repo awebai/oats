@@ -17,7 +17,7 @@ import { serverSpawnSpec } from "../server-host.mjs";
 import { boundedTail } from "./launch-probe.mjs";
 
 /**
- * How the packaged executable is run as Node. macos-14 runners are arm64:
+ * How the packaged executable is run as Node. macos-15 runners are arm64:
  * for the x64 cross-build the packaged x64 Electron is invoked explicitly
  * through Rosetta — auto-translation is not a sufficient CI contract and may
  * not engage predictably. Executing the REAL x64 app catches a wrong-arch

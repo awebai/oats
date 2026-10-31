@@ -110,8 +110,8 @@ function callsWorkflow(definition) {
  *  label is not the rule: `build-1` has the form of a version's name and would be somebody's own
  *  runner. A label is added by whoever decides the runner, in a pull request that changes it in
  *  the two files as well and says what the installers then need. */
-const RELEASE_RUNNERS = ["ubuntu-24.04", "macos-14"];
-/** What a label of the list must still be: a system's name with its version (`macos-14-large`
+const RELEASE_RUNNERS = ["ubuntu-24.04", "macos-15"];
+/** What a label of the list must still be: a system's name with its version (`macos-15-large`
  *  too). It is the one thing the list cannot say of itself: with `ubuntu-latest` on it, every
  *  job would pass on a label that GitHub moves to another system on a date of its own. */
 const VERSIONED_RUNNER = /^[a-z]+-\d+(\.\d+)?(-[a-z0-9]+)*$/;
@@ -285,13 +285,13 @@ test("release.yml and build-installers.yml run every job on a runner of the list
 });
 
 test("the rule: which runner labels a job can run on, and which of them the list holds", () => {
-  const legs = [{ os: "macos-14", arch: "arm64" }, { os: "macos-14", arch: "x64" }, { os: "ubuntu-24.04", arch: "x64" }];
-  const RUNNERS = ["ubuntu-24.04", "macos-14"];
+  const legs = [{ os: "macos-15", arch: "arm64" }, { os: "macos-15", arch: "x64" }, { os: "ubuntu-24.04", arch: "x64" }];
+  const RUNNERS = ["ubuntu-24.04", "macos-15"];
   assert.deepEqual(runnerLabels({ "runs-on": "ubuntu-24.04" }), { labels: ["ubuntu-24.04"] });
-  assert.deepEqual(runnerLabels({ "runs-on": "${{ matrix.os }}", strategy: { matrix: { include: legs } } }), { labels: ["macos-14", "ubuntu-24.04"] });
-  assert.deepEqual(runnerLabels({ "runs-on": "${{matrix.os}}", strategy: { matrix: { os: ["ubuntu-24.04", "macos-14"] } } }), { labels: ["ubuntu-24.04", "macos-14"] });
+  assert.deepEqual(runnerLabels({ "runs-on": "${{ matrix.os }}", strategy: { matrix: { include: legs } } }), { labels: ["macos-15", "ubuntu-24.04"] });
+  assert.deepEqual(runnerLabels({ "runs-on": "${{matrix.os}}", strategy: { matrix: { os: ["ubuntu-24.04", "macos-15"] } } }), { labels: ["ubuntu-24.04", "macos-15"] });
   // A list and legs: a leg with the key adds a label, a leg without it takes the list's.
-  assert.deepEqual(runnerLabels({ "runs-on": "${{ matrix.os }}", strategy: { matrix: { os: ["ubuntu-24.04"], include: [{ os: "macos-14" }, { node: 22 }] } } }), { labels: ["ubuntu-24.04", "macos-14"] });
+  assert.deepEqual(runnerLabels({ "runs-on": "${{ matrix.os }}", strategy: { matrix: { os: ["ubuntu-24.04"], include: [{ os: "macos-15" }, { node: 22 }] } } }), { labels: ["ubuntu-24.04", "macos-15"] });
   const unresolved = [
     { "runs-on": "${{ inputs.os }}" },
     { "runs-on": "${{ matrix.os }}" },
@@ -318,14 +318,14 @@ test("the rule: which runner labels a job can run on, and which of them the list
   assert.equal(runsOnUnlistedRunner({ "runs-on": "${{ matrix.os }}", strategy: { matrix: { include: legs } } }, RUNNERS), null);
   const unlisted = [
     // A label that moves by itself; another version, or another flavour, of a listed system.
-    "ubuntu-latest", "macos-latest", "ubuntu-slim", "ubuntu-22.04", "ubuntu-26.04", "macos-15", "macos-14-large", "ubuntu-24.04-arm", "windows-2025",
+    "ubuntu-latest", "macos-latest", "ubuntu-slim", "ubuntu-22.04", "ubuntu-26.04", "macos-26", "macos-15-large", "ubuntu-24.04-arm", "windows-2025",
     // The form of a version's name is not the rule: these would be somebody's own runners.
     "build-1", "self-hosted", "release-2",
     // Not the listed spelling.
     "Ubuntu-24.04", "ubuntu-24.04 ", "ubuntu-24", "",
   ];
   for (const label of unlisted) {
-    assert.match(String(runsOnUnlistedRunner({ "runs-on": label }, RUNNERS)), /not on the list of runners \(ubuntu-24\.04, macos-14\): the release and its installers are built on a system somebody decided\. A label is added to the list by whoever decides the runner, in a pull request that says what the installers then need/, JSON.stringify(label));
+    assert.match(String(runsOnUnlistedRunner({ "runs-on": label }, RUNNERS)), /not on the list of runners \(ubuntu-24\.04, macos-15\): the release and its installers are built on a system somebody decided\. A label is added to the list by whoever decides the runner, in a pull request that says what the installers then need/, JSON.stringify(label));
   }
   // One unlisted label among a matrix's is enough, and the message names it alone.
   assert.match(runsOnUnlistedRunner({ "runs-on": "${{ matrix.os }}", strategy: { matrix: { include: [...legs, { os: "ubuntu-latest", arch: "x64" }] } } }, RUNNERS), /^it runs on ubuntu-latest, not on the list of runners/);
@@ -333,7 +333,7 @@ test("the rule: which runner labels a job can run on, and which of them the list
   assert.equal(runsOnUnlistedRunner({ "runs-on": "ubuntu-22.04" }, [...RUNNERS, "ubuntu-22.04"]), null);
 
   // What a label of the list must be. `build-1` has the form, which is why the form is not the rule.
-  for (const label of ["ubuntu-24.04", "macos-14", "macos-14-large", "ubuntu-24.04-arm", "windows-2025", "build-1"]) assert.match(label, VERSIONED_RUNNER);
+  for (const label of ["ubuntu-24.04", "macos-15", "macos-15-large", "ubuntu-24.04-arm", "windows-2025", "build-1"]) assert.match(label, VERSIONED_RUNNER);
   for (const label of ["ubuntu-latest", "macos-latest", "macos-latest-large", "ubuntu", "ubuntu-slim", "self-hosted", "Ubuntu-24.04", "ubuntu-24.04 ", ""]) assert.doesNotMatch(label, VERSIONED_RUNNER);
 });
 
