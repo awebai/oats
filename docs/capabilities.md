@@ -1138,7 +1138,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
 | `StopFailure` | none | set `attention` or `question` by the error's class, the error as its message (see "A failed turn" below) |
 
-**A failed turn** (oats.core 2.10.0,
+**A failed turn** (oats.core 2.11.0,
 [#1667](https://github.com/awebai/oats/issues/1667)). A turn that ends in a
 provider error stops the session with nothing left to run an instruction, so
 the harness adapter reports it. The claim is reason `attention`, or `question`
