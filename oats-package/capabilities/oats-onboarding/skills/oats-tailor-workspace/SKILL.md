@@ -4,8 +4,9 @@ description: >-
   Use when you are a workspace's setup expert, the workspace is new, and the
   getting-started skill has handed it over: turn OATS's defaults into this
   workspace's own coordination, knowledge and tasks capabilities for its use
-  case, take the person through the deployment-agent step, offer the
-  approved channel route, and brief the person. Procedure only; the setup
+  case, attach the person to the workspace's messaging account, take them
+  through the deployment-agent step, offer the approved channel route, and
+  brief the person. Procedure only; the setup
   and config procedures it points to are oats.setup's. Part of
   oats.onboarding.
 ---
@@ -82,7 +83,31 @@ oats souls --json
 oats spawn <soul> --preview --json
 ```
 
-## 3. The deployment's agent, for human attribution
+## 3. Attach the person to the messaging account
+
+This is a normal step, not an option. When getting started created the
+workspace's messaging account for the workspace, without the person's
+sign-in, that account belongs to nobody yet. Attach it to the person now.
+
+- The act comes from the messaging capability's own skill. With aweb, the
+  default, the account was created by `oats aweb setup --username` and its
+  root is `<deployment>/.aw`. Ask for the person's email address, then run,
+  from your home:
+
+  ```bash
+  aw --identity-home "<deployment>/.aw" claim-human --email "<their email>"
+  ```
+
+  Tell them what it prints, and what it asks them to do next.
+- Skip it when the person signed in to their own account at getting started
+  (`aw auth login`): that account is already theirs.
+- If the messaging capability's skill names no such step, say so in step 6,
+  as information.
+
+Until it is done, say that the team is on a messaging account created for
+the workspace. Never say it is the person's.
+
+## 4. The deployment's agent, for human attribution
 
 This is a normal step, not an option. The deployment's agent ties the
 instances spawned from here on to the person who runs them.
@@ -98,13 +123,14 @@ instances spawned from here on to the person who runs them.
   respawned. Respawning is the person's choice; it costs each one a new
   session.
 - If the messaging capability's skill names no such step, the deployment has
-  no bound human. Say so in step 5, as information, never as a failure.
+  no bound human. Say so in step 6, as information, never as a failure.
 
 Until an agent actually carries a chain, never say the team or the agents
-are bound or attributed. Say that the team is owned by the person's account
-(with aweb: "your aweb account").
+are bound or attributed. Once step 3 attached the person (or they signed
+in at getting started), say that the team is on their account (with aweb:
+"your aweb account").
 
-## 4. The approved channel route
+## 5. The approved channel route
 
 This is also a normal step. The getting-started skill left the harness's
 development channel mode, which the kernel confirms at each start. Offer the
@@ -113,7 +139,7 @@ channel delivery (approved route)". Writing the managed-settings file needs
 `sudo`, so the person runs it in their own terminal. Homes started before the
 change keep development mode until they are respawned.
 
-## 5. Brief the person
+## 6. Brief the person
 
 In the session, plainly:
 
@@ -121,5 +147,6 @@ In the session, plainly:
 - how to work with the agents: who to talk to first, and how the roles hand
   work to each other;
 - how coordination across humans will run;
-- what is still `unknown` (step 3), and what respawning would change;
+- whether the account is attached to them (step 3);
+- what is still `unknown` (step 4), and what respawning would change;
 - what is open, and who decides it.

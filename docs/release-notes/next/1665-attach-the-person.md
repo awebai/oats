@@ -1,0 +1,3 @@
+## Changed
+
+- **`oats.framework` 1.19.0: the setup expert attaches the person to a messaging account created for the workspace.** `oats.onboarding` 1.1.0's `/oats-tailor-workspace` gains a normal step 3, before the deployment-agent step: when getting started created the workspace's account without the person's sign-in, the setup expert asks for their email and, with aweb, runs `aw --identity-home "<deployment>/.aw" claim-human --email <their email>`; it skips the step when the person signed in to their own account. Until then, the skill and `oats.setup` 2.10.1's `/oats-setup-expert` say the team is on an account created for the workspace, never that it is the person's ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).
