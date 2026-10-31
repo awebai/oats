@@ -29,7 +29,8 @@ It holds:
   existing knowledge tools, and whether messaging is wanted;
 - the harness, and what the entry skill already did: the versions installed,
   the gh login over https, the Desktop, and the workspace's messaging team
-  (with aweb, a team owned by the person's aweb account).
+  (with aweb, a team on an aweb account created for the workspace, or on
+  the person's own account when they signed in).
 
 It holds no secret, and none ever goes into one.
 
@@ -106,11 +107,12 @@ only the secrets, the logins and the installs that capture their shell.
      capability for it is installed. Say so; don't promise more.
 6. **Messaging, when wanted:**
    - **If the workspace already has it,** the entry skill set it up on this
-     machine before your spawn: for a new workspace, a team owned by the
-     person's aweb account (or, from an older entry skill, a new account),
-     and a join by invite for an existing one (the hand-over says which).
-     That team is owned by the account; no agent is attributed to the person
-     until the deployment agent exists (`/oats-tailor-workspace`). Check it with the
+     machine before your spawn: for a new workspace, a team on an aweb
+     account created for the workspace (or on the person's own account, when
+     they signed in), and a join by invite for an existing one (the
+     hand-over says which). A created account is the person's only once they
+     attach to it, and no agent is attributed to them until the deployment
+     agent exists: both are `/oats-tailor-workspace` steps. Check it with the
      briefing's read-only aweb check (`member: true`, your own soul as
      `S`), then go on from `/oats-teams`.
    - **If it has none yet,** first the `oats.aweb` pin
