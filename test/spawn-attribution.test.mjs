@@ -101,7 +101,7 @@ test("the spawner is callerSpawnOrigin's instance unless its session is found go
   await t.test("the socket symlink loop reaches the inconclusive liveness branch, never found gone", () => fx.inEnv(() => {
     assert.throws(() => inspectInstanceSession(unreadable.home), (e) => {
       assert.equal(e.code, "E_SESSION_UNAVAILABLE");
-      assert.match(String(e.cause?.stderr), /Too many levels of symbolic links/i);
+      assert.match(String(e.cause?.stderr), /Too many levels of symbolic links|Symbolic link loop/i);
       assert.equal(tmuxServerAbsence(e.cause), null);
       assert.deepEqual(sessionServerGone(unreadable.home, e.cause), { gone: false, why: null });
       return true;
