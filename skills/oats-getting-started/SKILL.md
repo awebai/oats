@@ -628,7 +628,16 @@ stop if its readiness still reports a problem.
    harness's channel as step 4 says, then check again; stop on anything else
    and tell the person why. Its `defaultTeam.label` is `L`, the setup expert's team.
    - **A new workspace** expects `"member": true` here: step 5 installed the
-     root. Then this step is done.
+     root. Then this step is done. A machine found-list skipped step 5, so
+     its `"member": false` here is expected: go on to item 2.
+   - **`"member": false` on a new workspace, without a machine found-list:**
+     stop, spawn nothing, and tell the person which fix applies. With
+     `"root": null`, there is no root in `D/.aw`: step 5's team creation did
+     not finish there, so run its line for an interrupted run, then check
+     again. With a `root`, that root is not a member of `defaultTeam.team`:
+     the team id step 7 wrote must be step 5's `canonical_team_id` exactly,
+     so correct it in `oats-workspace.yaml`, commit and push it, run
+     `oats sync --dir D`, then check again.
 2. **Machine found-list: sign up its aweb account and team,** with `N` and
    `A` from step 1. No API key, no token and nothing for the person to type.
    Preview first, then run it:
@@ -659,6 +668,9 @@ stop if its readiness still reports a problem.
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
    ```
 5. **After items 2 to 4, check again** (item 1), and expect `"member": true`.
+   On `"member": false`, stop and spawn nothing: tell the person the run
+   left this machine's root outside `L`, with what the check shows, and
+   don't rerun the signup or the join.
 
 The setup expert does the rest of this machine's messaging
 (`/oats-host-delivery`).
