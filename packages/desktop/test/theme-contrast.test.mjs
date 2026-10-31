@@ -1863,6 +1863,7 @@ for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messa
       <span class="context-panel-state" data-state="running"><span>Running</span><span>· 42m</span></span><span id="stopped" class="context-panel-state" data-state="stopped">Stopped</span></div>
     <div class="context-panel-work"><div class="context-panel-work-main"><span class="context-panel-mode-tile"></span><p class="context-panel-work-sentence">Works in its own worktree of <span class="context-panel-fact-code">oats</span>, on branch <span class="context-panel-fact-code">main</span>.</p></div>
       <details class="context-panel-paths"><summary>Paths</summary><dl class="context-panel-facts"><div class="context-panel-fact"><dt>Home</dt><dd><div class="context-panel-pathline"><div class="context-panel-path">/h</div></div></dd></div></dl></details></div>
+    <div class="context-panel-session"><div class="context-panel-session-lines">Claude</div><p class="context-panel-session-note context-panel-note">This agent can't report needs input: its oats.core (oats.framework 1.5.9) is older than 2.4.0. Upgrade or respawn it to get the marker.</p></div>
     <section class="context-panel-section"><div class="context-panel-section-head"><div class="context-panel-label">Messaging &amp; Teams</div></div>
       <div class="context-panel-part"><div class="context-panel-sublabel">Messaging ID</div><div class="context-panel-idline"><span class="context-panel-id">team/dev-1</span></div></div><div id="teams-sublabel" class="context-panel-sublabel">Teams</div>
       <section class="teams-panel is-compact"><p class="teams-note teams-intro">The messaging teams this soul is allowed to join. It is always in the default team.</p><div class="teams-card"><div class="team-row"><div class="team-main"><div class="team-name">oats<span class="team-tag">default</span></div><div class="team-meta">oats:team</div></div><span class="team-badge">Always on</span></div>
@@ -1887,6 +1888,7 @@ for (const [name] of palettes) test(`${name}: v4.1 instance panel, compact Messa
     ['#stopped', '#context-panel', 'muted', 'surface'],
     // Spec A: the Work card's sentence and its mono facts, the Paths disclosure, the Messaging & Teams parts.
     ['.context-panel-work-sentence', '.context-panel-work', 'fg', 'surface'],
+    ['.context-panel-session-note', '.context-panel-session', 'muted', 'surface'],
     ['.context-panel-fact-code', '.context-panel-work', 'fg', 'surface'],
     ['.context-panel-paths > summary', '.context-panel-work', 'muted', 'surface'],
     ['.context-panel-paths dt', '.context-panel-work', 'muted', 'surface'],

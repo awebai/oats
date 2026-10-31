@@ -4,6 +4,7 @@ import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { reasonLine, unsupportedLine } from './speaker-line.mjs';
 import { instanceActs } from '../../client/instance-acts.mjs';
+import { needsInputReportingGap } from '../../client/needs-input-reporting-gap.mjs';
 import { rowReason, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
 let workNotes = 0;
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
@@ -100,7 +101,9 @@ export const contextPanelCSS = `
 #context-panel .context-panel-action { font:600 12.5px/1 inherit; height:32px; padding:0 14px; border-radius:7px; background:var(--primary-bg); color:var(--primary-fg); border:1px solid var(--primary-bg); cursor:pointer; }
 #context-panel .context-panel-action:disabled { background:var(--surface-2); color:var(--muted); border-color:var(--border); cursor:default; }
 /* Session: the harness mark and name, the model and where it came from, the terminal target and its age. */
-#context-panel .context-panel-session { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
+#context-panel .context-panel-session { display:flex; flex-direction:column; gap:10px; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
+#context-panel .context-panel-session-lines { display:flex; align-items:center; gap:10px; min-width:0; }
+#context-panel .context-panel-session-note { margin:0; font-size:12px; line-height:1.5; }
 #context-panel .context-panel-session-badge { flex:none; }
 #context-panel .context-panel-session-badge:empty { display:none; }
 #context-panel .context-panel-session-badge .runtime-badge { width:26px; height:26px; border-radius:7px; font-size:11px; }
@@ -434,6 +437,8 @@ export function createContextPanel({
   // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
   const sessionCard = node('div', 'context-panel-session');
+  const sessionLines = node('div', 'context-panel-session-lines');
+  const sessionNote = node('p', 'context-panel-session-note context-panel-note'); sessionNote.hidden = true;
   const sessionBadge = node('span', 'context-panel-session-badge'); sessionBadge.setAttribute('aria-hidden', 'true');
   const sessionCopy = node('div', 'context-panel-session-copy');
   // "<model> · <where the choice came from>" on one line under the harness.
@@ -447,7 +452,8 @@ export function createContextPanel({
   const startedLine = node('span', 'context-panel-session-age'); startedLine.dataset.age = 'started';
   startedLine.append('started ', field('span', null, 'startedAt'));
   sessionSide.append(tmuxLine, startedLine, createdLine);
-  sessionCard.append(sessionBadge, sessionCopy, sessionSide); session.append(sessionCard);
+  sessionLines.append(sessionBadge, sessionCopy, sessionSide);
+  sessionCard.append(sessionLines, sessionNote); session.append(sessionCard);
   // Messaging & Teams (teams contract): injected like Git — this host performs no IO.
   // Header: the label and a tools slot (the section's icon Refresh); then two
   // labelled parts: the Messaging ID (with an icon Copy), then Teams, whose lead
@@ -620,6 +626,9 @@ export function createContextPanel({
       }));
     }
     // Session card: the harness mark and name, the model, the terminal session.
+    const reportingGap = needsInputReportingGap(instance);
+    sessionNote.textContent = reportingGap ? `This agent can't report needs input: its oats.core (oats.framework ${reportingGap}) is older than 2.4.0. Upgrade or respawn it to get the marker.` : '';
+    sessionNote.hidden = !reportingGap;
     const harness = typeof instance.harness === 'string' && instance.harness ? instance.harness : null;
     if (sessionBadge.dataset.harness !== (harness ?? '')) { sessionBadge.dataset.harness = harness ?? ''; sessionBadge.replaceChildren(...(harness ? [createRuntimeBadge(document, harness)] : [])); }
     const tmux = typeof instance.tmux?.session === 'string' && instance.tmux.session ? `tmux · ${instance.tmux.session}` : '';
