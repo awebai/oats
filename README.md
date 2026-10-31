@@ -39,7 +39,7 @@ If you are a person, give your coding agent (Claude Code, Codex, pi or any other
 
 - **Asks first, in one round:** your project, its repositories and where the workspace should live, the knowledge tools you use, and how your agents message each other ([aweb](https://aweb.ai) by default).
 - **Installs OATS, OATS Desktop and the messaging CLI.**
-- **Creates your workspace's team:** you sign in to your aweb account in your browser, and one command creates the team, owned by your account, that every agent you spawn joins.
+- **Creates your workspace's team,** with no sign-in: the workspace's team, on an aweb account created for it, that every agent you spawn joins. You attach yourself to the account in the setup expert's first steps, or sign in to your own aweb account instead if you want the team on it from the start.
 - **Writes your workspace** in one commit, in your repository or a new private one: the workspace and its team, nothing else. Or it joins this machine to an existing workspace.
 - **Spawns the setup expert and opens the Desktop on it.** The setup expert is an OATS agent that turns OATS's defaults into your own coordination, knowledge and tasks capabilities, with you. You type only passwords, logins and tokens.
 

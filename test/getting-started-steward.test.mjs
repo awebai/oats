@@ -108,13 +108,43 @@ test("a root that is not a member of the team stops step 9 before the spawn, wit
   // The fields the stop reads are the ones `oats aweb setup --check-only` prints.
   const provider = read("mirrors/oats-aweb/bin/oats-aweb.mjs");
   assert.match(provider, /console\.log\(JSON\.stringify\(\{ aw, defaultTeam: label \|\| team \? \{ label, team \} : null, member, root: teamRoot \}\)\)/);
-  const stop = skill.indexOf("**`\"member\": false` on a new workspace, without a machine found-list:**\n     stop, spawn nothing");
+  const stop = skill.indexOf("**`\"member\": false` after step 5's sign-in:** stop, spawn nothing");
   assert.ok(stop > skill.indexOf("## 9. Messaging on this machine") && stop < skill.indexOf("## 10. Spawn the setup expert"), "in step 9, before the spawn");
   const fix = skill.slice(stop, skill.indexOf("\n2. ", stop));
   assert.match(fix, /With\s+`"root": null`, there is no root in `D\/\.aw`: step 5's team creation did\s+not finish there, so run its line for an interrupted run, then check\s+again\./);
   assert.match(fix, /the team id step 7 wrote must be step 5's `canonical_team_id` exactly/);
   assert.match(skill, /expect `"member": true`\.\n\s+On `"member": false`, stop and spawn nothing/);
-  // A machine found-list skips step 5 and signs up in item 2, so its first check is not a member and goes on.
-  assert.match(skill, /A machine found-list skipped step 5, so\s+its `"member": false` here is expected: go on to item 2\./);
-  assert.ok(stop < skill.indexOf("2. **Machine found-list: sign up its aweb account and team,**"), "the found-list's first check reaches the signup");
+  // Without step 5's sign-in there is no root yet: the first check is not a member and goes on to the signup.
+  assert.match(skill, /Every other new workspace \(the default, and a machine found-list\)\s+has no root yet, so its `"member": false` here is expected: go on to\s+item 2\./);
+  assert.ok(stop < skill.indexOf("2. **A new workspace without step 5's sign-in, and a machine found-list:"), "the first check reaches the signup");
+});
+
+test("the default new workspace signs up without a sign-in, and the team id it writes is checked against setup's answer", () => {
+  const signup = read("mirrors/oats-aweb/lib/setup-team-default.mjs");
+  // The skeleton's team is the provider's own predicted team, and the answer carries team and membershipVerified.
+  assert.ok(signup.includes("predictedTeam = `default:${username}.aweb.ai`"));
+  assert.ok(signup.includes("return { plan: false, label, team, root, steps, observed, membershipVerified: true };"));
+  assert.match(skill, /the messaging account's name `N`[^]*?default\s+`<workspace>-oats`/);
+  assert.match(skill, /## 5\. Optional: the team on your own aweb account/);
+  assert.match(skill, /- \*\*The team\*\* is `default:N\.aweb\.ai`, with `N` from step 1/);
+  const item2 = skill.slice(skill.indexOf("2. **A new workspace without step 5's sign-in, and a machine found-list:"), skill.indexOf("\n3. **Existing workspace"));
+  assert.ok(item2.includes("cd \"D\" && oats aweb setup --soul S --username N --name A --label L --plan --json"));
+  assert.match(item2, /`result\.team` must be\s+the team line step 7 wrote, `default:N\.aweb\.ai`, and\s+`result\.membershipVerified` must be `true`/);
+  const flat = item2.replace(/\s+/g, " ");
+  assert.ok(flat.includes("Ask the person for another `N`, change the team line in `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit and push it, run `oats sync --dir D`, then run the preview and the signup again"));
+  // A changed N only when the failed run kept no root; a retained root keeps N and the team line.
+  assert.ok(flat.indexOf("test -e \"D/.aw\" && echo RETAINED") < flat.indexOf("Ask the person for another `N`"), "the rename is gated on no retained root");
+  assert.ok(flat.includes("**Nothing printed:** aw kept nothing, so `N` is free to change."));
+  assert.ok(flat.includes("**`RETAINED`:** the run left a root. Keep `N` and the team line, and run the preview again, unchanged."));
+  assert.ok(flat.includes("this is the workspace's team, on an aweb account created for it; they attach themselves to it in the setup expert's first steps"));
+});
+
+test("only the sign-in route says the team is owned by the person's account", () => {
+  const step5 = [skill.indexOf("## 5. "), skill.indexOf("## 6. ")];
+  for (let i = skill.indexOf("owned by"); i !== -1; i = skill.indexOf("owned by", i + 1)) {
+    const inStep5 = i > step5[0] && i < step5[1];
+    const tagged = /signed in at step 5/.test(skill.slice(i - 120, i + 120));
+    assert.ok(inStep5 || tagged, `"owned by" outside the sign-in route: ${skill.slice(i - 60, i + 60)}`);
+  }
+  assert.ok(!/owned by your account/.test(read("README.md")), "the README's default path says nothing about ownership");
 });

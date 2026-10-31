@@ -3,10 +3,11 @@ name: oats-getting-started
 description: >-
   The way into OATS (Open Agent Team Specification) for a person who has only
   a coding agent. Asks about their project, installs OATS, OATS Desktop and
-  the messaging CLI, signs the person in to their messaging account and
-  creates the workspace's team, writes a new workspace's skeleton (or joins
-  this machine to an existing workspace), spawns the workspace's setup
-  expert, which does the rest, and opens the Desktop on it. Offers the TUI.
+  the messaging CLI, creates the workspace's messaging account and team (with
+  no sign-in, or on the person's own account if they sign in), writes a new
+  workspace's skeleton (or joins this machine to an existing workspace),
+  spawns the workspace's setup expert, which does the rest, and opens the
+  Desktop on it. Offers the TUI.
   Use for "get started with OATS", "set up / install / adopt OATS", "set up
   OATS for this project", "join our OATS workspace", or when someone gives
   you this file or its URL.
@@ -44,8 +45,9 @@ stop instead: the person answers nothing after step 1.
   steps yourself and read back what each did.
 - **Secrets.** The person types only what you must never hold: passwords,
   tokens and logins. Before the spawn there are two ways for that: a browser
-  device flow you start (the GitHub login, step 3, and the messaging login,
-  step 5), and the exact command in their own terminal (a `sudo` or Homebrew
+  device flow you start (the GitHub login, step 3, and, only when they want
+  the team on their own aweb account, the messaging login, step 5), and the
+  exact command in their own terminal (a `sudo` or Homebrew
   password, an aweb invite token), which you open for them (below).
   - Never ask for a secret in the conversation, and never write one to a file.
   - Never suggest Claude Code's `! <command>` for one: its command and output
@@ -113,10 +115,16 @@ On a machine found-list, ask the machine's round below instead of this list.
   the list.
 - **Messaging between agents:** which messaging capability, or none. The
   default, and the one this skill sets up, is aweb (`oats.aweb`):
-  recommended, because agents that can mail each other can coordinate. A new
-  workspace needs nothing more from them now: they sign in to their aweb
-  account, or create one, in their browser in step 5. For another messaging
-  capability, leave messaging out here: the setup expert adds it.
+  recommended, because agents that can mail each other can coordinate. For
+  another messaging capability, leave messaging out here: the setup expert
+  adds it. A new workspace with aweb gets an aweb account of its own, which
+  step 9 creates with no sign-in:
+  - the messaging account's name `N`: the part of every agent's address
+    before the `/`, in the same form as the workspace name, default
+    `<workspace>-oats`. The root's name `A` is `<workspace>-root`.
+  - Tell them they attach themselves to that account in the setup expert's
+    first steps. Only if they want the team on their own aweb account now,
+    they sign in to it in their browser in step 5 instead.
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
 - **The deployment directory `D`:** where OATS lives on this machine. Any
@@ -381,10 +389,12 @@ npm install -g @awebai/aw && aw version
 
 `aw` must be 1.36.33 or later.
 
-## 5. Your messaging account and the workspace's team
+## 5. Optional: the team on your own aweb account
 
-**New workspace with aweb only.** An existing workspace joins in step 9, and
-a machine found-list signs up there too: skip this step for both.
+**Only for a new workspace with aweb whose person chose, in step 1, the team
+on their own aweb account now.** Skip this step otherwise: the default
+creates the workspace's account in step 9, an existing workspace joins
+there, and a machine found-list signs up there too.
 
 The workspace's agents share one team, its **default team**. Here the person
 signs in to their own aweb account, and that account creates the team. Say
@@ -524,9 +534,10 @@ defaultTeam: acme                     # every soul starts in this team
 - **The versions** are the ones step 4 printed: the framework's (the part
   after `oats-framework/`) and `oats.aweb`'s, but never below `v1.31.0` for
   `oats.aweb`.
-- **The team** is `T` from step 5, written in literally; its label (here
-  `acme`) is the workspace name. On a machine found-list, which signs up in
-  step 9, it is `default:N.aweb.ai`, with `N` the namespace from step 1.
+- **The team** is `default:N.aweb.ai`, with `N` from step 1: the team step
+  9's signup creates, checked there against this line. With step 5's
+  sign-in, it is `T` from step 5 instead, written in literally. Its label
+  (here `acme`) is the workspace name.
 - **On a machine found-list only,** keep the `oats.machine` line, at the
   catalog's `packages."oats.machine".ref`. Elsewhere, leave it out.
 - **Without messaging,** leave out the `oats.aweb` line, the `messaging`
@@ -627,31 +638,55 @@ stop if its readiness still reports a problem.
    Its `aw.status` must be `ok`. If `aw` is missing, install it and the
    harness's channel as step 4 says, then check again; stop on anything else
    and tell the person why. Its `defaultTeam.label` is `L`, the setup expert's team.
-   - **A new workspace** expects `"member": true` here: step 5 installed the
-     root. Then this step is done. A machine found-list skipped step 5, so
-     its `"member": false` here is expected: go on to item 2.
-   - **`"member": false` on a new workspace, without a machine found-list:**
-     stop, spawn nothing, and tell the person which fix applies. With
+   - **A new workspace that signed in at step 5** expects `"member": true`
+     here: step 5 installed the root. Then this step is done.
+     Every other new workspace (the default, and a machine found-list)
+     has no root yet, so its `"member": false` here is expected: go on to
+     item 2.
+   - **`"member": false` after step 5's sign-in:** stop, spawn nothing, and
+     tell the person which fix applies. With
      `"root": null`, there is no root in `D/.aw`: step 5's team creation did
      not finish there, so run its line for an interrupted run, then check
      again. With a `root`, that root is not a member of `defaultTeam.team`:
      the team id step 7 wrote must be step 5's `canonical_team_id` exactly,
      so correct it in `oats-workspace.yaml`, commit and push it, run
      `oats sync --dir D`, then check again.
-2. **Machine found-list: sign up its aweb account and team,** with `N` and
-   `A` from step 1. No API key, no token and nothing for the person to type.
-   Preview first, then run it:
+2. **A new workspace without step 5's sign-in, and a machine found-list:
+   sign up the workspace's aweb account and team,** with `N` and `A` from
+   step 1. No API key, no token and nothing for the person to type. Preview
+   first, then run it:
 
    ```bash
    cd "D" && oats aweb setup --soul S --username N --name A --label L --plan --json
    cd "D" && oats aweb setup --soul S --username N --name A --label L --json
    ```
 
-   The preview does not contact aweb, so it can't tell whether `N` is free.
-   If the run fails with `E_SETUP_NATIVE` (most likely the username is
-   taken; aw's output is withheld), don't rerun.
-   On a machine found-list, ask nothing: tell the person that the run
-   failed, most likely because `N` is taken, and stop.
+   - **The answer:** `result.team` must be
+     the team line step 7 wrote, `default:N.aweb.ai`, and
+     `result.membershipVerified` must be `true`. Otherwise stop, spawn
+     nothing, and tell the person what it shows.
+   - **Then tell the person,** in your words: this is the workspace's
+     team, on an aweb account created for it; they attach themselves to it
+     in the setup expert's first steps.
+   - **`E_SETUP_NATIVE`:** the preview does not contact aweb, so it can't
+     tell whether `N` is free, and the run fails this way most likely
+     because `N` is taken (aw's output is withheld). It can also fail
+     part-way and leave a root. Never remove `D/.aw`, and never rerun
+     blindly.
+     On a machine found-list, ask nothing: tell the person that the run
+     failed, most likely because `N` is taken, and stop.
+     Otherwise look first, read-only: `test -e "D/.aw" && echo RETAINED`.
+     - **Nothing printed:** aw kept nothing, so `N` is free to change. Ask
+       the person for another `N`, change the team line in
+       `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit
+       and push it, run `oats sync --dir D`, then run the preview and the
+       signup again with the new `N`.
+     - **`RETAINED`:** the run left a root. Keep `N` and the team line, and
+       run the preview again, unchanged. When its `result.team` is
+       `default:N.aweb.ai`, the account exists: run the signup again,
+       unchanged, and it reuses that root. Anything else, the preview
+       failing included: stop, spawn nothing, and tell the person what it
+       shows.
 3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
    `oats aweb invite --soul <their soul> --label L --json` in their own
    deployment and passes the token to the person privately, never by
@@ -740,9 +775,11 @@ are cloned, knowledge tools, messaging wanted or not>
 - New workspace only: host <owner>/<repo>, skeleton committed (pushed | in
   pull request <url>)
 - Messaging: <capability>, aw <version>, <harness> channel installed;
-  team T owned by aweb account <handle> (new workspace), or new account N
-  signed up (machine found-list), or joined L by invite (existing) | not set
-  up (the setup expert has no messaging)
+  team T on aweb account N, created for the workspace, not yet attached to
+  the person (new workspace), or T owned by aweb account <handle>
+  (signed in at step 5), or new account N signed up (machine found-list),
+  or joined L by invite (existing) | not set up (the setup expert has no
+  messaging)
 - Harness channel mode: development, confirmed by OATS at each start
 
 ## Left to you
@@ -850,7 +887,9 @@ its own window when they need to type a secret. You are done.
   them to rotate it.
 - **Overwrite or re-onboard** a deployment, touch `D/.aw`, or push to a
   repository the person did not create or name as the host in step 6.
-- **Guess the team id:** it comes from step 5's answer.
+- **Guess the team id:** it is the signup's team, `default:N.aweb.ai`,
+  which step 9 checks against setup's answer, or step 5's answer after its
+  sign-in.
 - **Write a setup soul into the workspace:** the setup expert is
   `oats.framework`'s.
 - **The Desktop:** never download it through a browser, skip a verification
