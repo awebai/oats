@@ -90,22 +90,23 @@ workspace's messaging account for the workspace, without the person's
 sign-in, that account belongs to nobody yet. Attach it to the person now.
 
 - The act comes from the messaging capability's own skill. With aweb, the
-  default, the account was created by `oats aweb setup --username` and its
-  root is `<deployment>/.aw`. Ask for the person's email address, then run,
-  from your home:
-
-  ```bash
-  aw --identity-home "<deployment>/.aw" claim-human --email "<their email>"
-  ```
-
-  Tell them what it prints, and what it asks them to do next.
-- Skip it when the person signed in to their own account at getting started
-  (`aw auth login`): that account is already theirs.
+  default, it is `/oats-aweb`'s "attach yourself to the account" step, from
+  the `oats.aweb` release that ships it. It asks for the person's email
+  address.
+- The answer is one of three:
+  - **Attached:** the account is theirs now.
+  - **Waiting on their email:** tell them to check their mail and click the
+    link in it. The account is theirs only once they have; until then, step
+    6 reports it as waiting on them.
+  - **Refused:** tell them what it says. The account stays unattached, and
+    step 6 says so.
+- Skip it when the person signed in to their own account at getting started:
+  that account is already theirs.
 - If the messaging capability's skill names no such step, say so in step 6,
   as information.
 
-Until it is done, say that the team is on a messaging account created for
-the workspace. Never say it is the person's.
+Until the account is theirs, say that the team is on a messaging account
+created for the workspace. Never say it is the person's.
 
 ## 4. The deployment's agent, for human attribution
 
@@ -126,9 +127,9 @@ instances spawned from here on to the person who runs them.
   no bound human. Say so in step 6, as information, never as a failure.
 
 Until an agent actually carries a chain, never say the team or the agents
-are bound or attributed. Once step 3 attached the person (or they signed
-in at getting started), say that the team is on their account (with aweb:
-"your aweb account").
+are bound or attributed. Once the account is theirs (step 3, or they
+signed in at getting started), say that the team is on their account (with
+aweb: "your aweb account").
 
 ## 5. The approved channel route
 
@@ -147,6 +148,7 @@ In the session, plainly:
 - how to work with the agents: who to talk to first, and how the roles hand
   work to each other;
 - how coordination across humans will run;
-- whether the account is attached to them (step 3);
+- whether the account is theirs, waiting on their email, or unattached
+  (step 3);
 - what is still `unknown` (step 4), and what respawning would change;
 - what is open, and who decides it.
