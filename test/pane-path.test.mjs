@@ -64,7 +64,6 @@ const fx = v2Deployment({
   capabilities: { "test.racer": { manifest: { layer: "knowledge", launchPreview: true, hooks: { spawn: "spawn.mjs", launch: "spawn.mjs" } }, files: { "spawn.mjs": `import { execFileSync } from "node:child_process";
 import { appendFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-appendFileSync(join(process.env.OATS_INSTANCE_HOME, "handed-yolo"), JSON.stringify({ preview: process.env.OATS_LAUNCH_PREVIEW === "1", yolo: process.env.OATS_YOLO ?? null }) + "\\n");
 appendFileSync(join(process.env.OATS_INSTANCE_HOME, "handed"), JSON.stringify({ event: process.env.OATS_EVENT, preview: process.env.OATS_LAUNCH_PREVIEW === "1", executable: process.env.OATS_HARNESS_EXECUTABLE ?? null }) + "\\n");
 if (process.env.OATS_LAUNCH_PREVIEW === "1") { process.stdout.write("{}\\n"); process.exit(0); }
 if (process.env.RACE_RELINK) { rmSync(${JSON.stringify(LINK)}); symlinkSync(${JSON.stringify(PROBE_EXE)}, ${JSON.stringify(LINK)}); }
@@ -256,38 +255,18 @@ test("a start's hooks are handed the executable it looked up, the same in the pr
   assertReplaced(answer.warnings, raced.home, join(decoyBin, "claude"), PROBE_EXE);
 });
 
-test("a start's hooks read its own yolo, in the preview and the real run, whatever the home recorded or the caller's environment says", async () => {
-  await startServer(SERVER_PATH);
-  const env = { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: `${SERVER_PATH}` };
-  const yoloRuns = (home) => lines(readFileSync(join(home, "handed-yolo"), "utf8")).map((line) => JSON.parse(line)).slice(1);
-  const home = spawned(fx.cli(["spawn", "racer", "--name", "yolo-start", "--launch-config", "none", "--harness", "claude", "--yolo", "--no-launch", "--json"], { env })).home;
-  const started = fx.cli(["session", "start", "--home", home, "--harness", "claude", "--no-yolo", "--json"], { env: { ...env, OATS_YOLO: "1" } });
-  assert.equal(started.status, 0, started.stdout + started.stderr);
-  assert.deepEqual(yoloRuns(home), [{ preview: true, yolo: null }, { preview: false, yolo: null }], "an inherited 1 on a non-yolo start reads absent");
-  const plain = spawned(fx.cli(["spawn", "racer", "--name", "yolo-plain", "--launch-config", "none", "--harness", "claude", "--no-launch", "--json"], { env })).home;
-  const inherited = fx.cli(["session", "start", "--home", plain, "--harness", "claude", "--json"], { env: { ...env, OATS_YOLO: "1" } });
-  assert.equal(inherited.status, 0, inherited.stdout + inherited.stderr);
-  assert.deepEqual(yoloRuns(plain), [{ preview: true, yolo: null }, { preview: false, yolo: null }], "nothing chose yolo: the caller's 1 is not the launch's");
-  const other = spawned(fx.cli(["spawn", "racer", "--name", "yolo-on", "--launch-config", "none", "--harness", "claude", "--no-launch", "--json"], { env })).home;
-  const on = fx.cli(["session", "start", "--home", other, "--harness", "claude", "--yolo", "--json"], { env });
-  assert.equal(on.status, 0, on.stdout + on.stderr);
-  assert.deepEqual(yoloRuns(other), [{ preview: true, yolo: "1" }, { preview: false, yolo: "1" }]);
-});
-
 test("a name only a hook is handed never reaches the harness, even from a server that already holds it, at a spawn and at a start", async () => {
   await startServer(SERVER_PATH);
-  tmuxOn("set-environment", "-g", "OATS_YOLO", "1");
   tmuxOn("set-environment", "-g", "OATS_HARNESS_EXECUTABLE", "/server/harness");
   const env = { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: SERVER_PATH };
-  const spawnedHome = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-spawn", "--launch-config", "abs", "--no-yolo", "--json"], { env })).home;
+  const spawnedHome = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-spawn", "--launch-config", "abs", "--json"], { env })).home;
   await ready(spawnedHome);
-  const quiet = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-start", "--launch-config", "abs", "--no-yolo", "--no-launch", "--json"], { env })).home;
+  const quiet = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-start", "--launch-config", "abs", "--no-launch", "--json"], { env })).home;
   const r = fx.cli(["session", "start", "--home", quiet, "--json"], { env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   await ready(quiet);
   for (const home of [spawnedHome, quiet]) {
     const pane = paneEnv(home);
-    assert.equal("OATS_YOLO" in pane, false, home);
     assert.equal("OATS_HARNESS_EXECUTABLE" in pane, false, home);
   }
 });
