@@ -3,10 +3,11 @@ name: oats-getting-started
 description: >-
   The way into OATS (Open Agent Team Specification) for a person who has only
   a coding agent. Asks about their project, installs OATS, OATS Desktop and
-  the messaging CLI, signs the person in to their messaging account and
-  creates the workspace's team, writes a new workspace's skeleton (or joins
-  this machine to an existing workspace), spawns the workspace's setup
-  expert, which does the rest, and opens the Desktop on it. Offers the TUI.
+  the messaging CLI, creates the workspace's messaging account and team (with
+  no sign-in, or on the person's own account if they sign in), writes a new
+  workspace's skeleton (or joins this machine to an existing workspace),
+  spawns the workspace's setup expert, which does the rest, and opens the
+  Desktop on it. Offers the TUI.
   Use for "get started with OATS", "set up / install / adopt OATS", "set up
   OATS for this project", "join our OATS workspace", or when someone gives
   you this file or its URL.
@@ -669,14 +670,23 @@ stop if its readiness still reports a problem.
      in the setup expert's first steps.
    - **`E_SETUP_NATIVE`:** the preview does not contact aweb, so it can't
      tell whether `N` is free, and the run fails this way most likely
-     because `N` is taken (aw's output is withheld). aw then writes nothing,
-     so don't rerun it unchanged.
+     because `N` is taken (aw's output is withheld). It can also fail
+     part-way and leave a root. Never remove `D/.aw`, and never rerun
+     blindly.
      On a machine found-list, ask nothing: tell the person that the run
      failed, most likely because `N` is taken, and stop.
-     Otherwise ask the person for another `N`, change the team line in
-     `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit
-     and push it, run `oats sync --dir D`, then run the preview and the
-     signup again with the new `N`.
+     Otherwise look first, read-only: `test -e "D/.aw" && echo RETAINED`.
+     - **Nothing printed:** aw kept nothing, so `N` is free to change. Ask
+       the person for another `N`, change the team line in
+       `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit
+       and push it, run `oats sync --dir D`, then run the preview and the
+       signup again with the new `N`.
+     - **`RETAINED`:** the run left a root. Keep `N` and the team line, and
+       run the preview again, unchanged. When its `result.team` is
+       `default:N.aweb.ai`, the account exists: run the signup again,
+       unchanged, and it reuses that root. Anything else, the preview
+       failing included: stop, spawn nothing, and tell the person what it
+       shows.
 3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
    `oats aweb invite --soul <their soul> --label L --json` in their own
    deployment and passes the token to the person privately, never by

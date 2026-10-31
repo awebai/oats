@@ -131,7 +131,11 @@ test("the default new workspace signs up without a sign-in, and the team id it w
   assert.ok(item2.includes("cd \"D\" && oats aweb setup --soul S --username N --name A --label L --plan --json"));
   assert.match(item2, /`result\.team` must be\s+the team line step 7 wrote, `default:N\.aweb\.ai`, and\s+`result\.membershipVerified` must be `true`/);
   const flat = item2.replace(/\s+/g, " ");
-  assert.ok(flat.includes("ask the person for another `N`, change the team line in `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit and push it, run `oats sync --dir D`, then run the preview and the signup again"));
+  assert.ok(flat.includes("Ask the person for another `N`, change the team line in `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit and push it, run `oats sync --dir D`, then run the preview and the signup again"));
+  // A changed N only when the failed run kept no root; a retained root keeps N and the team line.
+  assert.ok(flat.indexOf("test -e \"D/.aw\" && echo RETAINED") < flat.indexOf("Ask the person for another `N`"), "the rename is gated on no retained root");
+  assert.ok(flat.includes("**Nothing printed:** aw kept nothing, so `N` is free to change."));
+  assert.ok(flat.includes("**`RETAINED`:** the run left a root. Keep `N` and the team line, and run the preview again, unchanged."));
   assert.ok(flat.includes("this is the workspace's team, on an aweb account created for it; they attach themselves to it in the setup expert's first steps"));
 });
 
