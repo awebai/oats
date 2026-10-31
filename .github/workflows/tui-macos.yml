@@ -45,8 +45,8 @@ jobs:
   tui-macos:
     name: TUI tests on macOS
     # The image of macos-tests.yml, whose hand-started runs this job repeats.
-    runs-on: macos-14
-    # About five minutes on macos-14, one file at a time; tmux and npm ci before them.
+    runs-on: macos-15
+    # About five minutes on macos-15, one file at a time; tmux and npm ci before them.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

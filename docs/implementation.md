@@ -543,7 +543,7 @@ A pull request that touches `packages/tui/`, `packages/client/`, a
 `test/tui-*.test.mjs` file or the workflow itself also runs
 [`tui-macos.yml`](../.github/workflows/tui-macos.yml): every TUI test file,
 `packages/tui/test/*.test.mjs` and `test/tui-*.test.mjs`, one file at a time
-and each test within five minutes, on `macos-14` with tmux installed, in about
+and each test within five minutes, on `macos-15` with tmux installed, in about
 five minutes. Its last step fails the run if a test left a tmux server on the
 default `oats` socket, as a hand-started run checks after each file; it does
 not give each file a process group of its own, as a hand-started run does. The
