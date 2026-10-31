@@ -356,7 +356,7 @@ oats instance attention --clear                                  # once you have
   and ALM marks are fine. Name what you need, not the whole story. A message that
   starts with `--` goes as `--message=--<rest>`.
 - `oats status` shows the claim on your row as
-  `! needs input (attention): <message>`.
+  `! needs input (attention) since <local start>, <elapsed>: <message>`.
 - Only `--clear` or the next session start, restart or stop clears it.
   Clear it yourself first thing when the answer arrives.
 - Only for input you wait on. Never for FYIs, progress or "done" reports:

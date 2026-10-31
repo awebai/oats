@@ -4571,8 +4571,13 @@ oats instance attention [--message <text>] [--clear] --json
 - **Where it shows.** `waitingOnYou` on the events read, on `oats status
   --json` instance rows (running rows only) and on `oats session inspect
   --json` (beside `state`, whose enum is unchanged; `null` unless the harness
-  is running). Plain `oats status` prints `! needs input (<reason>):
-  <message>` under a running instance's row while it holds a claim.
+  is running). Plain `oats status` prints `! needs input (<reason>) since
+  <start>, <elapsed>: <message>` under a running instance's row while it holds
+  a claim (the message and its colon are omitted when absent). The start is
+  local to the CLI machine: `HH:MM` today, `Mon D HH:MM` on another day in
+  the same year, or `YYYY-MM-DD HH:MM` in another year. Elapsed time is floored
+  to `under a minute`, `N min`, `N h` or `N d`. A future start omits elapsed
+  time; an unparseable start retains the line without any time.
 - **Cost.** To compute the field, `oats status` reads the home log of each
   running row (the workspace log only when the home log is absent), with
   the same bounded read as the events read: at most the last 4 MiB, so a
