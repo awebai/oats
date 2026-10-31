@@ -195,7 +195,7 @@ test("cliCard: every other state keeps today's heading, explanation, install com
     ["below the band", refused([entry("0.25.9", "version 0.25.9 outside >=0.26.0 <0.70.0")])],
     ["unparsable", refused([entry("0.56", 'unparsable version "0.56"')])],
     ["a prerelease above", refused([entry("0.70.0-rc.1", "prerelease version 0.70.0-rc.1 not accepted (need a released >=0.26.0 <0.70.0)")])],
-    ["not the oats CLI", refused([entry("0.70.0", "not the oats CLI (name: @other/pkg)")])],
+    ["not the oats CLI", refused([entry("0.70.0", "not the oats CLI (name: @other/pkg, not @awebai/oats or @oats-project/oats)")])],
     ["no CLI found", refused([])],
     ["a probe that failed", refused([entry(undefined, "probe failed: timeout")])],
     // A flag the card cannot use alone: no band to state, or a candidate that is not the one shown.

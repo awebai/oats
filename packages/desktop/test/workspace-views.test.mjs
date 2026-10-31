@@ -25,6 +25,24 @@ test('equal key and equal team: one view holding both deployments', () => {
     deployments: ['/Users/juan/Agents/oats', 'remote:altair:a1'], primary: '/Users/juan/Agents/oats' });
 });
 
+test('the two spellings of a moved workspace are one view, under its first deployment\'s id and key', () => {
+  const OLD = KEY, NEW = 'github.com/oats-project/oats';
+  const moved = identity({ key: NEW, ref: `git:${NEW}` });
+  const [view, ...rest] = buildViews([dep('/Users/me/OATS', identity(), { name: 'oats' }), dep('remote:altair:a1', moved)]);
+  assert.deepEqual(rest, [], 'one view, not two of one name');
+  assert.deepEqual(view.deployments, ['/Users/me/OATS', 'remote:altair:a1']);
+  assert.deepEqual([view.id, view.key, view.name], [viewId(OLD, identity().defaultTeam.team), OLD, 'oats']);
+  const [flipped] = buildViews([dep('/Users/me/OATS', moved, { name: 'oats' }), dep('remote:altair:a1', identity())]);
+  assert.deepEqual([flipped.id, flipped.key, flipped.deployments.length], [viewId(NEW, identity().defaultTeam.team), NEW, 2]);
+});
+
+test('inert: a set of one spelling keeps the view id and key it had; another repository of that name stays another view', () => {
+  const [view] = buildViews([dep('/Users/me/OATS', identity()), dep('remote:altair:a1', identity())]);
+  assert.equal(view.id, viewId(KEY, identity().defaultTeam.team));
+  const views = buildViews([dep('/Users/me/OATS', identity()), dep('remote:altair:a1', identity({ key: 'github.com/acme/oats' }))]);
+  assert.equal(views.length, 2);
+});
+
 test('keyFrom "member" is unresolved: never matched, unattached with its reason', () => {
   const member = identity({ keyFrom: 'member', key: 'github.com/awebai/oats-member' });
   assert.deepEqual(attach(member), { unattached: 'member' });
