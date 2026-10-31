@@ -24,6 +24,7 @@
           "launchAt": null,
           "launchDeclared": null,
           "spawnOrigin": "operator",
+          "spawnedBy": null,
           "policy": {
             "childSpawns": {
               "allowed": true,
@@ -144,6 +145,7 @@
           "launched": false,
           "startedAt": null,
           "identityAddress": null,
+          "attributedHuman": null,
           "color": null,
           "running": false,
           "waitingOnYou": null,
