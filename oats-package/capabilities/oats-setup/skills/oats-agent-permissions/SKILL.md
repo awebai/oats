@@ -99,7 +99,8 @@ same user settings file. Prose, with `"$defaults"` kept first:
     ],
     "allow": [
       "$defaults",
-      "OATS coordination: in an OATS instance, writing a task file in the agent's own instance home and running `oats spawn --task-file` with it, and mailing other instances with `aw`, is normal multi-agent work"
+      "OATS coordination: in an OATS instance, writing a task file in the agent's own instance home and running `oats spawn --task-file` with it, and mailing other instances with `aw`, is normal multi-agent work",
+      "OATS checkpoints: in an OATS instance, adding or removing a wake job bound to the agent's own instance home with `oats schedule add` or `oats schedule remove` is normal multi-agent work"
     ]
   }
 }
@@ -124,7 +125,8 @@ mode.
       "Bash(oats status *)", "Bash(oats souls *)", "Bash(oats capabilities *)",
       "Bash(oats workspace status *)", "Bash(oats inspect *)", "Bash(oats readiness *)",
       "Bash(oats doctor *)", "Bash(oats instance events *)", "Bash(oats instance git *)",
-      "Bash(oats session inspect *)", "Bash(oats launch-config list *)",
+      "Bash(oats session inspect *)", "Bash(oats schedule show *)",
+      "Bash(oats schedule host status *)", "Bash(oats launch-config list *)",
       "Bash(oats launch-config preview *)", "Bash(oats okf index *)", "Bash(oats okf cat *)",
       "Bash(oats okf search *)", "Bash(oats okf ls *)", "Bash(oats okf links *)",
       "Bash(oats okf bases *)", "Bash(oats okf status *)",
@@ -154,6 +156,11 @@ mode.
   `--yolo` (a child with no permission checks), `--server` (another
   machine) and `--wake-*` (a host wake schedule). A launch configuration
   with `yolo: true` is the person's own choice, made in `oats-local.yaml`.
+- A wake job on an instance's own home is its checkpoint while it waits on a
+  child: a routine act of the instance, not an operator act. `oats schedule
+  show` and `oats schedule host status` only read. Adding or removing the job
+  goes to the classifier, which the `autoMode` entry above tells that this is
+  normal, because a rule can't see which home a job file names.
 - `oats retire` and `oats instance stop` are allowed with `--plan` only,
   which reads. Applying them ends someone's work: a stop ends a live
   session and stops its children, and a retire removes a home whose
@@ -192,7 +199,9 @@ mode.
   - `oats retire` and `oats instance stop` without `--plan`.
   - The operator acts: `oats sync`, `oats onboard`, `oats aweb …`,
     `oats harness trust`, `oats launch-config set`, `oats teams …`,
-    `oats schedule …`, `oats trigger …`, `oats session input`.
+    `oats schedule …` apart from its two reads and a wake job on the
+    instance's own home, `oats trigger …`, `oats session input`. Installing
+    the host's timer stays the operator's.
   - `aw` identity and team acts.
 - **`ask`, always a prompt even in auto mode:** what the workspace says needs
   a person, for example `"ask": ["Bash(gh pr merge *)", "Bash(gh release *)"]`.
