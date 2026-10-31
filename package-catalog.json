@@ -76,6 +76,7 @@
     "oats.knowledge-theory": "oats.framework",
     "oats.core": "oats.framework",
     "oats.setup": "oats.framework",
+    "oats.onboarding": "oats.framework",
     "oats.okf-harvest": "oats.okf",
     "oats.okf-maintenance": "oats.okf",
     "oats.aweb-tasks": "oats.aweb",

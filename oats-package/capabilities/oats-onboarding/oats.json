@@ -1,0 +1,12 @@
+{
+  "capability": "oats.onboarding",
+  "version": "1.0.0",
+  "description": "Onboarding a new OATS workspace to its use case: the setup expert discovers how the team works, authors the workspace's own coordination, knowledge and tasks capabilities from OATS's defaults, takes the person through the deployment-agent step for human attribution, offers the approved channel route and briefs the person. Procedure only; the setup and config procedures are oats.setup's.",
+  "compatibility": {
+    "oats": ">=0.30.0"
+  },
+  "requires": [],
+  "skills": [
+    "skills/oats-tailor-workspace"
+  ]
+}

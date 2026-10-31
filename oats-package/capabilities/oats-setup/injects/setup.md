@@ -117,7 +117,7 @@ before calling it done; report uncertainty rather than an unobserved result.
 - `/oats-setup-expert`: your first session as a workspace's setup expert, from the `oats-getting-started` skill's hand-over (from OATS 0.64.0).
 - `/oats-agent-permissions`: Claude Code's permissions for the instances on a machine: which settings layer to write, auto mode, the narrow allow rules for the `oats` and `gh` reads, `oats spawn` and reading `aw` mail and chat, what stays gated, and the check that an instance meets no permission prompt.
 - `/oats-host-delivery`: how messages reach the agents on a host: Claude channel delivery (approved route or a stated fallback) and the host wake broker service. Every host with messaging seats makes both choices.
-- `/oats-git-setup`: Git and GitHub for the person who runs OATS on a machine: `git` and `gh`, one SSH key for authentication and signing, a verified identity, the DCO sign-off hook, and the check that proves them. Onboarding needs it before the first Git read.
+- `/oats-git-setup`: Git and GitHub for the person who runs OATS on a machine: `git` and `gh`, one SSH key for authentication and signing, a verified identity, the DCO sign-off hook, and the check that proves them. Optional: onboarding needs only GitHub over https; run it when Git access is broken, or when the person wants SSH, signing or the sign-off.
 - `/oats-package-pins`: adding, bumping or removing a package; the lock.
 - `/oats-workspace-config`: any field of the shared files, where a fact belongs, an `E_*` refusal.
 - `/oats-teams`: the teams (shared and local), the default, which teams each soul may join (`souls:` in the workspace file; `oats teams`, `oats soul teams`), joining and leaving.

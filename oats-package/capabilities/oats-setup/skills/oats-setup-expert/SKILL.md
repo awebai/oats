@@ -16,8 +16,9 @@ description: >-
 Use this skill when your task starts with `# Onboarding hand-over from the
 getting-started skill`. From OATS 0.64.0, the repository's
 `oats-getting-started` skill writes that file when it spawns a workspace's setup expert
-(`<workspace>-oats-setup-expert`). You are that expert, and from now on the
-onboarding is yours.
+(the instance `<workspace>-oats-setup-expert`, of `oats.framework`'s soul
+`oats-setup-expert` or of the workspace's own setup soul). You are that
+expert, and from now on the onboarding is yours.
 
 The hand-over is `/oats-onboarding` card 1's intake, already collected. Don't ask again what it
 answers; ask only what it leaves open, all in one round.
@@ -27,7 +28,8 @@ It holds:
 - the use case, the existing repositories and where they are cloned, the
   existing knowledge tools, and whether messaging is wanted;
 - the harness, and what the entry skill already did: the versions installed,
-  the gh login over https, the Desktop.
+  the gh login over https, the Desktop, and the workspace's messaging team
+  (with aweb, a team owned by the person's aweb account).
 
 It holds no secret, and none ever goes into one.
 
@@ -45,29 +47,39 @@ It holds no secret, and none ever goes into one.
   machine's own steps (2, 5's host settings, 6 and 7) are yours to do with
   the person.
 
+**A new workspace, and you carry `oats.onboarding`** (`oats.framework`'s
+`oats-setup-expert` does): do steps 1 and 3, then `/oats-tailor-workspace`
+in place of steps 4 and 5. It finds the use case, authors the workspace's
+own coordination, knowledge and tasks capabilities and the souls that use
+them, and adds the deployment agent and the approved channel route. Then do
+steps 6 and 7; its brief is step 8's hand-back.
+
 Do the steps below in order. In each, apply this capability's rule on what
 the person types (its briefing): run the step yourself, and hand the person
 only the secrets, the logins and the installs that capture their shell.
 
 1. **Read the deployment** (`/oats-onboarding` card 2). The entry skill's gh
-   login over https is enough for these reads; step 2 completes Git. A new
-   workspace has the host as its only member repository, `oats.framework`
-   pinned, `oats.core` as a default and you as its setup soul; the entry
-   skill may also have added `oats.aweb` with a team, and a first developer
-   soul:
+   login over https is enough for these reads. A new workspace has the host
+   as its only member repository, `oats.framework` pinned, `oats.core` as a
+   default and you as its setup soul; the entry skill may also have added
+   `oats.aweb` with a team, and an older entry skill a first developer soul:
 
    ```bash
    oats workspace status --dir D --json
    oats souls --dir D --json
    oats status --json
    ```
-2. **Git and GitHub in full:** `/oats-git-setup`. The entry skill only logged
-   gh in over https. Every agent's commits need the key, the signing and the
-   sign-off.
+2. **Git beyond https, when it is needed:** `/oats-git-setup` is optional.
+   The entry skill logged gh in over https, which is enough for the reads,
+   pushes and pull requests here: GitHub stays where the flow needs it. Run
+   it when Git access is broken, or when the person wants an SSH key, signed
+   commits or the DCO sign-off (a repository that requires them). It says
+   plainly what it changes.
 3. **The person's repositories as members.** For each repository the intake
    names that agents will read or work in, make two changes:
    - an `oats-membership.yaml` in that repository;
-   - its line under `members:` in `oats-workspace.yaml`, from your work tree.
+   - its line under `members:` in `oats-workspace.yaml`, from your work tree
+     (with `work: directory`, a clone of the host in your `work/`).
 
    Each goes in by the briefing's rule: straight to a repository the person
    alone can push to, when the checks in `/oats-workspace-config`, "Change a
@@ -94,8 +106,11 @@ only the secrets, the logins and the installs that capture their shell.
      capability for it is installed. Say so; don't promise more.
 6. **Messaging, when wanted:**
    - **If the workspace already has it,** the entry skill set it up on this
-     machine before your spawn: a new account for a new workspace, a join by
-     invite for an existing one (the hand-over says which). Check it with the
+     machine before your spawn: for a new workspace, a team owned by the
+     person's aweb account (or, from an older entry skill, a new account),
+     and a join by invite for an existing one (the hand-over says which).
+     That team is owned by the account; no agent is attributed to the person
+     until the deployment agent exists (`/oats-tailor-workspace`). Check it with the
      briefing's read-only aweb check (`member: true`, your own soul as
      `S`), then go on from `/oats-teams`.
    - **If it has none yet,** first the `oats.aweb` pin
