@@ -13,9 +13,9 @@ export function needsInputReportingGap(row) {
   const from = core?.from;
   if (from?.kind !== 'package' || from.package !== 'oats.framework' || typeof from.version !== 'string') return null;
   // Semver: core numbers and numeric prerelease identifiers have no leading zeros;
-  // build identifiers do. Match the entire string (including a possible final newline).
+  // build identifiers do.
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(from.version);
-  if (!match || match[0] !== from.version || match[4]?.split('.').some(id => /^\d+$/.test(id) && id.length > 1 && id[0] === '0')) return null;
+  if (!match || match[4]?.split('.').some(id => /^\d+$/.test(id) && id.length > 1 && id[0] === '0')) return null;
   for (let i = 0; i < NEEDS_INPUT_FRAMEWORK_MIN.length; i++) {
     const number = Number(match[i + 1]), minimum = NEEDS_INPUT_FRAMEWORK_MIN[i];
     if (number !== minimum) return number < minimum ? from.version : null;
