@@ -43,7 +43,7 @@ If you are a person, give your coding agent (Claude Code, Codex, pi or any other
 - **Writes your workspace** in one commit, in your repository or a new private one: the workspace and its team, nothing else. Or it joins this machine to an existing workspace.
 - **Spawns the setup expert and opens the Desktop on it.** The setup expert is an OATS agent that turns OATS's defaults into your own coordination, knowledge and tasks capabilities, with you. You type only passwords, logins and tokens.
 
-On a machine where Homebrew, gh and a browser are already signed in, this takes under two minutes.
+You end with a working workspace, the Desktop open on it, and its setup expert running.
 
 Download the skill, don't web-fetch it: a tool that summarises pages would lose its exact commands.
 

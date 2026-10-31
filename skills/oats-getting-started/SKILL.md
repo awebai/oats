@@ -18,9 +18,7 @@ You are the person's own coding agent. This skill takes them from nothing to
 a running **setup expert**: an OATS agent of their workspace that does the
 rest of the setup with them (their repositories, their own coordination,
 knowledge and tasks capabilities, their first agents). You install, ask,
-write a few files and spawn it. Then you are done. On a warm machine
-(Homebrew, gh and a browser already signed in) a new workspace takes under
-two minutes.
+write a few files and spawn it. Then you are done.
 
 OATS in one paragraph: a **workspace** is one Git repository declaring which
 repositories belong to an organisation and which packages it trusts. A
