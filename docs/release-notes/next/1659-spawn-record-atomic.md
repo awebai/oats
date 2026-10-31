@@ -1,3 +1,0 @@
-## Fixed
-
-- **A spawn no longer shows a half-written `instance.json`.** `oats spawn` wrote the home's record in place, the last time after the session had started, so a status, a Desktop listing or a start reading it at that moment could report the home as unreadable. Every write of the record during a spawn now goes through a private file renamed over it, so a reader sees the record before or after a write, never part of one. The record's bytes and mode are unchanged. A spawn killed during such a write leaves `instance.json.tmp-<pid>` beside the record, which a retire does not count as a change to the home ([awebai/oats#1659](https://github.com/awebai/oats/issues/1659)).
