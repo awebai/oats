@@ -28,8 +28,9 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
   through the home's `oats` link, before any PATH or global lookup (the
   order is in [its README](../packages/pi/README.md)).
 - **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup`,
-  `oats.support` and `oats.knowledge-theory` capabilities and the
-  `knowledge-theory-expert` soul,
+  `oats.onboarding`, `oats.support` and `oats.knowledge-theory`
+  capabilities and the `knowledge-theory-expert` and `oats-setup-expert`
+  souls,
   released as a package under its own `oats-framework/v<version>` tags.
   `oats.core` is the one with executables: its spawn and launch hook and the
   Claude Code waiting emitter (`capabilities/oats-core/bin/`).
@@ -543,7 +544,7 @@ A pull request that touches `packages/tui/`, `packages/client/`, a
 `test/tui-*.test.mjs` file or the workflow itself also runs
 [`tui-macos.yml`](../.github/workflows/tui-macos.yml): every TUI test file,
 `packages/tui/test/*.test.mjs` and `test/tui-*.test.mjs`, one file at a time
-and each test within five minutes, on `macos-14` with tmux installed, in about
+and each test within five minutes, on `macos-15` with tmux installed, in about
 five minutes. Its last step fails the run if a test left a tmux server on the
 default `oats` socket, as a hand-started run checks after each file; it does
 not give each file a process group of its own, as a hand-started run does. The
