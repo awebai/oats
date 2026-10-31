@@ -163,8 +163,9 @@ steward takes them up with the person later.
 uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
 ```
 
-- **Versions:** Node 22 or later; Git 2.45 or later is best (older works,
-  fetching more); `gh` 2.49 or later (step 4 uses `gh attestation`).
+- **Versions:** Node 22 or later; Git 2.45 or later recommended (partial
+  caches), and older Git works with whole-tree fetches; `gh` 2.49 or later
+  (step 4 uses `gh attestation`).
 - **The harness** they chose must be installed and logged in (`claude
   --version`, `codex --version` or `pi --version`).
 - **macOS:** with Homebrew (`brew --version`), `brew install node git tmux gh`.
@@ -181,10 +182,25 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
   - **gh:** from GitHub's own apt or rpm repository
     (<https://github.com/cli/cli/blob/trunk/docs/install_linux.md>), because
     distributions ship versions too old for step 4.
-  - **Node 22:** from NodeSource or a version manager when the distribution's
-    is older.
+  - **Node 22:** distributions ship older ones (Debian 13 has 20, Ubuntu
+    24.04 has 18). On Debian and Ubuntu, x64 or arm64, from NodeSource:
+
+    ```bash
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
+    ```
+  - **Git 2.45 (recommended):** Debian 13's is new enough. Ubuntu 24.04
+    ships 2.43; on Ubuntu, x64 or arm64, from the git-core PPA:
+
+    ```bash
+    sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update && sudo apt-get install -y git
+    ```
   - **Passwords:** a line that needs `sudo` goes to their own terminal,
     unless `sudo -n true` succeeds.
+- **Then check again** with `node --version` and `git --version`. When
+  Node is still under 22 (on another distribution, or where that route does
+  not apply), stop: tell the person the minimum and the version found, and
+  go no further until they have installed it. Git under 2.45 is no stop:
+  tell them it works with whole-tree fetches, and go on.
 - **npm's global folder** (`npm prefix -g`) must be writable for step 4's
   installs (`test -w "$(npm prefix -g)/lib"`). If it is not (a system Node
   under `/usr`, as NodeSource installs it), either they run those installs
