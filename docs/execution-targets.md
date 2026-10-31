@@ -170,7 +170,7 @@ other than the one the window is on.
 |---|---|---|
 | each agent window it creates | `window-style default`, `window-active-style default`, `cursor-colour default` | that window (`set-option -w`), by window id |
 | each agent window, and the `hq` window of a session it creates | `window-size latest`, `aggressive-resize on` | that window |
-| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
+| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` or `OATS_HARNESS_EXECUTABLE` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
 
 So an agent pane takes the colours of the terminal that views it, whatever
 the server's own defaults say, and on tmux 3.1 or later the window follows

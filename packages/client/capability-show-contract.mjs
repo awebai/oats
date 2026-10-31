@@ -11,6 +11,7 @@
  * projected below: never a reason to refuse the answer (an older kernel sends none). */
 import { warningsOf } from './capability-warnings-contract.mjs';
 import { requireTerms } from './client-terms.mjs';
+import { sameRepo } from './repo-moves.mjs';
 
 export const CAPABILITY_SHOW_API = 1;
 export const CAPABILITY_SHOW_FEATURE = 'capability-show';
@@ -64,7 +65,7 @@ export function selectorOf(v) {
   if (v.kind === 'package' && keys === 'kind,name,package') return capabilitySelector(v);
   return null;
 }
-export const sameSelector = (a, b) => !!a && !!b && a.name === b.name && a.kind === b.kind && (a.kind === 'member' ? a.repoKey === b.repoKey : a.package === b.package);
+export const sameSelector = (a, b) => !!a && !!b && a.name === b.name && a.kind === b.kind && (a.kind === 'member' ? sameRepo(a.repoKey, b.repoKey) : a.package === b.package);
 
 /* ── the decoder ─────────────────────────────────────────────────────────── */
 class Unreadable extends Error {}
@@ -187,7 +188,7 @@ export function capabilityShowData(v, { selector, name = selector?.name } = {}) 
   try {
     head(v, name);
     if (v.kind === 'member' ? !validRepoKey(v.repoKey) : !(validPackageId(v.package) && (v.repoKey === null || v.repoKey === undefined || validRepoKey(v.repoKey)))) refuse();
-    if (selector && (v.kind !== selector.kind || (v.kind === 'member' ? v.repoKey !== selector.repoKey : v.package !== selector.package))) refuse();
+    if (selector && (v.kind !== selector.kind || (v.kind === 'member' ? !sameRepo(v.repoKey, selector.repoKey) : v.package !== selector.package))) refuse();
     const skills = v.skills === null ? null : Array.isArray(v.skills) && v.skills.length <= LIMITS.skills ? v.skills.map(skill) : refuse();
     if (skills && new Set(skills.map(s => s.path)).size !== skills.length) refuse();
     const problems = Array.isArray(v.problems) && v.problems.length <= LIMITS.problems ? v.problems.map(problem) : refuse();

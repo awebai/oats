@@ -255,6 +255,22 @@ test("a start's hooks are handed the executable it looked up, the same in the pr
   assertReplaced(answer.warnings, raced.home, join(decoyBin, "claude"), PROBE_EXE);
 });
 
+test("a name only a hook is handed never reaches the harness, even from a server that already holds it, at a spawn and at a start", async () => {
+  await startServer(SERVER_PATH);
+  tmuxOn("set-environment", "-g", "OATS_HARNESS_EXECUTABLE", "/server/harness");
+  const env = { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: SERVER_PATH };
+  const spawnedHome = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-spawn", "--launch-config", "abs", "--json"], { env })).home;
+  await ready(spawnedHome);
+  const quiet = spawned(fx.cli(["spawn", "dev", "--name", "hook-only-start", "--launch-config", "abs", "--no-launch", "--json"], { env })).home;
+  const r = fx.cli(["session", "start", "--home", quiet, "--json"], { env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  await ready(quiet);
+  for (const home of [spawnedHome, quiet]) {
+    const pane = paneEnv(home);
+    assert.equal("OATS_HARNESS_EXECUTABLE" in pane, false, home);
+  }
+});
+
 test("the same pathname can be another program by the launch: a symlink moved while the hooks ran warns, for a declared path at spawn and start and for a bare name", async () => {
   await startServer(`${linkBin}:${SERVER_PATH}`);
   const env = { OATS_TMUX_SESSION: "base", PI_AGENTS_TMUX_SESSION: "base", LANG: "C.UTF-8", PATH: `${decoyBin}:${SYSTEM}`, RACE_RELINK: "1" };

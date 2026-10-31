@@ -15,6 +15,7 @@
  * Nothing here caps the memory: an answer drops every group it no longer lists, so the memory is
  * never larger than the roster answer. */
 import { readIdentity, attachment, viewId } from './workspace-views.mjs';
+import { currentRepoKey } from './repo-moves.mjs';
 
 const GROUP_ID = /^[a-z0-9][a-z0-9-]{0,63}:[A-Za-z0-9._-]{1,128}$/;
 const SERVER = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -33,8 +34,9 @@ export function entryOf(id, raw) {
 }
 
 const sameIdentity = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-/** The view an identity attaches to, or null (an unattached identity has no workspace view). */
-const viewOf = identity => { const a = attachment(identity); return a.unattached ? null : viewId(a.key, a.team); };
+/** The view an identity attaches to, or null (an unattached identity has no workspace view). The other
+ * spelling of a moved repository is the same workspace, so a host that changed its string has not moved. */
+const viewOf = identity => { const a = attachment(identity); return a.unattached ? null : viewId(currentRepoKey(a.key), a.team); };
 /** The name the move note gives the new workspace: the last segment of its key. */
 const workspaceName = identity => identity?.key ? String(identity.key).split('/').filter(Boolean).pop() : null;
 
