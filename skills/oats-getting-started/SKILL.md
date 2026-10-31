@@ -791,26 +791,29 @@ In the fallback, or without messaging, leave out both `--provider` options.
   is opened in the Desktop below; if it is stopped, start it with
   `oats session start --home H`.
 
-**The Desktop**, if installed, opens on the new deployment:
+**The Desktop**, if installed, opens on the new deployment with the setup
+expert selected. `I` is its instance name: the one the spawn printed, which is
+`next.spawn`'s `--name` when it has one (after `E_INSTANCE_NAME_TAKEN`, that
+`--name`). A Desktop that does not know `--instance` ignores it and opens the
+deployment, so pass it always.
 - **macOS:**
 
   ```bash
-  open -n -a "OATS Desktop" --args --dir "D"
-  # instance focus (awebai/oats#1665 D3): append --instance <instance name> once the Desktop takes it
+  open -n -a "OATS Desktop" --args --dir "D" --instance "I"
   ```
 
-  If the Desktop is already running, the new launch hands `--dir` to it and
-  exits.
+  If the Desktop is already running, the new launch hands `--dir` and
+  `--instance` to it and exits.
 - **Linux:** start it yourself through their session manager, so it gets
   their desktop session's environment, not yours (yours may carry your
   harness's variables and sandbox, and the Desktop passes its environment to
   every agent it starts):
 
   ```bash
-  U="oats-desktop-$(date +%s)"; LOG="$(mktemp)"; systemd-run --user --collect --quiet --unit "$U" -p KillMode=process -p StandardOutput="file:$LOG" -p StandardError="file:$LOG" -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY "$HOME/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" && for i in $(seq 30); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null && break; sleep 1; done; sleep 3; if pgrep -u "$(id -u)" -x oats-desktop >/dev/null; then echo STARTED; else echo FAILED; tail -n 20 "$LOG"; fi
+  U="oats-desktop-$(date +%s)"; LOG="$(mktemp)"; systemd-run --user --collect --quiet --unit "$U" -p KillMode=process -p StandardOutput="file:$LOG" -p StandardError="file:$LOG" -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY "$HOME/.local/opt/oats-desktop/OATS-Desktop.AppImage" --dir "D" --instance "I" && for i in $(seq 30); do pgrep -u "$(id -u)" -x oats-desktop >/dev/null && break; sleep 1; done; sleep 3; if pgrep -u "$(id -u)" -x oats-desktop >/dev/null; then echo STARTED; else echo FAILED; tail -n 20 "$LOG"; fi
   ```
 
-  - **`STARTED`:** it shows `D`.
+  - **`STARTED`:** it shows `D`, with `I` selected.
   - **A FUSE message:** see step 4, then start it again.
   - **Anything else,** or no `systemd-run`: tell the person what it printed.
     They open **OATS Desktop** from their app launcher, and it lists `D` in
