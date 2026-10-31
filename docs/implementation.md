@@ -28,8 +28,9 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
   through the home's `oats` link, before any PATH or global lookup (the
   order is in [its README](../packages/pi/README.md)).
 - **`oats.framework`** (`oats-package/`): the `oats.core`, `oats.setup`,
-  `oats.support` and `oats.knowledge-theory` capabilities and the
-  `knowledge-theory-expert` soul,
+  `oats.onboarding`, `oats.support` and `oats.knowledge-theory`
+  capabilities and the `knowledge-theory-expert` and `oats-setup-expert`
+  souls,
   released as a package under its own `oats-framework/v<version>` tags.
   `oats.core` is the one with executables: its spawn and launch hook and the
   Claude Code waiting emitter (`capabilities/oats-core/bin/`).
@@ -111,6 +112,7 @@ and the rules its tests pin.
 | `argv.mjs` | how the kernel reads `--flag=value` ([Flag syntax](desktop-cli-api.md#flags)): `expandInlineValues`, which the CLI's dispatch runs once on its argv and the reader on each request's, so both give a malformed flag the same `E_BAD_ARGS`, and `flagValue`, a flag's value in an expanded argv. Kernel-private, not in `./core`. Dependency-free |
 | `kernel-features.mjs` | `KERNEL_FEATURES`, the features this kernel implements: `features` in `version --json` and in `status --json`; `READER_API`, the warm reader's protocol number (`readerApi` in `version --json` and in the reader's hello). Kernel-private, not in `./core` |
 | `captured-context.mjs` | the refusal (`E_UNSUPPORTED_MODE`) of an environment that carries `OATS_RESOLUTION` or `OATS_DEPLOYMENT`, which the dispatch asks for every command but `version` and `reader`; the reader asks it for each request instead, so it starts and answers each read as the CLI would. Dependency-free |
+| `repo-moves.mjs` | the moved repositories: `currentRepoKey` and `sameRepo`, what a compare of two repository keys goes through. It compares and never rewrites ([Moved repositories](workspaces.md#moved-repositories)). No I/O, no imports. `packages/client/repo-moves.mjs` is the same file, byte for byte, because the kernel and the clients import nothing of each other; `test/repo-moves.test.mjs` pins it |
 | `version.mjs`, `deployment-path.mjs`, `write-file-atomic.mjs`, `agents-root.mjs`, `soul-listing.mjs`, `instance-address.mjs`, `session-inspect.mjs`, `instance-listing.mjs`, `drift.mjs`, `package-catalog.mjs`, `member-clone.mjs`, `reserved-launch-env.mjs`, `automation-scope.mjs`, `automation-api.mjs`, `semver.mjs` | the leaves the hot reads load instead of the modules that re-export them (awebai/oats#1630): the version; the canonical deployment path; the atomic file write; the agents root; souls and instance homes; `resolveInstance`; `inspectInstanceSession`; `listInstances` and the status rows; soul and module drift; the official package catalog; discovery and member clones; the reserved launch environment; the automation scope; the automation API versions; `compareSemver`. Each name is still exported, under the same name, from the module it left (`core.mjs`, `packages.mjs`, `instance-lifecycle.mjs`, `materialize.mjs`, `instance-resolution.mjs`, `schedule.mjs`, `automations.mjs`, `servers.mjs`), so `./core` is unchanged (`test/core-exports.test.mjs`), and no leaf imports `core.mjs` or the module it left. Code a hot read reaches goes in a leaf, never in `core.mjs` |
 | `upgrade-state.mjs` | upgrade receipt state and the partial-upgrade guard used before session start; receipts remain lifecycle state, and provider adoption stays in the module's upgrade hook |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata. A home's record (`instance.json`) is read with `readHomeRecord`, which never throws: a record, an absent one, or one that is there and cannot be read, with the reason. Code that walks other homes (the listing, a retire's lineage repair) uses it, so that one home's record decides only for that home; `identifiedHomeRecord` is the one refusal (`E_UNIDENTIFIED_INSTANCE_HOME`) a lifecycle verb makes when it has resolved its home: `resolveRetireHome`, `startInstanceSession`, and `resolveTarget` in `instance-lifecycle.mjs` for the stop and retire plans. A plan reads its own home's record with `targetRecord` (the same refusal) and any other home's with `otherRecord` (absent or unreadable: nobody's parent or child) |
@@ -542,7 +544,7 @@ A pull request that touches `packages/tui/`, `packages/client/`, a
 `test/tui-*.test.mjs` file or the workflow itself also runs
 [`tui-macos.yml`](../.github/workflows/tui-macos.yml): every TUI test file,
 `packages/tui/test/*.test.mjs` and `test/tui-*.test.mjs`, one file at a time
-and each test within five minutes, on `macos-14` with tmux installed, in about
+and each test within five minutes, on `macos-15` with tmux installed, in about
 five minutes. Its last step fails the run if a test left a tmux server on the
 default `oats` socket, as a hand-started run checks after each file; it does
 not give each file a process group of its own, as a hand-started run does. The

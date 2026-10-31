@@ -2272,6 +2272,21 @@ never evidence (Stop ends it too); the viewer's `detach-on-destroy on`
 to another session. Tests: `retired-tabs.test.mjs` (the rule, over the server's
 own panels) and `retired-tabs-shell.test.mjs` (the shipped shell close).
 
+## A launch's `--instance` (`launch-focus.mjs`)
+
+Main reads `--instance <name>` beside `--dir` with one reader for both launch paths (`single-instance.mjs`
+`launchInstance`, the kernel's `--name` rule from `packages/client/instance-name.mjs` `validInstanceName`). It
+pushes the `--dir` deployment's window `window:focus-instance` with `{ deployment, name }`, or `{ invalid: true }`,
+which never carries the value. The push is one-way: no renderer→main call answers it. The preload keeps the latest
+ask until the shell subscribes (`onLaunchFocus`). `createLaunchFocus` holds the one pending request:
+- Each observed roster read of this computer's rows (`refreshContextRoster`, after the paint) is checked with
+  `launchFocusMatch`, which counts only that deployment's local rows (a spawning home included, a remote row never).
+- One match is selected through `showInRoster`, nothing else. Two or more say so. None waits
+  `LAUNCH_FOCUS_PENDING_MS`, then says "No instance <name> in this workspace" from a timer, with no read of its own.
+- A person's choice drops the request: the selection-ownership ticket (`tabOpenIntents.watch()`, taken at the first
+  roster read so the window's own binding does not count), or input or a pointer press (`watchOperator`).
+- A later ask replaces the request. Rows the window already shows answer an ask at once.
+
 ## Supporting read-only files
 
 **File: open read-only…** in the command palette, or **Mod+O**, opens a browser

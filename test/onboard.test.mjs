@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
 import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -323,6 +323,73 @@ test("#1314: among souls declaring oats.setup (never one that turns it off), nex
   assert.equal(res.next.spawn, `oats spawn ${west.key}/guide --dir ${shared}`);
   r = west.cli(["spawn", `${west.key}/guide`, "--dir", shared, "--preview", "--json"]);
   assert.equal(r.status, 0, `the suggested name spawns the chosen soul: ${r.stdout}${r.stderr}`);
+});
+
+// ---- #1665 D1: the framework's package soul oats-setup-expert ----
+// The order: the workspace's own <workspace>-oats-setup-expert, then oats.framework's package soul
+// oats-setup-expert, then the first by name; each only when it declares oats.setup. The package soul's
+// next.spawn carries --name <workspace>-oats-setup-expert, or <workspace>-oats-setup when a workspace soul
+// holds that name, or no --name when that is taken too or a name would pass the instance-name limit; the
+// text says why. onboardApi 2: next.spawn stays a command string.
+test("#1665 D1: next.spawn takes the workspace's own setup soul, then oats.framework's oats-setup-expert with a descriptive --name, then the first holder; a name the kernel would refuse is left out and the text says why", { timeout: 300_000 }, async (t) => {
+  const { packageRepo } = await import("./helpers/package-repo.mjs");
+  const framework = packageRepo({
+    id: "oats.framework", souls: { "oats-setup-expert": { soul: { capabilities: { "acme-tool": { from: "here" }, "oats.setup": { from: "here" } } } } },
+    manifest: { capabilities: ["capabilities/acme-tool", "capabilities/oats-setup"] },
+    files: { "capabilities/oats-setup/oats.json": { capability: "oats.setup", version: "1.0.0", description: "setup", compatibility: { oats: ">=0.24.0" } } },
+  });
+  t.after(framework.cleanup);
+  const withFramework = (name, souls) => v2Deployment({ t, name, souls, workspace: { packages: { "oats.framework": `${framework.ref}@v1.0.0` } } });
+  const onboard = (fx, name, json) => {
+    const dir = join(fx.base, name);
+    const r = fx.cli(["onboard", dir, "--workspace", fx.ref, ...(json ? ["--json"] : [])], { cwd: fx.base });
+    assert.equal(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
+    return { dir, r, next: json ? r.json().result.next : null };
+  };
+
+  // The package soul, over a workspace holder that sorts earlier: named for the workspace.
+  let fx = withFramework("west", { "a-guide": { soul: { capabilities: { "oats.setup": { from: "here" } } } } });
+  let { dir, r, next } = onboard(fx, "package", true);
+  assert.equal(next.spawn, `oats spawn oats-setup-expert --dir ${dir} --name west-oats-setup-expert`);
+  assert.deepEqual(Object.keys(next).sort(), ["clone", "souls", "spawn"], "onboardApi 2: no new field");
+  ({ r } = onboard(fx, "package-text", false));
+  assert.match(r.stdout, /^ {2}3\. Spawn oats-setup-expert, this workspace's OATS setup expert\n {5}\(it holds oats\.setup\), to guide the rest:\n {7}oats spawn oats-setup-expert --dir \S*package-text --name west-oats-setup-expert$/m);
+  r = fx.cli(["spawn", "oats-setup-expert", "--dir", dir, "--name", "west-oats-setup-expert", "--preview", "--json"]);
+  assert.equal(r.status, 0, `the suggested command spawns the package soul: ${r.stdout}${r.stderr}`);
+
+  // The workspace's own soul wins over the package soul, and keeps today's command: no --name.
+  fx.commit(soulFiles("west-oats-setup-expert", { soul: { capabilities: { "oats.setup": { from: "package" } } } }), "the workspace's own setup soul");
+  ({ dir, next } = onboard(fx, "own", true));
+  assert.equal(next.spawn, `oats spawn west-oats-setup-expert --dir ${dir}`);
+
+  // A workspace soul holding the name without oats.setup: the package soul, as <workspace>-oats-setup.
+  fx.commit(soulFiles("west-oats-setup-expert", { soul: { capabilities: {} } }), "the soul no longer declares oats.setup");
+  ({ dir, next } = onboard(fx, "renamed", true));
+  assert.equal(next.spawn, `oats spawn oats-setup-expert --dir ${dir} --name west-oats-setup`);
+  ({ r } = onboard(fx, "renamed-text", false));
+  assert.match(r.stdout, /--name west-oats-setup\n {7}\(named west-oats-setup: this workspace has a soul named west-oats-setup-expert, and an instance may not share a soul's name\)$/m);
+
+  // That name taken too: no --name, and spawn names the instance.
+  fx.commit(soulFiles("west-oats-setup"), "a soul named west-oats-setup");
+  ({ dir, next } = onboard(fx, "unnamed", true));
+  assert.equal(next.spawn, `oats spawn oats-setup-expert --dir ${dir}`);
+  ({ r } = onboard(fx, "unnamed-text", false));
+  assert.match(r.stdout, /\(no --name: this workspace has souls named west-oats-setup-expert and west-oats-setup, and an instance may not share a soul's name; spawn names it\)$/m);
+
+  // A workspace name too long for the instance-name limit: onboard succeeds, with no --name.
+  const long = "w".repeat(47);
+  fx = withFramework(long, {});
+  ({ dir, next } = onboard(fx, "long", true));
+  assert.equal(next.spawn, `oats spawn oats-setup-expert --dir ${dir}`);
+  ({ r } = onboard(fx, "long-text", false));
+  assert.match(r.stdout, new RegExp(`\\(no --name: ${long}-oats-setup-expert would be 65 characters, over the 64-character instance-name limit; spawn names it\\)$`, "m"));
+
+  // A package soul by that name that does not declare oats.setup is never chosen by its name.
+  const undeclared = packageRepo({ id: "oats.framework", souls: { "oats-setup-expert": {} } });
+  t.after(undeclared.cleanup);
+  fx = v2Deployment({ t, name: "east", souls: { dev: {} }, workspace: { packages: { "oats.framework": `${undeclared.ref}@v1.0.0` } } });
+  ({ next } = onboard(fx, "undeclared", true));
+  assert.equal(next.spawn, null, "a package soul's name alone never makes it the setup expert");
 });
 
 // ---- lane 3 (0.25.2) ----

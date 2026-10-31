@@ -153,7 +153,33 @@ recently added workspaces there, once.
 opened, or your home directory when there is none (never ~/Downloads);
 **Choose oats…** opens in the directory of the chosen or discovered CLI.
 
-Launch flags for scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
+Launch flags for scripted use: `--dir <workspace>`, `--instance <name>` and
+`OATS_DESKTOP_PORT`.
+
+### Opening on an instance
+
+`--instance <name>` beside `--dir <deployment>` opens the deployment's window
+with that instance selected in the roster, as **Show in roster** selects it:
+its row is revealed (a collapsed parent or the Background section opens) and
+takes the keyboard focus. Press Enter to open its terminal. On a first launch
+and on a launch while Desktop runs, it behaves the same way.
+
+- **It only selects.** Nothing starts, attaches or is written, and Desktop
+  reads nothing for it beyond the roster reads it makes anyway.
+- **The name must be an instance name**, the one `oats spawn --name` takes. Any
+  other value is ignored, and the window says the instance named at launch
+  isn't a valid instance name, without repeating the value.
+- **Only the `--dir` deployment's own instances count.** Its other machines and
+  other workspaces never match. A name that isn't there yet (a spawn still
+  finishing) is waited for, over the roster's next reads, for about 30
+  seconds; then the window says "No instance <name> in this workspace". A name
+  two of its instances share selects nothing, and the window says so.
+- **Your choice wins.** Selecting anything, typing or clicking while it waits
+  drops it. A later launch's `--instance` replaces it.
+- Without `--dir`, with a `--dir` that isn't a deployment, or from a folder
+  that is one but no `--dir`, `--instance` is ignored and the launch behaves
+  as it would without it. A Desktop older than this one ignores it too, and
+  opens the workspace.
 
 ### One window per workspace
 
@@ -182,7 +208,8 @@ workspace on a server: `name — server`).
   to restore, one window opens on the last workspace you used.
 - **Launching again.** Running the app again (`open -a "OATS Desktop" --args
   --dir <deployment>`, or from inside a deployment) adds that deployment if
-  needed and brings its window to the front, opening one if it has none. Any
+  needed and brings its window to the front, opening one if it has none, with
+  its `--instance` selected ([Opening on an instance](#opening-on-an-instance)). Any
   other launch brings the most recently used window to the front. A launch of
   another version also offers to restart into it ([Updating](#updating)).
 - **Closing.** Closing a window leaves the other windows, and their

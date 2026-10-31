@@ -1,3 +1,0 @@
-## Changed
-
-- **A Claude turn that ends in a rate limit now reads as a question, not an attention claim.** Claude's usage-limit screen is a menu an Enter answers, so the failed-turn claim from oats.core 2.10.0 now uses `question` for error class `rate_limit`, and for any class not known to be free of a dialog, including one Claude adds later. A provider's refusal, a dead credential and a server error stay `attention`. The message is unchanged. An API-key home has no such menu, but its `rate_limit` reads `question` too. A claim doesn't cover every Claude dialog: the limit menu fires no hook of its own, and choosing "Stop and wait" leaves the claim until the next prompt ([awebai/oats#1670](https://github.com/awebai/oats/issues/1670)).

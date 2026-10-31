@@ -1,3 +1,0 @@
-## Added
-
-- **Spawn and launch hooks get `OATS_YOLO`.** A hook can now read this launch's resolved `yolo`: `OATS_YOLO=1` when it is true, the same in a preview, and absent otherwise, never `0`. `launch.yolo` in `instance.json` couldn't answer this, because it is the previous launch's and a spawn has none. The name is reserved, so a launch configuration can't set it and an inherited value is dropped. It reports this launch's flag only: a `yolo` home can still show a question dialog, and a bypass through `args` or a harness's own settings reads as absent, meaning not known. Landing order: this kernel first, then the capability that reads it ([awebai/oats#1675](https://github.com/awebai/oats/issues/1675)).

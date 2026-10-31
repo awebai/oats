@@ -49,7 +49,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "status-retire-state","session-inspect-size","session-inspect-running","deployments-list"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
- "capabilityShowApi":1,"sessionViewer":{"prefixScroll":true}}
+ "capabilityShowApi":1,"sessionViewer":{"prefixScroll":true},"package":"@awebai/oats"}
 ```
 
 - The Desktop accepts `desktopApi === 1` and a released `version` inside
@@ -65,6 +65,10 @@ see the [official catalog](official-catalog.md) for current pins.
   probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
   `instance-git` and `lifecycle-plans` name the
   [routed reads and plans](#routed-reads-and-plans).
+- `name` is the probe's contract value: `@awebai/oats` under either npm name,
+  and a reader refuses any other. `package` is the npm name this kernel was
+  installed under, `@awebai/oats` or `@oats-project/oats`, and is absent from a
+  kernel before the bridge.
 - `sessionViewer` (feature `session-attach-prefix-scroll`) is a fact of
   this host, not of the binary: `prefixScroll` is `true` when a viewer
   without a detach key binds `C-b [` here, that is when the `tmux` on
@@ -992,23 +996,35 @@ same argument, given once). The ref is checked before anything is written.
   existing clone (the `clones:` entry, else `<dir>/<name>`), else where to
   clone it: `<dir>/<name>`, or `<dir>/agents-repo` for a member named
   `agents`. `url` is `null` when unknown.
-- `next.spawn` is `oats spawn <soul> --dir <dir>` naming the workspace's
-  OATS setup expert, else `null` (OATS 0.61.0; before it, only a soul named
-  `oats-operator-expert` was named). Among the souls onboarding lists
-  (confirmed members', external and package souls; standalone, the
-  repository's own), the setup expert is:
-  1. the soul named `<workspace name>-oats-setup-expert` that declares
-     `oats.setup`, where the workspace name is the `name:` of
+- `next.spawn` is a command string, `oats spawn <soul> --dir <dir>
+  [--name <instance>]`, naming the workspace's OATS setup expert, else
+  `null` (OATS 0.61.0; before it, only a soul named `oats-operator-expert`
+  was named). Among the souls onboarding lists (confirmed members', external
+  and package souls; standalone, the repository's own), the setup expert is:
+  1. the workspace's own soul named `<workspace name>-oats-setup-expert`
+     that declares `oats.setup`, where the workspace name is the `name:` of
      `oats-workspace.yaml` (`sync.workspace.name`); a standalone view has no
      workspace name, so this step does not apply there;
-  2. otherwise the first soul by name that declares `oats.setup`;
-  3. otherwise none: `null`.
+  2. otherwise `oats.framework`'s package soul `oats-setup-expert`, when it
+     declares `oats.setup`;
+  3. otherwise the first soul by name that declares `oats.setup`;
+  4. otherwise none: `null`.
 
   A soul declares `oats.setup` when its own `soul.yaml` names it under
   `capabilities:` as `{ from: … }`, from any source (`package`, `here` or a
   member key); `oats.setup: off` does not count. A soul is never chosen by
-  its name alone: one named `<workspace name>-oats-setup-expert` that does
-  not declare `oats.setup` falls through to step 2.
+  its name alone: a soul named `<workspace name>-oats-setup-expert` or
+  `oats-setup-expert` that does not declare `oats.setup` falls through to
+  the next step.
+
+  Only the package soul of step 2 gets `--name`: `<workspace
+  name>-oats-setup-expert`; `<workspace name>-oats-setup` when a soul of the
+  workspace already holds the first name (spawn refuses an instance name that
+  is a soul's); none when that is taken too, or when the name would pass the
+  64-character instance-name limit. Spawn then names the instance itself;
+  onboarding never refuses on a long workspace name. The text output says why
+  a name other than the first is suggested. A soul of steps 1 and 3 is
+  spawned with no `--name`.
 
   Only the soul's own declaration is read, not its resolved composition:
   `oats.setup` that reaches a soul only through the workspace's `defaults:`
@@ -2982,7 +2998,7 @@ kernel stage raised as well.
 |---|---|---|
 | `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul; `--same-work` for an instance that would record no parent ([Same work as the parent](#same-work-as-the-parent-oats-instance-same-work)) |
 | `E_LOCAL_MISSING`, `E_NO_DEPLOYMENT` | | no `oats-local.yaml`; no `agents/` root |
-| `E_SOUL_UNKNOWN` | `{name, members, packages}` | no such soul, or not at `--agents-root` |
+| `E_SOUL_UNKNOWN` | `{name, members, packages, unconfirmed?}` | no such soul, or not at `--agents-root`. `unconfirmed`, only when a member could not be confirmed: `[{key, reason, detail}]`, which the message repeats with what to do |
 | `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
 | `E_SOUL_DISABLED` | `{name, qualifiedName, entry}` | listed in `souls.disabled` |
 | `E_UNKNOWN_AGENT` | | the resolved soul is not under the deployment's agents root |
@@ -3710,7 +3726,8 @@ A group whose registration names another workspace is neither probed nor
 returned, its saved routes under that registration and target with it. A
 group is judged by its registration when it has one, so a saved route whose
 target differs from the registration's is a group of its own, kind 3. A key
-is compared with the registration's `workspaceKey` by exact string equality:
+is compared with the registration's `workspaceKey` as a string, the two
+spellings of a [moved repository](workspaces.md#moved-repositories) being one:
 it is the canonical key a host's `status --json` reports as `workspace.key`,
 never parsed as a repository reference. An empty or missing value, or one
 with whitespace or a control character, is `E_BAD_ARGS`. `--server` and

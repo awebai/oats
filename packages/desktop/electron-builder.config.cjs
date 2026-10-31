@@ -88,7 +88,7 @@ module.exports = {
   afterPack: "scripts/after-pack.cjs",
   mac: {
     // Targets WITHOUT pinned arch: electron-builder builds the HOST arch by
-    // default, so each CI matrix job (macos-14=arm64, macos-13=x64) produces
+    // default, so each CI matrix job (macos-15=arm64, cross-built x64) produces
     // exactly its own pair and the desktop-<os>-<arch> artifact stays pure.
     // Cross-arch fallback (if the x64 runner disappears):
     //   npm run dist -- --x64   on an arm64 runner.

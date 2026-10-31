@@ -48,7 +48,7 @@
     },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
-      "ref": "oats-framework/v1.16.4",
+      "ref": "oats-framework/v1.17.0",
       "path": "oats-package"
     }
   },
@@ -76,6 +76,7 @@
     "oats.knowledge-theory": "oats.framework",
     "oats.core": "oats.framework",
     "oats.setup": "oats.framework",
+    "oats.onboarding": "oats.framework",
     "oats.okf-harvest": "oats.okf",
     "oats.okf-maintenance": "oats.okf",
     "oats.aweb-tasks": "oats.aweb",

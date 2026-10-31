@@ -12,9 +12,9 @@ description: >-
   `credential.helper osxkeychain` line), `Permission denied (publickey)`,
   `failed to write commit object`, and commits GitHub shows as Unverified.
   The agent runs the steps; the person approves logins in the browser and
-  chooses their identity. `/oats-onboarding` sends a host here before its
-  first Git read. Part of the setup and config of an OATS workspace
-  (oats.setup); day-to-day operation inside an instance is oats.core.
+  chooses their identity. Optional: onboarding needs only GitHub over https.
+  Part of the setup and config of an OATS workspace (oats.setup); day-to-day
+  operation inside an instance is oats.core.
 ---
 
 # Git and GitHub setup
