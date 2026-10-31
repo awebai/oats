@@ -246,7 +246,7 @@ These are constants of the scripts, not inputs:
 | time for one file, then its process group is killed | 5 minutes | 20 minutes |
 | time for the job | 60 minutes | 240 minutes |
 | wait for the user manager | none | 60 seconds at the validation step |
-| runner | `macos-14` (arm64), Node 22 | `ubuntu-24.04` (x64), Node 22 |
+| runner | `macos-15` (arm64), Node 22 | `ubuntu-24.04` (x64), Node 22 |
 
 A Linux file gets 20 minutes because the files that qualify the record
 capture at scale ([#1108](https://github.com/awebai/oats/issues/1108)) run
