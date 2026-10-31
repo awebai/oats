@@ -383,7 +383,7 @@ one with text, such as a permission prompt's, is shown in its place.
 
 From OATS 0.69.7, a turn that ends in a provider error sets a claim the same
 way, because the error ends the turn and you can't: `Turn failed: <the error>`,
-from oats.core's hooks on Claude Code (oats.core 2.10.0 or later) and the
+from oats.core's hooks on Claude Code (oats.core 2.11.0 or later) and the
 `@awebai/oats-pi` bridge (producer `oats.pi`) on pi, after the harness's own
 retries. Your next turn clears it. Codex reports nothing, because no hook sees the failure. When you
 wait on a child, its row in `oats status --json` shows this as `waitingOnYou`.
