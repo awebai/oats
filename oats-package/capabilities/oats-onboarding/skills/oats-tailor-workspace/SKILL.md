@@ -54,7 +54,7 @@ step 1's findings and its starting point:
     review and merge rules and to their size;
   - the Desktop's grouping (from OATS 0.69.2): a top-level agent is spawned
     without `--same-work`, a feature's agents with it, and each group has one
-    colour (`oats instance color`);
+    colour (`oats instance color`, from OATS 0.67.0);
   - coordination across humans: taught to the agents, and explained to the
     people.
 - **Knowledge**, from the knowledge theory (`oats.knowledge-theory`'s
