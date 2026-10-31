@@ -84,7 +84,7 @@ const { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_B
 const { observeInstanceGit, diffInstanceFile } = await kernelImport("instance-git", () => import("../lib/instance-git.mjs"));
 const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, descendantsOf, resolveInstance: resolveInstanceForCli, setInstanceColor, setInstanceBackground, setInstanceSameWork, STOP_WARNINGS } = await kernelImport("instance-lifecycle", () => import("../lib/instance-lifecycle.mjs"));
 const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await kernelImport("retire-output", () => import("../lib/retire-output.mjs"));
-const { livenessWord, lostLine, statusWord } = await kernelImport("status-words", () => import("../lib/status-words.mjs"));
+const { livenessWord, lostLine, statusWord, waitingLine } = await kernelImport("status-words", () => import("../lib/status-words.mjs"));
 const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await kernelImport("retained-after-retire", () => import("../lib/retained-after-retire.mjs"));
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await kernelImport("instance-inspect", () => import("../lib/instance-inspect.mjs"));
@@ -2601,7 +2601,7 @@ function printStatus({ root, agents: data, ws, problems }, verbose) {
       { const lost = lostLine(i); if (lost) console.log(`          ${lost}`); }
       // Feature waiting-on-you: non-null only on a running row; the reader has
       // already validated the message (one line, no control characters).
-      if (i.running === true && i.waitingOnYou) console.log(`          ! needs input (${i.waitingOnYou.reason ?? "unknown"})${i.waitingOnYou.message ? `: ${i.waitingOnYou.message}` : ""}`);
+      { const waiting = waitingLine(i); if (waiting) console.log(`          ${waiting}`); }
       const key = i.home ?? `${a.name}/${i.instance}`;
       if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
       // The kernel the home's plain `oats` runs (its last launch's), when it is not this one.
