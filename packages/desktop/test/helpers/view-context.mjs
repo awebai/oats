@@ -32,6 +32,9 @@ export const viewContext = () => ({
   // #1421 §2: an instance's colour on its dots (instance-dot.mjs), pure, read by the roster paint, the tab sync and a tab's open.
   dotColor, paintDotColor,
   shownRows: rows => rows, retires: { landed() {}, ids: () => new Set() },
+  // A launch's --instance (launch-focus.mjs): a suite about other behaviour has no request pending; an observed read
+  // tells it nothing. launch-focus.test.mjs drives the shipped one.
+  launchFocus: { observe() {}, pending: () => false },
   // syncTabNeedsInput's module state (#558): the last painted roster, read when a terminal tab opens.
   // Every roster paint calls syncTabNeedsInput; a suite about other behaviour gets this no-op, and a suite
   // that extracts the shipped function by name replaces it (tab-needs-input, roster-needs-input).
