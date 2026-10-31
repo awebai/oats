@@ -996,23 +996,35 @@ same argument, given once). The ref is checked before anything is written.
   existing clone (the `clones:` entry, else `<dir>/<name>`), else where to
   clone it: `<dir>/<name>`, or `<dir>/agents-repo` for a member named
   `agents`. `url` is `null` when unknown.
-- `next.spawn` is `oats spawn <soul> --dir <dir>` naming the workspace's
-  OATS setup expert, else `null` (OATS 0.61.0; before it, only a soul named
-  `oats-operator-expert` was named). Among the souls onboarding lists
-  (confirmed members', external and package souls; standalone, the
-  repository's own), the setup expert is:
-  1. the soul named `<workspace name>-oats-setup-expert` that declares
-     `oats.setup`, where the workspace name is the `name:` of
+- `next.spawn` is a command string, `oats spawn <soul> --dir <dir>
+  [--name <instance>]`, naming the workspace's OATS setup expert, else
+  `null` (OATS 0.61.0; before it, only a soul named `oats-operator-expert`
+  was named). Among the souls onboarding lists (confirmed members', external
+  and package souls; standalone, the repository's own), the setup expert is:
+  1. the workspace's own soul named `<workspace name>-oats-setup-expert`
+     that declares `oats.setup`, where the workspace name is the `name:` of
      `oats-workspace.yaml` (`sync.workspace.name`); a standalone view has no
      workspace name, so this step does not apply there;
-  2. otherwise the first soul by name that declares `oats.setup`;
-  3. otherwise none: `null`.
+  2. otherwise `oats.framework`'s package soul `oats-setup-expert`, when it
+     declares `oats.setup`;
+  3. otherwise the first soul by name that declares `oats.setup`;
+  4. otherwise none: `null`.
 
   A soul declares `oats.setup` when its own `soul.yaml` names it under
   `capabilities:` as `{ from: … }`, from any source (`package`, `here` or a
   member key); `oats.setup: off` does not count. A soul is never chosen by
-  its name alone: one named `<workspace name>-oats-setup-expert` that does
-  not declare `oats.setup` falls through to step 2.
+  its name alone: a soul named `<workspace name>-oats-setup-expert` or
+  `oats-setup-expert` that does not declare `oats.setup` falls through to
+  the next step.
+
+  Only the package soul of step 2 gets `--name`: `<workspace
+  name>-oats-setup-expert`; `<workspace name>-oats-setup` when a soul of the
+  workspace already holds the first name (spawn refuses an instance name that
+  is a soul's); none when that is taken too, or when the name would pass the
+  64-character instance-name limit. Spawn then names the instance itself;
+  onboarding never refuses on a long workspace name. The text output says why
+  a name other than the first is suggested. A soul of steps 1 and 3 is
+  spawned with no `--name`.
 
   Only the soul's own declaration is read, not its resolved composition:
   `oats.setup` that reaches a soul only through the workspace's `defaults:`

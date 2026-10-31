@@ -105,7 +105,9 @@ souls, and keeping its messages to other instances few and short:
 `oats.framework`). Workspaces give it to every soul through
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
-knowledge an onboarding expert needs, and **`oats.support`** (same package)
+knowledge an onboarding expert needs, **`oats.onboarding`** (same package)
+is how the package soul `oats-setup-expert` tailors a new workspace to its use
+case, and **`oats.support`** (same package)
 is the support desk role: a publicly reachable soul that tickets requests and
 hands them to a support maintainer. None of them is kernel magic; the kernel still
 composes its own instance-boundary and work-mode briefings, and the "You run

@@ -96,7 +96,7 @@ test("a missing npm-style source alias or a regular compatibility copy fails the
   assert.equal(checkKnowledgeTheoryPackage({ packageRoot: copied, parity: false }).ok, true);
 });
 
-test("knowledge-theory-expert is an oats.framework PACKAGE SOUL: locked with the package, spawned by its qualified name, with the theory skill and no knowledge slot", { timeout: 120_000 }, (t) => {
+test("knowledge-theory-expert and oats-setup-expert are oats.framework PACKAGE SOULS: locked with the package, spawned by their qualified names, with their package's capabilities and no knowledge slot", { timeout: 120_000 }, (t) => {
   // The shipped oats-package tree as a tagged Git package (the release channel).
   const base = temp(t);
   const bare = join(base, "framework.git"), seed = join(base, "seed");
@@ -111,11 +111,18 @@ test("knowledge-theory-expert is an oats.framework PACKAGE SOUL: locked with the
   const ok = (r) => { const j = r.json(); assert.equal(j.ok, true, r.stdout + r.stderr); return j.result; };
   ok(fx.cli(["sync", "--json"]));
   const lock = JSON.parse(readFileSync(join(fx.dep, "oats-lock.json"), "utf8"));
-  assert.deepEqual(lock.packages["oats.framework"].souls.map((s) => s.name), ["knowledge-theory-expert"]);
+  assert.deepEqual(lock.packages["oats.framework"].souls.map((s) => s.name), ["knowledge-theory-expert", "oats-setup-expert"]);
   const spawned = ok(fx.cli(["spawn", "oats.framework/knowledge-theory-expert", "--purpose", "author", "--work", "directory", "--no-launch", "--json"]));
   assert.equal(spawned.home, join(fx.root, "oats-framework--knowledge-theory-expert", "instances", "oats-framework-knowledge-theory-expert-author"));
   const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   assert.deepEqual(Object.keys(meta.modules), ["oats.knowledge-theory"], "its package's theory capability, no knowledge slot");
   assert.ok(readFileSync(join(spawned.home, ".agents", "skills", "knowledge-capability-authoring", "SKILL.md"), "utf8").includes("name: knowledge-capability-authoring"));
   assert.match(readFileSync(join(spawned.home, "AGENTS.md"), "utf8"), /# Knowledge theory expert/);
+  // The setup expert: its package's oats.setup and oats.onboarding, no knowledge slot, in its own folder.
+  const setup = ok(fx.cli(["spawn", "oats.framework/oats-setup-expert", "--name", "acme-oats-setup-expert", "--no-launch", "--json"]));
+  assert.equal(setup.home, join(fx.root, "oats-framework--oats-setup-expert", "instances", "acme-oats-setup-expert"));
+  const setupMeta = JSON.parse(readFileSync(join(setup.home, "instance.json"), "utf8"));
+  assert.deepEqual(Object.keys(setupMeta.modules).sort(), ["oats.onboarding", "oats.setup"], "its package's setup and onboarding capabilities, no knowledge slot");
+  assert.ok(readFileSync(join(setup.home, ".agents", "skills", "oats-tailor-workspace", "SKILL.md"), "utf8").includes("name: oats-tailor-workspace"));
+  assert.match(readFileSync(join(setup.home, "AGENTS.md"), "utf8"), /# OATS setup expert/);
 });
