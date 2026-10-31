@@ -162,6 +162,36 @@ the one previous state, and retirement carries it into recovery.
 This act handles one local home at a time. A deployment loops over its homes;
 it does not upgrade automatically or through `--server`.
 
+## The move to the oats-project organisation
+
+OATS is moving from the `awebai` GitHub organisation and npm scope to
+`oats-project`, in stages. A GitHub transfer changes nothing a deployment
+reads, because the old URLs redirect. A changed string does: the kernel
+compares repository keys literally, and clients compare the CLI's npm name
+literally. So a bridge release comes first.
+
+**What the bridge does.** It makes the old and the new spelling of each moved
+repository one repository ([Moved repositories](workspaces.md#moved-repositories)),
+and it makes the kernel know the npm name it was installed under, so `oats
+update` stays on that name and never crosses to the other. Clients and the pi
+bridge accept both npm names.
+
+**A deployment on the bridge behaves as it did before.** It emits the same
+keys, uses the same cache directories and writes the same lock. Nothing asks
+you to change a string, and `oats version --json` keeps
+`"name":"@awebai/oats"` under either npm name, with the real name in its new
+`package` field.
+
+**Keep `@awebai/oats` installed.** This release installs over it, under the
+same name.
+
+- `npm rm -g @awebai/oats` leaves running sessions without their kernel until
+  they restart. A start rewrites each home's `.oats/bin/oats` and hooks.
+- The host's schedule unit stays on the old path until `oats schedule host
+  install` runs.
+- Installing the other name with `--force` and then removing the old one also
+  deletes the `oats` command.
+
 ## Coming from an older version
 
 Read the `## Upgrade` section of every release after yours, up to the
