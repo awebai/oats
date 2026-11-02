@@ -14,24 +14,29 @@ test("a local-only project is put on GitHub only on the person's yes, private, w
   const from = flat.indexOf("**A project only on this computer:**"), to = flat.indexOf("For each repository the intake names");
   assert.ok(from >= 0 && to > from, "the step comes before the members are added");
   const step = flat.slice(from, to);
-  assert.ok(step.includes("Put it on GitHub only on the person's yes, as a private repository"));
-  // A folder inside another repository never pushes the parent (review H2).
-  assert.ok(step.includes('`git -C "<dir>" rev-parse --show-toplevel` is `<dir>` itself'));
-  assert.ok(step.includes("never the parent's"));
-  // What is pushed is found without changing the folder, and shown before the question.
-  assert.ok(step.includes('git --git-dir="$T/.git" --work-tree="<dir>" ls-files --others --exclude-standard'));
-  assert.ok(step.indexOf("**Before you ask, find what would be pushed,**") < step.indexOf("**Ask, showing it:**"));
-  assert.ok(step.indexOf("**Ask, showing it:**") < step.indexOf("**On their yes, a new repository:**"));
-  // An existing repository pushes its history: a secret in it means push nothing (review H1).
-  assert.ok(step.includes('git -C "<dir>" log --all --format= --name-only | sort -u'));
-  assert.ok(step.includes("a secret that is tracked now or appears in its history means push nothing"));
-  // The staged list is checked against what was shown, before the commit (review M1).
-  assert.ok(step.indexOf('git -C "<dir>" diff --cached --name-only') < step.indexOf('git -C "<dir>" commit -m "First commit"'));
-  assert.ok(step.includes("must be exactly what you showed"));
-  assert.ok(step.indexOf("add what you leave out to the folder's `.gitignore`") < step.indexOf('git -C "<dir>" init -b main'));
-  assert.ok(step.includes('gh repo create "<owner>/<name>" --private --source "<dir>" --remote origin --push'));
-  assert.ok(step.includes("`PRIVATE`"), "the visibility is checked after the create");
-  assert.ok(step.includes("that putting it on GitHub also starts the automations in it"), "push-triggered automations are named (briefing)");
-  assert.ok(step.includes("**On their no:** create nothing."));
-  assert.ok(step.includes("record it as open in the hand-back"));
+  const at = (phrase) => { const i = step.indexOf(phrase); assert.ok(i >= 0, `missing: ${phrase}`); return i; };
+  at("Put it on GitHub only on the person's yes, as a private repository");
+  // A folder inside another repository: the parent's code on GitHub is asked about, never duplicated or pushed (review H2, N3).
+  at('`git -C "<dir>" rev-parse --show-toplevel`');
+  at("the code is on GitHub already: ask whether the parent is the project to add");
+  at("never the parent's");
+  // What is pushed is found without changing the folder, with secrets searched by content, and shown before the question.
+  at('git --git-dir="$T/.git" --work-tree="<dir>" ls-files --others --exclude-standard');
+  at("xargs -0 grep -IilE \"$P\"");
+  at("(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_-]*[[:space:]]*[:=]");
+  assert.ok(at("**Before you ask, find what would be pushed,**") < at("**Ask, showing it:**"));
+  assert.ok(at("**Ask, showing it:**") < at("**On their yes, a new repository:**"));
+  // An existing repository pushes its history: its content is searched, and any match means push nothing (review H1, N2).
+  at('git -C "<dir>" log --all -p --format= | grep -icE "$P"');
+  at("any match, now or anywhere in its history, means push nothing");
+  at("A detached HEAD prints no branch: stop and ask.");
+  // The staged list is checked against what was shown, before the commit (review M1, N4).
+  assert.ok(at('git -C "<dir>" diff --cached --name-only') < at('git -C "<dir>" commit -m "First commit"'));
+  at("must be exactly what you showed, plus `.gitignore`");
+  assert.ok(at("add what you leave out to the folder's `.gitignore`") < at('git -C "<dir>" init -b main'));
+  at('gh repo create "<owner>/<name>" --private --source "<dir>" --remote origin --push');
+  at("`PRIVATE`");
+  at("that putting it on GitHub also starts the automations in it");
+  at("**On their no:** create nothing.");
+  at("record it as open in the hand-back");
 });
