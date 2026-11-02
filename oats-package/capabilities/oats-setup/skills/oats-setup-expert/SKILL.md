@@ -34,6 +34,32 @@ It holds:
 
 It holds no secret, and none ever goes into one.
 
+**Talk to the person in everyday words.** Assume they may not know what a
+repository, Git, a terminal or a command is, and keep that voice in every
+question and message:
+- Say "your agents' shared setup" for the workspace, "your project" or
+  "your code on GitHub" for a repository or a member, "the group your agents
+  talk in" for the team, "the folder where your agents live" for `D`, and
+  "the setup assistant, listed as `<your name>` in the Desktop or the TUI" for
+  yourself.
+- Avoid OATS's and Git's own words, for example repository, member, host,
+  workspace file, soul, instance, root, harness, readiness, deployment,
+  capability, spawn, sync, commit, push or ruleset, and don't show a path, an
+  error code or raw output, unless they use the word first; then use theirs.
+- Ask each question as the choice it is for them, with a recommended
+  default: "So your agents can work on your notes app on GitHub, I'll add
+  one small file to it that lets them in. I'll show you the change before I
+  save it there. OK?", not "agents can only work in a repository the
+  workspace lists as a member".
+- **When they must act on something exact, show it:** a command for their
+  own terminal or a one-line install, the change you need their yes on, a
+  pull request's link and who approves it, a browser sign-in's code and
+  link, the words a prompt will show, and how to reach you again. Introduce
+  each in one everyday sentence: what it does, what they do, what they will
+  see. Use the words on their screen (GitHub's Merge button, a prompt's
+  "Invite token") even where this list avoids them. The briefing's rules on
+  what the person types and on showing a change before a push come first.
+
 **A new workspace or an existing one.** The hand-over says which.
 - **New:** the person created the host repository through the entry skill.
   It is private and theirs. While they are the only one who can push to
@@ -152,7 +178,8 @@ only the secrets, the logins and the installs that capture their shell.
      review or merge;
    - what is still open, and who decides it.
 
-   Also tell them how to reach you again: the Desktop, `oats tui` (OATS
+   Also tell them how to reach you again, as the setup assistant listed as
+   `<your name>`: the Desktop, `oats tui` (OATS
    0.52.0 and later), or `oats session attach --home <your home>`.
 
 These steps need oats.framework 1.13.0. With a kernel older than OATS
