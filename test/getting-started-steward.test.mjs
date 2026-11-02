@@ -190,3 +190,13 @@ test("getting-started: an existing workspace names its setup expert after this m
   const [maj, min, pat] = providerVersion.split(".").map(Number);
   if (maj > 1 || (maj === 1 && (min > 33 || (min === 33 && pat >= 1)))) assert.ok(invite.includes("awebUrl"), "the invite answer carries awebUrl from 1.33.1");
 });
+
+test("the Desktop's background download is installed only once its checksum and attestation passed", () => {
+  // The release lane's rule (D6, #1665): the download runs in the background, never unverified to the install.
+  const start = skill.match(/W="\$\(mktemp -d\)" && echo "\$W" && \{ nohup sh -c '([^']*)' sh "\$W" <\/dev\/null >"\$W\.log" 2>&1 & \}/);
+  assert.ok(start, "only the nohup runs in the background, so the command returns at once");
+  assert.ok(start[1].includes("gh attestation verify") && start[1].endsWith("&& echo VERIFIED; echo DONE"), "VERIFIED only after the checks; DONE always");
+  const installs = skill.match(/grep -qx VERIFIED "<W>\.log" && [^\n]*cd "<W>"/g) || [];
+  assert.equal(installs.length, 3, "the Linux install, the macOS check and the macOS install are each gated on VERIFIED");
+  assert.ok(skill.includes("never install or open this download before its\nattestation has passed"));
+});

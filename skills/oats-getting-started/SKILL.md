@@ -71,7 +71,10 @@ stop instead: the person answers nothing after step 1.
   agent, OATS Desktop with its app-launcher entry, and each system package
   step 2 found missing, with what it is for. One change outside their
   computer goes on the same list: for a new workspace whose host step 6
-  creates, the private repository `<owner>/<repo>` on their GitHub account.
+  creates, the private repository `<owner>/<repo>` on GitHub. Git's own
+  settings count too: Git told to use their GitHub login (`gh auth
+  setup-git`, in `~/.gitconfig`) and, on Linux, npm's per-user folder (in
+  `~/.npmrc`).
   Name each change by what and where, not by kind: a permission check that
   reads the conversation lets a step through only when their yes named it.
   Never run `sudo` for something that was not on that list, even where no
@@ -221,12 +224,14 @@ before you go on. The rules for each value follow.
 - **OATS Desktop:** installed and started unless they decline. Don't offer
   the TUI (`oats tui`, a terminal client, preview) unless they ask for a
   terminal client or decline the Desktop.
-- **The name on their commits:** only when step 2's checks printed
-  `NO_GIT_EMAIL` and step 7 commits (a new workspace). Default: their
-  computer account's full name (`getent passwd "$(id -un)" | cut -d: -f5 | cut -d, -f1`
-  on Linux, `id -F` on macOS); when that is empty, their GitHub profile
-  name, found after step 3 (`gh api user --jq '.name // .login'`), and the
-  line says "your GitHub name". Step 7 uses it without asking again.
+- **The name on their commits:** whenever step 2's checks printed
+  `NO_GIT_IDENTITY`; drop it if they join an existing workspace (step 7
+  commits only for a new one). Default: their computer account's full name
+  (`getent passwd "$(id -un)" | cut -d: -f5 | cut -d, -f1` on Linux, `id -F`
+  on macOS); when that is empty or just their login name capitalised
+  (`Ubuntu` for `ubuntu`), their GitHub profile name, found after step 3
+  (`gh api user --jq '.name // .login'`), and the line says "your GitHub
+  name". Step 7 uses it without asking again.
 
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
@@ -273,12 +278,12 @@ message. Install now what they found missing, as step 1's yes allows.
 before the first line that needs `sudo`.
 
 ```bash
-uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; git config user.email || echo NO_GIT_EMAIL
+uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; { git config --global user.name && git config --global user.email; } >/dev/null || echo NO_GIT_IDENTITY
 ```
 
 - **Versions:** Node 22 or later; Git 2.45 or later recommended (partial
   caches), and older Git works with whole-tree fetches; `gh` 2.49 or later
-  (step 4 uses `gh attestation`).
+  (step 3 uses `gh attestation`).
 - **The harness** they chose must be installed and logged in (`claude
   --version`, `codex --version` or `pi --version`).
 - **macOS:** with Homebrew (`brew --version`), `brew install node git tmux gh`.
@@ -294,7 +299,7 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
   - **Packages:** the distribution's, for git and tmux.
   - **gh:** from GitHub's own apt or rpm repository
     (<https://github.com/cli/cli/blob/trunk/docs/install_linux.md>), because
-    distributions ship versions too old for step 4.
+    distributions ship versions too old for step 3.
   - **Node 22:** distributions ship older ones (Debian 13 has 20, Ubuntu
     24.04 has 18). On Debian and Ubuntu, x64 or arm64, from NodeSource:
 
@@ -317,7 +322,7 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
     - **ALSA missing:** the Desktop doesn't start without it, so its package
       is a system package for step 1's list: `libasound2t64` on Ubuntu 24.04
       and Debian 13, `libasound2` before them, `alsa-lib` on Fedora.
-    - **FUSE 2 missing:** install nothing. Step 4 starts the AppImage with
+    - **FUSE 2 missing:** install nothing. Step 10 starts the AppImage with
       `--appimage-extract-and-run`, which needs no FUSE.
   - **Passwords:** a line that needs `sudo` runs only after their yes in
     step 1, and goes to their own terminal unless `sudo -n true` succeeds.
@@ -345,7 +350,7 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
 ## 3. Log in to GitHub
 
 GitHub stays where the flow needs it: the Desktop's download and its
-attestation (step 4), creating and pushing the host repository (step 6), and
+attestation (step 3), creating and pushing the host repository (step 6), and
 OATS reading the workspace and its repositories with Git (step 8). Check
 first:
 
@@ -391,45 +396,80 @@ setup this needs. An SSH key, commit signing and the DCO sign-off are
 optional: the setup expert's `/oats-git-setup` sets them up when Git access
 is broken or the person wants them, and says plainly what it changes.
 
-**Then start the Desktop's download, in the background,** unless they
-declined the Desktop or this machine has none (Linux arm64, step 4). It needs
-`gh` logged in, so it starts here, and runs while you do the next steps. The
-Desktop accepts a band of CLI versions around its own, so step 4 installs the
-CLI of the same version `V`. Find `V`, and on macOS `ARCH`:
+**Then find the OATS version `V`,** and on macOS `ARCH`. Step 4 installs the
+CLI and the Desktop of this one version, since the Desktop accepts a band of
+CLI versions around its own:
 
 ```bash
 npm view @awebai/oats version
 sysctl -n hw.optional.arm64 2>/dev/null   # macOS: 1 means ARCH=arm64, otherwise ARCH=x64
 ```
 
-Then, with `V` written in, and `F` the release file:
+**Then start the Desktop's download, in the background,** unless they
+declined the Desktop or this machine has none (Linux arm64, step 4). It needs
+`gh` logged in, so it starts here, and runs while step 4 installs the CLI.
+With `V` written in, and `F` the release file:
 `oats-desktop-V-linux-x86_64.AppImage` on Linux x64,
 `oats-desktop-V-mac-ARCH.zip` on macOS (where `shasum -a 256 -c -` replaces
 `sha256sum -c -`). It downloads, checks the checksum and the release's
 attestation, and prints `VERIFIED` only when all three pass:
 
 ```bash
-W="$(mktemp -d)" && echo "$W" && nohup sh -c 'cd "$1" && gh release download "vV" -R awebai/oats -p "F" -p SHA256SUMS.txt && grep " F\$" SHA256SUMS.txt | sha256sum -c - && gh attestation verify "F" --repo awebai/oats && echo VERIFIED; echo DONE' sh "$W" </dev/null >"$W.log" 2>&1 &
+W="$(mktemp -d)" && echo "$W" && { nohup sh -c 'cd "$1" && gh release download "vV" -R awebai/oats -p "F" -p SHA256SUMS.txt && grep " F\$" SHA256SUMS.txt | sha256sum -c - && gh attestation verify "F" --repo awebai/oats && echo VERIFIED; echo DONE' sh "$W" </dev/null >"$W.log" 2>&1 & }
 ```
 
 Write the folder it prints in as `<W>` in step 4.
 
 ## 4. Install OATS Desktop, the CLI and the messaging CLI
 
-Install the Desktop first, then the CLI of the same version `V` (step 3).
+Install the CLI first, then the Desktop, both of version `V` (step 3): the
+Desktop's download runs meanwhile.
 
-**Every step verifies before it installs.** Wait for step 3's download to
-finish, then read its log:
+**First the CLI, and for pi its bridge:**
 
 ```bash
-for i in $(seq 300); do grep -qx DONE "<W>.log" && break; sleep 1; done; tail -n 5 "<W>.log"
+npm install -g "@awebai/oats@V" && oats version
+pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
+```
+
+**A new workspace needs `oats.framework` 1.18.0 or later,** the release
+that ships the setup expert soul. Read the installed CLI's catalog:
+
+```bash
+node -e 'const c=require(process.argv[1]);console.log(c.packages["oats.framework"].ref,c.packages["oats.aweb"].ref)' "$(oats root)/package-catalog.json"
+```
+
+It prints the two refs, for example `oats-framework/v1.18.0 v1.32.1`. If the
+framework's version (the part after the `/`) is below `1.18.0`, this OATS
+release is older than this skill: stop, and tell the person to wait for the
+next OATS release. Never write a setup soul into the workspace in its place.
+
+**With aweb, the messaging CLI `aw`, and the harness's aweb channel.**
+Skip this without messaging. The channel is what wakes an agent when mail
+arrives: Claude
+`claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace`;
+pi `pi install npm:@awebai/pi`; Codex nothing (it is woken another way, which
+the setup expert sets up).
+
+```bash
+npm install -g @awebai/aw && aw version
+```
+
+`aw` must be 1.36.33 or later.
+
+**Then the Desktop. Every step verifies before it installs.** Wait for step
+3's download to finish, then read its log. Each run waits up to a minute; run
+it again, up to five times, while the log has no `DONE` line:
+
+```bash
+for i in $(seq 60); do grep -qx DONE "<W>.log" && break; sleep 1; done; tail -n 5 "<W>.log"
 ```
 
 Install the Desktop only when the log has a `VERIFIED` line. If a download or
 a check failed (the release's Desktop assets can lag its npm package), or it
-has not finished, skip the Desktop, say so, and go on with the CLI. Never
-skip a check to make it install, and never install or open the Desktop
-before its attestation has passed.
+still has not finished, skip the Desktop and say so. Never skip a check to
+make it install, and never install or open this download before its
+attestation has passed. A Desktop installed before this run stays as it is.
 
 **macOS.** In one block, with `V` and `ARCH` written in. Install into
 `/Applications`, which needs an administrator; for a standard user, use
@@ -455,7 +495,7 @@ defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
   Then:
 
   ```bash
-  cd "<W>" && rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app" && defaults read "/Applications/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
+  grep -qx VERIFIED "<W>.log" && test -d "<W>/OATS Desktop.app" && cd "<W>" && rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app" && defaults read "/Applications/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
   xattr -p com.apple.quarantine "/Applications/OATS Desktop.app" 2>/dev/null && echo QUARANTINED
   ```
 
@@ -497,37 +537,6 @@ Categories=Development;
 
 **Don't start the Desktop yet;** step 10 starts it on the new deployment.
 
-**Then the CLI, and for pi its bridge:**
-
-```bash
-npm install -g "@awebai/oats@V" && oats version
-pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
-```
-
-**A new workspace needs `oats.framework` 1.18.0 or later,** the release
-that ships the setup expert soul. Read the installed CLI's catalog:
-
-```bash
-node -e 'const c=require(process.argv[1]);console.log(c.packages["oats.framework"].ref,c.packages["oats.aweb"].ref)' "$(oats root)/package-catalog.json"
-```
-
-It prints the two refs, for example `oats-framework/v1.18.0 v1.32.1`. If the
-framework's version (the part after the `/`) is below `1.18.0`, this OATS
-release is older than this skill: stop, and tell the person to wait for the
-next OATS release. Never write a setup soul into the workspace in its place.
-
-**With aweb, the messaging CLI `aw`, and the harness's aweb channel.**
-Skip this without messaging. The channel is what wakes an agent when mail
-arrives: Claude
-`claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace`;
-pi `pi install npm:@awebai/pi`; Codex nothing (it is woken another way, which
-the setup expert sets up).
-
-```bash
-npm install -g @awebai/aw && aw version
-```
-
-`aw` must be 1.36.33 or later.
 
 ## 5. Optional: the team on your own aweb account
 
@@ -700,8 +709,9 @@ workspace: git:github.com/acme/acme-oats
   branch only on their yes. If the push is refused (a protected branch, say),
   push a branch instead, open a pull request, tell them, and stop until it is
   merged.
-- If `git config user.email` prints nothing, the person's Git identity is not
-  set up yet. Commit with the name step 1's yes covered:
+- If `git config user.name` or `git config user.email` prints nothing in
+  `D/<repo>`, the person's Git identity is not set up yet. Commit with the
+  name step 1's yes covered:
   `-c user.name="<their name>" -c user.email="<their noreply address>"`. The
   noreply address comes from
   `gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'`.
