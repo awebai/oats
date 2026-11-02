@@ -159,8 +159,10 @@ only the secrets, the logins and the installs that capture their shell.
      - **Secrets, decided in two kinds:**
        - **Certain:** a file named like one (`.env`, key and credential
          files; in a repository with commits, also anywhere in
-         `git -C "<dir>" log --all --format= --name-only | sort -u`), or one
-         holding a private key (`grep -l 'BEGIN [A-Z ]*PRIVATE KEY'`, or
+         `git -C "<dir>" log --all --format= --name-only | sort -u`; templates
+         such as `.env.example` are not), or one holding a private key (a
+         file the content scan named that `grep -l 'BEGIN [A-Z ]*PRIVATE KEY' <file>`
+         matches, or
          `git -C "<dir>" log --all -G'BEGIN [A-Z ]*PRIVATE KEY' --format='%h' --name-only`).
          A new repository leaves these out. In a repository with commits,
          one in its history means push nothing.

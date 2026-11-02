@@ -29,7 +29,7 @@ test("a local-only project is put on GitHub only on the person's yes, private, w
   at("(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_-]*[[:space:]]*[:=]");
   assert.ok(at("**Before you ask, find what would be pushed,**") < at("**Ask, showing it:**"));
   assert.ok(at("**Ask, showing it:**") < at("**On their yes, a new repository:**"));
-  // An existing repository pushes its history: its content is searched, and any match means push nothing (review H1, N2).
+  // An existing repository pushes its history, which is searched: certain matches decide, possible ones are the person's call (review H1, N2).
   at('git -C "<dir>" log --all -i -G"$P" --format=\'%h\' --name-only | sort -u');
   // Certain signals decide; a possible content match is the person's call, by file name (review N9).
   at("one in its history means push nothing");
