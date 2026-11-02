@@ -27,7 +27,7 @@ test("no --soul: the first providing soul by name, skipping one that lacks the n
   assert.equal(ran(r).soul, "gamma", "dispatched as gamma");
   assert.deepEqual(ran(r).argv, ["--flag", "x"]);
   assert.match(r.stderr, /oats acme: using the settings and teams of soul [\w.-]+\/gamma, the first soul by name in this deployment that provides "acme"; pass --soul <name> to use another/);
-  // It names the soul whose settings and team the command uses, never "running as" it (a8, #1665 onboarding campaign).
+  // It names the soul whose settings and teams the command uses, never "running as" it (a8, #1665 onboarding campaign).
   assert.equal(/running as soul/.test(r.stderr), false);
   // --json: the provider's stdout is untouched; the note stays on stderr.
   const j = fx.cli(["acme", "show", "--json"]);
