@@ -164,13 +164,16 @@ before you go on. The rules for each value follow.
 - **A new workspace, or an existing one?**
   - Existing: its repository reference, for example
     `git:github.com/acme/acme-oats`. They get it from whoever runs that
-    workspace. The workspace name, for the folder and the names below, is
-    the reference's repository name without a trailing `-oats` (`acme`).
+    workspace. Until step 8, take its name from the reference's repository
+    name without a trailing `-oats` (`acme`), for the folder `D` only. Step 8
+    gives its real name, which `A` and the setup expert's name use.
   - New: the **workspace name**: lowercase letters and digits, words joined
     by single `-` (`^[a-z0-9]+(?:-[a-z0-9]+)*$`), for example `acme`. Refuse
     `agents`: OATS keeps instance homes in a folder of that name. Default:
     their project's name (its repository's, or its folder's), normalised as
-    in the machine's round; with no project, ask for a name.
+    in the machine's round, with repeated `-` collapsed and a leading or
+    trailing `-` dropped (`My_App_` gives `my-app`); with no project, ask
+    for a name.
 - **New workspace: where the workspace lives.** The workspace's files live in
   one repository, its host. Three cases, from their repositories:
   - **One repository (a monorepo):** the host is that repository, and the
@@ -251,9 +254,10 @@ such as `macbook-pro`), add the first eight characters of
 
 ## 2. Check, and install what is missing
 
-You ran this step's checks (the commands that only read, `sudo -n true`
-among them) before step 1's message. Install now what they found missing,
-as step 1's yes allows.
+You ran this step's checks (the commands that only read) before step 1's
+message. Install now what they found missing, as step 1's yes allows.
+`sudo -n true` is not one of those checks: it runs after the yes, right
+before the first line that needs `sudo`.
 
 ```bash
 uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
@@ -312,7 +316,8 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
 - **npm's global folder** (`npm prefix -g`) must be writable for step 4's
   installs (`test -w "$(npm prefix -g)/lib"`). If it is not (a system Node
   under `/usr`, as NodeSource installs it), set a per-user prefix, as step
-  1's list said: `npm config set prefix ~/.local`. Then put `~/.local/bin` on PATH: start
+  1's list said (when Node is missing before step 1 and will come from
+  NodeSource, the list names the per-user folder and its PATH line): `npm config set prefix ~/.local`. Then put `~/.local/bin` on PATH: start
   each later command of yours with `export PATH="$HOME/.local/bin:$PATH"`
   (your shell does not reread their profile). Add that line to their shell's
   startup file yourself, so their own terminal finds `oats` too, and tell
@@ -690,6 +695,8 @@ line to spawn it with. For a new workspace it names `oats.framework`'s
 `oats-setup-expert` with `--name <workspace>-oats-setup-expert`; when it
 carries another name or no `--name`, the text output of `oats onboard` says
 why. `S` is the soul it names.
+- **An existing workspace's name** is its `--name` without the trailing
+  `-oats-setup-expert` (`acme`); with no `--name` there, keep step 1's.
 - **On a machine found-list,** `S` is `oats.machine/steward`. An existing
   workspace that doesn't offer it: stop, and say that its owner adds
   `oats.machine` to its `packages:`.
@@ -795,9 +802,10 @@ stop if its readiness still reports a problem.
    the person privately, never by ordinary mail. From oats.aweb 1.33.1 the
    answer's `result.awebUrl` is the service URL `U`, and the member passes
    it too; it is no secret. When it is `null` or absent, leave `--service U`
-   out of item 4: the join then uses aw's default service. This machine's
+   out of item 4: the join then takes the service from the invite itself,
+   and when it can't, it fails and item 5 stops. This machine's
    messaging root is named `A` = `<workspace>-<this machine's name>` (step
-   1): don't ask. This works for a hosted team only: if the invite is
+   1), with the workspace's name from step 8: don't ask. This works for a hosted team only: if the invite is
    refused, or the join says the team is not hosted, stop, and the
    workspace's owner decides.
 4. **Existing workspace: the person joins in their own terminal,** which you
@@ -808,15 +816,16 @@ stop if its readiness still reports a problem.
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
    ```
 
-   If the join says the name `A` is taken in the team, another machine of
-   the same name joined first: ask the person once for a short name for this
-   machine, rebuild `A` and the setup expert's name (step 10) with it, and
-   open the window again, with a new invite if the join says this one is
-   used. Never take the other machine's name.
 5. **After items 2 to 4, check again** (item 1), and expect `"member": true`.
    On `"member": false`, stop and spawn nothing: tell the person the run
    left this machine's root outside `L`, with what the check shows, and
-   don't rerun the signup or the join.
+   don't rerun the signup or the join. You can't see the join's own output
+   (it ran in their window, and the provider withholds it). When another
+   machine of the same name may already be in the team, say that a taken
+   name is a likely cause: the member's agent can look for `A` in
+   `oats aweb roster --label L`, and the fix (a new invite and a name for
+   this machine) is the workspace owner's to decide. Never take the other
+   machine's name.
 
 The setup expert does the rest of this machine's messaging
 (`/oats-host-delivery`).
@@ -927,8 +936,9 @@ later.
 
 **An existing workspace names the setup expert after this machine,** since
 every member's machine has its own, in the same team, and two of one name
-can't share it: replace `next.spawn`'s `--name <workspace>-oats-setup-expert`
-with `--name <workspace>-<this machine's name>-oats-setup-expert` (step 1).
+can't share it: in `next.spawn`'s `--name <workspace>-oats-setup-expert`,
+put `-<this machine's name>` (step 1) before `-oats-setup-expert`, giving
+`--name <workspace>-<this machine's name>-oats-setup-expert`.
 When that is longer than 64 characters, shorten this machine's name to fit
 by cutting characters from its end (and any `-` left last), so a rerun
 derives the same name. A rerun on this machine then finds its own setup
@@ -959,6 +969,10 @@ In the fallback, or without messaging, leave out both `--provider` options.
   problem, stop and tell the person what it says.
 - **The spawn** prints the instance's home `H` and its name. Then delete the
   hand-over file: the home has its copy as `TASK.md`.
+- **A messaging name already held by another machine's agent** (the spawn
+  names the conflict): spawn nothing more and rename nothing. Tell the
+  person that another machine in the team already uses this name, and that
+  the workspace owner decides the fix.
 - **`E_SPAWN_INCOMPLETE`:** don't spawn again. Run `oats session inspect
   --home H --json` and tell the person what it shows.
 - **`E_INSTANCE_NAME_TAKEN`** (the preview or the spawn): the setup expert

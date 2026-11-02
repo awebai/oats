@@ -163,6 +163,7 @@ test("getting-started: one yes covers the computer's changes; a refused step is 
   assert.ok(!flat.includes("run that command in their own terminal, which you open for them"), "a refused step does not move to a window");
   assert.ok(flat.includes("PATH=\"$PATH:/sbin:/usr/sbin\" ldconfig -p"), "the Desktop's libraries are checked where a user's PATH lacks /sbin");
   assert.ok(flat.includes("**FUSE 2 missing:** install nothing."));
+  assert.ok(flat.includes("`sudo -n true` is not one of those checks: it runs after the yes"), "no sudo, not even -n, before the yes");
   assert.ok(!/\|\| true`\)/.test(flat), "checks keep their exit status");
   assert.ok(!flat.includes("ask them to restart you"));
   assert.ok(!flat.includes("ask for it, and suggest none"), "the folder where agents live has a default");
@@ -174,13 +175,17 @@ test("getting-started: an existing workspace names its setup expert after this m
   assert.ok(flat.includes("`--name <workspace>-<this machine's name>-oats-setup-expert`"));
   assert.ok(flat.includes("short hostname (`hostname -s`, never the full domain name)"));
   assert.ok(flat.includes("so a rerun derives the same name"), "a long name is shortened deterministically, never left to spawn");
-  assert.ok(flat.includes("If the join says the name `A` is taken in the team"), "two machines of one name don't collide silently");
+  // The agent can't see the join's output, so a taken name is named at item 5's stop, never rerun around (#1665 re-review N1).
+  assert.ok(flat.includes("say that a taken name is a likely cause"));
+  assert.ok(!flat.includes("open the window again, with a new invite"), "no rerun of the join after a failure");
+  assert.ok(flat.includes("**An existing workspace's name** is its `--name` without the trailing `-oats-setup-expert`"));
   assert.ok(flat.includes("A new workspace keeps `next.spawn` as it is."));
   assert.ok(flat.includes("`I` is its instance name: the `--name` you spawned with"));
   assert.ok(!/Choose with the person a name `A`/.test(flat), "the messaging root's name is derived, not asked");
   // awebUrl is new in oats.aweb 1.33.1 and may be null: the join works without --service.
   assert.ok(flat.includes("From oats.aweb 1.33.1 the answer's `result.awebUrl` is the service URL `U`"));
   assert.ok(flat.includes("When it is `null` or absent, leave `--service U` out of item 4"));
+  assert.ok(!flat.includes("default service"), "the provider has no default service: the join fails without one");
   const invite = read("mirrors/oats-aweb/lib/invite.mjs");
   const [maj, min, pat] = providerVersion.split(".").map(Number);
   if (maj > 1 || (maj === 1 && (min > 33 || (min === 33 && pat >= 1)))) assert.ok(invite.includes("awebUrl"), "the invite answer carries awebUrl from 1.33.1");
