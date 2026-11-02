@@ -151,22 +151,37 @@ test("only the sign-in route says the team is owned by the person's account", ()
 });
 
 // The onboarding VM campaign's newcomer runs (#1665): what the person is asked to do, and what changes on their computer.
-test("getting-started: one yes covers the computer's changes; the person never types a command", () => {
+test("getting-started: one yes covers the computer's changes; a refused step is never run another way", () => {
   const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
   assert.ok(flat.includes("Never run `sudo` for something that was not on that list, even where no password is asked"));
-  assert.ok(flat.includes("Never ask them to type a command, with `!` or otherwise."));
-  assert.ok(flat.includes("run that command in their own terminal, which you open for them with the command already in it"), "a step the harness refuses runs in a window the agent opens");
-  assert.ok(flat.includes("for l in libasound.so.2 libfuse.so.2; do ldconfig -p"), "the Desktop's system libraries are checked before the install, not discovered by a failed start");
+  // The list comes from step 2's read-only checks, run before step 1's message (#1665 campaign review).
+  assert.ok(flat.includes("**First, step 2's checks.** They only read, so run them before the message"));
+  assert.ok(flat.includes("**The changes to this computer:** the list in \"How to work\", from step 2's checks"), "the machine's round lists them too");
+  // A harness refusal is not routed around: ask once by name, retry once, else say what is missing.
+  assert.ok(flat.includes("never run it another way (another shell, a script, a window you open)"));
+  assert.ok(flat.includes("Never ask them to type a command with `!`."));
+  assert.ok(!flat.includes("run that command in their own terminal, which you open for them"), "a refused step does not move to a window");
+  assert.ok(flat.includes("PATH=\"$PATH:/sbin:/usr/sbin\" ldconfig -p"), "the Desktop's libraries are checked where a user's PATH lacks /sbin");
+  assert.ok(flat.includes("**FUSE 2 missing:** install nothing."));
+  assert.ok(!/\|\| true`\)/.test(flat), "checks keep their exit status");
   assert.ok(!flat.includes("ask them to restart you"));
   assert.ok(!flat.includes("ask for it, and suggest none"), "the folder where agents live has a default");
+  assert.ok(!/Ask for (?:its|their) (?:GitHub )?owner/.test(flat), "the host's owner is derived, not asked");
 });
 
 test("getting-started: an existing workspace names its setup expert after this machine, and joins with the invite's service URL", () => {
   const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
-  assert.ok(flat.includes("`--name <workspace>-<this machine>-oats-setup-expert`"));
-  assert.ok(flat.includes("short hostname (never the full domain name)"));
+  assert.ok(flat.includes("`--name <workspace>-<this machine's name>-oats-setup-expert`"));
+  assert.ok(flat.includes("short hostname (`hostname -s`, never the full domain name)"));
+  assert.ok(flat.includes("so a rerun derives the same name"), "a long name is shortened deterministically, never left to spawn");
+  assert.ok(flat.includes("If the join says the name `A` is taken in the team"), "two machines of one name don't collide silently");
   assert.ok(flat.includes("A new workspace keeps `next.spawn` as it is."));
-  assert.ok(flat.includes("its `result.awebUrl` is the service URL `U`"));
+  assert.ok(flat.includes("`I` is its instance name: the `--name` you spawned with"));
   assert.ok(!/Choose with the person a name `A`/.test(flat), "the messaging root's name is derived, not asked");
+  // awebUrl is new in oats.aweb 1.33.1 and may be null: the join works without --service.
+  assert.ok(flat.includes("From oats.aweb 1.33.1 the answer's `result.awebUrl` is the service URL `U`"));
+  assert.ok(flat.includes("When it is `null` or absent, leave `--service U` out of item 4"));
+  const invite = read("mirrors/oats-aweb/lib/invite.mjs");
+  const [maj, min, pat] = providerVersion.split(".").map(Number);
+  if (maj > 1 || (maj === 1 && (min > 33 || (min === 33 && pat >= 1)))) assert.ok(invite.includes("awebUrl"), "the invite answer carries awebUrl from 1.33.1");
 });
-

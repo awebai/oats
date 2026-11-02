@@ -53,25 +53,33 @@ stop instead: the person answers nothing after step 1.
   your colleagues can reach it"). Don't say repository, workspace file,
   soul, instance, root, harness, readiness, deployment, capability, CLI or
   token, and don't show a file path, a command, an error code or raw
-  output, unless they ask or use the word first. When a command fails, say in one sentence what it means and what you
-  do next. Run checks quietly (`2>/dev/null`, `|| true`), so that an
-  expected failure doesn't show as an error. Before a step that takes more
-  than half a minute, say what it does and about how long it takes.
+  output, unless they ask or use the word first. The one exception is the
+  name the Desktop shows for the setup expert, which they click. When a
+  command fails, say in one sentence what it means and what you do next.
+  Keep a check's output and exit status for yourself (`2>&1; echo
+  "exit=$?"`), and don't show the person an expected failure as an error.
+  Before a step that takes more than half a minute, say what it does and
+  about how long it takes.
 - **One yes covers the changes to their computer.** Step 1's message lists
   them in plain words, and their yes to it covers every one: you don't ask
-  again step by step. The list: the tools you install (per user, under
-  `~/.local`), the line that puts `~/.local/bin` on their PATH in their
-  shell's startup file, the aweb channel plugin in Claude (Claude only), the
-  folder where their agents live marked as trusted by their coding agent,
-  OATS Desktop with its app-launcher entry, and each system package step 2
-  found missing, with what it is for. Never run `sudo` for something that
-  was not on that list, even where no password is asked; if they say no to
-  a system package, tell them what will not work without it. If your
-  harness's permission check refuses a step on the list, run that command
-  in their own terminal, which you open for them with the command already
-  in it ("Their own terminal, opened by you"): they watch it finish and
-  close the window. Never ask them to type a command, with `!` or
-  otherwise.
+  again step by step. The list, from step 2's checks: the tools you install
+  (on Linux per user, under `~/.local`; on macOS with Homebrew), the line
+  that puts them on their PATH in their shell's startup file (`~/.local/bin`
+  on Linux; on macOS, Homebrew's `brew shellenv` line, only when Homebrew
+  is new), the aweb channel plugin in Claude (Claude only), the folder where
+  their agents live marked as trusted by their coding agent, OATS Desktop
+  with its app-launcher entry, and each system package step 2 found
+  missing, with what it is for. Never run `sudo` for something that was not
+  on that list, even where no password is asked; if they say no to a system
+  package, tell them what will not work without it.
+- **When your harness's permission check stops a step on the list.** If it
+  asks the person to approve, tell them it is one of the changes they said
+  yes to; they approve it there. If it refuses the step outright, never run
+  it another way (another shell, a script, a window you open): ask the person
+  once, naming the change, whether you may make it, and try again once on
+  their yes. Still refused: tell them in one sentence which change is
+  missing and what won't work without it, and go on where you can. Never ask
+  them to type a command with `!`.
 - **Secrets.** The person types only what you must never hold: passwords,
   tokens and logins. Before the spawn there are two ways for that: a browser
   device flow you start (the GitHub login, step 3, and, only when they want
@@ -107,8 +115,10 @@ stop instead: the person answers nothing after step 1.
   Tell them what to type there, and ask whether the window opened: a
   command that started is no proof of a window. Check the result with a
   read-only command, never by reading the window, then delete the file.
-  Only when no window opens, and only for a secret, a login or a `sudo`
-  password, do you give them the command to run themselves.
+  When no window opens: for a secret, a login or a `sudo` or Homebrew
+  password, give them the command to run in a terminal of their own, the
+  one time a person types a command; for anything else, tell them what did
+  not happen, and leave it to the setup expert.
 - **Touch nothing you were not asked to.** Don't edit an existing
   deployment's files (`oats-local.yaml`, `oats-lock.json`, `agents/`), and
   don't push to a repository the person did not create in step 6 or name as
@@ -117,6 +127,10 @@ stop instead: the person answers nothing after step 1.
 ## 1. Ask, in one round
 
 On a machine found-list, ask the machine's round below instead of this list.
+
+**First, step 2's checks.** They only read, so run them before the message
+(not its installs): the changes to their computer that the message lists
+are what they found missing.
 
 **The message.** Ask three things, and in the same message propose
 everything else as defaults they accept with "ok" or change:
@@ -135,13 +149,12 @@ files live (the host below, in plain words: "kept with your notes-app code
 on GitHub", or "in a new private space on your GitHub, `<workspace>-oats`"),
 the messaging
 account, the folder where their agents live, OATS Desktop installed and
-opened, and the changes to their computer ("How to work"). The GitHub owner
-comes from the login (`gh api user --jq .login`), now if gh is logged in,
-else after step 3: don't ask for it. The coding agent the setup expert runs
-on is you, when you are `claude`, `codex` or `pi`: don't ask. When an answer
-changes the workspace name, derive every default from the new name again
-(the account `N`, the folder `D`, the host's name) and show the final
-values before you go on. The rules for each value follow.
+opened, and the changes to their computer ("How to work"). Don't ask for
+the GitHub owner (below), or for the coding agent the setup expert runs on:
+it is you, when you are `claude`, `codex` or `pi`. Their answers can change
+the defaults: when one does (a name, a host, a fresh start or a join),
+derive every default again and show the final values in one short message
+before you go on. The rules for each value follow.
 
 - **The use case:** what they want agents to do.
 - **Their repositories and project:** which repositories agents should work
@@ -151,19 +164,25 @@ values before you go on. The rules for each value follow.
 - **A new workspace, or an existing one?**
   - Existing: its repository reference, for example
     `git:github.com/acme/acme-oats`. They get it from whoever runs that
-    workspace.
+    workspace. The workspace name, for the folder and the names below, is
+    the reference's repository name without a trailing `-oats` (`acme`).
   - New: the **workspace name**: lowercase letters and digits, words joined
     by single `-` (`^[a-z0-9]+(?:-[a-z0-9]+)*$`), for example `acme`. Refuse
-    `agents`: OATS keeps instance homes in a folder of that name.
+    `agents`: OATS keeps instance homes in a folder of that name. Default:
+    their project's name (its repository's, or its folder's), normalised as
+    in the machine's round; with no project, ask for a name.
 - **New workspace: where the workspace lives.** The workspace's files live in
   one repository, its host. Three cases, from their repositories:
   - **One repository (a monorepo):** the host is that repository, and the
-    files go at its root. Ask for its GitHub owner and name.
+    files go at its root. Its owner and name come from its remote.
   - **Several repositories:** a dedicated host repository, private, created
-    in step 6. Ask for its owner (their user, or an organisation they can
-    create repositories in) and name; suggest `<workspace>-oats`.
-  - **No repositories yet:** create their first one in step 6; it is the
-    host. Ask for its owner and name.
+    in step 6 and named `<workspace>-oats`. Its owner is the one their
+    repositories share, when they share one; otherwise their GitHub login.
+  - **No repositories yet:** create their first one in step 6, named
+    `<workspace>`, under their GitHub login; it is the host.
+
+  The GitHub login is `gh api user --jq .login`: now, if gh is logged in,
+  else after step 3; until then the line says "your GitHub account".
 
   Whatever the case, if any repository of theirs is private, the host is
   private: the workspace file names every member, so whoever reads it sees
@@ -219,8 +238,22 @@ steward takes them up with the person later.
 - **OATS Desktop:** installed and started by default; the TUI not opened.
 - **The harness:** the found-list's `harness`. Ask only when it names none,
   with the one you are as the default.
+- **The changes to this computer:** the list in "How to work", from step 2's
+  checks, as one line; "yes" covers it.
+
+**This machine's name** (an existing workspace only, below) is its short
+hostname (`hostname -s`, never the full domain name), normalised as in the
+machine's round: `ada-s-laptop`. When that is a name many machines share
+(`localhost`, `ubuntu`, `debian`, `fedora`, `raspberrypi`, or a model name
+such as `macbook-pro`), add the first eight characters of
+`/etc/machine-id` on Linux, or of `ioreg -rd1 -c IOPlatformExpertDevice`'s
+`IOPlatformUUID` on macOS, lowercased: `ubuntu-3f9c2a1b`.
 
 ## 2. Check, and install what is missing
+
+You ran this step's checks (the commands that only read, `sudo -n true`
+among them) before step 1's message. Install now what they found missing,
+as step 1's yes allows.
 
 ```bash
 uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
@@ -257,17 +290,18 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
     ```bash
     sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update && sudo apt-get install -y git
     ```
-  - **The Desktop's system libraries** (x64): it needs ALSA and, without
-    `--appimage-extract-and-run` (step 4), FUSE 2. Check, quietly:
+  - **The Desktop's system libraries** (x64): ALSA and FUSE 2. Check
+    (`ldconfig` lives in `/sbin`, which a user's PATH may lack):
 
     ```bash
-    for l in libasound.so.2 libfuse.so.2; do ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
+    for l in libasound.so.2 libfuse.so.2; do PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
     ```
 
-    On Ubuntu 24.04 the packages are `libasound2t64` and `libfuse2t64`
-    (`libasound2` and `libfuse2` before it). A missing one is a system
-    package for step 1's list. Without FUSE, use `--appimage-extract-and-run`
-    instead of installing it.
+    - **ALSA missing:** the Desktop doesn't start without it, so its package
+      is a system package for step 1's list: `libasound2t64` on Ubuntu 24.04
+      and Debian 13, `libasound2` before them, `alsa-lib` on Fedora.
+    - **FUSE 2 missing:** install nothing. Step 4 starts the AppImage with
+      `--appimage-extract-and-run`, which needs no FUSE.
   - **Passwords:** a line that needs `sudo` runs only after their yes in
     step 1, and goes to their own terminal unless `sudo -n true` succeeds.
 - **Then check again** with `node --version` and `git --version`. When
@@ -415,10 +449,10 @@ Terminal=false
 Categories=Development;
 ```
 
-- **Without FUSE** (step 10's start fails with a FUSE message; Ubuntu 22.04
-  and later ship without `libfuse2`), add ` --appimage-extract-and-run` after
-  the AppImage's path in `Exec=` and in step 10's start. That needs no
-  `sudo`; installing `libfuse2` (`libfuse2t64` on Ubuntu 24.04) does.
+- **Without FUSE 2** (step 2's check printed `MISSING libfuse.so.2`; Ubuntu
+  22.04 and later ship without it), add ` --appimage-extract-and-run` after
+  the AppImage's path in `Exec=` and in step 10's start. Do the same when
+  step 10's start fails with a FUSE message.
 - **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: skip the
   download, say so and go on.
 
@@ -757,14 +791,15 @@ stop if its readiness still reports a problem.
 3. **Existing workspace: the person gets an invite** from a member of `L`.
    That member asks their own agent for it, which runs
    `oats aweb invite --soul <their soul> --label L --json` in their
-   deployment. The answer's `result.token` is the invite token and its
-   `result.awebUrl` is the service URL `U` (oats.aweb 1.33.1 and later).
-   The member passes both to the person privately, never by ordinary mail.
-   This machine's messaging root is named `A` = `<workspace>-<this
-   machine>`, with this machine's short hostname normalised as in the
-   machine's round: don't ask. This works for a hosted team only: if the
-   invite is refused, or the join says the team is not hosted, stop, and
-   the workspace's owner decides.
+   deployment. The answer's `result.token` is the invite token, passed to
+   the person privately, never by ordinary mail. From oats.aweb 1.33.1 the
+   answer's `result.awebUrl` is the service URL `U`, and the member passes
+   it too; it is no secret. When it is `null` or absent, leave `--service U`
+   out of item 4: the join then uses aw's default service. This machine's
+   messaging root is named `A` = `<workspace>-<this machine's name>` (step
+   1): don't ask. This works for a hosted team only: if the invite is
+   refused, or the join says the team is not hosted, stop, and the
+   workspace's owner decides.
 4. **Existing workspace: the person joins in their own terminal,** which you
    open for them ("How to work"), typing the token at the hidden prompt. Its
    command, with `D`, `S`, `L`, `A` and `U` filled in:
@@ -772,6 +807,12 @@ stop if its readiness still reports a problem.
    ```text
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
    ```
+
+   If the join says the name `A` is taken in the team, another machine of
+   the same name joined first: ask the person once for a short name for this
+   machine, rebuild `A` and the setup expert's name (step 10) with it, and
+   open the window again, with a new invite if the join says this one is
+   used. Never take the other machine's name.
 5. **After items 2 to 4, check again** (item 1), and expect `"member": true`.
    On `"member": false`, stop and spawn nothing: tell the person the run
    left this machine's root outside `L`, with what the check shows, and
@@ -865,11 +906,13 @@ oats harness trust --dir D --harness claude --plan
 oats harness trust --dir D --harness claude
 ```
 
-- **If either refuses a file** (on macOS, `~/.claude.json` can carry a mark
-  the writer refuses), don't edit the file or its attributes. Open their
-  own terminal ("How to work") with `cd "D" && claude` (or `codex`) already
-  running; tell them it will ask whether to trust the folder where their
-  agents live, that they answer yes, and then close the window.
+- **If the trust command itself refuses a file** (on macOS,
+  `~/.claude.json` can carry a mark the writer refuses), don't edit the file
+  or its attributes. Open their own terminal ("How to work") with
+  `cd "D" && claude` (or `codex`) already running; tell them their coding
+  agent will ask there whether to trust the folder where their agents live,
+  that they answer yes, and then close the window. A refusal by your
+  harness's permission check is "How to work"'s case instead.
 - **Then check** that the `harness-trust` item of
   `oats readiness --soul S --dir D --json` passes.
 
@@ -885,13 +928,13 @@ later.
 **An existing workspace names the setup expert after this machine,** since
 every member's machine has its own, in the same team, and two of one name
 can't share it: replace `next.spawn`'s `--name <workspace>-oats-setup-expert`
-with `--name <workspace>-<this machine>-oats-setup-expert`, with this
-machine's short hostname (never the full domain name), normalised as in the
-machine's round. A rerun on this machine then finds its own setup expert
-(`E_INSTANCE_NAME_TAKEN`, below). A machine that is renamed gets a new setup
-expert; the setup expert under the old name is retired by its agent. When
-the name would be longer than 64 characters, leave `--name` out and let
-spawn name it. A new workspace keeps `next.spawn` as it is.
+with `--name <workspace>-<this machine's name>-oats-setup-expert` (step 1).
+When that is longer than 64 characters, shorten this machine's name to fit
+by cutting characters from its end (and any `-` left last), so a rerun
+derives the same name. A rerun on this machine then finds its own setup
+expert (`E_INSTANCE_NAME_TAKEN`, below). A machine that is renamed gets a
+new setup expert; the one under the old name is retired by its agent. A new
+workspace keeps `next.spawn` as it is.
 
 **Preview the spawn, read it, then spawn,** with step 8's `next.spawn` line
 plus the hand-over:
@@ -924,9 +967,9 @@ In the fallback, or without messaging, leave out both `--provider` options.
   `oats session start --home H`.
 
 **The Desktop**, if installed, opens on the new deployment with the setup
-expert selected. `I` is its instance name: the one the spawn printed, which is
-`next.spawn`'s `--name` when it has one (after `E_INSTANCE_NAME_TAKEN`, that
-`--name`). A Desktop that does not know `--instance` ignores it and opens the
+expert selected. `I` is its instance name: the `--name` you spawned with
+(after `E_INSTANCE_NAME_TAKEN`, that same `--name`), else the one the spawn
+printed. A Desktop that does not know `--instance` ignores it and opens the
 deployment, so pass it always.
 - **macOS:**
 
@@ -953,25 +996,28 @@ deployment, so pass it always.
 - **Never start it with an emptied environment** (`env -i`): it then loses
   HOME, and Git loses the person's login.
 
-**The TUI**, if they wanted it, runs in a terminal of its own: open it in
-their own terminal, as "How to work" says, with the command
-`oats tui --dir "D"`.
+**The TUI** runs in a terminal of its own. Open it in their own terminal
+("How to work"), with the command `oats tui --dir "D"`, when they asked for
+it in step 1, or when they have no Desktop and say yes to it in the
+hand-over below.
 
 **Hand over to the setup expert,** in a short message in plain words:
-- what is ready: their workspace and its repository, the messaging team, the
-  setup expert running;
+- what is ready: their agents' shared setup, kept on GitHub, the group their
+  agents talk in, and the setup assistant running; on a machine found-list,
+  the steward, and its address when it has one;
 - **where to go now:** "Switch to the OATS Desktop window. Click
-  **<the setup expert's name, as the Desktop shows it>** in the list on the
-  left, if it isn't selected: it has already started and will ask you its
-  first question there. You can close this chat." Without the Desktop, open
-  the TUI for them in their own terminal ("How to work"), with
-  `oats tui --dir "D"`, and say the same about it;
-- what the setup expert does next, in one line: it learns how they work,
-  then sets up their repositories and their first agents with them, and it
+  **<I, as the Desktop shows it>** in the list on the left, if it isn't
+  selected: it has already started and will ask you its first question
+  there. You can close this chat." Without the Desktop, offer to open a
+  terminal window where they can talk to it (the TUI, above), and say the
+  same about it there. When neither opens, tell them the setup assistant is
+  running, and that the OATS Desktop, once installed, shows it;
+- what the setup assistant does next, in one line: it learns how they work,
+  then sets up their projects and their first agents with them, and it
   opens a small hidden prompt when they need to type a password or a key.
 
-Don't list instance names, homes, paths, versions or commands in this
-message. You are done.
+Don't list homes, paths, versions or commands in this message. You are
+done.
 
 ## Never
 
