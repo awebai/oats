@@ -19,7 +19,8 @@ works. Do the steps in order. Apply `oats.setup`'s briefing throughout: you
 run each step, and the person types only secrets, logins and the installs
 that capture their shell.
 Talk to them in everyday words, as `/oats-setup-expert` says, in every
-question and in the brief (step 6).
+question and in the brief (step 6), and show them what they must act on
+exactly, as it says.
 
 ## 1. Discover the use case
 
