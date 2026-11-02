@@ -24,9 +24,10 @@ const atLeast = (v, min) => {
   return true;
 };
 
-// The floors the skill names for the root route: oats.aweb 1.33.0 ships it, and
+// The floors the skill names for the root route: oats.aweb 1.34.0 at the earliest
+// ships it (#147; 1.33.x does not), and
 // its aw floor is 1.36.48 (oats.aweb's AW_RESIDENT_ROOT_MIN).
-const PROVIDER_ROOT_ROUTE = "1.33.0";
+const PROVIDER_ROOT_ROUTE = "1.34.0";
 const AW_ROOT_ROUTE = "1.36.48";
 
 test("the catalog lists oats.machine at v0.1.1, and oats.machine-care resolves to it", () => {
