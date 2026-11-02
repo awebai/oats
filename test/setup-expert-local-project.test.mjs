@@ -23,12 +23,17 @@ test("a local-only project is put on GitHub only on the person's yes, private, w
   // What is pushed is found without changing the folder, with secrets searched by content, and shown before the question.
   at('git --git-dir="$T/.git" --work-tree="<dir>" ls-files --others --exclude-standard');
   at("xargs -0 grep -IilE \"$P\"");
+  // The scans print names only, never content, so no secret reaches the agent; P and T are set in each block.
+  at("never a line's content, so no secret reaches you");
+  at("Run each block as one command");
   at("(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_-]*[[:space:]]*[:=]");
   assert.ok(at("**Before you ask, find what would be pushed,**") < at("**Ask, showing it:**"));
   assert.ok(at("**Ask, showing it:**") < at("**On their yes, a new repository:**"));
   // An existing repository pushes its history: its content is searched, and any match means push nothing (review H1, N2).
-  at('git -C "<dir>" log --all -p --format= | grep -icE "$P"');
-  at("any match, now or anywhere in its history, means push nothing");
+  at('git -C "<dir>" log --all -i -G"$P" --format=\'%h\' --name-only | sort -u');
+  // Certain signals decide; a possible content match is the person's call, by file name (review N9).
+  at("one in its history means push nothing");
+  at("so show these files to the person by name, as files that may hold a password or key, and let them choose what to leave out");
   at("A detached HEAD prints no branch: stop and ask.");
   // The staged list is checked against what was shown, before the commit (review M1, N4).
   assert.ok(at('git -C "<dir>" diff --cached --name-only') < at('git -C "<dir>" commit -m "First commit"'));
