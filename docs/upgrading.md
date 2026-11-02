@@ -203,7 +203,7 @@ must follow is in its release's Upgrade section whether or not it is listed
 here.
 
 - **[0.69.9](release-notes/v0.69.9.md#upgrade):** the catalog pins
-  oats.framework 1.19.0, oats.aweb 1.33.0 and oats.engineering 1.18.0. With
+  oats.framework 1.19.0, oats.aweb 1.33.1 and oats.engineering 1.18.0. With
   oats.engineering 1.18.0, a stop doesn't hold while a checkpoint is pending:
   `oats schedule disable <id>` keeps it stopped.
 - **[0.69.8](release-notes/v0.69.8.md#upgrade):** the catalog pins

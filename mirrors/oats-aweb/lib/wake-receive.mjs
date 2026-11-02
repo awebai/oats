@@ -13,6 +13,7 @@
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {approvedChannelPolicyWarning} from './claude-managed-policy.mjs';
+import { parseVersion, versionAtLeast } from './aw-floor.mjs';
 
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
 // Observation age is advisory; readiness does not certify recent observation.
@@ -347,13 +348,11 @@ export function wakeDaemonAssessment(status, {minimumVersion}) {
   const fail = (code, message) => ({problems: [problem(code, message)], warnings});
   if (!object(status)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
   if (status.daemon_running !== true) return fail('wake-daemon-not-running', 'host wake daemon is not confirmed running');
-  if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !/^\d+\.\d+\.\d+$/.test(status.daemon_version || '')) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
-  const version = status.daemon_version.split('.').map(Number), floor = minimumVersion.split('.').map(Number);
-  const difference = version.map((n, i) => n - floor[i]).find(n => n !== 0);
+  if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !parseVersion(status.daemon_version)) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
   // A daemon below the floor still receives; the floor exists for replies to
   // senders outside the roster, so it is reported as a warning, and every
   // later check (and its fail) still carries that warning.
-  if (difference < 0) warnings.push(problem('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}: upgrade aw, then restart the host wake daemon`));
+  if (!versionAtLeast(status.daemon_version, minimumVersion)) warnings.push(problem('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}: upgrade aw, then restart the host wake daemon`));
   return {problems: [], warnings};
 }
 
@@ -499,7 +498,7 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   // A malformed observation cannot establish age. Keep the wire's unavailable
   // status (kernel: unknown), and distinguish it from a parsed future snapshot.
   if (updated !== undefined && !Number.isFinite(updated)) {
-    const client = typeof clientVersion === 'string' && /^\d+\.\d+\.\d+$/.test(clientVersion) ? clientVersion : 'unknown';
+    const client = typeof clientVersion === 'string' && parseVersion(clientVersion) ? clientVersion : 'unknown';
     return fail('wake-status-timestamp-unknown', `status.updated_at is not an RFC 3339 timestamp in the form aw emits (aw client ${client}; daemon ${status.daemon_version}); broker observation time is unknown`);
   }
   if (updated !== undefined && updated > now) return fail('wake-status-stale', 'status.updated_at is in the future');

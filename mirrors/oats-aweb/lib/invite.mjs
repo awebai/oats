@@ -1,11 +1,12 @@
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, statSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { selectedDeployment } from './team-roots.mjs';
 import { querySelectedKernel } from './session-readiness.mjs';
+import { yamlScalar } from './binding-wire.mjs';
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -78,6 +79,15 @@ function selectedProblems(problems, label) {
     }
   }
 }
+/** The service the issuing root names (`aweb_url` in its workspace.yaml), as written, for the member to
+ *  hand on beside the token. Only a plain service URL is handed on: http(s), a host, an optional port
+ *  and no path but `/` or `/api`, the shape probe-support.mjs admits. Anything else could carry a
+ *  credential (userinfo, a query, a path segment), so it answers null, as a root that names none does. */
+export function rootAwebUrl(root) {
+  let raw;
+  try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
+  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
+}
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
   let deployment;
@@ -99,14 +109,17 @@ export function issueInvite(argv, env = process.env) {
   const team = rows[0].team;
   if (!validTeam(team)) fail('E_INVITE_TEAM', 'selected label has no valid canonical aweb team');
   if (!opts.label && env.OATS_DEFAULT_TEAM_ID !== team) fail('E_INVITE_TEAM', 'selected default team does not match current kernel declarations');
-  const raw = object(settings.roots) && Object.hasOwn(settings.roots,team) ? settings.roots[team] : settings.root;
+  // With no root declared, the team's root is the deployment's own, as setup creates it and spawn
+  // reads it. A declared root, even an invalid one, is never replaced.
+  const declared = (object(settings.roots) && Object.hasOwn(settings.roots,team)) || Object.hasOwn(settings,'root');
+  const raw = object(settings.roots) && Object.hasOwn(settings.roots,team) ? settings.roots[team] : declared ? settings.root : deployment;
   let root;
-  try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', 'selected team root is missing, invalid or unreadable; repair its explicit root setting'); }
+  try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', declared ? 'selected team root is missing, invalid or unreadable; repair its explicit root setting' : 'no team root is set and the deployment has no .aw root; run setup, or set settings.oats.aweb.root'); }
   let membership;
   try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');
   if (membership.memberships.filter(m => object(m) && m.team_id === team).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
-  const result = { label, team, root, authority: 'native/server decides at issuance' };
+  const result = { label, team, root, awebUrl: rootAwebUrl(root), authority: 'native/server decides at issuance' };
   if (opts.plan) return { ...result, plan: true, command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
   // Fresh native user state prevents an invoking-home BYOT controller key or
   // cached principal from silently replacing selected-root hosted authority.

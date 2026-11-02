@@ -141,7 +141,8 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, fai
     // A classification, never the text: the caller may name a KNOWN failure
     // class (an alias that still holds a certificate) without any output of a
     // credential-handling command reaching a log.
-    err.aliasConflict = /already|exists|conflict|422|active certificate/i.test(String(e.stderr ?? "") + String(e.stdout ?? ""));
+    // self_custody_reinit_unproven: AWID's refusal when another agent that holds its own key has the alias.
+    err.aliasConflict = /already|exists|conflict|422|active certificate|self_custody_reinit_unproven/i.test(String(e.stderr ?? "") + String(e.stdout ?? ""));
     throw err;
   }
 };
@@ -1788,11 +1789,12 @@ if (event === "launch") {
         minted = { team, alias: late };
         fatal(`aw init --join-from was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
       }
-      // A retired alias keeps its certificate until aweb-abim ships, so a
-      // re-spawn under the same name is refused by AWID. Say that, and the
-      // remedy, instead of relaying a bare join error.
+      // Another agent holds the alias in this team: an instance of that name
+      // on another machine, or a retired one, whose certificate stays until
+      // aweb-abim ships. Say that, and the remedy, instead of relaying a bare
+      // join error.
       if (e.aliasConflict) {
-        fatal(`alias "${instance}" already holds a certificate on ${team} (a retired instance of that name is not reusable until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);
+        fatal(`alias "${instance}" already holds a certificate on ${team} (another machine's instance of that name, or a retired one until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);
       }
       throw e;
     }
