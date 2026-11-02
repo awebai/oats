@@ -1025,7 +1025,7 @@ hand-over below.
   agents talk in, and the setup assistant running; on a machine found-list,
   the steward, and its address when it has one;
 - **where to go now:** "Switch to the OATS Desktop window. Click
-  **<I, as the Desktop shows it>** in the list on the left, if it isn't
+  **<I's display form>** under Instances on the left, if it isn't
   selected: it has already started and will ask you its first question
   there. You can close this chat." Without the Desktop, offer to open a
   terminal window where they can talk to it (the TUI, above), and say the
@@ -1035,7 +1035,10 @@ hand-over below.
   then sets up their projects and their first agents with them, and it
   opens a small hidden prompt when they need to type a password or a key.
 
-Don't list homes, paths, versions or commands in this message. You are
+`I`'s display form is how the Desktop lists it: `-` turned into spaces and
+the first letter capitalised (`acme-oats-setup-expert` shows as "Acme oats
+setup expert"). Don't list homes, paths, versions or commands in this
+message. You are
 done.
 
 ## Never
