@@ -67,11 +67,16 @@ stop instead: the person answers nothing after step 1.
   that puts them on their PATH in their shell's startup file (`~/.local/bin`
   on Linux; on macOS, Homebrew's `brew shellenv` line, only when Homebrew
   is new), the aweb channel plugin in Claude (Claude only), the folder where
-  their agents live marked as trusted by their coding agent, OATS Desktop
-  with its app-launcher entry, and each system package step 2 found
-  missing, with what it is for. Never run `sudo` for something that was not
-  on that list, even where no password is asked; if they say no to a system
-  package, tell them what will not work without it.
+  their agents live (`D`, spelled out) marked as trusted by their coding
+  agent, OATS Desktop with its app-launcher entry, and each system package
+  step 2 found missing, with what it is for. One change outside their
+  computer goes on the same list: for a new workspace whose host step 6
+  creates, the private repository `<owner>/<repo>` on their GitHub account.
+  Name each change by what and where, not by kind: a permission check that
+  reads the conversation lets a step through only when their yes named it.
+  Never run `sudo` for something that was not on that list, even where no
+  password is asked; if they say no to a system package, tell them what will
+  not work without it.
 - **When your harness's permission check stops a step on the list.** If it
   asks the person to approve, tell them it is one of the changes they said
   yes to; they approve it there. If it refuses the step outright, never run
@@ -149,7 +154,8 @@ files live (the host below, in plain words: "kept with your notes-app code
 on GitHub", or "in a new private space on your GitHub, `<workspace>-oats`"),
 the messaging
 account, the folder where their agents live, OATS Desktop installed and
-opened, and the changes to their computer ("How to work"). Don't ask for
+opened, the name on their commits (only when Git has none, below), and the
+changes to their computer ("How to work"). Don't ask for
 the GitHub owner (below), or for the coding agent the setup expert runs on:
 it is you, when you are `claude`, `codex` or `pi`. Their answers can change
 the defaults: when one does (a name, a host, a fresh start or a join),
@@ -215,6 +221,12 @@ before you go on. The rules for each value follow.
 - **OATS Desktop:** installed and started unless they decline. Don't offer
   the TUI (`oats tui`, a terminal client, preview) unless they ask for a
   terminal client or decline the Desktop.
+- **The name on their commits:** only when step 2's checks printed
+  `NO_GIT_EMAIL` and step 7 commits (a new workspace). Default: their
+  computer account's full name (`getent passwd "$(id -un)" | cut -d: -f5 | cut -d, -f1`
+  on Linux, `id -F` on macOS); when that is empty, their GitHub profile
+  name, found after step 3 (`gh api user --jq '.name // .login'`), and the
+  line says "your GitHub name". Step 7 uses it without asking again.
 
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
@@ -241,6 +253,7 @@ steward takes them up with the person later.
 - **OATS Desktop:** installed and started by default; the TUI not opened.
 - **The harness:** the found-list's `harness`. Ask only when it names none,
   with the one you are as the default.
+- **The name on its commits:** as in the list above, when Git has none.
 - **The changes to this computer:** the list in "How to work", from step 2's
   checks, as one line; "yes" covers it.
 
@@ -260,7 +273,7 @@ message. Install now what they found missing, as step 1's yes allows.
 before the first line that needs `sudo`.
 
 ```bash
-uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
+uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; git config user.email || echo NO_GIT_EMAIL
 ```
 
 - **Versions:** Node 22 or later; Git 2.45 or later recommended (partial
@@ -341,7 +354,8 @@ gh auth status
 ```
 
 If it is logged in, let Git use it (without this, step 6's push and step 8
-fail with "could not read Username"), then go to step 4:
+fail with "could not read Username"), then start the Desktop's download
+(below):
 
 ```bash
 gh auth setup-git
@@ -377,19 +391,45 @@ setup this needs. An SSH key, commit signing and the DCO sign-off are
 optional: the setup expert's `/oats-git-setup` sets them up when Git access
 is broken or the person wants them, and says plainly what it changes.
 
-## 4. Install OATS Desktop, the CLI and the messaging CLI
-
-The Desktop accepts a band of CLI versions around its own, so install it
-first, then the CLI of the same version `V`. Find `V`, and on macOS `ARCH`:
+**Then start the Desktop's download, in the background,** unless they
+declined the Desktop or this machine has none (Linux arm64, step 4). It needs
+`gh` logged in, so it starts here, and runs while you do the next steps. The
+Desktop accepts a band of CLI versions around its own, so step 4 installs the
+CLI of the same version `V`. Find `V`, and on macOS `ARCH`:
 
 ```bash
 npm view @awebai/oats version
 sysctl -n hw.optional.arm64 2>/dev/null   # macOS: 1 means ARCH=arm64, otherwise ARCH=x64
 ```
 
-**Every step verifies before it installs.** If a download or a check fails
-(the release's Desktop assets can lag its npm package), skip the Desktop,
-say so, and go on with the CLI. Never skip a check to make it install.
+Then, with `V` written in, and `F` the release file:
+`oats-desktop-V-linux-x86_64.AppImage` on Linux x64,
+`oats-desktop-V-mac-ARCH.zip` on macOS (where `shasum -a 256 -c -` replaces
+`sha256sum -c -`). It downloads, checks the checksum and the release's
+attestation, and prints `VERIFIED` only when all three pass:
+
+```bash
+W="$(mktemp -d)" && echo "$W" && nohup sh -c 'cd "$1" && gh release download "vV" -R awebai/oats -p "F" -p SHA256SUMS.txt && grep " F\$" SHA256SUMS.txt | sha256sum -c - && gh attestation verify "F" --repo awebai/oats && echo VERIFIED; echo DONE' sh "$W" </dev/null >"$W.log" 2>&1 &
+```
+
+Write the folder it prints in as `<W>` in step 4.
+
+## 4. Install OATS Desktop, the CLI and the messaging CLI
+
+Install the Desktop first, then the CLI of the same version `V` (step 3).
+
+**Every step verifies before it installs.** Wait for step 3's download to
+finish, then read its log:
+
+```bash
+for i in $(seq 300); do grep -qx DONE "<W>.log" && break; sleep 1; done; tail -n 5 "<W>.log"
+```
+
+Install the Desktop only when the log has a `VERIFIED` line. If a download or
+a check failed (the release's Desktop assets can lag its npm package), or it
+has not finished, skip the Desktop, say so, and go on with the CLI. Never
+skip a check to make it install, and never install or open the Desktop
+before its attestation has passed.
 
 **macOS.** In one block, with `V` and `ARCH` written in. Install into
 `/Applications`, which needs an administrator; for a standard user, use
@@ -397,10 +437,7 @@ say so, and go on with the CLI. Never skip a check to make it install.
 line below:
 
 ```bash
-cd "$(mktemp -d)" && pwd &&
-gh release download "vV" -R awebai/oats -p "oats-desktop-V-mac-ARCH.zip" -p SHA256SUMS.txt &&
-grep " oats-desktop-V-mac-ARCH.zip\$" SHA256SUMS.txt | shasum -a 256 -c - &&
-gh attestation verify "oats-desktop-V-mac-ARCH.zip" --repo awebai/oats &&
+grep -qx VERIFIED "<W>.log" && cd "<W>" &&
 ditto -x -k "oats-desktop-V-mac-ARCH.zip" . &&
 codesign --verify --deep --strict "OATS Desktop.app" &&
 defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleIdentifier &&
@@ -415,10 +452,10 @@ defaults read "$PWD/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
 - **Install it.** If the Desktop is running, tell the person and quit it;
   its agents keep running:
   `osascript -e 'quit app "OATS Desktop"'; for i in $(seq 20); do pgrep -xq "OATS Desktop" || break; sleep 1; done`.
-  Then, with the folder `pwd` printed:
+  Then:
 
   ```bash
-  cd "<that folder>" && rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app" && defaults read "/Applications/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
+  cd "<W>" && rm -rf "/Applications/OATS Desktop.app" && ditto "OATS Desktop.app" "/Applications/OATS Desktop.app" && defaults read "/Applications/OATS Desktop.app/Contents/Info" CFBundleShortVersionString
   xattr -p com.apple.quarantine "/Applications/OATS Desktop.app" 2>/dev/null && echo QUARANTINED
   ```
 
@@ -434,10 +471,7 @@ running, tell the person and quit it first; its agents keep running:
 person to quit it.
 
 ```bash
-cd "$(mktemp -d)" &&
-gh release download "vV" -R awebai/oats -p "oats-desktop-V-linux-x86_64.AppImage" -p SHA256SUMS.txt &&
-grep " oats-desktop-V-linux-x86_64.AppImage\$" SHA256SUMS.txt | sha256sum -c - &&
-gh attestation verify "oats-desktop-V-linux-x86_64.AppImage" --repo awebai/oats &&
+grep -qx VERIFIED "<W>.log" && cd "<W>" &&
 mkdir -p ~/.local/opt/oats-desktop ~/.local/share/applications &&
 install -m 755 "oats-desktop-V-linux-x86_64.AppImage" ~/.local/opt/oats-desktop/OATS-Desktop.AppImage
 ```
@@ -458,8 +492,8 @@ Categories=Development;
   22.04 and later ship without it), add ` --appimage-extract-and-run` after
   the AppImage's path in `Exec=` and in step 10's start. Do the same when
   step 10's start fails with a FUSE message.
-- **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: skip the
-  download, say so and go on.
+- **Linux arm64** (`uname -m` says `aarch64`) has no Desktop: step 3
+  started no download; say so and go on.
 
 **Don't start the Desktop yet;** step 10 starts it on the new deployment.
 
@@ -667,7 +701,7 @@ workspace: git:github.com/acme/acme-oats
   push a branch instead, open a pull request, tell them, and stop until it is
   merged.
 - If `git config user.email` prints nothing, the person's Git identity is not
-  set up yet. After they confirm their name, commit with
+  set up yet. Commit with the name step 1's yes covered:
   `-c user.name="<their name>" -c user.email="<their noreply address>"`. The
   noreply address comes from
   `gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'`.
