@@ -4,7 +4,7 @@
 // is always the pin. A password, an empty user and a second user stay refused, and no refusal prints a password.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadLocal, validateLocal, validateMembership, validateWorkspace } from "../lib/workspace.mjs";
@@ -48,5 +48,6 @@ test("a password, an empty user and a second user stay refused, pinned or not, a
 test("oats-local.yaml with an ssh:// user loads", () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-ssh-user-"));
   writeFileSync(join(dir, "oats-local.yaml"), JSON.stringify({ schemaVersion: 2, workspace: ref }));
-  assert.equal(loadLocal(dir).local.workspace, ref);
+  try { assert.equal(loadLocal(dir).local.workspace, ref); }
+  finally { rmSync(dir, { recursive: true, force: true }); }
 });
