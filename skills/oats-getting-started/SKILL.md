@@ -363,7 +363,7 @@ that ships the setup expert soul. Read the installed CLI's catalog:
 node -e 'const c=require(process.argv[1]);console.log(c.packages["oats.framework"].ref,c.packages["oats.aweb"].ref)' "$(oats root)/package-catalog.json"
 ```
 
-It prints the two refs, for example `oats-framework/v1.18.0 v1.32.1`. If the
+It prints the two refs, for example `oats-framework/v1.19.0 v1.33.0`. If the
 framework's version (the part after the `/`) is below `1.18.0`, this OATS
 release is older than this skill: stop, and tell the person to wait for the
 next OATS release. Never write a setup soul into the workspace in its place.
@@ -509,8 +509,8 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host; the setup expert adds the others
 packages:
-  oats.framework: v1.18.0             # the installed CLI's catalog versions (below)
-  oats.aweb: v1.32.1                  # messaging: agent identities, mail and chat
+  oats.framework: v1.19.0             # the installed CLI's catalog versions (below)
+  oats.aweb: v1.33.0                  # messaging: agent identities, mail and chat
   oats.machine: v0.1.1                # on a machine found-list only: the machine's steward
 defaults:
   capabilities:

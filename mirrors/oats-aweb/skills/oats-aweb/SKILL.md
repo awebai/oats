@@ -150,7 +150,7 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 | `Notification delivery: the aweb channel plugin` (Claude Code) or `the aweb pi extension` (pi) | the configured channel plugin / pi extension is intended to push events; this line does not prove connection |
 | `Notification delivery: external` | the host wake broker presents incoming mail/chat in your terminal, either as a waiting-items line or as the full event |
 | joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
-| joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
+| joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries. On a Claude home this is expected (see below) |
 
 **Channel selection and the development-channel prompt**
 
@@ -218,8 +218,7 @@ not receive.
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
 and needs no managed policy. Claude shows its development-channel prompt, and
 OATS 0.52.0 and later confirm that prompt once
-at launch. `settings.oats.aweb.delivery: session` or
-`settings.oats.aweb.claudeChannelMode: approved` stop the prompt.
+at launch. `settings.oats.aweb.claudeChannelMode: approved` stops the prompt.
 Provider, broker and ordinary agents never send prompt keys.
 
 The kernel records each start's outcome in `instance.json` as
@@ -233,9 +232,8 @@ key; readiness then warns `claude-channels-unavailable` instead: the home has
 no channel delivery. Claude Code disables channels when its launch environment
 opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization
-has no channels. Remove the variable from the launch environment, use an
-account with channels, or use `settings.oats.aweb.delivery: session`; approved
-mode needs channels too. The provider never reads or changes those variables.
+has no channels. Remove the variable from the launch environment, or use an
+account with channels; approved mode needs channels too. The provider never reads or changes those variables.
 `oats spawn --preview` runs no provider hooks, so it shows no decision statement
 yet, from the provider or the kernel ([oats#912](https://github.com/awebai/oats/issues/912)).
 A confirmed prompt proves no admission, connection, message presentation or
@@ -247,18 +245,26 @@ replay spawn, replace or restart because of that result or `launched:false`.
 Start only after inspection proves the session gone; live prompt intervention
 needs separate explicit operator authorization.
 
-Where broker delivery is authorized, an operator may choose `delivery: session`
-for an unattended home instead, without overriding an explicit native-channel
-requirement.
+For an unattended Claude home, the approved route is recommended.
 
 **The host wake broker** (`aw wake run`, one per host user) wakes every Codex
-home, every `delivery: session` home and every joined team. The provider
-registers a home at spawn and launch. `aw wake register` accepts a
+home, every `delivery: session` home and every joined team, except a Claude
+channel home's joined teams (below). The provider registers a home at spawn and
+launch. `aw wake register` accepts a
 registration even while the daemon is down, and the registration takes
 effect when the daemon starts. Readiness reads the daemon's own status
 (section 7). Without a running daemon, every such home reads `unavailable`
 with `wake-daemon-not-running`, and each joined team adds
 `joined-team-poll-only`.
+
+**Joined teams on a Claude home.** A Claude channel home reads its joined teams
+at task boundaries, as `receive: poll`. That is expected: readiness says
+`joined-team-polled` and needs no broker for those teams, so don't install or
+start one for this. Its default team is unchanged.
+
+Nothing wakes an idle Claude home for joined-team mail. Read that inbox at task
+boundaries. A wake job starts a turn; use one only where
+`oats session inspect --json` shows `wakeHold: on-claims`.
 
 The operator installs it as a per-user service with `oats aweb wake install`,
 run in their own shell (provider 1.28.0; section 8, "Host wake broker
@@ -392,12 +398,14 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | Code | Meaning | Who fixes it |
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
+| `joined-team-polled` | a Claude home reads this joined team at task boundaries, as expected | nobody: expected. Don't install or start the broker for this |
+| `joined-team-broker-unconfirmed` | soul readiness, with no home: the soul joins a team and no broker is confirmed running. It can't see the harness | operator: only if this soul launches on pi or Codex, start the broker. A Claude channel home needs nothing |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or start the broker (`/oats-host-delivery`, Choice 2); if readiness then shows `wake-target-missing` or `wake-stream-missing`, restart the home with the operator's word |
 | `wake-status-timestamp-unknown` | supplied `status.updated_at` is malformed; observation time is unknown, with observed client/daemon versions in the diagnostic | operator: inspect `aw version` and `aw wake status --json`; preserve a sanitized capture for a provider compatibility report |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | operator: upgrade aw, then restart the broker's service (`/oats-host-delivery`, Choice 2) |
-| `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route or `settings.oats.aweb.delivery: session`, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
-| `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag, so the home has no channel delivery. Claude Code disables channels when its launch environment sets `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or when the account or organization has no channels | operator: remove the variable from the launch environment, an account with channels, or `settings.oats.aweb.delivery: session` (then respawn). Approved mode needs channels too |
+| `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
+| `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag, so the home has no channel delivery. Claude Code disables channels when its launch environment sets `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or when the account or organization has no channels | operator: remove the variable from the launch environment, or use an account with channels (then respawn). Approved mode needs channels too |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; the banner check of `/oats-host-delivery`, Choice 1, and the nonce exchange |
 | `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 (`/oats-host-delivery`, Choice 1) |
@@ -535,8 +543,8 @@ as did earlier versions; provider 1.23.0 users follow the reference above.
 
 | Act / prerequisites | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| First hosted account, provider 1.22.2 (#66); selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias>`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
-| Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
+| First hosted account, provider 1.22.2 (#66); selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias> --do-not-touch-agents-md`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
+| Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | `aw init --do-not-touch-agents-md`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
 | Additional controller-owned team, released provider 1.21.1; actual controller authority for owned namespace | `oats aweb setup --soul S --create L --namespace <owned-domain>` | Normalizes label, creates team, accepts/connects a per-team root, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. No invented controller authority. |
 
 For created or joined LOCAL teams, one identity owns each separate `.aw`; never
@@ -546,6 +554,39 @@ root is a placement blocker: select and compose 1.22.0 or later before effects. 
 uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
+
+### attach yourself to the account
+
+An aweb account that `oats aweb setup --username` created has no person on it:
+nobody can sign in to its dashboard, and the root's `.aw/signing.key` is its
+only recovery. The person it belongs to attaches their email to it: ask the
+person for their email address and run the command with exactly that address,
+never a guessed or inferred one.
+
+```bash
+aw --identity-home "<root>/.aw" claim-human --email <their email>
+```
+
+`<root>` is the setup root: `D`, unless `settings.oats.aweb.roots[default:<u>.aweb.ai]`
+or `settings.oats.aweb.root` names another directory.
+
+| aw answers | Meaning |
+|---|---|
+| `Verification email requested for <email>` (`verification_sent`) | aw mailed a link to that address. The account is theirs only once they click the link in that mail. |
+| `Human account <email> is attached` (`attached`) | The address was already verified, so it is attached with no mail. |
+| `Human account <email> is already attached` (`already_attached`) | It was attached before; nothing was sent. |
+
+To check, the person clicks the link first; then run the same command once
+with the same email: `already_attached` means it is done, and no mail is sent. Run before the
+click, it sends another mail and answers `verification_sent` again; that mail
+carries a new link, and the earlier one stops working. (Within 60 seconds of
+the last mail none is sent, and the answer is the same.) So don't rerun it to
+check before they have clicked; if it was rerun, they use the newest mail. No other `aw` read
+shows it:
+`aw whoami` does not name the account's person, and `aw auth status` is this
+host CLI's own login. Signing in to the dashboard with that email also shows it.
+
+The person's own act is clicking the link: the account is theirs only then.
 
 ### LOCAL team join and resume
 

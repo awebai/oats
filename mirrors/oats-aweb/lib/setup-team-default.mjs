@@ -211,7 +211,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     if (!hasIdentity) {
       mkdirSync(root, { recursive: true });
       try {
-        run(['aw', 'init', '--new-account', '--username', username, '--name', name], root, 120000, {
+        run(['aw', 'init', '--new-account', '--username', username, '--name', name, '--do-not-touch-agents-md'], root, 120000, {
           secretSafe: true, secrets: [username], unsetEnv: ['AWEB_API_KEY', 'AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'],
         });
       } catch (error) {

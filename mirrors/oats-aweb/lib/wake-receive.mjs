@@ -51,7 +51,7 @@ export function recordedRuntime(meta, harness) {
  * receipt; only the kernel's recorded launchPrompts.status is. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.",
+  message: "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.claudeChannelMode: approved` stops it.",
 };
 
 /** The kernel's launchPrompts.status when Claude ignored the development-channel
@@ -63,7 +63,7 @@ export const CHANNEL_DEV_CONFIRMATION = {
 export const CHANNELS_UNAVAILABLE_STATUS = 'flag-ignored';
 export const CLAUDE_CHANNELS_UNAVAILABLE = {
   code: 'claude-channels-unavailable',
-  message: 'Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `settings.oats.aweb.delivery: session`.',
+  message: 'Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, or use an account with channels.',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
@@ -154,6 +154,12 @@ function capturedClaudeChannel(meta, hooks, policy, launchPromptStatus) {
 export function runtimeDeliveryFor({delivery, runtime}) {
   if (brokerDelivers({delivery, runtime})) return 'external-session';
   return runtime === 'claude' ? 'native-channel' : 'native-pi';
+}
+
+/** Whether this home reads its joined teams at task boundaries instead of
+ *  through the host wake broker: a Claude channel home does. */
+export function joinedTeamsPolled({delivery, runtime}) {
+  return runtimeDeliveryFor({delivery, runtime}) === 'native-channel';
 }
 
 /** The multi-identity registration document for this home, or null when it
@@ -310,11 +316,14 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
     catch (error) { return fail(error.message); }
     if (channelWarning) warnings.push(channelWarning);
   }
-  const bindings = joined.map(j => ({identity_home: j.identityHome, label: j.label, team: j.team, controls: false, event_classes: ['mail', 'chat']}));
+  // A home whose last sync polled these teams by design owes the broker nothing for them.
+  const polled = native && runtime === 'claude' ? joined.filter(j => j.expectedPoll === true) : [];
+  const brokered = joined.filter(j => !polled.includes(j));
+  const bindings = brokered.map(j => ({identity_home: j.identityHome, label: j.label, team: j.team, controls: false, event_classes: ['mail', 'chat']}));
   // Incomplete projections retain known joins but do not manufacture an exact
   // primary plan from settings or the broker's supplied binding list.
-  if (!incomplete && primaryBroker) bindings.unshift({identity_home: primary, team: meta.identity?.team || meta.team || meta.defaultTeam?.team, label: joined.length ? 'default' : undefined, controls: true, event_classes: []});
-  return {problems: [], warnings, runtimeDelivery, runtime, primary, ...(grant ? {grantHome: primary} : {}), primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0, startedAt: captured.startedAt};
+  if (!incomplete && primaryBroker) bindings.unshift({identity_home: primary, team: meta.identity?.team || meta.team || meta.defaultTeam?.team, label: brokered.length ? 'default' : undefined, controls: true, event_classes: []});
+  return {problems: [], warnings, runtimeDelivery, runtime, primary, ...(grant ? {grantHome: primary} : {}), primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined: brokered, polled, bindings, native, incomplete, brokerRequired: primaryBroker || brokered.length > 0, startedAt: captured.startedAt};
 }
 
 /** Milliseconds since the epoch of an RFC 3339 timestamp as aw writes them,

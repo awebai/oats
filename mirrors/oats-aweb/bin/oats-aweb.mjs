@@ -73,7 +73,7 @@ import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../l
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
-import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
+import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -1218,8 +1218,8 @@ function releaseReceiptStatus(doc) {
 // refusing an external-home self-release on a team that is not hosted, or
 // answering alias_released_reason "team_not_hosted". It decides whether retire
 // may let the member key go, so it is recognized only as aw states it: the
-// whole refusal aw 1.36.23 prints (exit 2, one stderr line, the principal
-// being the identity home it was given), or that JSON field. Never a part of
+// whole refusal (exit 2, one stderr line, the principal being this identity
+// home as aw names it), or that JSON field. Never a part of
 // stderr (an HTTP error's prose may end the same way) and never a message
 // this hook builds (those carry paths and labels). Anything else keeps the key.
 function teamNotHostedRefusal(e, identityHome) {
@@ -1227,6 +1227,12 @@ function teamNotHostedRefusal(e, identityHome) {
   const stderr = String(e?.stderr ?? "").trim();
   const principals = new Set([identityHome]);
   try { principals.add(realpathSync(identityHome)); } catch { /* the given path is the one aw names */ }
+  // aw names a home by the first of these its identity.yaml has, else by its path.
+  try {
+    const identity = readFileSync(join(identityHome, "identity.yaml"), "utf8");
+    const name = ["stable_id", "address", "did"].map((key) => yamlScalar(identity, key)).find(Boolean);
+    if (name) principals.add(name);
+  } catch { /* no identity to name: aw names the path */ }
   return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
 }
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
@@ -1651,7 +1657,8 @@ function primaryIdentityHomeOf(meta = {}) {
 }
 /** Keep the host wake broker's registration for this home in step with the
  *  joined teams, and record each joined team's receive mode. Never throws: a
- *  refused registration leaves that team poll-only with a warning. */
+ *  refused registration leaves that team poll-only with a warning. A home that
+ *  polls them by design registers nothing and records that it expects to. */
 function syncWakeReceive(meta) {
   // A joined home that no longer exists would make aw refuse the whole
   // registration; it is stale provider state, not a receive identity.
@@ -1659,7 +1666,8 @@ function syncWakeReceive(meta) {
   const delivery = meta.delivery || deliveryMode;
   const runtime = instanceRuntime(meta);
   const primary = primaryIdentityHomeOf(meta);
-  const doc = wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
+  const polled = joinedTeamsPolled({ delivery, runtime });
+  const doc = polled ? null : wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
   const warnings = [];
   let receive = "poll", wakeJoined = false;
   if (doc) {
@@ -1672,7 +1680,7 @@ function syncWakeReceive(meta) {
     if (brokerDelivers({ delivery, runtime })) { try { wakeRegister(home, primary); } catch (e) { warnings.push(String(e.message || e)); } }
     else if (!wakeDeregister(home)) warnings.push("aw wake deregister failed; the broker treats a stale registration as inactive on its own");
   }
-  const next = { ...meta, ...(typeof runtime === "string" ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => ({ ...j, receive: joined.includes(j) ? receive : "poll" })) };
+  const next = { ...meta, ...(typeof runtime === "string" ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => { const { expectedPoll: _last, ...team } = j; return { ...team, receive: joined.includes(j) ? receive : "poll", ...(polled ? { expectedPoll: true } : {}) }; }) };
   return { meta: next, warnings };
 }
 
@@ -1685,7 +1693,6 @@ if (event === "launch") {
   // must not enter the renewal helper's retained-grant early return.
   const globalLaunch = identityMode === "global" || started.identity?.mode === "global";
   if (globalLaunch) checkedGrantTTL(); // before preview, broker writes or retained returns
-  const renewalPath = globalLaunch || identitySettings.renew === "launch";
   // Under OATS_LAUNCH_PREVIEW=1 (the kernel's first pass of every start, and
   // `oats launch-config preview`) the hook changes nothing: no broker
   // registration, no renewal, no joined-team sync, no meta. It answers with
@@ -1695,7 +1702,7 @@ if (event === "launch") {
   // the preview names the current one and declares it volatile: the kernel
   // takes its value from the real pass and leaves it out of the comparison.
   if (process.env.OATS_LAUNCH_PREVIEW === "1") {
-    const renews = renewalPath && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
+    const renews = globalLaunch && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
     out({ ...retainedLaunchOutput(started), ...(globalLaunch ? { warning: grantInventoryAdvisory(started.identity?.grant, { retained: true, pending: renews }) } : {}), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
   }
   if (deliveryFor().launch) {
@@ -1704,7 +1711,7 @@ if (event === "launch") {
     if (note) outNotes.push(note);
   }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
-  if (renewalPath) globalGrantRenew(started);
+  if (globalLaunch) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
@@ -1849,6 +1856,16 @@ if (event === "launch") {
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
   const retireWarnings = [];
+  // Use the selected kernel and authoritative hook scope; no event-log writes
+  // or inherited instance selectors. Clear even on an incomplete retirement.
+  try {
+    const {healthHost} = await import('../lib/health-host.mjs');
+    const probe = healthHost({deployment: home, env: process.env});
+    if (await probe.supportsWaiting()) {
+      const host = healthHost({deployment: selectedDeployment(process.env), env: process.env});
+      await host.waiting(home, null);
+    }
+  } catch { retireWarnings.push('oats.aweb attention claim could not be cleared'); }
   const pendingControllerCleanup = [];
   const rememberControllerCleanup = (data) => {
     if (data?.cleanup === "controller") pendingControllerCleanup.push({ label: data.label, team: data.team, alias: data.alias, certificateId: data.certificateId, ...(data.command ? { command: data.command } : {}) });
@@ -2440,8 +2457,8 @@ ${JSON.stringify(problem.details || {})}`);
     }
     console.log(`  Workspace initialized, but no membership matching "${want}".`);
     console.log(`  Existing team path: ask a member for an appropriate invite token, then run \`${setupInviteCommand(defaultTeamLabel())}\` (accepts into the selected per-team root; supply the token on stdin, never in logs or messages).`);
-    console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
-    console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai).");
+    console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init --do-not-touch-agents-md` at the root; the key is never printed).");
+    console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai).");
   };
 
   try {
@@ -2460,8 +2477,8 @@ ${JSON.stringify(problem.details || {})}`);
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
       console.log("  Choose one guided setup path:");
-      console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai");
-      console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init` for the hosted team behind the key");
+      console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai");
+      console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init --do-not-touch-agents-md` for the hosted team behind the key");
       console.log("    oats aweb setup --join <label> --invite <token>    # accepts into a new per-team root");
       console.log("  Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run setup.");
       console.log("  Own your domain? Use the aweb-team-membership skill for BYOT flows.");
@@ -2508,7 +2525,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init"], scope, 120000, { secretSafe: true });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true });
       }
       teams = readTeams();
     }
