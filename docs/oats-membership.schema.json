@@ -11,7 +11,7 @@
     "workspace": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$",
       "description": "Repo ref of the workspace host, without revision."
     }
   }

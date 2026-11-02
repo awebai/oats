@@ -57,7 +57,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 
 | key | meaning |
 |---|---|
-| `workspace` | Repo ref of the workspace host (`git:host/org/repo`, `https://…`, `git@host:…`, `file:///…`, `/abs/bare.git`). Read with your own Git credentials; it need not be cloned. |
+| `workspace` | Repo ref of the workspace host (`git:host/org/repo`, `https://…`, `git@host:…`, `ssh://<user>@<host>[:<port>]/…` with no password, `file:///…`, `/abs/bare.git`). Read with your own Git credentials; it need not be cloned. |
 | `standalone` | A repo ref to realize on its own: its souls and `from: here` capabilities plus `oats.core`, with no workspace lookup. For a repository whose workspace this machine cannot read ([workspaces.md](workspaces.md#the-standalone-case)). |
 | `clones` | `<repo key>: <absolute path>` for a member clone that is not at `<deployment>/<member name>/`. Only a soul whose work target needs a clone (`work: worktree \| checkout`) uses it. Lookup order: `spawn --repo`, then this map, then `<deployment>/<member name>` (a member named `agents` → `<deployment>/agents-repo`). None → `E_CLONE_MISSING`; a directory whose `origin` is another repository → `E_CLONE_MISMATCH`. |
 | `launchPromptAnswers` | Ignored, with a warning to remove it; a home entry `awebDevelopmentChannel: false` is refused. See [the development-channel confirmation](#the-development-channel-confirmation). |

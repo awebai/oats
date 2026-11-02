@@ -72,12 +72,12 @@
     "memberRef": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
-      "description": "A repo ref (git:<host>/<path>, https://…, git@host:path.git, file:///…) with NO @revision."
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$",
+      "description": "A repo ref (git:<host>/<path>, https://…, git@host:path.git, ssh://<user>@<host>[:<port>]/<path> with no password, file:///…) with NO @revision."
     },
     "pinnedRef": {
       "type": "string",
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)@[0-9a-f]{40}$",
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)@[0-9a-f]{40}$",
       "description": "<repo ref>@<full 40-hex commit OID>."
     },
     "repoKey": {
