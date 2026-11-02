@@ -133,8 +133,8 @@ only the secrets, the logins and the installs that capture their shell.
        `.gitignore`, then the files that may hold a password or key:
 
        ```bash
-       T=$(mktemp -d) && git init -q "$T" && git --git-dir="$T/.git" --work-tree="<dir>" ls-files --others --exclude-standard
-       T=$(mktemp -d) && git init -q "$T" && P='BEGIN [A-Z ]*PRIVATE KEY|(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_-]*[[:space:]]*[:=]' && git --git-dir="$T/.git" --work-tree="<dir>" ls-files -z --others --exclude-standard | (cd "<dir>" && grep -zv '/$' | xargs -0 grep -IilE "$P")
+       T=$(mktemp -d) && git init -q "$T" && git --git-dir="$T/.git" --work-tree="<dir>" ls-files --others --exclude-standard; rm -rf "$T"
+       T=$(mktemp -d) && git init -q "$T" && P='BEGIN [A-Z ]*PRIVATE KEY|(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_-]*[[:space:]]*[:=]' && git --git-dir="$T/.git" --work-tree="<dir>" ls-files -z --others --exclude-standard | (cd "<dir>" && grep -zv '/$' | xargs -0 grep -IilE "$P"); rm -rf "$T"
        ```
 
        A line ending in `/` is a nested folder with its own `.git`: a
@@ -155,7 +155,15 @@ only the secrets, the logins and the installs that capture their shell.
        ```
 
        Uncommitted changes stay behind unless they are committed first,
-       shown and on their yes.
+       shown and on their yes. GitHub refuses a push whose history holds a
+       file over 100 MB; list any such file by name:
+
+       ```bash
+       git -C "<dir>" rev-list --objects --all | git -C "<dir>" cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1 == "blob" && $2 > 100000000 { print $3 }'
+       ```
+
+       If it names one, push nothing: offer a fresh repository of the
+       current files without it, or keeping the project local.
      - **Secrets, decided in two kinds:**
        - **Certain:** a file named like one (`.env`, key and credential
          files; in a repository with commits, also anywhere in
