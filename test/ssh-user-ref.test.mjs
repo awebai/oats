@@ -4,18 +4,22 @@
 // is always the pin. A password, an empty user and a second user stay refused, and no refusal prints a password.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateLocal, validateMembership, validateWorkspace } from "../lib/workspace.mjs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadLocal, validateLocal, validateMembership, validateWorkspace } from "../lib/workspace.mjs";
 
 const PIN = "0123456789abcdef0123456789abcdef01234567";
 const PASSWORD = "K1_PASSWORD_TOKEN";
 const ref = "ssh://tester@10.0.2.2:2222/srv/notes.git";
-const refused = [`ssh://tester:${PASSWORD}@10.0.2.2/srv/notes.git`, "ssh://@10.0.2.2/srv/notes.git", "ssh://a@b@10.0.2.2/srv/notes.git"];
+const refused = [`ssh://tester:${PASSWORD}@10.0.2.2/srv/notes.git`, `ssh://tester%3A${PASSWORD}@10.0.2.2/srv/notes.git`, "ssh://@10.0.2.2/srv/notes.git", "ssh://a@b@10.0.2.2/srv/notes.git", "ssh://-oProxyCommand=x@10.0.2.2/srv/notes.git"];
 
 const files = {
   "oats-local.yaml workspace": (r) => validateLocal({ schemaVersion: 2, workspace: r }),
   "oats-local.yaml standalone": (r) => validateLocal({ schemaVersion: 2, workspace: "git:github.com/acme/acme-oats", standalone: r }),
   "oats-membership.yaml workspace": (r) => validateMembership({ schemaVersion: 2, workspace: r }),
   "oats-workspace.yaml members": (r) => validateWorkspace({ schemaVersion: 2, name: "fixture", members: [r] }),
+  "oats-workspace.yaml stores": (r) => validateWorkspace({ schemaVersion: 2, name: "fixture", members: [], stores: { notes: r } }),
 };
 const pinned = (source) => validateWorkspace({ schemaVersion: 2, name: "fixture", members: [], external: [{ source, soul: "souls/x" }] });
 
@@ -39,4 +43,10 @@ test("a password, an empty user and a second user stay refused, pinned or not, a
     assert.ok(problems.some((p) => p.path === "/external/0/source"), `pinned: ${bad}`);
     assert.ok(!JSON.stringify(problems).includes(PASSWORD), "a pinned refusal prints no password");
   }
+});
+
+test("oats-local.yaml with an ssh:// user loads", () => {
+  const dir = mkdtempSync(join(tmpdir(), "oats-ssh-user-"));
+  writeFileSync(join(dir, "oats-local.yaml"), JSON.stringify({ schemaVersion: 2, workspace: ref }));
+  assert.equal(loadLocal(dir).local.workspace, ref);
 });

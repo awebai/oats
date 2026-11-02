@@ -350,7 +350,7 @@ test("configured member refusals retain the clause through schema wrapping, whil
   assert.equal(e.details.path, "oats-workspace.yaml");
   assert.equal(e.message.split(clause).length - 1, 2, "once per originating refusal, not once per combined error");
   assert.deepEqual(e.details.problems, https.flatMap((_, i) => [
-    { path: `/members/${i}`, message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|ssh:/{2}[^@\\s/:]+@[^@\\s]+|[^@\\s]+)$` },
+    { path: `/members/${i}`, message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$` },
   ]).concat(https.map((_, i) => ({ path: `/members/${i}`, message: `not a repo ref: ${httpUserinfoReason(`https://${host}/${path}`)} ${clause}` }))));
   assert.equal(e.provenance.problems, e.details.problems);
   const local = scratch();
@@ -358,7 +358,7 @@ test("configured member refusals retain the clause through schema wrapping, whil
   const localError = await refused(() => loadLocal(local));
   safeError(localError, "E_WORKSPACE_SCHEMA");
   assert.ok(!localError.message.includes(clause));
-  assert.deepEqual(localError.details.problems, [{ path: "/workspace", message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|ssh:/{2}[^@\\s/:]+@[^@\\s]+|[^@\\s]+)$` }]);
+  assert.deepEqual(localError.details.problems, [{ path: "/workspace", message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$` }]);
 });
 
 test("one renderer separates selected reference display from whole Git-line withholding", () => {
@@ -450,6 +450,9 @@ test("configured reference fields and package refusals redact without admitting 
   const pkg = validateWorkspace({ schemaVersion: 2, name: "fixture", members: [], packages: { "fixture.pkg": `git:${sshUser}@v1` } });
   assert.ok(pkg.some((p) => p.path === "/packages/fixture.pkg"));
   noTokens(pkg);
+  const pkgError = await refused(() => parsePackageRequest("fixture.pkg", `git:${sshUser}@v1`, {}));
+  safeError(pkgError, "E_REPO_REF");
+  assert.equal(pkgError.details.path, "/packages/fixture.pkg");
 });
 
 test("catalog source reaches real remote refusal rendering", async () => {
@@ -474,7 +477,7 @@ test("refusal rendering preserves hosts, paths, fixed prose and schema patterns 
     assert.equal(e.details.ref, clean);
     const before = validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] });
     assert.deepEqual(before, [
-      { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|ssh:/{2}[^@\\s/:]+@[^@\\s]+|[^@\\s]+)$` },
+      { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$` },
       { path: "/members/0", message: `not a repo ref: ${reason} ${explanation}` },
     ]);
     if (clean === WITHHELD) continue; // This malformed value has no display components.
