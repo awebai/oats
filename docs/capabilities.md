@@ -75,7 +75,8 @@ A self-contained package has an `oats.json`:
   without `--soul`, the first soul of the deployment by name, not disabled
   there, whose resolution provides the namespace (souls whose resolution is
   refused are skipped). The chosen soul is named on stderr (`oats <namespace>:
-  no --soul given; running as soul <member>/<soul>, …`), so the command's
+  using the settings and team of soul <member>/<soul>, …`): the command runs
+  with that soul's settings and team, never as that soul. So the command's
   stdout, its `--json` envelope included, is the provider's alone. When no
   soul provides the namespace, the command is refused with `E_BAD_ARGS` (`no
   soul of this deployment provides the <namespace> namespace; pass --soul
