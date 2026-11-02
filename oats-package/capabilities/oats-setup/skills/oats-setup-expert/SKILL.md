@@ -40,7 +40,7 @@ question and message:
 - Say "your agents' shared setup" for the workspace, "your project" or
   "your code on GitHub" for a repository or a member, "the group your agents
   talk in" for the team, "the folder where your agents live" for `D`, and
-  "the setup assistant, listed as `<your name>` in the Desktop" for
+  "the setup assistant, listed as `<your name>` in the Desktop or the TUI" for
   yourself.
 - Avoid OATS's and Git's own words, for example repository, member, host,
   workspace file, soul, instance, root, harness, readiness, deployment,
