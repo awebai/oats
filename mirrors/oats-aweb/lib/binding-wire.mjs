@@ -9,6 +9,7 @@ import { channelConnection, channelReadiness } from './claude-channel.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
+import {healthSettings} from './health-settings.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import {
@@ -93,7 +94,8 @@ function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join']:['delivery','claudeChannelMode','root','roots','join'],[]);
+  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join','health']:['delivery','claudeChannelMode','root','roots','join'],[]);
+  if(phase==='check') {try {healthSettings(value);} catch {wireError('needs-configuration');}}
   if(phase!=='check') {try {selectClaudeChannel(value.claudeChannelMode);} catch {wireError('needs-configuration');}}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
@@ -175,17 +177,23 @@ function workspaceReadinessContext(value) {
 }
 export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export { AW_MIN } from './aw-floor.mjs';
-import { AW_MIN } from './aw-floor.mjs';
+import { AW_MIN, parseVersion, versionAtLeast } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
 export const unmappedDefaultMessage=(label)=>`the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: \`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the workspace doesn't allow local teams`;
-const AW_VERSION_RE=/aw\s+v?(\d+\.\d+\.\d+)/;
-/** The installed aw version ("x.y.z"), or undefined when it cannot be read.
+// The version token after `aw`: while output streams in, only a token something
+// has followed is complete (`aw 1.36.53` may still grow `-rc.3`); at close the
+// end of the text completes it too.
+const AW_VERSION_STREAM_RE=/aw\s+v?(\d[0-9A-Za-z.+-]*)(?=[^0-9A-Za-z.+-])/;
+const AW_VERSION_RE=/aw\s+v?(\d[0-9A-Za-z.+-]*)(?![0-9A-Za-z.+-])/;
+const versionToken=(re,text) => {const m=re.exec(text);return m && (parseVersion(m[1]) ? m[1] : undefined);};
+/** The installed aw version ("x.y.z", with its pre-release if any), or undefined when it cannot be read.
  *  `aw version` prints its version line first and then makes a blocking update
  *  check against GitHub (aw 1.36.17 cmd/aw/root.go versionCmd, which ignores
- *  AW_NO_UPDATE_CHECK), so the reader resolves at the first stdout match and
- *  kills the child instead of waiting for it. The ceiling still bounds a child
+ *  AW_NO_UPDATE_CHECK), so the reader resolves once the version token is
+ *  complete and kills the child instead of waiting for it. A token that isn't
+ *  semver is unreadable. The ceiling still bounds a child
  *  that never prints; a child that exits without a match is unreadable. The
  *  promise settles only after the child has exited, so no aw is left behind. */
 export function readAwVersion({timeout=10000,env=process.env}={}) {
@@ -199,9 +207,9 @@ export function readAwVersion({timeout=10000,env=process.env}={}) {
     timer=setTimeout(() => decide(undefined),timeout);
     child.on('error',() => {exited=true;decide(undefined);settle(answer);});
     child.on('exit',() => {exited=true;if(decided) settle(answer);});
-    child.on('close',() => decide(AW_VERSION_RE.exec(text)?.[1]));
+    child.on('close',() => decide(versionToken(AW_VERSION_RE,text)||undefined));
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data',(chunk) => {text=(text+chunk).slice(-4096);const m=AW_VERSION_RE.exec(text);if(m) decide(m[1]);});
+    child.stdout.on('data',(chunk) => {text=(text+chunk).slice(-4096);const v=versionToken(AW_VERSION_STREAM_RE,text);if(v!==null) decide(v);});
   });
 }
 const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
@@ -273,7 +281,6 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}
 }
-function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
 /** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
 export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
@@ -281,15 +288,14 @@ async function awFloorObservation({env=process.env}={}) {
   if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
   const version=await readAwVersion({env});
   if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
-  return {version,message:semverLt(version,AW_MIN)?`aw ${version} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined};
+  return {version,message:!versionAtLeast(version,AW_MIN)?`aw ${version} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined};
 }
 /** Why the aw on PATH does not meet AW_MIN, or undefined when it does: the one
  *  wording every path that refuses below the floor uses. `env` is the PATH to
  *  search and the environment `aw version` runs in. */
 export async function awFloorMessage(options){return (await awFloorObservation(options)).message;}
-/** Whether a spawn from these soul-scope settings needs the host wake broker:
- *  session delivery, or a joined team (a Codex launch is not visible here). */
-function soulNeedsBroker(settings) {return settings.delivery==='session' || (typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim()));}
+/** Whether these soul-scope settings join a team: a non-empty `join`. */
+function soulJoinsTeams(settings) {return typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim());}
 /** The kernel's captured per-leaf settings origins for a home (JSON pointer to
  *  {kind,at}); anything unparseable is no origin. */
 function settingsOrigins(env) {try {const origins=JSON.parse(env.OATS_SETTINGS_ORIGINS??'');return obj(origins)?origins:undefined;} catch {return undefined;}}
@@ -300,6 +306,10 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
   const details=await readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
+  // Soul scope has no captured harness: only explicit session delivery proves
+  // that its primary will use the broker. Home scope uses expectedReceive's
+  // captured runtime/delivery (including Codex on channel settings).
+  let primaryBroker = !ctx.home && req.settings.delivery === 'session';
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
@@ -343,8 +353,10 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // after configuration and custody checks succeed.
   if(ctx.home && !problems.length) {
     const expected=expectedReceive(ctx.home,{delivery:req.settings.delivery||'channel'});
+    primaryBroker = expected.primaryBroker === true;
     receiveProblems.push(...expected.problems);
     warnings.push(...(expected.warnings||[]));
+    for(const team of expected.polled||[]) warnings.push({code:'joined-team-polled',message:`joined team ${team.label} is read at task boundaries on this Claude home, as expected. An idle session doesn't read its mail until something else wakes it. No wake broker is needed for this team.`});
     if(!expected.problems.length) {
       // A Claude channel home is on the channel only with Claude's own
       // registration line from after its last start (awebai/oats#981).
@@ -370,11 +382,21 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     }
   }
   // Soul scope has no target row: only the daemon a spawn will need, read once.
-  if(!ctx.home && !problems.length && soulNeedsBroker(req.settings)) {
+  // It sees no harness either, so a join alone can't say the daemon is needed.
+  const session=req.settings.delivery==='session';
+  if(!ctx.home && !problems.length && (session || soulJoinsTeams(req.settings))) {
     let status;
     try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.deployment));} catch { /* unavailable below */ }
     const daemon=wakeDaemonAssessment(status,{minimumVersion:AW_MIN});
-    receiveProblems.push(...daemon.problems);warnings.push(...daemon.warnings);
+    warnings.push(...daemon.warnings);
+    if(session) receiveProblems.push(...daemon.problems);
+    else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home. A Claude channel home reads its joined teams at task boundaries and needs no broker.'});
+  }
+  const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
+  if (primaryBroker && !excludedGrantSeat && !problems.length && req.settings.health?.publish === true) {
+    let countOnly = false;
+    try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
+    if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});
   }
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};

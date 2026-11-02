@@ -17,6 +17,7 @@ import { lingerEnabled, manage, managed, runningPid, samePath, searchPath, syste
 import { kernelQueryEnvironment } from "./session-readiness.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
 import { expectedReceive, statusListsHome } from "./wake-receive.mjs";
+import { parseVersion, versionAtLeast } from "./aw-floor.mjs";
 
 export const WAKE_LABEL = "ai.aweb.wake";
 export const WAKE_USAGE = "usage: oats aweb wake install [--plan] [--linger-required] [--json] | oats aweb wake status [--json] | oats aweb wake uninstall [--plan] [--json]";
@@ -420,7 +421,6 @@ export function uninstallWake(opts, ctx) {
   return { ok: true, unit: { ...unit, removed: true } };
 }
 
-const versionBelow = (a, b) => { const A = a.split(".").map(Number), B = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (A[i] !== B[i]) return A[i] < B[i]; return false; };
 
 /** The deployment's instance homes, from one read-only `oats status --json`
  *  through the kernel that dispatched this command (OATS_CLI_BIN). */
@@ -451,7 +451,7 @@ export async function wakeStatus(opts, ctx) {
   const reader = awOnPath ?? unit.aw;
   const status = reader ? readWakeStatus(reader, env, home) : undefined;
   const daemon = { ...daemonOf(status), readable: !!status, floor: { min: AW_MIN, ok: null } };
-  if (daemon.version && /^\d+\.\d+\.\d+$/.test(daemon.version)) daemon.floor.ok = !versionBelow(daemon.version, AW_MIN);
+  if (parseVersion(daemon.version)) daemon.floor.ok = versionAtLeast(daemon.version, AW_MIN);
   const found = deploymentHomes(env, opts.dir);
   let homes = { known: false, reason: found.reason };
   if (found.known) {
