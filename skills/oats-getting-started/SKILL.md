@@ -226,7 +226,9 @@ before you go on. The rules for each value follow.
   terminal client or decline the Desktop.
 - **The name on their commits:** whenever step 2's checks printed
   `NO_GIT_IDENTITY`; drop it if they join an existing workspace (step 7
-  commits only for a new one). Default: their computer account's full name
+  commits only for a new one). Default: the name Git already has
+  (`git config --global user.name`), when it has one; else their computer
+  account's full name
   (`getent passwd "$(id -un)" | cut -d: -f5 | cut -d, -f1` on Linux, `id -F`
   on macOS); when that is empty or just their login name capitalised
   (`Ubuntu` for `ubuntu`), their GitHub profile name, found after step 3
@@ -536,7 +538,6 @@ Categories=Development;
   started no download; say so and go on.
 
 **Don't start the Desktop yet;** step 10 starts it on the new deployment.
-
 
 ## 5. Optional: the team on your own aweb account
 
