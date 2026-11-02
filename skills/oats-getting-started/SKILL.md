@@ -696,7 +696,8 @@ line to spawn it with. For a new workspace it names `oats.framework`'s
 carries another name or no `--name`, the text output of `oats onboard` says
 why. `S` is the soul it names.
 - **An existing workspace's name** is its `--name` without the trailing
-  `-oats-setup-expert` (`acme`); with no `--name` there, keep step 1's.
+  `-oats-setup-expert` or `-oats-setup` (`acme`); with no `--name` there,
+  keep step 1's.
 - **On a machine found-list,** `S` is `oats.machine/steward`. An existing
   workspace that doesn't offer it: stop, and say that its owner adds
   `oats.machine` to its `packages:`.
@@ -822,9 +823,10 @@ stop if its readiness still reports a problem.
    don't rerun the signup or the join. You can't see the join's own output
    (it ran in their window, and the provider withholds it). When another
    machine of the same name may already be in the team, say that a taken
-   name is a likely cause: the member's agent can look for `A` in
-   `oats aweb roster --label L`, and the fix (a new invite and a name for
-   this machine) is the workspace owner's to decide. Never take the other
+   name is a likely cause: the person who invited them can ask their own
+   agent whether this machine's name is already in the group (its agent
+   reads `oats aweb roster --label L`), and the fix (a new invite and a
+   name for this machine) is the workspace owner's to decide. Never take the other
    machine's name.
 
 The setup expert does the rest of this machine's messaging
@@ -943,8 +945,11 @@ When that is longer than 64 characters, shorten this machine's name to fit
 by cutting characters from its end (and any `-` left last), so a rerun
 derives the same name. A rerun on this machine then finds its own setup
 expert (`E_INSTANCE_NAME_TAKEN`, below). A machine that is renamed gets a
-new setup expert; the one under the old name is retired by its agent. A new
-workspace keeps `next.spawn` as it is.
+new setup expert; the one under the old name is retired by its agent. When
+`next.spawn` has no `--name` (a very long workspace name), there is no name
+to extend: before spawning, look in `oats status --dir D --json` for a setup
+expert of `S` already here, and open that one instead of spawning a second.
+A new workspace keeps `next.spawn` as it is.
 
 **Preview the spawn, read it, then spawn,** with step 8's `next.spawn` line
 plus the hand-over:
