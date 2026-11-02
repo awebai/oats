@@ -104,30 +104,74 @@ only the secrets, the logins and the installs that capture their shell.
    plainly what it changes.
 3. **The person's repositories as members.** A member is a repository OATS
    reads over Git, so a project that lives only on this computer comes first:
-   - **A project only on this computer** (a folder the intake names whose
-     `git -C <dir> remote -v` prints nothing, or that is no Git repository):
-     put it on GitHub only on the person's yes. Before you ask, show them
-     what would be pushed: the files (`git -C <dir> ls-files` once it is a
-     repository, else the folder's files, without those its `.gitignore`
-     leaves out), and leave out anything that looks like a secret (`.env`,
-     keys, credentials), naming it, unless they say otherwise. Propose a
-     private repository under their GitHub login, named after the folder.
-   - **On their yes:** first add what you left out to the folder's
-     `.gitignore`. If it is no repository yet, make it one and commit its
-     files, with the Git identity `/oats-git-setup` checks (or GitHub's
-     noreply address, as the entry skill did); a repository with commits
-     skips this line. Then create the GitHub repository and push:
+   - **A project only on this computer:** a folder the intake names that is
+     not its own repository with a GitHub remote. It is its own repository
+     when `git -C "<dir>" rev-parse --show-toplevel` is `<dir>` itself
+     (compare real paths): a folder inside another repository is not, and
+     gets its own new repository below, never the parent's. Put it on
+     GitHub only on the person's yes, as a private repository under their
+     GitHub login named after the folder (letters, digits, `-`, `_`, `.`;
+     check the name is free with `gh repo view "<owner>/<name>"`), unless
+     they ask for a public one (`--public`; say anyone can then see it). In
+     an existing workspace whose host is public, tell them first that a
+     private project can't join it (`/oats-onboarding` card 3).
+   - **Before you ask, find what would be pushed,** without changing the
+     folder:
+     - **A new repository** (no repository of its own yet): list what Git
+       would take, honouring `.gitignore`:
+
+       ```bash
+       T=$(mktemp -d) && git init -q "$T" && git --git-dir="$T/.git" --work-tree="<dir>" ls-files --others --exclude-standard
+       ```
+
+       Propose leaving out dependency and build folders (`node_modules`,
+       virtual environments, build output) and files over 50 MB
+       (`find "<dir>" -type f -size +50M`; GitHub refuses over 100 MB). A
+       nested folder with its own `.git` is a project of its own: ask
+       whether to leave it out or treat it separately.
+     - **A repository with commits and no remote:** what is pushed is its
+       current branch (`git -C "<dir>" branch --show-current`, which becomes
+       GitHub's main branch) with all its history:
+       `git -C "<dir>" ls-tree -r --name-only HEAD` and, for names in its
+       history, `git -C "<dir>" log --all --format= --name-only | sort -u`.
+       Uncommitted changes stay behind unless they are committed first,
+       shown and on their yes.
+     - **Secrets:** look for files that look like one, by name (`.env`, key
+       and credential files) and by content (`grep -rIl -E 'BEGIN [A-Z ]*PRIVATE KEY|(api[_-]?key|secret|token|password)[[:space:]]*[:=]'`
+       over those files). A new repository leaves them out (below). In a
+       repository with commits, a secret that is tracked now or appears in
+       its history means push nothing: ask whether to put up a fresh
+       repository of the current files without the secrets, or keep the
+       project local.
+   - **Ask, showing it:** the files (grouped by top-level folder, with
+     counts, when there are many), what you leave out and why, and, when
+     `<dir>/.github/workflows` exists, that putting it on GitHub also starts
+     the automations in it. For example: "Your agents work on code kept on
+     GitHub. I can put your `notes-app` folder there as a private project
+     only you can see. These files would go up; I'll leave out `.env`,
+     which looks like a password file. OK?"
+   - **On their yes, a new repository:** add what you leave out to the
+     folder's `.gitignore`, then, as separate steps:
 
      ```bash
-     git -C "<dir>" init -b main && git -C "<dir>" add -A && git -C "<dir>" commit -m "First commit"
+     git -C "<dir>" init -b main && git -C "<dir>" add -A
+     git -C "<dir>" diff --cached --name-only
+     git -C "<dir>" commit -m "First commit"
      gh repo create "<owner>/<name>" --private --source "<dir>" --remote origin --push
      ```
 
-     Before the commit, `git -C "<dir>" status --short` must list only what
-     you showed them.
-
-     Then check `gh repo view "<owner>/<name>" --json visibility` says
-     `PRIVATE`, and go on with it as one of their repositories below.
+     The staged list (the second line) must be exactly what you showed;
+     on any difference, or a warning about an embedded repository, stop and
+     ask before the commit. If `git config user.email` prints nothing,
+     commit with `-c user.name="<their name>" -c user.email="<noreply>"`,
+     the noreply address from
+     `gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'`, after
+     they confirm their name. An empty folder has nothing to put up: ask.
+   - **On their yes, a repository with commits:** only the `gh repo create`
+     line, which pushes its current branch.
+   - **Then check** that `gh repo view "<owner>/<name>" --json visibility`
+     says `PRIVATE` (unless they chose public), and go on with it as one of
+     their repositories below.
    - **On their no:** create nothing. Tell them their agents can't work on
      that project until its code is on GitHub, and record it as open in the
      hand-back.
