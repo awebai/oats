@@ -180,7 +180,7 @@ the final values in one short message before you go on. The rules:
   names every member.
 - **Messaging between agents:** which messaging capability, or none. The
   default, and the one this skill sets up, is aweb (`oats.aweb`): agents
-that can mail each other can coordinate. For
+  that can mail each other can coordinate. For
   another, leave messaging out here: the setup expert adds it. A new
   workspace with aweb gets an aweb account of its own, which step 9 creates
   with no sign-in:
@@ -1030,8 +1030,8 @@ done.
   person pastes one anyway, don't repeat it, and tell them to rotate it.
 - **Overwrite or re-onboard** a deployment, edit an existing deployment's
   files (`oats-local.yaml`, `oats-lock.json`, `agents/`), touch `D/.aw`, or
-  push to a repository other than the host they agreed to in step 1 (step 6
-  creates or clones it).
+  push to a repository other than the new workspace's host they agreed to in
+  step 1 (step 6 creates or clones it).
 - **Guess the team id:** it is the signup's `default:N.aweb.ai`, checked in
   step 9, or step 5's answer after its sign-in.
 - **Write a setup soul into the workspace:** the setup expert is
