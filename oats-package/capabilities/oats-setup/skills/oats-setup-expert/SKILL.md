@@ -156,10 +156,11 @@ only the secrets, the logins and the installs that capture their shell.
 
        Uncommitted changes stay behind unless they are committed first,
        shown and on their yes. GitHub refuses a push whose history holds a
-       file over 100 MB; list any such file by name:
+       file over 100 MiB; list any such file in the branch's history by
+       name:
 
        ```bash
-       git -C "<dir>" rev-list --objects --all | git -C "<dir>" cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1 == "blob" && $2 > 100000000 { print $3 }'
+       git -C "<dir>" rev-list --objects HEAD | git -C "<dir>" cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' | awk '$1 == "blob" && $2 > 104857600 { sub(/^[^ ]+ [^ ]+ /, ""); print }'
        ```
 
        If it names one, push nothing: offer a fresh repository of the

@@ -46,6 +46,6 @@ test("a local-only project is put on GitHub only on the person's yes, private, w
   at("record it as open in the hand-back");
   // The release lane's follow-ups: the scratch repositories are removed, and a history file over 100 MB is caught.
   assert.equal(step.split('rm -rf "$T"').length - 1, 2, "both preview blocks remove their scratch repository");
-  at("awk '$1 == \"blob\" && $2 > 100000000 { print $3 }'");
+  at("awk '$1 == \"blob\" && $2 > 104857600 { sub(/^[^ ]+ [^ ]+ /, \"\"); print }'");
   at("If it names one, push nothing: offer a fresh repository");
 });
