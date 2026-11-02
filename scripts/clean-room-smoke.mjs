@@ -318,7 +318,7 @@ try {
   assert.ok(!existsSync(join(deployment, ".oats", "modules")), "a refused dispatch fetches nothing");
   // The same soul answers with and without --soul (read-only: okf init refuses to run twice).
   const helpDefault = cliRun(["okf", "--help", "--json"]);
-  assert.match(helpDefault.stderr, /oats okf: using the settings and team of soul [\w.-]+\/probe, the first soul by name in this deployment that provides "okf"/, helpDefault.stderr);
+  assert.match(helpDefault.stderr, /oats okf: using the settings and teams of soul [\w.-]+\/probe, the first soul by name in this deployment that provides "okf"/, helpDefault.stderr);
   assert.deepEqual(JSON.parse(helpDefault.stdout), JSON.parse(cli(["okf", "--help", "--soul", "probe", "--json"])), "without --soul the dispatch resolves as --soul probe");
   // The 5.0 package is synced, but the explicit old host key still blocks use.
   // Both a command and a new spawn must name the supported cleanup remedy.
@@ -343,7 +343,7 @@ try {
 
   // The init itself, without --soul: the default soul's run is the real one.
   const defaultInit = cliRun(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"]);
-  assert.match(defaultInit.stderr, /using the settings and team of soul [\w.-]+\/probe,/, defaultInit.stderr);
+  assert.match(defaultInit.stderr, /using the settings and teams of soul [\w.-]+\/probe,/, defaultInit.stderr);
   const initEnvelope = JSON.parse(defaultInit.stdout);
   assert.equal(initEnvelope.schemaVersion, 1, defaultInit.stdout); assert.equal(initEnvelope.ok, true, defaultInit.stdout);
   const okfInitAnswer = initEnvelope.result;

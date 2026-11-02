@@ -3893,7 +3893,7 @@ async function capabilityCommand() {
     if (!hit) return NOT_DISPATCHED;
     // Without --soul the dispatch chose the soul (feature operator-default-soul): say which, on stderr,
     // so a provider's stdout (its --json envelope included) is untouched.
-    if (hit.defaultSoul) process.stderr.write(`oats ${cmd}: using the settings and team of soul ${hit.defaultSoul}, the first soul by name in this deployment that provides "${cmd}"; pass --soul <name> to use another\n`);
+    if (hit.defaultSoul) process.stderr.write(`oats ${cmd}: using the settings and teams of soul ${hit.defaultSoul}, the first soul by name in this deployment that provides "${cmd}"; pass --soul <name> to use another\n`);
     // The same team/workspace facts a spawn hook receives (lead decision c3-7).
     const teamCtx = teamEnv(resolvedFromPrepared(hit.prepared, hit.deployment));
     // No home, so no recorded soul: OATS_SOUL is the soul's source at the resolved commit, read

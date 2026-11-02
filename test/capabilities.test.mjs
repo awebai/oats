@@ -652,7 +652,7 @@ test("operational commands are gated by active instance metadata; doctor exposes
   // --soul's, or without it the first soul that provides the namespace (named on stderr).
   let r = fx.cli(["ops", "ping"]);
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
-  assert.match(r.stderr, /oats ops: using the settings and team of soul [\w.-]+\/dev,/);
+  assert.match(r.stderr, /oats ops: using the settings and teams of soul [\w.-]+\/dev,/);
   r = fx.cli(["ops", "ping", "--soul", "plain"]);
   assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
   r = fx.cli(["ops", "ping", "--soul", "dev"]);

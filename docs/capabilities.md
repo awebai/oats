@@ -74,10 +74,11 @@ A self-contained package has an `oats.json`:
   resolves as a spawn of a soul would: the soul named by `--soul <name>`, or,
   without `--soul`, the first soul of the deployment by name, not disabled
   there, whose resolution provides the namespace (souls whose resolution is
-  refused are skipped). The chosen soul is named on stderr (`oats <namespace>:
-  using the settings and team of soul <member>/<soul>, …`): the command runs
-  with that soul's settings and team, never as that soul. So the command's
-  stdout, its `--json` envelope included, is the provider's alone. When no
+  refused are skipped). The chosen soul is named on stderr, so the command's stdout, its
+  `--json` envelope included, is the provider's alone: `oats <namespace>:
+  using the settings and teams of soul <member>/<soul>, …`. The command runs
+  with that soul's resolution (its provider settings, its teams, its source
+  and its name, in the variables below) and starts no instance of it. When no
   soul provides the namespace, the command is refused with `E_BAD_ARGS` (`no
   soul of this deployment provides the <namespace> namespace; pass --soul
   <name>`, with any skipped souls and their codes in `details.skipped`).
