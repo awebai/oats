@@ -136,7 +136,8 @@ test("the default new workspace signs up without a sign-in, and the team id it w
   assert.ok(flat.indexOf("test -e \"D/.aw\" && echo RETAINED") < flat.indexOf("Ask the person for another `N`"), "the rename is gated on no retained root");
   assert.ok(flat.includes("**Nothing printed:** aw kept nothing, so `N` is free to change."));
   assert.ok(flat.includes("**`RETAINED`:** the run left a root. Keep `N` and the team line, and run the preview again, unchanged."));
-  assert.ok(flat.includes("this is the workspace's team, on an aweb account created for it; they attach themselves to it in the setup expert's first steps"));
+  assert.ok(flat.includes("this is the workspace's team, on an aweb account created for it; they attach themselves to it later in the setup, with the setup expert"));
+  assert.ok(!flat.includes("setup expert's first steps"), "attaching comes later in the setup, not first (#1665 campaign, ux2)");
 });
 
 test("only the sign-in route says the team is owned by the person's account", () => {
@@ -148,3 +149,24 @@ test("only the sign-in route says the team is owned by the person's account", ()
   }
   assert.ok(!/owned by your account/.test(read("README.md")), "the README's default path says nothing about ownership");
 });
+
+// The onboarding VM campaign's newcomer runs (#1665): what the person is asked to do, and what changes on their computer.
+test("getting-started: one yes covers the computer's changes; the person never types a command", () => {
+  const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(flat.includes("Never run `sudo` for something that was not on that list, even where no password is asked"));
+  assert.ok(flat.includes("Never ask them to type a command, with `!` or otherwise."));
+  assert.ok(flat.includes("run that command in their own terminal, which you open for them with the command already in it"), "a step the harness refuses runs in a window the agent opens");
+  assert.ok(flat.includes("for l in libasound.so.2 libfuse.so.2; do ldconfig -p"), "the Desktop's system libraries are checked before the install, not discovered by a failed start");
+  assert.ok(!flat.includes("ask them to restart you"));
+  assert.ok(!flat.includes("ask for it, and suggest none"), "the folder where agents live has a default");
+});
+
+test("getting-started: an existing workspace names its setup expert after this machine, and joins with the invite's service URL", () => {
+  const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(flat.includes("`--name <workspace>-<this machine>-oats-setup-expert`"));
+  assert.ok(flat.includes("short hostname (never the full domain name)"));
+  assert.ok(flat.includes("A new workspace keeps `next.spawn` as it is."));
+  assert.ok(flat.includes("its `result.awebUrl` is the service URL `U`"));
+  assert.ok(!/Choose with the person a name `A`/.test(flat), "the messaging root's name is derived, not asked");
+});
+

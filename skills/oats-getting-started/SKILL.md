@@ -43,6 +43,35 @@ stop instead: the person answers nothing after step 1.
 **How to work.**
 - **Ask first, then run.** Ask everything in one round (step 1), then run the
   steps yourself and read back what each did.
+- **Talk to a newcomer, in everyday words.** The person may never have
+  heard of OATS, and may not know what a repository, Git, a terminal or a
+  command is. Talk about their projects, their code and their folders; say
+  "your agents' shared setup" for the workspace, "the setup assistant" for
+  the setup expert, "the group your agents talk in" for the team, and "the
+  folder where your agents live" for `D`. When GitHub comes up, say what it
+  is for in a few words ("where your code is kept online, so your agents and
+  your colleagues can reach it"). Don't say repository, workspace file,
+  soul, instance, root, harness, readiness, deployment, capability, CLI or
+  token, and don't show a file path, a command, an error code or raw
+  output, unless they ask or use the word first. When a command fails, say in one sentence what it means and what you
+  do next. Run checks quietly (`2>/dev/null`, `|| true`), so that an
+  expected failure doesn't show as an error. Before a step that takes more
+  than half a minute, say what it does and about how long it takes.
+- **One yes covers the changes to their computer.** Step 1's message lists
+  them in plain words, and their yes to it covers every one: you don't ask
+  again step by step. The list: the tools you install (per user, under
+  `~/.local`), the line that puts `~/.local/bin` on their PATH in their
+  shell's startup file, the aweb channel plugin in Claude (Claude only), the
+  folder where their agents live marked as trusted by their coding agent,
+  OATS Desktop with its app-launcher entry, and each system package step 2
+  found missing, with what it is for. Never run `sudo` for something that
+  was not on that list, even where no password is asked; if they say no to
+  a system package, tell them what will not work without it. If your
+  harness's permission check refuses a step on the list, run that command
+  in their own terminal, which you open for them with the command already
+  in it ("Their own terminal, opened by you"): they watch it finish and
+  close the window. Never ask them to type a command, with `!` or
+  otherwise.
 - **Secrets.** The person types only what you must never hold: passwords,
   tokens and logins. Before the spawn there are two ways for that: a browser
   device flow you start (the GitHub login, step 3, and, only when they want
@@ -78,7 +107,8 @@ stop instead: the person answers nothing after step 1.
   Tell them what to type there, and ask whether the window opened: a
   command that started is no proof of a window. Check the result with a
   read-only command, never by reading the window, then delete the file.
-  Only when no window opens do you give them the command to run themselves.
+  Only when no window opens, and only for a secret, a login or a `sudo`
+  password, do you give them the command to run themselves.
 - **Touch nothing you were not asked to.** Don't edit an existing
   deployment's files (`oats-local.yaml`, `oats-lock.json`, `agents/`), and
   don't push to a repository the person did not create in step 6 or name as
@@ -87,6 +117,31 @@ stop instead: the person answers nothing after step 1.
 ## 1. Ask, in one round
 
 On a machine found-list, ask the machine's round below instead of this list.
+
+**The message.** Ask three things, and in the same message propose
+everything else as defaults they accept with "ok" or change:
+1. What they want their agents to help with, and where their notes and
+   documentation live today (if anywhere).
+2. Which projects the agents should work on: the folders on this computer,
+   or where the code is kept online. Work out the rest yourself (where
+   each is cloned, whether it's private: `git -C <dir> remote -v`,
+   `gh repo view <owner>/<repo> --json visibility`); ask only what you
+   can't find.
+3. Whether they're starting fresh, or joining agents that someone on their
+   team already set up (then the reference that person gives them).
+
+Then the defaults, one plain line each: the workspace name, where its two
+files live (the host below, in plain words: "kept with your notes-app code
+on GitHub", or "in a new private space on your GitHub, `<workspace>-oats`"),
+the messaging
+account, the folder where their agents live, OATS Desktop installed and
+opened, and the changes to their computer ("How to work"). The GitHub owner
+comes from the login (`gh api user --jq .login`), now if gh is logged in,
+else after step 3: don't ask for it. The coding agent the setup expert runs
+on is you, when you are `claude`, `codex` or `pi`: don't ask. When an answer
+changes the workspace name, derive every default from the new name again
+(the account `N`, the folder `D`, the host's name) and show the final
+values before you go on. The rules for each value follow.
 
 - **The use case:** what they want agents to do.
 - **Their repositories and project:** which repositories agents should work
@@ -122,20 +177,22 @@ On a machine found-list, ask the machine's round below instead of this list.
   - the messaging account's name `N`: the part of every agent's address
     before the `/`, in the same form as the workspace name, default
     `<workspace>-oats`. The root's name `A` is `<workspace>-root`.
-  - Tell them they attach themselves to that account in the setup expert's
-    first steps. Only if they want the team on their own aweb account now,
-    they sign in to it in their browser in step 5 instead.
+  - Tell them they attach themselves to that account later in the setup, with
+    the setup expert. Only if they want the team on their own aweb account
+    now, they sign in to it in their browser in step 5 instead.
 - **The harness for the setup expert:** `claude`, `codex` or `pi`. Default:
   the one you are, if it is one of these.
-- **The deployment directory `D`:** where OATS lives on this machine. Any
-  folder but their home folder itself works: ask for it, and suggest none.
+- **The deployment directory `D`:** where OATS lives on this machine.
+  Default: `<home>/Agents/<workspace>`, with the home folder spelled out.
+  Any folder but their home folder itself works.
   `oats onboard` adds `D` to this computer's list of deployments
   (`~/.oats/config/deployments.json`, which `oats deployments` reads), so the
   Desktop and the TUI find it wherever it is. Write `D` everywhere below as
   an absolute path, with the home folder spelled out: never `~`, which the
   shell does not expand inside quotes.
-- **OATS Desktop:** installed and started unless they decline. **The TUI**
-  (`oats tui`, a terminal client, preview): opened for them or not.
+- **OATS Desktop:** installed and started unless they decline. Don't offer
+  the TUI (`oats tui`, a terminal client, preview) unless they ask for a
+  terminal client or decline the Desktop.
 
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
@@ -182,7 +239,7 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
     steps” say.
   - Your running process does not see their new PATH. Start each later
     command with `eval "$(/opt/homebrew/bin/brew shellenv)"`
-    (`/usr/local/bin/brew` on Intel), or ask them to restart you.
+    (`/usr/local/bin/brew` on Intel).
 - **Linux:**
   - **Packages:** the distribution's, for git and tmux.
   - **gh:** from GitHub's own apt or rpm repository
@@ -200,8 +257,19 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
     ```bash
     sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update && sudo apt-get install -y git
     ```
-  - **Passwords:** a line that needs `sudo` goes to their own terminal,
-    unless `sudo -n true` succeeds.
+  - **The Desktop's system libraries** (x64): it needs ALSA and, without
+    `--appimage-extract-and-run` (step 4), FUSE 2. Check, quietly:
+
+    ```bash
+    for l in libasound.so.2 libfuse.so.2; do ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
+    ```
+
+    On Ubuntu 24.04 the packages are `libasound2t64` and `libfuse2t64`
+    (`libasound2` and `libfuse2` before it). A missing one is a system
+    package for step 1's list. Without FUSE, use `--appimage-extract-and-run`
+    instead of installing it.
+  - **Passwords:** a line that needs `sudo` runs only after their yes in
+    step 1, and goes to their own terminal unless `sudo -n true` succeeds.
 - **Then check again** with `node --version` and `git --version`. When
   Node is still under 22 (on another distribution, or where that route does
   not apply), stop: tell the person the minimum and the version found, and
@@ -209,9 +277,8 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g
   tell them it works with whole-tree fetches, and go on.
 - **npm's global folder** (`npm prefix -g`) must be writable for step 4's
   installs (`test -w "$(npm prefix -g)/lib"`). If it is not (a system Node
-  under `/usr`, as NodeSource installs it), either they run those installs
-  with `sudo` in their own terminal, or set a per-user prefix:
-  `npm config set prefix ~/.local`. Then put `~/.local/bin` on PATH: start
+  under `/usr`, as NodeSource installs it), set a per-user prefix, as step
+  1's list said: `npm config set prefix ~/.local`. Then put `~/.local/bin` on PATH: start
   each later command of yours with `export PATH="$HOME/.local/bin:$PATH"`
   (your shell does not reread their profile). Add that line to their shell's
   startup file yourself, so their own terminal finds `oats` too, and tell
@@ -667,7 +734,7 @@ stop if its readiness still reports a problem.
      nothing, and tell the person what it shows.
    - **Then tell the person,** in your words: this is the workspace's
      team, on an aweb account created for it; they attach themselves to it
-     in the setup expert's first steps.
+     later in the setup, with the setup expert.
    - **`E_SETUP_NATIVE`:** the preview does not contact aweb, so it can't
      tell whether `N` is free, and the run fails this way most likely
      because `N` is taken (aw's output is withheld). It can also fail
@@ -687,12 +754,15 @@ stop if its readiness still reports a problem.
        unchanged, and it reuses that root. Anything else, the preview
        failing included: stop, spawn nothing, and tell the person what it
        shows.
-3. **Existing workspace: the person gets an invite token** from a member of `L`, who runs
-   `oats aweb invite --soul <their soul> --label L --json` in their own
-   deployment and passes the token to the person privately, never by
-   ordinary mail. They also give the aweb service URL `U`. Choose with the
-   person a name `A` for this machine's messaging root, such as
-   `<workspace>-<their machine>`. This works for a hosted team only: if the
+3. **Existing workspace: the person gets an invite** from a member of `L`.
+   That member asks their own agent for it, which runs
+   `oats aweb invite --soul <their soul> --label L --json` in their
+   deployment. The answer's `result.token` is the invite token and its
+   `result.awebUrl` is the service URL `U` (oats.aweb 1.33.1 and later).
+   The member passes both to the person privately, never by ordinary mail.
+   This machine's messaging root is named `A` = `<workspace>-<this
+   machine>`, with this machine's short hostname normalised as in the
+   machine's round: don't ask. This works for a hosted team only: if the
    invite is refused, or the join says the team is not hosted, stop, and
    the workspace's owner decides.
 4. **Existing workspace: the person joins in their own terminal,** which you
@@ -797,8 +867,9 @@ oats harness trust --dir D --harness claude
 
 - **If either refuses a file** (on macOS, `~/.claude.json` can carry a mark
   the writer refuses), don't edit the file or its attributes. Open their
-  own terminal ("How to work") with `cd "D" && claude` (or `codex`); they
-  accept the harness's folder-trust question and exit.
+  own terminal ("How to work") with `cd "D" && claude` (or `codex`) already
+  running; tell them it will ask whether to trust the folder where their
+  agents live, that they answer yes, and then close the window.
 - **Then check** that the `harness-trust` item of
   `oats readiness --soul S --dir D --json` passes.
 
@@ -806,7 +877,21 @@ oats harness trust --dir D --harness claude
 development channel mode, the default: Claude asks once at each start
 whether to load the aweb channel, and OATS confirms it for you. Leave it so.
 Don't set `delivery: session`. The setup expert offers the approved route,
-which needs no confirmation, later (it needs `sudo`).
+which needs no confirmation, later (it needs `sudo`). Tell the person once,
+before the spawn: a notice about a "development channel" may flash past when
+the setup expert starts; OATS answers it, and the setup expert can remove it
+later.
+
+**An existing workspace names the setup expert after this machine,** since
+every member's machine has its own, in the same team, and two of one name
+can't share it: replace `next.spawn`'s `--name <workspace>-oats-setup-expert`
+with `--name <workspace>-<this machine>-oats-setup-expert`, with this
+machine's short hostname (never the full domain name), normalised as in the
+machine's round. A rerun on this machine then finds its own setup expert
+(`E_INSTANCE_NAME_TAKEN`, below). A machine that is renamed gets a new setup
+expert; the setup expert under the old name is retired by its agent. When
+the name would be longer than 64 characters, leave `--name` out and let
+spawn name it. A new workspace keeps `next.spawn` as it is.
 
 **Preview the spawn, read it, then spawn,** with step 8's `next.spawn` line
 plus the hand-over:
@@ -872,13 +957,21 @@ deployment, so pass it always.
 their own terminal, as "How to work" says, with the command
 `oats tui --dir "D"`.
 
-**Tell the person where the setup expert is** (its instance name; on a
-machine found-list, the steward, and its address), and that it continues
-from here: in the Desktop or the TUI you started. Without either, they reach
-it with `oats session attach --home H` in a terminal.
+**Hand over to the setup expert,** in a short message in plain words:
+- what is ready: their workspace and its repository, the messaging team, the
+  setup expert running;
+- **where to go now:** "Switch to the OATS Desktop window. Click
+  **<the setup expert's name, as the Desktop shows it>** in the list on the
+  left, if it isn't selected: it has already started and will ask you its
+  first question there. You can close this chat." Without the Desktop, open
+  the TUI for them in their own terminal ("How to work"), with
+  `oats tui --dir "D"`, and say the same about it;
+- what the setup expert does next, in one line: it learns how they work,
+  then sets up their repositories and their first agents with them, and it
+  opens a small hidden prompt when they need to type a password or a key.
 
-It will ask them only what the hand-over leaves open, and it opens a pane in
-its own window when they need to type a secret. You are done.
+Don't list instance names, homes, paths, versions or commands in this
+message. You are done.
 
 ## Never
 
