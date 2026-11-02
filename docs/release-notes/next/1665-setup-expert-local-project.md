@@ -1,0 +1,3 @@
+## Changed
+
+- **The setup expert puts a project that lives only on the person's computer on GitHub, on their yes.** OATS reads a workspace's members over Git, so `/oats-setup-expert` step 3 now handles a folder with no GitHub remote first. It shows the person the files that would be pushed, leaves out anything that looks like a secret, and proposes a private repository under their GitHub login, named after the folder. It creates and pushes it only on their yes. On a no it creates nothing and says the agents can't work on that project until its code is on GitHub. A newcomer test run found the setup expert improvising this step ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).

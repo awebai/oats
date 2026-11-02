@@ -102,8 +102,38 @@ only the secrets, the logins and the installs that capture their shell.
    it when Git access is broken, or when the person wants an SSH key, signed
    commits or the DCO sign-off (a repository that requires them). It says
    plainly what it changes.
-3. **The person's repositories as members.** For each repository the intake
-   names that agents will read or work in, make two changes:
+3. **The person's repositories as members.** A member is a repository OATS
+   reads over Git, so a project that lives only on this computer comes first:
+   - **A project only on this computer** (a folder the intake names whose
+     `git -C <dir> remote -v` prints nothing, or that is no Git repository):
+     put it on GitHub only on the person's yes. Before you ask, show them
+     what would be pushed: the files (`git -C <dir> ls-files` once it is a
+     repository, else the folder's files, without those its `.gitignore`
+     leaves out), and leave out anything that looks like a secret (`.env`,
+     keys, credentials), naming it, unless they say otherwise. Propose a
+     private repository under their GitHub login, named after the folder.
+   - **On their yes:** first add what you left out to the folder's
+     `.gitignore`. If it is no repository yet, make it one and commit its
+     files, with the Git identity `/oats-git-setup` checks (or GitHub's
+     noreply address, as the entry skill did); a repository with commits
+     skips this line. Then create the GitHub repository and push:
+
+     ```bash
+     git -C "<dir>" init -b main && git -C "<dir>" add -A && git -C "<dir>" commit -m "First commit"
+     gh repo create "<owner>/<name>" --private --source "<dir>" --remote origin --push
+     ```
+
+     Before the commit, `git -C "<dir>" status --short` must list only what
+     you showed them.
+
+     Then check `gh repo view "<owner>/<name>" --json visibility` says
+     `PRIVATE`, and go on with it as one of their repositories below.
+   - **On their no:** create nothing. Tell them their agents can't work on
+     that project until its code is on GitHub, and record it as open in the
+     hand-back.
+
+   For each repository the intake names that agents will read or work in,
+   make two changes:
    - an `oats-membership.yaml` in that repository;
    - its line under `members:` in `oats-workspace.yaml`, from your work tree
      (with `work: directory`, a clone of the host in your `work/`).
