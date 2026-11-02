@@ -1,0 +1,3 @@
+## Changed
+
+- **The setup expert talks to a newcomer in everyday words.** `oats.framework`'s `/oats-setup-expert` and `/oats-tailor-workspace` now carry the getting-started skill's voice: questions about the person's project, their code on GitHub and the group their agents talk in, each with a recommended default, and no repository, member, soul or deployment jargon, paths or commands unless the person uses them first. A newcomer test run found the setup expert's first question asking where code should live because "agents can only work in a repository the workspace lists as a member" ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).

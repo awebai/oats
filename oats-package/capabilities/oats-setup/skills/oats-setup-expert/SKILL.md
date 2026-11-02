@@ -34,6 +34,22 @@ It holds:
 
 It holds no secret, and none ever goes into one.
 
+**Talk to the person in everyday words.** The getting-started skill talked
+to them as someone who may not know what a repository, Git, a terminal or a
+command is; keep that voice in every question and message:
+- Say "your agents' shared setup" for the workspace, "your project" or
+  "your code on GitHub" for a repository or a member, "the group your agents
+  talk in" for the team, "the folder where your agents live" for `D`, and
+  "the setup assistant" for yourself.
+- Don't say repository, member, host, workspace file, soul, instance, root,
+  harness, readiness, deployment, capability, CLI, token, merge, branch
+  protection or ruleset, and don't show a path, a command, an error code or
+  raw output, unless they use the word first; then use theirs.
+- Ask each question as the choice it is for them, with a recommended
+  default: "Your notes app is only on this computer. So your agents can work
+  on it, I'll keep a private copy on your GitHub, `notes-app`. OK?", not
+  "agents can only work in a repository the workspace lists as a member".
+
 **A new workspace or an existing one.** The hand-over says which.
 - **New:** the person created the host repository through the entry skill.
   It is private and theirs. While they are the only one who can push to

@@ -18,6 +18,8 @@ them into the workspace's own capabilities, shaped by how this team already
 works. Do the steps in order. Apply `oats.setup`'s briefing throughout: you
 run each step, and the person types only secrets, logins and the installs
 that capture their shell.
+Talk to them in everyday words, as `/oats-setup-expert` says, in every
+question and in the brief (step 6).
 
 ## 1. Discover the use case
 
@@ -144,7 +146,8 @@ change keep development mode until they are respawned.
 
 In the session, plainly:
 
-- which capabilities now exist, and where to read them (repository and path);
+- what each of their agents now does, one line each, and where that is
+  written down, said plainly ("in your project on GitHub");
 - how to work with the agents: who to talk to first, and how the roles hand
   work to each other;
 - how coordination across humans will run;
