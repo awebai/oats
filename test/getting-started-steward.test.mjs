@@ -99,10 +99,22 @@ test("after step 1, a machine found-list asks nothing: a step that would ask tel
 test("the steward's harness is recorded before readiness and harness trust read it", () => {
   // '*' is every soul without its own entry, S and the souls spawned later included (#1665, further runs).
   const set = "oats soul launch set '*' --harness <harness> --dir D";
-  assert.ok(skill.replace(/\s+/g, " ").includes("So read `oats souls --dir D --json` first, in a new workspace too (a package soul may name its harness): for each soul whose `launch.declared` is not `null`, also give it its own entry"), "a soul's declared harness keeps its own entry in every workspace");
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("So read `oats souls --dir D --json` first, in a new workspace too (a package soul may name its harness). For each row whose `launch.declared.harness` differs from `<harness>`, give that soul its own entry with its declared harness"), "a soul's declared harness keeps its own entry in every workspace");
   const plan = skill.indexOf(`${set} --plan\n`), apply = skill.indexOf(`${set}\n`);
   assert.ok(plan > 0 && apply > plan, "planned, then applied");
-  assert.doesNotMatch(skill, /oats soul launch set S /, "no setting for the setup soul alone");
+  // A soul whose declared harness differs: its own entry, by the row's unambiguous key, with its model, plan first.
+  const perSoul = "oats soul launch set <key> --harness <its harness> --model <its model> --dir D";
+  const soulPlan = skill.indexOf(`${perSoul} --plan\n`), soulApply = skill.indexOf(`${perSoul}\n`);
+  assert.ok(soulPlan > apply && soulApply > soulPlan, "the per-soul entry is planned, then applied, after '*'");
+  assert.ok(flat.includes("Use the row's `key` (`<package>/<soul>` for a package's soul, so the name is never ambiguous), add `--model <its model>` only when `launch.declared.model` names one"));
+  // S keeps the person's choice: its own entry only when it declares another harness, and only with <harness>.
+  assert.ok(flat.includes("`S` is the exception: it always keeps `<harness>`, the person's choice in step 1. When `S` declares another harness, give it its own entry with `<harness>` instead"));
+  const sSet = "oats soul launch set S --harness <harness> --dir D";
+  const sPlan = skill.indexOf(`${sSet} --plan\n`), sApply = skill.indexOf(`${sSet}\n`);
+  assert.ok(sPlan > soulApply && sApply > sPlan, "S's exception is planned, then applied, after the per-soul entries");
+  assert.equal(skill.split("oats soul launch set S ").length, 3, "S alone appears only in its exception (plan and apply)");
+  assert.ok(sApply < skill.indexOf("oats harness trust --dir D"), "S's entry before harness trust");
   assert.ok(apply < skill.indexOf("oats harness trust --dir D"), "before harness trust");
   assert.ok(apply < skill.indexOf("oats readiness --soul S --dir D --json"), "before readiness");
   assert.ok(apply < skill.indexOf("oats spawn S --dir D --task-file D/.oats-handover.md --name R"), "before the spawn, which then takes no --harness");
@@ -366,7 +378,7 @@ test("getting-started: the Desktop's system libraries are among step 2's checks,
   // With the read-only checks at step 2's head, before the installs (the Linux bullets).
   assert.ok(check > step2 && check < skill.indexOf("- **Versions:**", step2), "beside the other read-only checks");
   const flat = skill.replace(/\s+/g, " ");
-  assert.ok(flat.includes("On Linux x64 they include the Desktop's system libraries: a missing one goes on the list as a system package, so the Desktop's install needs no second yes."));
+  assert.ok(flat.includes("On Linux x64 they include the Desktop's system libraries: a missing one goes on the list as a system package, dropped if they decline the Desktop, so the Desktop's install needs no second yes."));
   assert.ok(flat.includes("**ALSA missing:** the Desktop needs it, so step 1's list names its package, to install with the other system packages"));
 });
 
@@ -382,4 +394,21 @@ test("tailoring: tasks has one rule per case, aweb's list kept by default and an
   assert.ok(tailor.includes("default (`E_SLOT_CONFLICT`): the workspace's tasks capability goes in `defaults.tasks`."));
   assert.ok(!tailor.includes("the tracker's capability replaces `none`"), "the old rule that pinned a provider beside a tracker");
   assert.ok(read("docs/integrations.md").replace(/\s+/g, " ").includes("The setup expert then offers to make a tasks capability of the workspace's own for that tracker"));
+  // The conversation is the setup expert's own; a sub-agent writes the files; the manifest fills the tasks slot.
+  assert.ok(tailor.includes("You hold that conversation with the person yourself; a sub-agent only writes the files after it. Its manifest declares `\"layer\": \"tasks\"`"));
+  // getting-started promises an offer, not a connection.
+  const gs = skill.replace(/\s+/g, " ");
+  assert.ok(gs.includes("the setup assistant offers to connect them\") and step 7 writes `tasks: none`; the setup expert offers to connect the tracker with the person later."));
+  assert.ok(gs.includes("Your agents use your <GitHub issues | tracker>; the setup assistant offers to connect them."));
+  assert.ok(!/setup assistant connects them|setup expert connects the tracker/.test(gs));
+});
+
+test("a soul whose declared harness differs from this machine's '*' gets its own entry where souls are added later", () => {
+  const tailor = read("oats-package/capabilities/oats-onboarding/skills/oats-tailor-workspace/SKILL.md").replace(/\s+/g, " ");
+  const pins = read("oats-package/capabilities/oats-setup/skills/oats-package-pins/SKILL.md").replace(/\s+/g, " ");
+  for (const [name, text] of [["oats-tailor-workspace", tailor], ["oats-package-pins", pins]]) {
+    assert.match(text, /`souls\.launch\."\*"`[^.]*wins over [^.]*own `launch:`/, `${name} says '*' wins over a new soul's launch:`);
+    assert.ok(text.includes("`oats soul launch set <key> --harness <its harness> --plan`, then without `--plan`"), `${name} plans the per-soul entry first`);
+    assert.ok(text.includes("`--model <its model>` when it names one"), `${name} carries the model`);
+  }
 });

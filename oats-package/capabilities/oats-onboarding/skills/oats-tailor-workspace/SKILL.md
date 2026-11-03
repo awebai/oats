@@ -79,7 +79,9 @@ each with step 1's findings and its starting point:
     at how they work: their labels and states, who files issues and who
     closes them, and what agents may do there. Build it with the person, as
     this workspace's own capability (over `gh issue` for GitHub issues).
-    For a tool the catalog has a provider for (`oats.jira`, `oats.linear`),
+    You hold that conversation with the person yourself; a sub-agent only
+    writes the files after it. Its manifest declares `"layer": "tasks"`
+    (the installed kernel's `docs/capabilities.md`). For a tool the catalog has a provider for (`oats.jira`, `oats.linear`),
     copy that provider as the starting point, as above. It must expose what
     agents can operate, and say what stays with humans. On their yes, it
     replaces `none` as the tasks default. Don't leave `none` without asking,
@@ -103,6 +105,14 @@ oats sync
 oats souls --json
 oats spawn <soul> --preview --json
 ```
+
+This machine's `souls.launch."*"` (the getting-started skill sets it) wins
+over a new soul's own `launch:`. For each new soul whose
+`launch.declared.harness` in `oats souls --json` differs from that
+default, give it its own entry with its declared harness before its first
+spawn, by the row's `key`, with `--model <its model>` when it names one,
+plan first: `oats soul launch set <key> --harness <its harness> --plan`,
+then without `--plan`.
 
 ## 3. Attach the person to the messaging account
 
@@ -134,25 +144,29 @@ created for the workspace. Never say it is the person's.
 This is a normal step, not an option, where the messaging capability offers
 it. It ties this deployment's agents to the person who runs them.
 
-- **Agents run every command, and no agent holds the person's signing key**
-  (awebai/oats#1665). The person's one act is a click: in their aweb
-  dashboard, they approve the request you start. Before the click, tell them
-  exactly what the page will show: the agent's address, the domain, this
-  deployment's name and the key's fingerprint. They type no command and no
-  passphrase for it.
+- **First, look for the step.** It comes from the messaging capability's
+  own skill: with aweb, the default, `/oats-aweb`'s attribution step, from
+  the `oats.aweb` release that ships it. If that skill names no such step,
+  run nothing: no terminal step and no respawn. The deployment has no bound
+  human, and its agents report attribution as `unknown`. Say so in step 6,
+  as information, never as a failure: it comes with a later messaging
+  release.
+- **Also run nothing** when the person's aweb key is self-custodial (kept
+  on their own computer behind a passphrase), or the account is not on
+  aweb Cloud: neither has a click path. Say in step 6 that their agents
+  stay unattributed and keep working.
+- **What the step does, where it exists** (awebai/oats#1665): **agents run
+  every command, and no agent holds the person's signing key**. The
+  person's one act is a click: in their aweb dashboard, they approve the
+  request you start. Before the click, tell them exactly what the page will
+  show: the agent's address, the domain, this deployment's name and the
+  key's fingerprint. They type no command and no passphrase for it.
 - It needs the account to be theirs first (step 3, or their sign-in at
   getting started).
 - Agents already running, you included, are attached in place: no respawn
   and no new identities. Agents spawned later carry the chain from the start.
-- The act comes from the messaging capability's own skill. With aweb, the
-  default, it is `/oats-aweb`'s attribution step, from the `oats.aweb`
-  release that ships it. It needs aweb Cloud; a person whose aweb key is
-  kept on their own computer behind a passphrase has no click path.
-- If the messaging capability's skill names no such step, the deployment has
-  no bound human, and its agents report attribution as `unknown`. Run
-  nothing in its place: no terminal step and no respawn. Say so in step 6,
-  as information, never as a failure: it comes with a later messaging
-  release.
+- A declined or expired request leaves nothing signed. Report it to the
+  person; never start another request on your own.
 
 Until an agent actually carries a chain, never say the team or the agents
 are bound or attributed. Once the account is theirs (step 3, or they
@@ -179,8 +193,9 @@ In the session, plainly:
 - how coordination across humans will run;
 - whether the account is theirs, waiting on their email, or unattached
   (step 3);
-- whether their agents are tied to them yet (step 4), or that this waits
-  on a later messaging release;
+- whether their agents are tied to them yet (step 4); if not, why (it
+  waits on a later messaging release, or their key or account has no click
+  path), and that the agents keep working;
 - beside a tracker, how their agents now use it, or that nothing connects
   them to it yet (step 2);
 - what is open, and who decides it.

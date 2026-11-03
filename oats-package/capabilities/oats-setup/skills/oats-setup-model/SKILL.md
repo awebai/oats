@@ -144,9 +144,12 @@ only by that repo's souls.
 OATS 0.69.8 (`oats.framework` 1.18.0) it is the framework's package soul
 `oats-setup-expert`, with `oats.setup` and `oats.onboarding`, and its instance
 is named `<workspace>-oats-setup-expert` (on a machine joining an existing
-workspace, `<workspace>-<machine>-oats-setup-expert`). The repository's
-`oats-getting-started` skill spawns it; a workspace writes no setup soul of
-its own. All its knowledge comes from this capability, so a workspace's
+workspace, `<workspace>-<machine>-oats-setup-expert`; `<workspace>-oats-setup`
+when a soul of the workspace already holds the first name, and no `--name`,
+left to spawn, when a soul holds that one too or the name is too long). The
+repository's `oats-getting-started` skill spawns it, and for a new workspace
+writes no setup soul of its own. Before `oats.framework` 1.18.0, add one
+like any soul (`/oats-workspace-config`). All its knowledge comes from this capability, so a workspace's
 setup expert improves with the `oats.framework` pin, not by edits to a soul.
 From OATS 0.61.0, `oats onboard` names it as the next step. It finds the
 soul by what the soul's own `soul.yaml` declares, never by its name alone:

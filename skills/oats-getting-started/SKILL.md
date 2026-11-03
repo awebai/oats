@@ -161,8 +161,8 @@ On a machine found-list, ask the machine's round below instead of this list.
 **First, step 2's checks.** They only read, so run them before the message
 (not its installs): the changes to their computer that the message lists
 are what they found missing. On Linux x64 they include the Desktop's system
-libraries: a missing one goes on the list as a system package, so the
-Desktop's install needs no second yes.
+libraries: a missing one goes on the list as a system package, dropped if
+they decline the Desktop, so the Desktop's install needs no second yes.
 
 **The message.** Ask three things, and in the same message propose
 everything else as defaults they accept with "ok" or change:
@@ -271,9 +271,9 @@ the final values in one short message before you go on. The rules:
     `PEP` and `GPT`.
 
   With a tracker, the agents keep using it: the line says so ("your agents
-  use your GitHub issues; the setup assistant connects them") and step 7
-  writes `tasks: none`; the setup expert connects the tracker with the
-  person later. Without one, the line says "aweb's task list, shared by your
+  use your GitHub issues; the setup assistant offers to connect them") and
+  step 7 writes `tasks: none`; the setup expert offers to connect the
+  tracker with the person later. Without one, the line says "aweb's task list, shared by your
   agents". Ask only when unsure, as the final-values message's one open
   line, prefilled with the answer you'd pick: ticket keys the person didn't
   name, a project kept somewhere other than GitHub (its issues can't be
@@ -825,7 +825,8 @@ workspace whose setup soul is its own, run the `git clone` line
 none, and without this every later check (readiness, harness trust) and
 every spawn would use the default, pi, for `S` and for each soul the setup
 expert or the steward spawns later. `'*'` is every soul without an entry of
-its own, souls added later included, `S` among them:
+its own, `S` among them, and souls added later that name no harness of
+their own:
 
 ```bash
 oats soul launch set '*' --harness <harness> --dir D --plan
@@ -834,10 +835,26 @@ oats soul launch set '*' --harness <harness> --dir D
 
 `'*'` wins over a soul's own `launch:` on this machine. So read
 `oats souls --dir D --json` first, in a new workspace too (a package soul
-may name its harness): for each soul whose
-`launch.declared` is not `null`, also give it its own entry with that
-harness (and `--model`, when it names one), plan first, so it keeps its
-choice: `oats soul launch set <soul> --harness <its harness> --dir D`.
+may name its harness). For each row whose `launch.declared.harness`
+differs from `<harness>`, give that soul its own entry with its declared
+harness, so it keeps its choice. Use the row's `key` (`<package>/<soul>`
+for a package's soul, so the name is never ambiguous), add
+`--model <its model>` only when `launch.declared.model` names one, and plan
+first:
+
+```bash
+oats soul launch set <key> --harness <its harness> --model <its model> --dir D --plan
+oats soul launch set <key> --harness <its harness> --model <its model> --dir D
+```
+
+`S` is the exception: it always keeps `<harness>`, the person's choice in
+step 1. When `S` declares another harness, give it its own entry with
+`<harness>` instead:
+
+```bash
+oats soul launch set S --harness <harness> --dir D --plan
+oats soul launch set S --harness <harness> --dir D
+```
 
 ## 9. Messaging on this machine
 
@@ -1150,7 +1167,7 @@ and say yes to it in the hand-over below.
   line, with how to change it: "Your agents share aweb's task list; to use
   another tracker later, ask the setup assistant to switch." With a
   tracker: "Your agents use your <GitHub issues | tracker>; the setup
-  assistant connects them. Leave aweb's task list empty: one task there
+  assistant offers to connect them. Leave aweb's task list empty: one task there
   opts your whole group in to it. To use aweb's task list instead, ask the
   setup assistant."
 

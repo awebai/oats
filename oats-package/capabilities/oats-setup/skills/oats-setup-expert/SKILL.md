@@ -16,8 +16,11 @@ description: >-
 Use this skill when your task starts with `# Onboarding hand-over from the
 getting-started skill`. From OATS 0.64.0, the repository's
 `oats-getting-started` skill writes that file when it spawns a workspace's setup expert
-(the instance `<workspace>-oats-setup-expert`, of `oats.framework`'s soul
-`oats-setup-expert` or of the workspace's own setup soul). You are that
+(the instance `<workspace>-oats-setup-expert`, or
+`<workspace>-<machine>-oats-setup-expert` on a machine that joins an
+existing workspace, or `<workspace>-oats-setup` when a soul holds the first
+name, of `oats.framework`'s soul `oats-setup-expert` or of the
+workspace's own setup soul). You are that
 expert, and from now on the onboarding is yours.
 
 The hand-over is `/oats-onboarding` card 1's intake, already collected. Don't ask again what it
@@ -91,8 +94,8 @@ question and message:
 **A new workspace, and you carry `oats.onboarding`** (`oats.framework`'s
 `oats-setup-expert` does): do steps 1 and 3, then `/oats-tailor-workspace`
 in place of steps 4 and 5. It finds the use case, authors the workspace's
-own coordination, knowledge and tasks capabilities and the souls that use
-them, ties the agents to the person where messaging offers it, and offers
+own coordination and knowledge capabilities, and, beside a tracker and on
+the person's yes, a tasks capability, and the souls that use them, ties the agents to the person where messaging offers it, and offers
 the approved channel route. Then do
 steps 6 and 7; its brief is step 8's hand-back.
 
@@ -291,10 +294,21 @@ only the secrets, the logins and the installs that capture their shell.
    - If you were spawned before the workspace had messaging, this session
      has no mail; every setup expert spawned on this machine from now on
      has it. Say so in the hand-back, plainly, and offer to start a new
-     setup assistant for them. On their yes, spawn it unrelated to you
-     (`--relation unrelated`, preview first) with what is still open as its
-     task, then retire yourself (`oats retire <your name> --self`). The
-     person runs neither.
+     setup assistant for them. On their yes, in this order:
+     1. Spawn it, preview first, with what is still open as its task:
+        `oats spawn <your soul> --dir D --relation unrelated --name <your name>-2 --task-file <file>`.
+        Your own name stays taken while you run.
+     2. Check it: `oats status --dir D --json` shows it running and not
+        waiting on you, and the briefing's read-only aweb check for its
+        soul says `member: true`.
+     3. Tell the person its name as the Desktop lists it.
+     4. Read `oats retire <your name> --plan`. If it lists children, tell
+        the person which of their agents would stop, and ask.
+     5. Write your state file. Only then retire yourself:
+        `oats retire <your name> --self`.
+
+     If a check fails, keep this session, and tell the person so. The
+     person runs none of these.
 7. **Sync, check, first working soul:** first, for Claude harnesses,
    `/oats-agent-permissions`: the person chooses the Claude config and what
    stays gated, and you write it with their yes. Then `oats sync`, then
