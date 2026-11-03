@@ -41,7 +41,7 @@ arrives from.
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
   oats.okf: v5.7.0
-  oats.aweb: v1.33.1
+  oats.aweb: v1.34.0
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -156,6 +156,12 @@ Building an integration is implementing a contract. The framework's
   `oats-local.yaml` `settings.<cap>` and refuses it elsewhere
   (`E_WORKSPACE_SCHEMA`, reason `host-only-key`). The provider cannot enforce
   this itself: it receives one merged payload without provenance.
+- A setting every deployment must share (which shared task list to use) is
+  declared `committedOnly: true`, the mirror: the resolver refuses it from
+  `oats-local.yaml` `settings.<cap>` and `--provider` (`E_WORKSPACE_SCHEMA`,
+  reason `committed-only-key`), so it comes only from the workspace's
+  `messaging:` or `tasks:`, a soul's slot payload or the manifest default.
+  Kernels without the feature `settings-committed-only` ignore the flag.
 - A slot provider that declares `binding` answers `oats readiness` through
   its `binding.check` command
   ([capabilities.md](capabilities.md#readiness-check-bindingcheck)).

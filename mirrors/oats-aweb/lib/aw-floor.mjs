@@ -6,13 +6,14 @@
  *  starts when its working directory is reached through a symlink. */
 export const AW_MIN = '1.36.33';
 
-/** The parts of a plain major.minor.patch version (no leading zeros, no
- *  pre-release), or null for anything else. */
-export function stableVersion(value) {
-  if (typeof value !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) return null;
-  const parts = value.split('.').map(Number);
-  return parts.every(Number.isSafeInteger) ? parts : null;
-}
+/** The highest aw the provider's CI journeys pass on (ci.yml's resident-journey
+ *  matrix, whose top a test holds equal to this). It moves only once that aw is
+ *  in the matrix, never ahead of it. */
+export const AW_TESTED = '1.36.53';
+/** The aweb Cloud's service origins. aw reaches npm `latest` only after the
+ *  Cloud runs a server that supports it, so a Cloud home is never warned that
+ *  its aw is newer than tested. */
+export const AWEB_CLOUD_ORIGINS = Object.freeze(['https://app.aweb.ai']);
 
 const IDENT = '(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)';
 const VERSION_RE = new RegExp(`^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(${IDENT}(?:\\.${IDENT})*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`);
@@ -47,4 +48,23 @@ export function compareVersions(a, b) {
 export function versionAtLeast(version, floor) {
   const v = parseVersion(version), f = parseVersion(floor);
   return !!(v && f) && compareVersions(v, f) >= 0;
+}
+
+/** Whether a service URL is the aweb Cloud: its scheme, host and port equal a
+ *  Cloud origin exactly, with no suffix match. */
+export function awebCloudService(url) {
+  try { return AWEB_CLOUD_ORIGINS.includes(new URL(url).origin); } catch { return false; }
+}
+
+/** The warning for an aw above AW_TESTED on a service that isn't the Cloud, or
+ *  undefined. A server on an older aweb may refuse a newer aw; the fix the
+ *  warning names first is the server's, since a deployment on this host may
+ *  need the newer aw. No service named (aw's default, the Cloud) warns
+ *  nothing; a named service that isn't a Cloud origin, or isn't a URL at all,
+ *  warns. The service text only decides; it never reaches the message. */
+export function awNewerThanTestedMessage(version, awebUrl) {
+  if (!awebUrl || awebCloudService(awebUrl)) return undefined;
+  const v = parseVersion(version), tested = parseVersion(AW_TESTED);
+  if (!v || compareVersions(v, tested) <= 0) return undefined;
+  return `aw ${version} is newer than the aw this oats.aweb is tested with (${AW_TESTED}). A server on an older aweb may refuse it, for example when minting an identity at spawn; if that happens, the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one.`;
 }

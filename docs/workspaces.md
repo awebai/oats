@@ -54,7 +54,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
   - git:github.com/acme/tools              # a member that ALSO publishes a package (see below)
 
 packages:                                  # the ONLY versioned things
-  oats.framework: v1.19.0                  # bare version → resolves through the official catalog
+  oats.framework: v1.20.0                  # bare version → resolves through the official catalog
   oats.okf: v5.7.0
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
@@ -78,6 +78,8 @@ stores:                                    # knowledge stores, declared once
 
 messaging:                                 # an opaque provider payload for the messaging slot
   private: per-human
+tasks:                                     # the same, for whichever capability fills the tasks slot
+  team: engineering                        # (ignored while the slot is empty, as here unless a soul fills it)
 
 external:                                  # souls borrowed from NON-members; revision REQUIRED
   - source: git:github.com/oss-collective/experts@9c4e1f2a9c4e1f2a9c4e1f2a9c4e1f2a9c4e1f2a
@@ -625,10 +627,23 @@ Why it is shaped this way: [team model 3](design/2026-10-02-team-model-3.md).
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 
-The merged payload is `workspace.messaging` (messaging slot only) ⊕ soul slot
-payload ⊕ `local.settings[cap]` ⊕ `spawn.providers[cap]` — objects deep-merge,
-later wins on scalars and arrays. The provider's own `binding` contract
-(its readiness check) runs over the merged payload. Teams are **not** settings:
+The merged payload is the manifest's setting defaults ⊕ the workspace's
+`messaging:` (for the messaging-slot capability only) or `tasks:` (for the
+tasks-slot capability only) ⊕ soul slot payload ⊕ `local.settings[cap]` ⊕
+`spawn.providers[cap]` — objects deep-merge, later wins on scalars and arrays.
+There is no workspace `knowledge:` payload. A workspace `tasks:` needs a kernel
+with the feature `workspace-tasks-payload`: an older one refuses the file
+(unknown property). The provider's own `binding` contract (its readiness
+check) runs over the merged payload.
+
+A capability's manifest may pin a setting to one of these layers. A key it
+marks `hostOnly` comes only from `oats-local.yaml`; a key it marks
+`committedOnly` never comes from `oats-local.yaml` or `--provider`: it is set
+in the workspace's `messaging:` or `tasks:`, a soul's slot payload, or left at
+the manifest default, so every deployment shares one value. Either one set in
+the wrong layer is refused (`E_WORKSPACE_SCHEMA`, reason `host-only-key` or
+`committed-only-key`), naming the key, where it was set and where it may be set
+([Commands and hooks](capabilities.md#commands-and-hooks)). Teams are **not** settings:
 they reach the provider beside them, in its environment ([Teams](#teams)).
 Where a provider keeps its own state (for oats.aweb, its identity roots) is the
 provider's concern; see its documentation.

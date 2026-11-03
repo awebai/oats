@@ -1102,3 +1102,146 @@ test("a hostOnly key in the workspace's messaging payload is refused, path named
   const r = await resolveSoul(clean, findSoul(clean, "release-manager"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { root: "/srv/aweb" } } } }));
   assert.equal(r.payloads["nw-chat"].root, "/srv/aweb");
 });
+
+/* ─────────── #1719: the workspace tasks: payload and committedOnly settings ─────────── */
+
+const TASKS = manifest("nw-tasks", { layer: "tasks", settings: { list: { default: "general", description: "the task list" }, mode: { default: "shared", values: ["shared", "solo"], description: "how lists are shared" } } });
+const tasksCaps = (tasks = TASKS, chat = M.chat) => [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle), capEntry(K.agents, C.agents, chat), capEntry(K.agents, C.agents, tasks)];
+const planner = (extra = {}) => soulDef("planner", { capabilities: { "nw-tasks": { from: "here" }, "nw-chat": { from: "here" } }, tasks: { list: "planning", nested: { a: 1 } }, messaging: { channels: ["northwind-eng"] }, ...extra });
+const tasksDiscovery = ({ workspace = teamsWorkspace(), tasks, chat, soul = planner() } = {}) => discovery({ workspace, agentsCaps: tasksCaps(tasks, chat), souls: { planner: soul } });
+const pick = (r) => ({ payloads: r.payloads, payloadOrigins: r.payloadOrigins, declRevision: r.declRevision, payloadRevision: r.payloadRevision, revision: r.revision });
+const compatLocal = { schemaVersion: 2, workspace: R.agents, settings: { "nw-tasks": { nested: { b: 2 } }, "nw-chat": { private: "per-host" } } };
+const compatSpawn = { providers: { "nw-tasks": { mode: "solo" } } };
+
+test("compat (#1719): with no tasks: payload and no committedOnly setting, a tasks-slot soul and a messaging soul resolve byte-identically to main", async () => {
+  // Pinned FROM MAIN: computed on origin/main 232467e0f80b (before the tasks: payload and committedOnly existed)
+  // with exactly this fixture, and compared as JSON text so key order counts too. Do not re-pin to make a change pass.
+  const PLANNER = '{"payloads":{"nw-chat":{"private":"per-host","channels":["northwind-eng"]},"nw-house-style":{},"nw-tasks":{"list":"planning","mode":"solo","nested":{"a":1,"b":2}},"oats.core":{},"oats.okf":{}},"payloadOrigins":{"nw-chat":{"/channels":{"kind":"soul","at":"soul.yaml#/messaging"},"/private":{"kind":"host","at":"oats-local.yaml#/settings/nw-chat"}},"nw-house-style":{},"nw-tasks":{"/list":{"kind":"soul","at":"soul.yaml#/tasks"},"/nested/a":{"kind":"soul","at":"soul.yaml#/tasks"},"/nested/b":{"kind":"host","at":"oats-local.yaml#/settings/nw-tasks"},"/mode":{"kind":"spawn","at":"--provider nw-tasks"}},"oats.core":{},"oats.okf":{}},"declRevision":"49eda34b0f18f97f06b40ffc","payloadRevision":"c530becaa19a8a810b7388ec","revision":"66324da0ac12e886de9739d4"}';
+  const RELEASE_MANAGER = '{"payloads":{"nw-chat":{"private":"per-human","channels":["northwind-eng"]},"nw-deploy":{},"nw-house-style":{},"nw-release-tooling":{},"oats.core":{},"oats.okf":{"owns":"release-manager","reads":["platform-engineer"]}},"payloadOrigins":{"nw-chat":{"/private":{"kind":"workspace","at":"oats-workspace.yaml#/messaging"},"/channels":{"kind":"soul","at":"soul.yaml#/messaging"}},"nw-deploy":{},"nw-house-style":{},"nw-release-tooling":{},"oats.core":{},"oats.okf":{"/owns":{"kind":"soul","at":"soul.yaml#/knowledge"},"/reads":{"kind":"soul","at":"soul.yaml#/knowledge"}}},"declRevision":"36e5f09b512a15d6400d8062","payloadRevision":"a1b3a13c66f57295da2e910f","revision":"b65e3332f322c8eece145568"}';
+  const d = tasksDiscovery();
+  assert.equal(JSON.stringify(pick(await resolveSoul(d, findSoul(d, "planner"), opts({ local: compatLocal, spawn: compatSpawn })))), PLANNER);
+  assert.equal(JSON.stringify(pick(await resolveSoul(d, findSoul(d, "release-manager"), opts()))), RELEASE_MANAGER);
+});
+
+test("workspace tasks: reaches the tasks-slot capability only, under soul.tasks, host and spawn, its leaves' origin named; workspace messaging: still only the messaging one", async () => {
+  const ws = { ...teamsWorkspace(), tasks: { list: "shared", owner: "ops", nested: { a: 0, c: 3 } } };
+  const d = tasksDiscovery({ workspace: ws });
+  const r = await resolveSoul(d, findSoul(d, "planner"), opts({ local: compatLocal, spawn: compatSpawn }));
+  // manifest defaults ⊕ workspace.tasks ⊕ soul.tasks ⊕ host ⊕ spawn
+  assert.deepEqual(r.payloads["nw-tasks"], { list: "planning", mode: "solo", owner: "ops", nested: { a: 1, c: 3, b: 2 } });
+  assert.deepEqual(r.payloadOrigins["nw-tasks"], {
+    "/list": { kind: "soul", at: "soul.yaml#/tasks" },
+    "/mode": { kind: "spawn", at: "--provider nw-tasks" },
+    "/owner": { kind: "workspace", at: "oats-workspace.yaml#/tasks" },
+    "/nested/a": { kind: "soul", at: "soul.yaml#/tasks" },
+    "/nested/b": { kind: "host", at: "oats-local.yaml#/settings/nw-tasks" },
+    "/nested/c": { kind: "workspace", at: "oats-workspace.yaml#/tasks" },
+  });
+  // workspace.tasks never reaches the messaging capability; workspace.messaging never the tasks one.
+  assert.deepEqual(r.payloads["nw-chat"], { private: "per-host", channels: ["northwind-eng"] });
+  assert.ok(!Object.values(r.payloadOrigins["nw-chat"]).some((o) => o.at === "oats-workspace.yaml#/tasks"));
+  assert.ok(!Object.hasOwn(r.payloads["nw-tasks"], "private"));
+  // With only the workspace layer, a soul without a tasks payload gets the workspace's over the manifest defaults.
+  const bare = tasksDiscovery({ workspace: ws, soul: planner({ tasks: undefined }) });
+  const b = await resolveSoul(bare, findSoul(bare, "planner"), opts());
+  assert.deepEqual(b.payloads["nw-tasks"], { list: "shared", mode: "shared", owner: "ops", nested: { a: 0, c: 3 } });
+  assert.deepEqual(b.payloadOrigins["nw-tasks"]["/mode"], { kind: "manifest-default", at: "oats.json#/settings/mode/default" });
+  assert.deepEqual(b.payloadOrigins["nw-tasks"]["/list"], { kind: "workspace", at: "oats-workspace.yaml#/tasks" });
+  // The payload moves payloadRevision (and so revision), never declRevision.
+  const without = await resolveSoul(tasksDiscovery({ soul: planner({ tasks: undefined }) }), findSoul(bare, "planner"), opts());
+  assert.equal(b.declRevision, without.declRevision);
+  assert.notEqual(b.payloadRevision, without.payloadRevision);
+  // tasks: with the slot empty (a soul with no tasks capability) is ignored, no error.
+  const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts());
+  assert.equal(rm.slots.tasks, null);
+  assert.ok(!Object.values(rm.payloadOrigins).some((o) => Object.values(o).some((x) => x.at === "oats-workspace.yaml#/tasks")));
+});
+
+test("workspace tasks: refuses a hostOnly key and the removed byTeam key, path /tasks/<key>, exactly as messaging:", async () => {
+  const hostTasks = { ...TASKS, settings: { ...TASKS.settings, root: { hostOnly: true, description: "host-owned root" } } };
+  const d = tasksDiscovery({ workspace: { ...teamsWorkspace(), tasks: { root: "/evil" } }, tasks: hostTasks });
+  await rejectsCode(resolveSoul(d, findSoul(d, "planner"), opts()), "E_WORKSPACE_SCHEMA", (e) => {
+    assert.deepEqual([e.details.reason, e.details.key, e.details.capability, e.details.path], ["host-only-key", "root", "nw-tasks", "/tasks/root"]);
+  });
+  const t = tasksDiscovery({ workspace: { ...teamsWorkspace(), tasks: { byTeam: {} } } });
+  await rejectsCode(resolveSoul(t, findSoul(t, "planner"), opts()), "E_WORKSPACE_SCHEMA", (e) => {
+    assert.deepEqual([e.details.reason, e.details.key, e.details.path], ["removed-key", "byTeam", "/tasks/byTeam"]);
+  });
+});
+
+const TEAM_TASKS = { ...TASKS, settings: { ...TASKS.settings, team: { default: "general", committedOnly: true, description: "the shared task list" } } };
+test("committedOnly: a key in oats-local.yaml settings.<cap> or --provider <cap> is refused before the merge, naming the key, the layer, where it may be set and the fix", async () => {
+  const d = tasksDiscovery({ tasks: TEAM_TASKS });
+  const host = await rejectsCode(resolveSoul(d, findSoul(d, "planner"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-tasks": { team: "mine" } } } })), "E_WORKSPACE_SCHEMA");
+  assert.deepEqual(host.details, { path: "/settings/nw-tasks/team", key: "team", capability: "nw-tasks", reason: "committed-only-key", layer: "host", at: "oats-local.yaml#/settings/nw-tasks", allowed: ["oats-workspace.yaml#/tasks", "soul.yaml#/tasks"] });
+  assert.match(host.message, /"team" is a committed-only setting of nw-tasks \(its manifest marks it committedOnly\): it was set in oats-local\.yaml settings\.nw-tasks, and may be set only in a committed file — oats-workspace\.yaml under tasks: or a soul's tasks: payload\. Set it in oats-workspace\.yaml under tasks:, or remove it from oats-local\.yaml settings\.nw-tasks$/);
+  const spawn = await rejectsCode(resolveSoul(d, findSoul(d, "planner"), opts({ spawn: { providers: { "nw-tasks": { team: "mine" } } } })), "E_WORKSPACE_SCHEMA");
+  assert.deepEqual(spawn.details, { path: "/spawn/providers/nw-tasks/team", key: "team", capability: "nw-tasks", reason: "committed-only-key", layer: "spawn", at: "--provider nw-tasks", allowed: ["oats-workspace.yaml#/tasks", "soul.yaml#/tasks"] });
+  assert.match(spawn.message, /it was set in --provider nw-tasks, .*Set it in oats-workspace\.yaml under tasks:, or remove it from --provider nw-tasks$/);
+  // Presence is refused, even with the committed value itself.
+  const same = tasksDiscovery({ tasks: TEAM_TASKS, workspace: { ...teamsWorkspace(), tasks: { team: "eng" } } });
+  await rejectsCode(resolveSoul(same, findSoul(same, "planner"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-tasks": { team: "eng" } } } })), "E_WORKSPACE_SCHEMA", (e) => assert.equal(e.details.reason, "committed-only-key"));
+  // Top-level keys only, as hostOnly; other keys of the same layers stay legal.
+  const ok = await resolveSoul(d, findSoul(d, "planner"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-tasks": { nested: { team: "x" } } } }, spawn: { providers: { "nw-tasks": { mode: "solo" } } } }));
+  assert.deepEqual([ok.payloads["nw-tasks"].team, ok.payloads["nw-tasks"].nested.team, ok.payloads["nw-tasks"].mode], ["general", "x", "solo"]);
+  // A capability the soul does not resolve: no module, no check.
+  const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-tasks": { team: "mine" } } } }));
+  assert.equal(rm.slots.tasks, null);
+});
+
+test("committedOnly: accepted from the manifest default, workspace tasks: and the soul's tasks:, each origin named", async () => {
+  const d = tasksDiscovery({ tasks: TEAM_TASKS });
+  const def = await resolveSoul(d, findSoul(d, "planner"), opts());
+  assert.equal(def.payloads["nw-tasks"].team, "general");
+  assert.deepEqual(def.payloadOrigins["nw-tasks"]["/team"], { kind: "manifest-default", at: "oats.json#/settings/team/default" });
+  const w = tasksDiscovery({ tasks: TEAM_TASKS, workspace: { ...teamsWorkspace(), tasks: { team: "eng" } } });
+  const ws = await resolveSoul(w, findSoul(w, "planner"), opts());
+  assert.equal(ws.payloads["nw-tasks"].team, "eng");
+  assert.deepEqual(ws.payloadOrigins["nw-tasks"]["/team"], { kind: "workspace", at: "oats-workspace.yaml#/tasks" });
+  const s = tasksDiscovery({ tasks: TEAM_TASKS, workspace: { ...teamsWorkspace(), tasks: { team: "eng" } }, soul: planner({ tasks: { team: "planning" } }) });
+  const soul = await resolveSoul(s, findSoul(s, "planner"), opts());
+  assert.equal(soul.payloads["nw-tasks"].team, "planning");
+  assert.deepEqual(soul.payloadOrigins["nw-tasks"]["/team"], { kind: "soul", at: "soul.yaml#/tasks" });
+});
+
+test("committedOnly is generic: a messaging capability's key, and a knowledge and a layerless capability's, refused from host and spawn with where each may be set", async () => {
+  // A messaging (non-tasks) setting: workspace messaging: or the soul's messaging: may set it.
+  const chat = { ...M.chat, settings: { channel: { committedOnly: true, description: "the shared channel" } } };
+  const d = tasksDiscovery({ chat, workspace: { ...teamsWorkspace(), messaging: { private: "per-human", channel: "eng" } } });
+  const ok = await resolveSoul(d, findSoul(d, "planner"), opts());
+  assert.deepEqual([ok.payloads["nw-chat"].channel, ok.payloadOrigins["nw-chat"]["/channel"]], ["eng", { kind: "workspace", at: "oats-workspace.yaml#/messaging" }]);
+  const host = await rejectsCode(resolveSoul(d, findSoul(d, "planner"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { channel: "mine" } } } })), "E_WORKSPACE_SCHEMA");
+  assert.deepEqual([host.details.capability, host.details.layer, host.details.allowed], ["nw-chat", "host", ["oats-workspace.yaml#/messaging", "soul.yaml#/messaging"]]);
+  assert.match(host.message, /Set it in oats-workspace\.yaml under messaging:, or remove it from oats-local\.yaml settings\.nw-chat$/);
+  await rejectsCode(resolveSoul(d, findSoul(d, "planner"), opts({ spawn: { providers: { "nw-chat": { channel: "mine" } } } })), "E_WORKSPACE_SCHEMA", (e) => assert.deepEqual([e.details.path, e.details.layer], ["/spawn/providers/nw-chat/channel", "spawn"]));
+  // A knowledge capability: only a soul's knowledge: payload. A layerless one: only its manifest default.
+  const notes = { ...M.altOkf, settings: { base: { committedOnly: true, description: "the shared base" } } };
+  const style = { ...M.houseStyle, settings: { "tone/voice": { default: "plain", committedOnly: true, description: "house tone" } } };
+  const caps = [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, style), capEntry(K.agents, C.agents, notes)];
+  const ws = workspaceFile(); ws.defaults = { ...ws.defaults, knowledge: { "nw-notes": { from: K.agents } } };
+  const k = discovery({ workspace: ws, agentsCaps: caps, souls: { writer: soulDef("writer", { knowledge: { base: "org" } }) } });
+  const okK = await resolveSoul(k, findSoul(k, "writer"), opts());
+  assert.deepEqual([okK.payloads["nw-notes"].base, okK.payloads["nw-house-style"]["tone/voice"]], ["org", "plain"]);
+  const kn = await rejectsCode(resolveSoul(k, findSoul(k, "writer"), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-notes": { base: "mine" } } } })), "E_WORKSPACE_SCHEMA");
+  assert.deepEqual(kn.details.allowed, ["soul.yaml#/knowledge"]);
+  assert.match(kn.message, /may be set only in a committed file — a soul's knowledge: payload\. Set it in the soul's knowledge: payload, or remove it from oats-local\.yaml settings\.nw-notes$/);
+  const nl = await rejectsCode(resolveSoul(k, findSoul(k, "writer"), opts({ spawn: { providers: { "nw-house-style": { "tone/voice": "loud" } } } })), "E_WORKSPACE_SCHEMA");
+  assert.deepEqual([nl.details.layer, nl.details.at, nl.details.allowed], ["spawn", "--provider nw-house-style", ["oats.json#/settings/tone~1voice/default"]]);
+  assert.match(nl.message, /— its manifest default .*\. Remove it from --provider nw-house-style$/);
+});
+
+test("a setting marked both hostOnly and committedOnly is a manifest fault: E_CAPABILITY_MISSING for a member capability, E_PACKAGE_MANIFEST for a package one, why settings-flag-conflict", async () => {
+  const both = { ...TASKS, settings: { team: { hostOnly: true, committedOnly: true, description: "contradictory" } } };
+  const d = tasksDiscovery({ tasks: both });
+  await rejectsCode(resolveSoul(d, findSoul(d, "planner"), opts()), "E_CAPABILITY_MISSING", (e) => {
+    assert.deepEqual(e.details, { capability: "nw-tasks", key: "team", why: "settings-flag-conflict" });
+    assert.match(e.message, /both hostOnly and committedOnly/);
+  });
+  // The package path: nw-deploy (package nw.tools) carries the same contradiction.
+  const repos = remoteRepos();
+  repos[K.tools][C.toolsPkg]["oats-package/capabilities/nw-deploy/oats.json"] = { ...M.deploy, settings: { target: { hostOnly: true, committedOnly: true } } };
+  const r = discovery();
+  await rejectsCode(resolveSoul(r, findSoul(r, "release-manager"), opts({ remote: fakeRemote(repos) })), "E_PACKAGE_MANIFEST", (e) => {
+    assert.deepEqual([e.details.capability, e.details.key, e.details.why], ["nw-deploy", "target", "settings-flag-conflict"]);
+  });
+});
