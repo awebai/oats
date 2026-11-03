@@ -830,8 +830,9 @@ oats soul launch set '*' --harness <harness> --dir D --plan
 oats soul launch set '*' --harness <harness> --dir D
 ```
 
-`'*'` wins over a soul's own `launch:` on this machine. In an existing
-workspace, read `oats souls --dir D --json` first: for each soul whose
+`'*'` wins over a soul's own `launch:` on this machine. So read
+`oats souls --dir D --json` first, in a new workspace too (a package soul
+may name its harness): for each soul whose
 `launch.declared` is not `null`, also give it its own entry with that
 harness (and `--model`, when it names one), plan first, so it keeps its
 choice: `oats soul launch set <soul> --harness <its harness> --dir D`.

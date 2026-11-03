@@ -99,6 +99,7 @@ test("after step 1, a machine found-list asks nothing: a step that would ask tel
 test("the steward's harness is recorded before readiness and harness trust read it", () => {
   // '*' is every soul without its own entry, S and the souls spawned later included (#1665, further runs).
   const set = "oats soul launch set '*' --harness <harness> --dir D";
+  assert.ok(skill.replace(/\s+/g, " ").includes("So read `oats souls --dir D --json` first, in a new workspace too (a package soul may name its harness): for each soul whose `launch.declared` is not `null`, also give it its own entry"), "a soul's declared harness keeps its own entry in every workspace");
   const plan = skill.indexOf(`${set} --plan\n`), apply = skill.indexOf(`${set}\n`);
   assert.ok(plan > 0 && apply > plan, "planned, then applied");
   assert.doesNotMatch(skill, /oats soul launch set S /, "no setting for the setup soul alone");
