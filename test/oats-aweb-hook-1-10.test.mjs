@@ -333,7 +333,7 @@ test("spawn: a join refused because the alias still holds a certificate is fatal
     const bin = fakeAw(base, "conflict"); const { root, home } = deployment(base);
     const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}" });
     assert.notEqual(r.status, 0);
-    assert.match(r.stdout, /alias "probe" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name\. Team: t:example\.test/);
+    assert.match(r.stdout, /alias \\"probe\\" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name\. Team: t:example\.test/);
     assert.equal(r.stdout.includes("TOK-secret"), false, "the invite token never reaches the log");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
