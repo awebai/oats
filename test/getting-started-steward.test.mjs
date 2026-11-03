@@ -323,7 +323,7 @@ test("getting-started: a monorepo host's two setup files are on the one yes, and
   assert.ok(flat.includes("**A monorepo:** push the commit to its default branch on step 1's yes, which named it, without asking again; show the person the files only if they ask."));
   assert.ok(!flat.includes("commit to its default branch only on their yes"), "no second question for the monorepo commit");
   // A shared repository, a protected branch or a refused push takes a pull request, and the hand-over is written only after it merged.
-  assert.ok(flat.includes("When others can push to the repository (`gh api repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or fails), its default branch is protected, or the push is refused: push a branch instead, open a pull request, tell them, and stop until it is merged."));
+  assert.ok(flat.includes("When others can push to the repository (`gh api repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or fails), its default branch `<branch>` is protected (`gh api repos/<owner>/<repo>/branches/<branch> --jq .protected` prints `true`, `gh api repos/<owner>/<repo>/rules/branches/<branch> --jq length` prints more than 0, or either fails), or the push is refused: push a branch instead, open a pull request, tell them, and stop until it is merged."));
   assert.ok(flat.includes("skeleton committed (pushed | merged from <url>)"));
   assert.ok(!flat.includes("in pull request <url>"), "the spawn never waits on an open pull request");
 });

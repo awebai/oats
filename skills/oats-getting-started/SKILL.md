@@ -772,9 +772,11 @@ workspace: git:github.com/acme/acme-oats
   which named it, without asking again; show the person the files only if
   they ask. When others can push to the repository (`gh api
   repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or
-  fails), its default branch is protected, or the push is refused: push a
-  branch instead, open a pull request, tell them, and stop until it is
-  merged.
+  fails), its default branch `<branch>` is protected (`gh api
+  repos/<owner>/<repo>/branches/<branch> --jq .protected` prints `true`,
+  `gh api repos/<owner>/<repo>/rules/branches/<branch> --jq length` prints
+  more than 0, or either fails), or the push is refused: push a branch
+  instead, open a pull request, tell them, and stop until it is merged.
 - If `git config user.name` or `git config user.email` prints nothing in
   `D/<repo>`, commit with the name step 1's yes covered:
   `-c user.name="<their name>" -c user.email="<their noreply address>"`,
