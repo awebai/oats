@@ -1,3 +1,0 @@
-## Changed
-
-- **`oats.framework` 1.20.0 ships the setup expert's newcomer changes.** `oats.setup` 2.11.0's `/oats-setup-expert` talks to a newcomer in everyday words, and puts a project that lives only on the person's computer on GitHub when they say yes, after checking for secrets and for files GitHub refuses (#1710, #1711, #1712). `oats.onboarding` 1.1.1's `/oats-tailor-workspace` uses the same plain words, and keeps the tasks default a new workspace was given rather than adding a second tasks provider (#1710, #1716). No command they name needs a newer OATS than each capability already admits ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).

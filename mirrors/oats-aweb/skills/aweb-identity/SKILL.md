@@ -6,7 +6,7 @@ allowed-tools: "Bash(aw *)"
 
 # aweb Identity
 
-Use this skill when the question is about the agent's own identity — its keys, custody model, address, inbound delivery policy, contacts, or key rotation. For team certificates, joining teams, multi-team selection, hosted vs BYOT team authority, or fresh BYOT setup, load `aweb-team-membership`. For day-to-day work coordination, load `aweb-coordination`. For mail/chat response policy, load `aweb-messaging`.
+Use this skill when the question is about the agent's own identity — its keys, custody model, address, inbound delivery policy, contacts, or key rotation. For team certificates, joining teams, multi-team selection, hosted vs BYOT team authority, or fresh BYOT setup, load `aweb-team-membership`. For mail/chat response policy, load `aweb-messaging`.
 
 ## Foundations
 
