@@ -164,6 +164,12 @@ are what they found missing. On Linux x64 they include the Desktop's system
 libraries: a missing one goes on the list as a system package, dropped if
 they decline the Desktop, so the Desktop's install needs no second yes.
 
+**No GitHub account.** Their agents' shared setup and their projects live
+on GitHub. When gh is not logged in, ask in the same message whether they
+have a GitHub account. Without one, they make one, free, in their browser
+at step 3, and nothing else changes: gh goes on the list of changes like
+any missing tool, and you install it.
+
 **The message.** Ask three things, and in the same message propose
 everything else as defaults they accept with "ok" or change:
 1. What they want their agents to help with (the use case), and where their
@@ -424,7 +430,15 @@ fail with "could not read Username"), then go on below:
 gh auth setup-git
 ```
 
-If not, start the login yourself, detached and without a terminal (your
+**When they have no GitHub account** (step 1), open GitHub's sign-up page
+in their browser first: `open https://github.com/signup` on macOS,
+`xdg-open https://github.com/signup` on Linux, or give them the URL if that
+fails. Tell them it is free, and that they choose a username, an email and a
+password there, in their browser, never in this conversation; GitHub emails
+them a code to confirm the address. Wait until they say the account is
+made, then start the login below.
+
+If not logged in, start the login yourself, detached and without a terminal (your
 harness's background mode if it has one); gh prints a one-time code and a
 URL instead of opening a browser, and waits:
 

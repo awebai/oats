@@ -412,3 +412,13 @@ test("a soul whose declared harness differs from this machine's '*' gets its own
     assert.ok(text.includes("`--model <its model>` when it names one"), `${name} carries the model`);
   }
 });
+
+test("getting-started: a person with no GitHub account is helped to make one, and gh is installed for them", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**No GitHub account.** Their agents' shared setup and their projects live on GitHub. When gh is not logged in, ask in the same message whether they have a GitHub account."));
+  assert.ok(flat.includes("gh goes on the list of changes like any missing tool, and you install it."));
+  assert.ok(flat.includes("open GitHub's sign-up page in their browser first: `open https://github.com/signup` on macOS, `xdg-open https://github.com/signup` on Linux"));
+  assert.ok(flat.includes("in their browser, never in this conversation"), "the account's password never reaches the agent");
+  // The sign-up comes before the device login, which runs unchanged after it.
+  assert.ok(flat.indexOf("open GitHub's sign-up page") < flat.indexOf("nohup gh auth login --web"));
+});
