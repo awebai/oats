@@ -95,6 +95,14 @@ oats sync --json                                 # the same, as the machine-read
   workspace still declares are used (`E_PACKAGE_MISSING` otherwise).
 - Never edit `oats-lock.json` by hand; it is written by `oats sync` only and
   is identical on every machine that synced the same workspace commit.
+- After a sync that adds a package soul: this machine's `souls.launch."*"`,
+  when it has one, wins over that soul's own `launch:`. For each new soul
+  whose `launch.declared.harness` in `oats souls --json` differs from it
+  and is installed and logged in on this machine, give it its own entry by the row's `key` (with `--model <its model>` when
+  it names one), plan first:
+  `oats soul launch set <key> --harness <its harness> --plan`, then without
+  `--plan`. A declared harness that isn't installed here stays under `'*'`,
+  so the soul can run; tell the person.
 
 ## Diagnose
 

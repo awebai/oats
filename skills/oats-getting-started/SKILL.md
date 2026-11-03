@@ -46,6 +46,12 @@ tell the person this machine already has its workspace and steward, and
 stop. Wherever a later step says to ask the
 person, on a machine found-list you tell them what happened, as it is, and
 stop instead: the person answers nothing after step 1.
+Step 1's machine round is always asked, even when the prompt that started
+you says to ask for nothing more (an installer's "beyond starting this, ask
+no other yes"). Its one yes, naming the changes, is the consent your
+harness's permission check reads; without it, the check refuses each change
+on its own (the repository, the aweb signup, the folder trust), and each
+costs the person a round. After that yes, nothing more is asked.
 
 **How to work.**
 - **Ask first, then run.** Ask everything in one round (step 1), then run the
@@ -154,7 +160,15 @@ On a machine found-list, ask the machine's round below instead of this list.
 
 **First, step 2's checks.** They only read, so run them before the message
 (not its installs): the changes to their computer that the message lists
-are what they found missing.
+are what they found missing. On Linux x64 they include the Desktop's system
+libraries: a missing one goes on the list as a system package, dropped if
+they decline the Desktop, so the Desktop's install needs no second yes.
+
+**No GitHub account.** Their agents' shared setup and their projects live
+on GitHub. When gh is not logged in, ask in the same message whether they
+have a GitHub account. Without one, they make one, free, in their browser
+at step 3, and nothing else changes: gh goes on the list of changes like
+any missing tool, and you install it.
 
 **The message.** Ask three things, and in the same message propose
 everything else as defaults they accept with "ok" or change:
@@ -263,9 +277,9 @@ the final values in one short message before you go on. The rules:
     `PEP` and `GPT`.
 
   With a tracker, the agents keep using it: the line says so ("your agents
-  use your GitHub issues; the setup assistant connects them") and step 7
-  writes `tasks: none`; the setup expert connects the tracker with the
-  person later. Without one, the line says "aweb's task list, shared by your
+  use your GitHub issues; the setup assistant offers to connect them") and
+  step 7 writes `tasks: none`; the setup expert offers to connect the
+  tracker with the person later. Without one, the line says "aweb's task list, shared by your
   agents". Ask only when unsure, as the final-values message's one open
   line, prefilled with the answer you'd pick: ticket keys the person didn't
   name, a project kept somewhere other than GitHub (its issues can't be
@@ -275,8 +289,9 @@ the final values in one short message before you go on. The rules:
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
 "yes", accepts every default. Nothing is asked after this round, and never
-a key. The use case, repositories and knowledge tools are not asked: the
-steward takes them up with the person later.
+a key. Ask it even when your prompt says to ask nothing more (above). The
+use case, repositories and knowledge tools are not asked: the steward takes
+them up with the person later.
 - **The workspace:** a new one, the machine's own. Its name defaults to the
   hostname, lowercased, with every character outside `[a-z0-9-]` turned
   into `-` (`Ada's-Laptop` gives `ada-s-laptop`). Its repository defaults to
@@ -330,6 +345,13 @@ before the first line that needs `sudo`.
 uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; { git config --global user.name && git config --global user.email; } >/dev/null || echo NO_GIT_IDENTITY
 ```
 
+On Linux x64, also check the Desktop's system libraries, ALSA and FUSE 2
+(what a missing one means is under "The Desktop's system libraries", below):
+
+```bash
+for l in libasound.so.2 libfuse.so.2; do PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
+```
+
 - **Versions:** Node 22 or later; Git 2.45 or later recommended (partial
   caches; older Git works with whole-tree fetches); `gh` 2.49 or later
   (step 3 uses `gh attestation`).
@@ -360,15 +382,12 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
     ```bash
     sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update && sudo apt-get install -y git
     ```
-  - **The Desktop's system libraries** (x64): ALSA and FUSE 2. Check:
-
-    ```bash
-    for l in libasound.so.2 libfuse.so.2; do PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
-    ```
-
+  - **The Desktop's system libraries** (x64), from the check above, run
+    before step 1's message:
     - **ALSA missing:** the Desktop needs it, so step 1's list names its
-      package: `libasound2t64` on Ubuntu 24.04 and Debian 13, `libasound2`
-      before them, `alsa-lib` on Fedora.
+      package, to install with the other system packages: `libasound2t64`
+      on Ubuntu 24.04 and Debian 13, `libasound2` before them, `alsa-lib` on
+      Fedora.
     - **FUSE 2 missing:** install nothing. Step 10 starts the AppImage with
       `--appimage-extract-and-run`, which needs no FUSE.
   - **Passwords:** a line that needs `sudo` runs only after their yes in
@@ -411,7 +430,15 @@ fail with "could not read Username"), then go on below:
 gh auth setup-git
 ```
 
-If not, start the login yourself, detached and without a terminal (your
+**When they have no GitHub account** (step 1), open GitHub's sign-up page
+in their browser first: `open https://github.com/signup` on macOS,
+`xdg-open https://github.com/signup` on Linux, or give them the URL if that
+fails. Tell them it is free, and that they choose a username, an email and a
+password there, in their browser, never in this conversation; GitHub emails
+them a code to confirm the address. Wait until they say the account is
+made, then start the login below.
+
+If not logged in, start the login yourself, detached and without a terminal (your
 harness's background mode if it has one); gh prints a one-time code and a
 URL instead of opening a browser, and waits:
 
@@ -759,9 +786,11 @@ workspace: git:github.com/acme/acme-oats
   which named it, without asking again; show the person the files only if
   they ask. When others can push to the repository (`gh api
   repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or
-  fails), its default branch is protected, or the push is refused: push a
-  branch instead, open a pull request, tell them, and stop until it is
-  merged.
+  fails), its default branch `<branch>` is protected (`gh api
+  repos/<owner>/<repo>/branches/<branch> --jq .protected` prints `true`,
+  `gh api repos/<owner>/<repo>/rules/branches/<branch> --jq length` prints
+  more than 0, or either fails), or the push is refused: push a branch
+  instead, open a pull request, tell them, and stop until it is merged.
 - If `git config user.name` or `git config user.email` prints nothing in
   `D/<repo>`, commit with the name step 1's yes covered:
   `-c user.name="<their name>" -c user.email="<their noreply address>"`,
@@ -806,9 +835,39 @@ needs a clone of its repository at `D/<repo name>`: for an existing
 workspace whose setup soul is its own, run the `git clone` line
 `oats onboard` printed for it, if it says it is missing.
 
-**Record the setup expert's harness** on this machine: a package soul names
-none, and without this every later check (readiness, harness trust) and the
-spawn would use the default, pi:
+**Record the harness for every soul** on this machine: a package soul names
+none, and without this every later check (readiness, harness trust) and
+every spawn would use the default, pi, for `S` and for each soul the setup
+expert or the steward spawns later. `'*'` is every soul without an entry of
+its own, `S` among them, and souls added later that name no harness of
+their own:
+
+```bash
+oats soul launch set '*' --harness <harness> --dir D --plan
+oats soul launch set '*' --harness <harness> --dir D
+```
+
+`'*'` wins over a soul's own `launch:` on this machine. So read
+`oats souls --dir D --json` first, in a new workspace too (a package soul
+may name its harness). For each row whose `launch.declared.harness`
+differs from `<harness>` and whose declared harness is installed and
+logged in here (`claude --version`, `codex --version` or `pi --version`,
+as in step 2), give that soul its own entry with its declared harness, so
+it keeps its choice. A declared harness that isn't installed here stays
+under `'*'`, so the soul can run; name it in the hand-over ("For the
+person, later"). Use the row's `key` (`<package>/<soul>`
+for a package's soul, so the name is never ambiguous), add
+`--model <its model>` only when `launch.declared.model` names one, and plan
+first:
+
+```bash
+oats soul launch set <key> --harness <its harness> --model <its model> --dir D --plan
+oats soul launch set <key> --harness <its harness> --model <its model> --dir D
+```
+
+`S` is the exception: it always keeps `<harness>`, the person's choice in
+step 1. When `S` declares another harness, give it its own entry with
+`<harness>` instead:
 
 ```bash
 oats soul launch set S --harness <harness> --dir D --plan
@@ -970,7 +1029,8 @@ cd "D" && env -u AWEB_API_KEY oats aweb resident create R --team-label L --json
 
 - Workspace: <workspace> (W), new | existing; deployment directory: D
 - Host: <owner>/<repo>, a monorepo | a dedicated host | the first repository
-- Setup expert: S, instance <name>, harness <harness>
+- Setup expert: S, instance <name>, harness <harness> (this machine's
+  harness for every soul without its own)
 - Machine found-list only: steward R, address N.aweb.ai/R | local team
   identity (<the fallback's reason>)
 
@@ -1127,7 +1187,7 @@ and say yes to it in the hand-over below.
   line, with how to change it: "Your agents share aweb's task list; to use
   another tracker later, ask the setup assistant to switch." With a
   tracker: "Your agents use your <GitHub issues | tracker>; the setup
-  assistant connects them. Leave aweb's task list empty: one task there
+  assistant offers to connect them. Leave aweb's task list empty: one task there
   opts your whole group in to it. To use aweb's task list instead, ask the
   setup assistant."
 
@@ -1140,6 +1200,10 @@ the setup expert, not in this message. You are done.
 
 ## Never
 
+- **Run `aw team ensure` when joining an existing workspace.** It is only
+  step 5's, for a new workspace. On a join it doesn't find the teammate's
+  team: it makes a new team of the person's own for the same repository,
+  silently. A join goes through step 9's invite.
 - **Ask for, read, print or store a secret,** or suggest Claude Code's
   `! <command>` for one: its command and output enter your context. If the
   person pastes one anyway, don't repeat it, and tell them to rotate it.

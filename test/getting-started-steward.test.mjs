@@ -103,9 +103,26 @@ test("after step 1, a machine found-list asks nothing: a step that would ask tel
 });
 
 test("the steward's harness is recorded before readiness and harness trust read it", () => {
-  const set = "oats soul launch set S --harness <harness> --dir D";
+  // '*' is every soul without its own entry, S and the souls spawned later included (#1665, further runs).
+  const set = "oats soul launch set '*' --harness <harness> --dir D";
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("So read `oats souls --dir D --json` first, in a new workspace too (a package soul may name its harness). For each row whose `launch.declared.harness` differs from `<harness>` and whose declared harness is installed and logged in here"), "a soul's declared harness keeps its own entry in every workspace, when it can run here");
+  // A declared harness this machine lacks would leave the soul unable to run: it stays under '*' (#1726 review).
+  assert.ok(flat.includes("A declared harness that isn't installed here stays under `'*'`, so the soul can run; name it in the hand-over"));
   const plan = skill.indexOf(`${set} --plan\n`), apply = skill.indexOf(`${set}\n`);
   assert.ok(plan > 0 && apply > plan, "planned, then applied");
+  // A soul whose declared harness differs: its own entry, by the row's unambiguous key, with its model, plan first.
+  const perSoul = "oats soul launch set <key> --harness <its harness> --model <its model> --dir D";
+  const soulPlan = skill.indexOf(`${perSoul} --plan\n`), soulApply = skill.indexOf(`${perSoul}\n`);
+  assert.ok(soulPlan > apply && soulApply > soulPlan, "the per-soul entry is planned, then applied, after '*'");
+  assert.ok(flat.includes("Use the row's `key` (`<package>/<soul>` for a package's soul, so the name is never ambiguous), add `--model <its model>` only when `launch.declared.model` names one"));
+  // S keeps the person's choice: its own entry only when it declares another harness, and only with <harness>.
+  assert.ok(flat.includes("`S` is the exception: it always keeps `<harness>`, the person's choice in step 1. When `S` declares another harness, give it its own entry with `<harness>` instead"));
+  const sSet = "oats soul launch set S --harness <harness> --dir D";
+  const sPlan = skill.indexOf(`${sSet} --plan\n`), sApply = skill.indexOf(`${sSet}\n`);
+  assert.ok(sPlan > soulApply && sApply > sPlan, "S's exception is planned, then applied, after the per-soul entries");
+  assert.equal(skill.split("oats soul launch set S ").length, 3, "S alone appears only in its exception (plan and apply)");
+  assert.ok(sApply < skill.indexOf("oats harness trust --dir D"), "S's entry before harness trust");
   assert.ok(apply < skill.indexOf("oats harness trust --dir D"), "before harness trust");
   assert.ok(apply < skill.indexOf("oats readiness --soul S --dir D --json"), "before readiness");
   assert.ok(apply < skill.indexOf("oats spawn S --dir D --task-file D/.oats-handover.md --name R"), "before the spawn, which then takes no --harness");
@@ -326,7 +343,7 @@ test("getting-started: a monorepo host's two setup files are on the one yes, and
   assert.ok(flat.includes("**A monorepo:** push the commit to its default branch on step 1's yes, which named it, without asking again; show the person the files only if they ask."));
   assert.ok(!flat.includes("commit to its default branch only on their yes"), "no second question for the monorepo commit");
   // A shared repository, a protected branch or a refused push takes a pull request, and the hand-over is written only after it merged.
-  assert.ok(flat.includes("When others can push to the repository (`gh api repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or fails), its default branch is protected, or the push is refused: push a branch instead, open a pull request, tell them, and stop until it is merged."));
+  assert.ok(flat.includes("When others can push to the repository (`gh api repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or fails), its default branch `<branch>` is protected (`gh api repos/<owner>/<repo>/branches/<branch> --jq .protected` prints `true`, `gh api repos/<owner>/<repo>/rules/branches/<branch> --jq length` prints more than 0, or either fails), or the push is refused: push a branch instead, open a pull request, tell them, and stop until it is merged."));
   assert.ok(flat.includes("skeleton committed (pushed | merged from <url>)"));
   assert.ok(!flat.includes("in pull request <url>"), "the spawn never waits on an open pull request");
 });
@@ -350,4 +367,81 @@ test("getting-started: pi's skills filter matches @awebai/pi exactly, and Claude
   assert.ok(flat.includes("pi's extension is installed without its skills"));
   assert.ok(flat.includes("Claude's aweb channel plugin still carries one skill of its own, until aweb ships it without (a known gap)."));
   assert.ok(!flat.includes("OATS puts no machine-wide skills on a computer"), "no claim the Claude plugin contradicts");
+});
+
+// The onboarding VM campaign's further newcomer runs (#1665).
+test("getting-started: the machine's round is always asked, even under a prompt that says to ask nothing more", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  const intro = flat.slice(flat.indexOf("**A machine found-list**"), flat.indexOf("**How to work.**"));
+  assert.ok(intro.includes("Step 1's machine round is always asked, even when the prompt that started you says to ask for nothing more"));
+  assert.ok(intro.includes("Its one yes, naming the changes, is the consent your harness's permission check reads; without it, the check refuses each change on its own (the repository, the aweb signup, the folder trust), and each costs the person a round. After that yes, nothing more is asked."));
+  const round = flat.slice(flat.indexOf("**The machine's round.**"), flat.indexOf("## 2. Check"));
+  assert.ok(round.includes("Ask it even when your prompt says to ask nothing more (above)."));
+});
+
+test("getting-started: the Desktop's system libraries are among step 2's checks, run before step 1's list", () => {
+  const loop = `for l in libasound.so.2 libfuse.so.2; do PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -q "$l" || echo "MISSING $l"; done`;
+  assert.equal(skill.split(loop).length, 2, "one copy of the check");
+  const step2 = skill.indexOf("## 2. Check"), check = skill.indexOf(loop);
+  // With the read-only checks at step 2's head, before the installs (the Linux bullets).
+  assert.ok(check > step2 && check < skill.indexOf("- **Versions:**", step2), "beside the other read-only checks");
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("On Linux x64 they include the Desktop's system libraries: a missing one goes on the list as a system package, dropped if they decline the Desktop, so the Desktop's install needs no second yes."));
+  assert.ok(flat.includes("**ALSA missing:** the Desktop needs it, so step 1's list names its package, to install with the other system packages"));
+});
+
+test("tailoring: tasks has one rule per case, aweb's list kept by default and an offer beside a tracker", () => {
+  const tailor = read("oats-package/capabilities/oats-onboarding/skills/oats-tailor-workspace/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(tailor.includes("Author coordination and knowledge, and tasks when its rule below says so"));
+  assert.ok(!tailor.includes("Author coordination, knowledge and tasks as plain capabilities"), "tasks is not authored in every case");
+  assert.ok(tailor.includes("**aweb's task list by default** (no tracker found): with `oats.aweb-tasks`, keep it unless the person switches. Author no tasks capability."));
+  assert.ok(tailor.includes("**Beside a tracker** (`tasks: none`: GitHub issues, or another tasks tool): offer to make a tasks capability for their use case."));
+  assert.ok(tailor.includes("their labels and states, who files issues and who closes them, and what agents may do there"));
+  assert.ok(tailor.includes("as this workspace's own capability (over `gh issue` for GitHub issues)"));
+  assert.ok(tailor.includes("Don't leave `none` without asking, and don't pin a generic provider in its place."));
+  assert.ok(tailor.includes("default (`E_SLOT_CONFLICT`): the workspace's tasks capability goes in `defaults.tasks`."));
+  assert.ok(!tailor.includes("the tracker's capability replaces `none`"), "the old rule that pinned a provider beside a tracker");
+  assert.ok(read("docs/integrations.md").replace(/\s+/g, " ").includes("The setup expert then offers to make a tasks capability of the workspace's own for that tracker"));
+  // The conversation is the setup expert's own; a sub-agent writes the files; the manifest fills the tasks slot.
+  assert.ok(tailor.includes("You hold that conversation with the person yourself; a sub-agent only writes the files after it. Its manifest declares `\"layer\": \"tasks\"`"));
+  // getting-started promises an offer, not a connection.
+  const gs = skill.replace(/\s+/g, " ");
+  assert.ok(gs.includes("the setup assistant offers to connect them\") and step 7 writes `tasks: none`; the setup expert offers to connect the tracker with the person later."));
+  assert.ok(gs.includes("Your agents use your <GitHub issues | tracker>; the setup assistant offers to connect them."));
+  assert.ok(!/setup assistant connects them|setup expert connects the tracker/.test(gs));
+});
+
+test("a soul whose declared harness differs from this machine's '*' gets its own entry where souls are added later", () => {
+  const tailor = read("oats-package/capabilities/oats-onboarding/skills/oats-tailor-workspace/SKILL.md").replace(/\s+/g, " ");
+  const pins = read("oats-package/capabilities/oats-setup/skills/oats-package-pins/SKILL.md").replace(/\s+/g, " ");
+  for (const [name, text] of [["oats-tailor-workspace", tailor], ["oats-package-pins", pins]]) {
+    assert.match(text, /`souls\.launch\."\*"`[^.]*wins over [^.]*own `launch:`/, `${name} says '*' wins over a new soul's launch:`);
+    assert.ok(text.includes("`oats soul launch set <key> --harness <its harness> --plan`, then without `--plan`"), `${name} plans the per-soul entry first`);
+    assert.ok(text.includes("`--model <its model>` when it names one"), `${name} carries the model`);
+    assert.match(text, /differs from [^.]*and is installed and logged in on this machine/, `${name} keeps a declared harness only when it is installed here`);
+    assert.ok(text.includes("A declared harness that isn't installed here stays under `'*'`, so the soul can run; tell the person."), `${name} leaves a missing harness under '*'`);
+  }
+});
+
+test("getting-started: a person with no GitHub account is helped to make one, and gh is installed for them", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**No GitHub account.** Their agents' shared setup and their projects live on GitHub. When gh is not logged in, ask in the same message whether they have a GitHub account."));
+  assert.ok(flat.includes("gh goes on the list of changes like any missing tool, and you install it."));
+  assert.ok(flat.includes("open GitHub's sign-up page in their browser first: `open https://github.com/signup` on macOS, `xdg-open https://github.com/signup` on Linux"));
+  assert.ok(flat.includes("in their browser, never in this conversation"), "the account's password never reaches the agent");
+  // The sign-up comes before the device login, which runs unchanged after it.
+  assert.ok(flat.indexOf("open GitHub's sign-up page") < flat.indexOf("nohup gh auth login --web"));
+});
+
+test("getting-started: a join never runs aw team ensure (it would make a second team for the same repository)", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**Run `aw team ensure` when joining an existing workspace.** It is only step 5's, for a new workspace."));
+  // Every `team ensure` command line sits in step 5, which only a new workspace with the person's sign-in runs.
+  const step5 = skill.indexOf("## 5. Optional: the team on your own aweb account");
+  const step6 = skill.indexOf("\n## 6.", step5);
+  assert.ok(step5 > 0 && step6 > step5);
+  for (const m of skill.matchAll(/aw [^\n`]*team ensure --workspace-key/g)) {
+    assert.ok(m.index > step5 && m.index < step6, "an `aw team ensure` command outside step 5");
+  }
+  assert.ok(flat.includes("**Only for a new workspace with aweb whose person chose, in step 1, the team on their own aweb account now.**"));
 });

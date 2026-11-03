@@ -16,8 +16,11 @@ description: >-
 Use this skill when your task starts with `# Onboarding hand-over from the
 getting-started skill`. From OATS 0.64.0, the repository's
 `oats-getting-started` skill writes that file when it spawns a workspace's setup expert
-(the instance `<workspace>-oats-setup-expert`, of `oats.framework`'s soul
-`oats-setup-expert` or of the workspace's own setup soul). You are that
+(the instance `<workspace>-oats-setup-expert`, or
+`<workspace>-<machine>-oats-setup-expert` on a machine that joins an
+existing workspace, or `<workspace>-oats-setup` when a soul holds the first
+name, of `oats.framework`'s soul `oats-setup-expert` or of the
+workspace's own setup soul). You are that
 expert, and from now on the onboarding is yours.
 
 The hand-over is `/oats-onboarding` card 1's intake, already collected. Don't ask again what it
@@ -25,12 +28,26 @@ answers; ask only what it leaves open, all in one round.
 
 It holds:
 - the workspace and the deployment directory `D`, and whether the workspace is new;
+- the host and its type: a monorepo, a dedicated host or the first
+  repository (a new workspace), and whether its skeleton was pushed or
+  merged;
+- your soul, instance name and harness (this machine's harness for every
+  soul without its own);
+- on a machine found-list, the steward lines: the steward `R` and its
+  address, or its local team identity and why;
 - the use case, the existing repositories and where they are cloned, the
   existing knowledge tools, and whether messaging is wanted;
-- the harness, and what the entry skill already did: the versions installed,
-  the gh login over https, the Desktop, and the workspace's messaging team
-  (with aweb, a team on an aweb account created for the workspace, or on
-  the person's own account when they signed in).
+- what the entry skill already did: the versions installed, the gh login
+  over https, the Desktop (or why it is not installed), and the workspace's
+  messaging team (with aweb, a team on an aweb account created for the
+  workspace, or on the person's own account when they signed in);
+- the harness's channel mode: development, confirmed by OATS at each start
+  (Claude with aweb), or none;
+- Tasks (a new workspace with aweb): `oats.aweb-tasks`, or `none` beside a
+  tracker the agents use, for you to connect with the person
+  (`/oats-tailor-workspace`);
+- what the person may want to know later, which the entry skill's message
+  to them left out.
 
 It holds no secret, and none ever goes into one.
 
@@ -77,8 +94,9 @@ question and message:
 **A new workspace, and you carry `oats.onboarding`** (`oats.framework`'s
 `oats-setup-expert` does): do steps 1 and 3, then `/oats-tailor-workspace`
 in place of steps 4 and 5. It finds the use case, authors the workspace's
-own coordination, knowledge and tasks capabilities and the souls that use
-them, and adds the deployment agent and the approved channel route. Then do
+own coordination and knowledge capabilities, and, beside a tracker and on
+the person's yes, a tasks capability, and the souls that use them, ties the agents to the person where messaging offers it, and offers
+the approved channel route. Then do
 steps 6 and 7; its brief is step 8's hand-back.
 
 Do the steps below in order. In each, apply this capability's rule on what
@@ -89,7 +107,9 @@ only the secrets, the logins and the installs that capture their shell.
    login over https is enough for these reads. A new workspace has the host
    as its only member repository, `oats.framework` pinned, `oats.core` as a
    default and you as its setup soul; the entry skill may also have added
-   `oats.aweb` with a team, and an older entry skill a first developer soul:
+   `oats.aweb` with a team and a tasks default (`defaults.tasks`:
+   `oats.aweb-tasks`, or `none` beside a tracker, as the hand-over's Tasks
+   line says), and an older entry skill a first developer soul:
 
    ```bash
    oats workspace status --dir D --json
@@ -254,8 +274,8 @@ only the secrets, the logins and the installs that capture their shell.
      account created for the workspace (or on the person's own account, when
      they signed in), and a join by invite for an existing one (the
      hand-over says which). A created account is the person's only once they
-     attach to it, and no agent is attributed to them until the deployment
-     agent exists: both are `/oats-tailor-workspace` steps. Check it with the
+     attach to it, and no agent is attributed to them until they are tied to
+     it: both are `/oats-tailor-workspace` steps. Check it with the
      briefing's read-only aweb check (`member: true`, your own soul as
      `S`), then go on from `/oats-teams`.
    - **If it has none yet,** first the `oats.aweb` pin
@@ -273,8 +293,22 @@ only the secrets, the logins and the installs that capture their shell.
      person's one-line command.
    - If you were spawned before the workspace had messaging, this session
      has no mail; every setup expert spawned on this machine from now on
-     has it. Say so in the hand-back: when the person spawns a new one,
-     they retire this one (`oats retire <your name>`).
+     has it. Say so in the hand-back, plainly, and offer to start a new
+     setup assistant for them. On their yes, in this order:
+     1. Spawn it, preview first, with what is still open as its task:
+        `oats spawn <your soul> --dir D --relation unrelated --name <your name>-2 --task-file <file>`.
+        Your own name stays taken while you run.
+     2. Check it: `oats status --dir D --json` shows it running and not
+        waiting on you, and the briefing's read-only aweb check for its
+        soul says `member: true`.
+     3. Tell the person its name as the Desktop lists it.
+     4. Read `oats retire <your name> --plan`. If it lists children, tell
+        the person which of their agents would stop, and ask.
+     5. Write your state file. Only then retire yourself:
+        `oats retire <your name> --self`.
+
+     If a check fails, keep this session, and tell the person so. The
+     person runs none of these.
 7. **Sync, check, first working soul:** first, for Claude harnesses,
    `/oats-agent-permissions`: the person chooses the Claude config and what
    stays gated, and you write it with their yes. Then `oats sync`, then
@@ -288,16 +322,19 @@ only the secrets, the logins and the installs that capture their shell.
    without.
    Messaging, if any, is proved by card 8's exchange, and permissions by
    `/oats-agent-permissions`' check during card 8's task.
-8. **Hand back to the person**, in the session:
-   - what is set up, with the versions;
+8. **Hand back to the person**, in the session, in everyday words:
+   - what is set up, by what it does for them, with no versions (they go in
+     your state file, if anyone asks);
    - which steps they typed into (the steps, never the values);
-   - what you pushed straight, and the pull requests waiting for their
-     review or merge;
+   - what you saved straight to their projects, and the changes waiting
+     for their review or merge, each with its link and who approves it;
    - what is still open, and who decides it.
 
-   Also tell them how to reach you again, as the setup assistant listed as
-   `<your name>`: the Desktop, `oats tui` (OATS
-   0.52.0 and later), or `oats session attach --home <your home>`.
+   Also tell them how to reach you again: in OATS Desktop, click the setup
+   assistant under Instances, by your name as the Desktop lists it (`-` as
+   spaces, the first letter capitalised). Without the Desktop, tell them
+   they can reach you from a terminal too, and give them the one line to
+   type there only if they ask: `oats tui --dir D`.
 
 These steps need oats.framework 1.13.0. With a kernel older than OATS
 0.61.0, `oats onboard` does not name you as the next step; nothing here

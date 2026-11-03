@@ -132,26 +132,35 @@ package; the two never merge (`from: <repo>` reads its latest `capabilities/`,
 
 **Capabilities** are bundles of skills, an instruction inject, commands and
 hooks. Three are **core capabilities** with exactly one slot each per soul:
-knowledge (`oats.okf`), messaging (`oats.aweb`) and tasks (`oats.jira`,
-`oats.linear`), because an agent needs one memory, one address and one task
+knowledge (`oats.okf`), messaging (`oats.aweb`) and tasks (`oats.aweb-tasks`,
+`oats.jira`, `oats.linear`), because an agent needs one memory, one address and one task
 list. Everything else is additive; `oats.core` (operating inside OATS) is a
 default almost every soul has. A capability comes `from: package`, `from:
 <member repo key>` or, in a soul, `from: here` (its own repo or package). A
 member capability marked `private: true` is **repo-owned**: listed, but usable
 only by that repo's souls.
 
-**Each workspace has a setup expert:** a soul of its own that holds
-`oats.setup`, named `<workspace>-oats-setup-expert` by convention. From OATS
-0.64.0, the repository's `oats-getting-started` skill creates it for a new
-workspace; before that, add it like any soul (`/oats-workspace-config`). All its knowledge comes from this capability, so a
-workspace's setup expert improves with the `oats.framework` pin, not by edits
-to the soul. From OATS 0.61.0, `oats onboard` names it as the next step. It
-finds the soul by what the soul holds: among the souls whose own `soul.yaml`
-declares `oats.setup`, the one with the conventional name, else the first by
-name. A workspace may already have an older setup soul under another name,
-and that one serves the same way. The OATS project's own workspace has two:
-`oats-setup-admin`, and `oats-operator-expert`, which also holds the operator
-knowledge. Its onboard step names `oats-operator-expert`, the first by name.
+**Each workspace has a setup expert:** a soul that holds `oats.setup`. From
+OATS 0.69.8 (`oats.framework` 1.18.0) it is the framework's package soul
+`oats-setup-expert`, with `oats.setup` and `oats.onboarding`, and its instance
+is named `<workspace>-oats-setup-expert` (on a machine joining an existing
+workspace, `<workspace>-<machine>-oats-setup-expert`; `<workspace>-oats-setup`
+when a soul of the workspace already holds the first name, and no `--name`,
+left to spawn, when a soul holds that one too or the name is too long). The
+repository's `oats-getting-started` skill spawns it, and for a new workspace
+writes no setup soul of its own. Before `oats.framework` 1.18.0, add one
+like any soul (`/oats-workspace-config`). All its knowledge comes from this capability, so a workspace's
+setup expert improves with the `oats.framework` pin, not by edits to a soul.
+From OATS 0.61.0, `oats onboard` names it as the next step. It finds the
+soul by what the soul's own `soul.yaml` declares, never by its name alone:
+among the souls that declare `oats.setup`, the workspace's own soul named
+`<workspace>-oats-setup-expert`, else `oats.framework`'s `oats-setup-expert`,
+else the first by name. A workspace may already have an older setup soul
+under another name, and that one serves the same way where the framework's
+soul is not pinned. The OATS project's own workspace has two,
+`oats-setup-admin`, and `oats-operator-expert`, which also holds the
+operator knowledge; it pins `oats.framework`, so its onboard step names the
+framework's `oats-setup-expert`.
 
 **Souls** are durable roles: `souls/<name>/` in a member, in a package
 (`<package>/<soul>`), or borrowed through `external:`. **Composition** is
