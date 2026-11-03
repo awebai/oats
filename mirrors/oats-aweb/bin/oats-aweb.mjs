@@ -1736,6 +1736,13 @@ if (event === "launch") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));
     const warnings = [];
     for (const row of joined) if (!eligible.has(row.label)) {
+      // A joined team that is now the live default stays joined: the primary
+      // identity is still in the team it was spawned in, and a home moves only
+      // when it is respawned.
+      if (row.label === defaultTeamLabel() && row.team === defaultTeamId()) {
+        warnings.push(`kept joined team ${row.label}: it is now the default team, and this home's primary identity is still in ${defaultTeamObject(oldMeta)?.label || "its spawn team"}; respawn to move it`);
+        continue;
+      }
       try {
         oldMeta = leaveJoinedTeam(row.label, oldMeta).meta;
         const left = { label: row.label, team: row.team, at: new Date().toISOString(), reason: "no-longer-eligible" };

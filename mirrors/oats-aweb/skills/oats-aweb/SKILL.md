@@ -366,6 +366,8 @@ acts as a resident identity through a session grant (identity.mode "global")`:
 stop at #60's owner-pending grant contract, never use native switch/join in-seat.
 When a team becomes ineligible, launch attempts leave; an unconfirmed release
 keeps the identity and reports the failure. Do not manually delete its receipts.
+A joined team that has become the default is kept, with a warning, until the
+home is respawned: only a respawn moves its primary identity.
 
 ## 6. Etiquette
 
@@ -430,6 +432,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `channel-cache-unrecognized` (start) | the failure cache is not in the shape the provider reads (Claude Code 2.1.300's), so it was left alone | nobody; `channel-not-connected` follows if Claude skips the channel |
 | `channel-cache-changed` (start) | another Claude kept writing the failure cache while the start read it, so it was left alone rather than overwrite that write | nobody; `channel-not-connected` follows if Claude skips the channel |
 | `channel-cache-unchecked` (spawn, start) | the start's Claude config dir is not known: every spawn (the kernel gives hooks no resolved config dir, awebai/oats#1503), or a start whose recorded `CLAUDE_CONFIG_DIR` is not a literal path. The cache was not checked | nobody; `channel-not-connected` follows if Claude skips the channel |
+| `pi-extension-skills-loaded` (warning, pi homes) | the pi folder of the home's launch lists `npm:@awebai/pi` without `"skills": []` in its `settings.json`, so pi loads the skills bundled with the extension in every session using that folder; a home gets its skills through its OATS capabilities only | operator: make the entry `{"source": "npm:@awebai/pi", "skills": []}` as the message says, keeping any version and the other entries (README, "The pi extension without its skills"); `pi install` and `pi update` keep the filter |
 
 A registered channel still reads `native-receive-unproven`: registration proves
 Claude took the channel for this start, not that the plugin's aweb event stream
@@ -441,7 +444,9 @@ is up.
   message lists them. Check the spelling against `oats aweb teams --json`.
 - `E_TEAM_DEFAULT` — the workspace's default team cannot be left.
 - `E_TEAM_GLOBAL_MODE` — this home acts as a resident identity through a
-  session grant; joined teams need local identities. Report it.
+  session grant; joined teams need local identities. Report it. A GLOBAL seat
+  cannot join teams (#60), so readiness refuses a tasks `team` setting that
+  names another team.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
   home was kept on purpose so leave can be retried. Retry later or report.
 
