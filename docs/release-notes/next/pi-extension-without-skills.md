@@ -1,0 +1,3 @@
+## Documentation
+
+- **`/oats-host-delivery` installs the pi extension without its skills.** `oats.framework`'s host-delivery skill gains the pi step of channel delivery: the setup expert runs `pi install npm:@awebai/pi`, then makes the extension's entry in the pi folder's `settings.json` `{"source": "npm:@awebai/pi", "skills": []}`, so pi loads the extension and none of the skills `@awebai/pi` bundles. A home gets its skills through its OATS capabilities only. The filter is interim, until aweb publishes the extension without skills; oats.aweb's readiness warns `pi-extension-skills-loaded` while it is missing.
