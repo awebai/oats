@@ -254,6 +254,8 @@ test("a new workspace with aweb defaults to aweb tasks, and to `tasks: none` onl
   assert.ok(flat.includes(`--search "updated:>=<date 180 days ago> -author:app/renovate -author:app/dependabot"`));
   assert.ok(flat.includes("a project kept somewhere other than GitHub (its issues can't be read)"));
   assert.ok(flat.includes("Now run step 1's GitHub-issues check if it waited for this login"));
+  assert.ok(flat.includes("ask now in one line, prefilled with their GitHub issues (`tasks: none`)"));
+  assert.ok(flat.includes("write only when `team_instructions.version` is `1`, the server's untouched default"));
   // The setup expert's tailor skill keeps the default rather than adding a second tasks provider.
   const tailor = read("oats-package/capabilities/oats-onboarding/skills/oats-tailor-workspace/SKILL.md").replace(/\s+/g, " ");
   assert.ok(tailor.includes("with `oats.aweb-tasks`, keep it unless the person switches"));

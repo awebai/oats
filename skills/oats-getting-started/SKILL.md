@@ -227,14 +227,15 @@ the final values in one short message before you go on. The rules:
     `gh issue list -R <owner>/<repo> --state all --limit 1 --json number --jq length --search "updated:>=<date 180 days ago> -author:app/renovate -author:app/dependabot"`
     prints `1`. Issues switched on but unused are no tracker, and so is a
     repository with issues switched off (the command says they are
-    disabled). Before step 3's login, step 3 runs this check.
+    disabled). If gh isn't logged in yet, step 3 runs this check after its
+    login.
   - **Jira, Linear or another tracker:** the person named it in their
     answers, or ticket keys are in the project's recent branch names or
     commit subjects (`git -C <dir> log -50 --format=%s`,
     `git -C <dir> branch -a --format='%(refname:short)'`): one prefix
     matching `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]*` with two different numbers,
-    other than `UTF`, `SHA`, `ISO`, `RFC`, `CVE`, `ES`, `HTTP`, `TLS` and
-    `PEP`.
+    other than `UTF`, `SHA`, `ISO`, `RFC`, `CVE`, `ES`, `HTTP`, `TLS`,
+    `PEP` and `GPT`.
 
   With a tracker, the agents keep using it: the line says so ("your agents
   use your GitHub issues; the setup assistant connects them") and step 7
@@ -409,7 +410,10 @@ gh auth status && gh auth setup-git && rm -f "$HOME/.oats-gh-login.txt"
 
 The token stays in gh's store and never reaches you. Now run step 1's
 GitHub-issues check if it waited for this login; a tracker it finds changes
-the tasks line, so tell the person in one sentence. That is all the Git
+the tasks line, so tell the person in one sentence. If the check fails for
+another reason (access refused, say), ask now in one line, prefilled with
+their GitHub issues (`tasks: none`): never aweb's task list beside a
+tracker you couldn't rule out. That is all the Git
 setup this needs: an SSH key, commit signing and the DCO sign-off are the
 setup expert's `/oats-git-setup`, when Git access is broken or the person
 wants them.
@@ -886,9 +890,10 @@ readiness still reports a problem.
      text with the line added at the end, through a file in a new temporary
      folder (`aw instructions set --body-file <file>`), then show them again
      and check that the line is there. These are the whole team's
-     instructions: on step 5's route, `team ensure` may have returned a
-     team that already existed, so add the line there only when the person
-     said this is a new workspace for that team. If `set` is refused (the
+     instructions: write only when `team_instructions.version` is `1`, the
+     server's untouched default, as on a team made here. A higher version
+     (step 5's `team ensure` can return a team that already existed) means
+     someone wrote them: write nothing, and the hand-over says so. If `set` is refused (the
      root may not edit them), write nothing else, and the hand-over says
      so.
    - **The host wake broker,** which wakes agents when work or mail arrives,
