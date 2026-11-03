@@ -158,15 +158,16 @@ test("cron evaluation follows the zone through DST and is due exactly on the min
 });
 
 test("a local spawn job names its soul as oats spawn does: add and update ask spawn's preview, and runs launch it through spawn", () => {
-  const ws = workspace(), root = join(ws, "agents");
-  const job = { id: "rev", cron: "*/5 * * * *", tz: "UTC", kind: "spawn", agent: "reviewer", task: "Review.", harness: "pi", model: "m1", launchConfig: "fast" };
+  const ws = workspace(), root = join(ws, "agents"), clone = join(ws, "elsewhere", "clone");
+  const job = { id: "rev", cron: "*/5 * * * *", tz: "UTC", kind: "spawn", agent: "reviewer", task: "Review.", harness: "pi", model: "m1", launchConfig: "fast", backend: "tmux", repo: clone };
+  // The selectors the run passes, so the preview checks what the run's spawn will.
+  const selectors = ["--launch-config=fast", "--harness=pi", "--model=m1", "--backend=tmux", `--repo=${clone}`];
   const invalid = (agent, message) => (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agent" && (typeof message === "string" ? e.message === message : message.test(e.message));
   // A soul the workspace offers, never spawned here (no agents/reviewer/soul): spawn's preview resolves it.
   const offered = fakeOats(ws, { ok: true, result: { agent: "reviewer" } });
   assert.equal(existsSync(join(root, "reviewer")), false);
   assert.equal(S.addSchedule(ws, job, { oatsBin: offered.bin }).soul.name, "reviewer");
-  // The soul only: no launch options, so save refuses nothing new about them.
-  assert.deepEqual(offered.calls(), [["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--preview", "--json"]]);
+  assert.deepEqual(offered.calls(), [["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--preview", "--json", ...selectors]]);
   // A name spawn refuses is refused with spawn's own message, its code in details.
   const unknown = fakeOats(ws, { ok: false, error: { code: "E_SOUL_UNKNOWN", message: "soul \"ghost\" is not offered by this workspace" } });
   assert.throws(() => S.addSchedule(ws, { ...job, id: "ghost", agent: "ghost" }, { oatsBin: unknown.bin }), (e) => invalid("ghost", "agent: soul \"ghost\" is not offered by this workspace")(e) && e.details?.code === "E_SOUL_UNKNOWN");
@@ -184,10 +185,10 @@ test("a local spawn job names its soul as oats spawn does: add and update ask sp
   assert.equal(S.describe(ws, "local").agent, "dev", "a refused update changes nothing");
   assert.equal(S.updateSchedule(ws, "local", { ...job, agent: "reviewer" }, { oatsBin: offered.bin }).agent, "reviewer");
   assert.equal(offered.calls().length, 2);
-  // schedule test reports the soul as resolving, through the same preview (with the job's launch options).
+  // schedule test reports the soul as resolving, through the same preview.
   const t = S.testSchedule(ws, "rev", { oatsBin: offered.bin }, { now: at("2026-09-07T10:01:00Z") });
   assert.equal(t.soul.resolves, true); assert.equal(t.soul.error, null);
-  assert.deepEqual(offered.calls()[2], ["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--preview", "--json", "--launch-config=fast", "--harness=pi", "--model=m1"]);
+  assert.deepEqual(offered.calls()[2], ["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--preview", "--json", ...selectors]);
   assert.equal(S.testSchedule(ws, "rev", { oatsBin: unknown.bin }).soul.error.code, "E_SOUL_UNKNOWN");
   S.removeSchedule(ws, "local");
   // A due minute launches it: the tick runs no preview, it hands the soul to spawn.
@@ -202,9 +203,44 @@ test("a local spawn job names its soul as oats spawn does: add and update ask sp
   const r = S.runNow(ws, "rev", { now: at("2026-09-07T10:07:00Z"), io: { oatsBin: tick.bin, noLaunch: true, inspect: io.inspect } });
   assert.equal(r.schedule.lastRun.outcome, "launched");
   const [spawned] = tick.calls();
-  assert.deepEqual(spawned.slice(0, 4), ["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`]);
+  assert.deepEqual(spawned.slice(0, 11), ["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--purpose=rev-202609071007", "--json", ...selectors]);
   assert.equal(spawned.includes("--preview"), false);
   assert.equal(existsSync(join(root, "reviewer")), false, "nothing needed agents/reviewer/soul");
+});
+
+test("reconcile proves a lost spawn receipt launched nothing only where spawn names the run <agent>-<purpose>", () => {
+  const ws = workspace();
+  const io = { inspect: () => ({ present: true, state: "unknown" }) };
+  // A spawn whose receipt is lost: it may have made the home (named after the soul's stem, as spawn names it).
+  const lost = (stem) => ({ ...io, spawn: (root, agent, opts) => { if (stem) home(ws, `${stem}-${opts.purpose}`); throw Object.assign(new Error("workspace spawn timed out; its effects could not be confirmed (a home may have been created)"), { code: "E_SPAWN_UNCONFIRMED" }); } });
+  const offered = fakeOats(ws, { ok: true, result: { agent: "dev" } }).bin;
+  const unknownAfterTick = (id, agent, stem, minute) => {
+    S.addSchedule(ws, { id, cron: "0 * * * *", tz: "UTC", kind: "spawn", agent, task: "t" }, { oatsBin: offered });
+    const c = S.tickWorkspace(ws, { now: at(minute), io: lost(stem), reg: { maxConcurrent: 8 } });
+    assert.equal(c.find((x) => x.id === id).action, "unknown", id);
+    assert.ok(S.describe(ws, id, io).attempt, `${id}: the attempt is retained`);
+  };
+  // A qualified name: spawn names the run dev-…, not ws/dev-…; the receipt's absence proves nothing.
+  unknownAfterTick("qual", "ws/dev", "dev", "2026-09-07T10:00:00Z");
+  let r = S.reconcile(ws, "qual", { io });
+  assert.equal(r.reconciled, "unknown"); assert.match(r.remedy, /cannot be proven[\s\S]*reconcile qual --clear/);
+  let d = S.describe(ws, "qual", io);
+  assert.ok(d.attempt, "the attempt is kept"); assert.equal(d.running, true, "and the slot"); assert.equal(d.lastRun.outcome, "unknown");
+  r = S.reconcile(ws, "qual", { io, clear: true });
+  assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.lastRun.outcome, "launch-failed"); assert.equal(r.schedule.running, false);
+  // A package soul homes at <package>--<soul> and its runs are <package>-<soul>-…: unproven as well, even spawned here.
+  mkdirSync(join(ws, "agents", "acme--keeper", "soul"), { recursive: true });
+  writeFileSync(join(ws, "agents", "acme--keeper", "soul", "soul.yaml"), "name: keeper\nwork: worktree\nharness: claude\n");
+  unknownAfterTick("pkg", "acme--keeper", null, "2026-09-07T11:00:00Z");
+  assert.equal(S.reconcile(ws, "pkg", { io }).reconciled, "unknown");
+  // A bare name of a member soul under agents/: its runs are named dev-<purpose>, so no such home proves nothing launched.
+  unknownAfterTick("plain", "dev", null, "2026-09-07T12:00:00Z");
+  r = S.reconcile(ws, "plain", { io });
+  assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.lastRun.outcome, "launch-failed"); assert.equal(r.schedule.running, false);
+  // And its home, when there is one, is adopted by that name.
+  unknownAfterTick("found", "dev", "dev", "2026-09-07T13:00:00Z");
+  r = S.reconcile(ws, "found", { io });
+  assert.equal(r.reconciled, "adopted"); assert.equal(r.schedule.lastRun.instance, "dev-found-202609071300");
 });
 
 test("a local spawn job's soul is refused at add when the deployment's oats-local.yaml cannot be read", () => {

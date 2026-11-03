@@ -77,20 +77,23 @@ refuses the key on a trigger.
   one disposable instance of `agent` with the options `oats spawn` takes.
   `agent` is resolved as `oats spawn <agent>` resolves it (a member or
   package soul the workspace offers, see `oats souls`), whether or not this
-  deployment has spawned it before. `add` and `update` refuse a name `oats
-  spawn` would refuse (`E_SCHEDULE_INVALID`, field `agent`, with spawn's own
-  message and its code in `details.code`), or one whose resolution cannot be
-  confirmed; a soul this deployment has already spawned is accepted without
-  asking. `agentsRoot`, when given, must be the deployment's `agents/` root; `repo`
+  deployment has spawned it before. `add` and `update` refuse a job whose
+  `oats spawn <agent> --preview`, with the job's `launchConfig`, `harness`,
+  `model`, `backend` and `repo`, fails (`E_SCHEDULE_INVALID`, field `agent`,
+  with spawn's own message and its code in `details.code`), or whose preview
+  answer cannot be confirmed; a soul this deployment has already spawned is
+  accepted without the preview. `agentsRoot`, when given, must be the deployment's `agents/` root; `repo`
   is the work repository, as `--repo`. `backend` is `tmux`; `backend: herdr`
   is refused (`E_HERDR_REMOVED`, naming the file and key: Herdr was removed in
   0.31.0), and a stored job that names it is reported invalid and never runs.
   `model` is a model id (a letter or
   digit, then letters, digits and `. _ : / @ + - [ ]`, at most 128
   characters) or `@native-default`; `agent` and `repo` never start with `-`,
-  so no value can be read as an option of the child `oats spawn`. Each run is
-  named `<agent>-<purpose or id>-<YYYYMMDDHHMM>`, at most 64 characters (a
-  longer one is refused when saved, `E_SCHEDULE_INVALID`). The task gets a
+  so no value can be read as an option of the child `oats spawn`. Spawn names
+  each run after the soul's stem, `<stem>-<purpose or id>-<YYYYMMDDHHMM>`: the
+  stem is the soul's name, `<package>-<soul>` for a package soul. Instance
+  names are at most 64 characters; a job whose `<agent>-<purpose or
+  id>-<YYYYMMDDHHMM>` is longer is refused when saved (`E_SCHEDULE_INVALID`). The task gets a
   trailing block naming the job and the minute and ending with `oats retire
   --self`. `wake` (`{cron, tz, message}`) attaches a wake schedule to each
   launched instance.
@@ -791,7 +794,12 @@ or answered no envelope, or an attempt was never recorded. A job with a
 persisted attempt is skipped until `oats schedule reconcile <id>` (an
 unknown `lastRun` alone does not block it; see below), which adopts only an attributable
 receipt (a spawn job's instance, named for its minute, or the instance a
-command's answer named). When nothing is attributable, check the roster and
+command's answer named). A spawn job's instance is found by the name
+`<agent>-<purpose or id>-<YYYYMMDDHHMM>`, and no home of that name proves the
+attempt launched nothing only when `agent` is the bare name of a member soul
+under `agents/`. For a qualified or package soul, whose runs spawn names after
+its stem, reconcile answers `unknown` and keeps the attempt and its slot. When
+nothing is attributable, check the roster and
 the host by hand, then `reconcile <id> --clear` records `launch-failed` and
 frees the slot. The unresolved attempt shows in `show` as `attempt:
 {scheduledFor, startedAt, error?, exited?, exitStatus?, exitSignal?}`;
