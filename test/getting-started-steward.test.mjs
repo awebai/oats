@@ -418,6 +418,7 @@ test("a soul whose declared harness differs from this machine's '*' gets its own
     assert.match(text, /`souls\.launch\."\*"`[^.]*wins over [^.]*own `launch:`/, `${name} says '*' wins over a new soul's launch:`);
     assert.ok(text.includes("`oats soul launch set <key> --harness <its harness> --plan`, then without `--plan`"), `${name} plans the per-soul entry first`);
     assert.ok(text.includes("`--model <its model>` when it names one"), `${name} carries the model`);
+    assert.ok(text.includes("plan first (from OATS 0.53.0)"), `${name} names the OATS version that has the command`);
     assert.match(text, /differs from [^.]*and is installed and logged in on this machine/, `${name} keeps a declared harness only when it is installed here`);
     assert.ok(text.includes("A declared harness that isn't installed here stays under `'*'`, so the soul can run; tell the person."), `${name} leaves a missing harness under '*'`);
   }
