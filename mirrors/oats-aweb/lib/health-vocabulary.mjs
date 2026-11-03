@@ -63,7 +63,7 @@ function classify({now, liveness, launchPrompts, readiness, grant, identity, rec
   if (problems.size) return row('unknown', 'oats.unclassified', 'unknown');
   const expiresAt = Date.parse(grant?.expiresAt);
   if (warnings.has('grant-expiring') && expiresAt - now <= GRANT_EXPIRING_MS) return row('degraded', 'oats.grant_expiring', 'operator');
-  if (identity?.kind === 'joined' && identity.receive === 'poll') return row('degraded', 'oats.joined_team_poll_only', 'operator');
+  if (identity?.kind === 'joined' && identity.receive === 'poll') return identity.expectedPoll === true ? row('yes') : row('degraded', 'oats.joined_team_poll_only', 'operator');
   if (RECEIVE_UNPROVEN_WARNINGS.some((c) => warnings.has(c))) return row('degraded', 'oats.receive_unproven', 'unknown');
   if (receive?.native && identity?.kind !== 'joined') {
     if (receive.receipt === 'proven') return row('yes');

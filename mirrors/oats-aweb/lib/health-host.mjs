@@ -58,7 +58,8 @@ export function healthHost({deployment, env}) {
 
   const kernel = async (args) => {
     const r = await run(kernelArgv[0], [...kernelArgv.slice(1), ...args, '--json'], {cwd: deployment, env: kernelEnv, timeout: KERNEL_TIMEOUT_MS});
-    return parseJson(r.stdout) ?? {ok: false, error: {code: 'E_UNREADABLE', message: (r.stderr || r.stdout).trim().slice(0, 500)}};
+    const doc = parseJson(r.stdout);
+    return r.status === 0 && doc ? doc : {ok: false, error: doc?.error ?? {code: 'E_UNREADABLE', message: (r.stderr || r.stdout).trim().slice(0, 500)}};
   };
   const aw = (target, args, input) => run('aw', [...(target.identityHome ? ['--identity-home', target.identityHome] : []), ...args], {cwd: target.cwd ?? deployment, env: awEnv, input, timeout: AW_TIMEOUT_MS});
   /** An aw status command's answer: {ok, status, code, message, retry_after}. */
@@ -72,6 +73,34 @@ export function healthHost({deployment, env}) {
   const awVersion = async () => (await aw({}, ['version'])).stdout.match(/^aw (\S+)$/m)?.[1] ?? 'unknown';
 
   return {
+    async supportsWaiting() {
+      const doc = await kernel(['version']);
+      return Array.isArray(doc?.features) && doc.features.includes('waiting-on-you');
+    },
+
+    async wakeStatus() {
+      const answer = await aw({}, ['wake', 'status', '--json']);
+      return answer.status === 0 ? parseJson(answer.stdout) : null;
+    },
+
+    async unreadCount(identityHome) {
+      const answer = await aw({identityHome}, ['mail', 'inbox', '--count-only', '--json']);
+      const count = answer.status === 0 ? parseJson(answer.stdout)?.unread_count : null;
+      return Number.isSafeInteger(count) && count >= 0 ? count : null;
+    },
+
+    async supportsUnreadCount() {
+      const answer = await aw({}, ['mail', 'inbox', '--help']);
+      return answer.status === 0 && answer.stdout.includes('--count-only');
+    },
+
+    async waiting(home, message) {
+      const doc = await kernel(['instance', 'waiting', message === null ? 'clear' : 'set',
+        '--producer', 'oats.aweb', ...(message === null ? [] : ['--reason', 'attention', '--message', message]),
+        '--home', home, '--dir', deployment]);
+      if (!doc?.ok) throw new Error('oats.aweb waiting claim update failed');
+    },
+
     async status() {
       const doc = await kernel(['status']);
       if (!Array.isArray(doc?.agents)) throw new Error(`oats status gave no roster: ${doc?.error?.message ?? 'no answer'}`);

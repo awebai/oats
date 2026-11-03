@@ -399,15 +399,15 @@ npm install -g "@awebai/oats@V" && oats version
 pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
 ```
 
-**A new workspace needs `oats.framework` 1.18.0 or later** (it ships the
-setup expert soul). Read the installed CLI's catalog:
+**A new workspace needs `oats.framework` 1.19.0 or later** (its setup
+expert attaches the person to the workspace's messaging account). Read the installed CLI's catalog:
 
 ```bash
 node -e 'const c=require(process.argv[1]);console.log(c.packages["oats.framework"].ref,c.packages["oats.aweb"].ref)' "$(oats root)/package-catalog.json"
 ```
 
-It prints the two refs, for example `oats-framework/v1.18.0 v1.32.1`. If the
-framework's version (after the `/`) is below `1.18.0`, this OATS release is
+It prints the two refs, for example `oats-framework/v1.19.0 v1.33.1`. If the
+framework's version (after the `/`) is below `1.19.0`, this OATS release is
 older than this skill: stop, and tell the person to wait for the next OATS
 release. Never write a setup soul into the workspace in its place.
 
@@ -625,8 +625,8 @@ name: acme
 members:
   - git:github.com/acme/acme-oats     # the host; the setup expert adds the others
 packages:
-  oats.framework: v1.18.0             # the installed CLI's catalog versions (below)
-  oats.aweb: v1.32.1                  # messaging: agent identities, mail and chat
+  oats.framework: v1.19.0             # the installed CLI's catalog versions (below)
+  oats.aweb: v1.33.1                  # messaging: agent identities, mail and chat
   oats.machine: v0.1.1                # on a machine found-list only: the machine's steward
 defaults:
   capabilities:
@@ -638,7 +638,7 @@ defaultTeam: acme                     # every soul starts in this team
 ```
 
 - **The versions** are the ones step 4 printed: the framework's (after
-  `oats-framework/`) and `oats.aweb`'s, that one never below `v1.31.0`.
+  `oats-framework/`) and `oats.aweb`'s, that one never below `v1.33.1`.
 - **The team** is `default:N.aweb.ai`, with `N` from step 1: the team step
   9's signup creates, checked there against this line. With step 5's
   sign-in, it is `T` from step 5 instead, written in literally. Its label
@@ -700,7 +700,7 @@ the text output of `oats onboard` says why.
   workspace that doesn't offer it: stop, and say that its owner adds
   `oats.machine` to its `packages:`.
 - **An existing workspace with no setup soul** (`next.spawn` is `null`):
-  stop, and say that its owner pins `oats.framework` 1.18.0 or later, which
+  stop, and say that its owner pins `oats.framework` 1.19.0 or later, which
   ships `oats-setup-expert`. Once that is merged, run `oats sync --dir D` and
   look again.
 
@@ -831,7 +831,7 @@ with no API key and nothing for the person to type. Without messaging, skip
 this. It needs all of these; when one fails, take the fallback below:
 - a new workspace: a root that joined by invite (items 3 and 4) does not own
   the namespace, so aweb would refuse the create;
-- `oats.aweb` 1.33.0 or later: the `oats.aweb` row of the
+- `oats.aweb` 1.34.0 or later: the `oats.aweb` row of the
   `oats inspect` you read above, `result.capabilities[].version`;
 - aw 1.36.48 or later: `aw.version` in the check (item 1).
 

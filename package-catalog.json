@@ -8,7 +8,7 @@
     },
     "oats.aweb": {
       "url": "https://github.com/awebai/oats-aweb.git",
-      "ref": "v1.32.1",
+      "ref": "v1.33.1",
       "path": "oats-package"
     },
     "oats.jira": {
@@ -28,7 +28,7 @@
     },
     "oats.engineering": {
       "url": "https://github.com/awebai/oats-engineering.git",
-      "ref": "v1.17.2",
+      "ref": "v1.18.0",
       "path": "oats-package"
     },
     "oats.cloning": {
@@ -48,7 +48,7 @@
     },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
-      "ref": "oats-framework/v1.18.0",
+      "ref": "oats-framework/v1.19.0",
       "path": "oats-package"
     }
   },

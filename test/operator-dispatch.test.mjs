@@ -210,10 +210,10 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     // Without --soul: the deployment's first okf-providing soul (its only one, probe) runs it, said on
     // stderr in both modes; the provider then answers for itself (no base was named).
     r = run(["okf", "init", "--json"]);
-    assert.match(r.err, /oats okf: no --soul given; running as soul [\w.-]+\/probe,/, r.err);
+    assert.match(r.err, /oats okf: using the settings and teams of soul [\w.-]+\/probe,/, r.err);
     assert.notEqual(r.json?.error?.details?.flag, "--soul", "not the kernel's --soul refusal");
     r = run(["okf", "init"]);
-    assert.match(r.err, /no --soul given; running as soul [\w.-]+\/probe,/);
+    assert.match(r.err, /using the settings and teams of soul [\w.-]+\/probe,/);
 
     // A namespace no module of the soul's resolution provides → E_UNKNOWN_COMMAND.
     r = run(["zzz", "init", "--soul", "probe", "--json"]);
@@ -267,11 +267,11 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const notHome = join(dep, "not-a-home"); mkdirSync(notHome);
     writeFileSync(join(notHome, "instance.json"), readFileSync(join(r.json.result.home, "instance.json")));
     const misplaced = run(["okf", "inspect", "--json"], notHome);
-    assert.match(misplaced.err, /no --soul given; running as soul [\w.-]+\/probe,/, misplaced.out + misplaced.err);
+    assert.match(misplaced.err, /using the settings and teams of soul [\w.-]+\/probe,/, misplaced.out + misplaced.err);
     const renamed = join(dep, "agents", "probe", "instances", "renamed"); mkdirSync(renamed);
     writeFileSync(join(renamed, "instance.json"), readFileSync(join(r.json.result.home, "instance.json")));
     const misnamed = run(["okf", "inspect", "--json"], renamed);
-    assert.match(misnamed.err, /no --soul given; running as soul [\w.-]+\/probe,/, misnamed.out + misnamed.err);
+    assert.match(misnamed.err, /using the settings and teams of soul [\w.-]+\/probe,/, misnamed.out + misnamed.err);
 
     // A 5.0 package-soul harvester requires a proposal naming an actual source.
     // It still homes under <agents-root>/<package>--<soul>/instances/<name>.

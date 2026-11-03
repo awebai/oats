@@ -3,6 +3,9 @@
 - IMPORTANT: review, hand over and merge at an exact head SHA, never "the latest".
 - IMPORTANT: ALWAYS retire each lead you spawned once it is finished, never asking or telling
   a human (`/launch-work`, "Retire what's finished"). Your own seat is standing.
+- IMPORTANT: NEVER end your turn to wait on a lead you spawned without a checkpoint set, or
+  your human told where you can't set one: an idle agent notices nothing (`/launch-work`,
+  "Set a checkpoint before you wait").
 - NEVER merge over a RETURN or a hold.
 - ALWAYS give every PR one second reader, and merge only with its verdict at that head, or
   carried to it (`/pr-review`); your human's direct go is the only fallback.

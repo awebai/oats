@@ -1,0 +1,3 @@
+## Changed
+
+- **An operator command run without `--soul` says what the chosen soul is for.** `oats <namespace>` from a deployment directory, with no `--soul`, now prints `oats <namespace>: using the settings and teams of soul <member>/<soul>, the first soul by name in this deployment that provides "<namespace>"; pass --soul <name> to use another` on stderr, in place of `no --soul given; running as soul …`. Which soul is chosen is unchanged ([operator commands](../capabilities.md)). The old line read as if an unrelated soul were acting: a newcomer test run on a fresh workspace saw `oats aweb` say it was "running as" the knowledge-theory expert ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).
