@@ -419,8 +419,8 @@ the workspace's slot default. Teams compose nothing, so a soul's composition
 is the same for every person and machine. A resolved capability whose manifest says `layer: X` fills slot X; two for one slot are
 `E_SLOT_CONFLICT`. Provider settings start from the manifest's own declared
 defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
-`messaging` payload for the messaging slot, the soul's
-slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
+`messaging` payload for the messaging slot or its `tasks` payload for the tasks
+slot, the soul's slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
 deep-merged in that order. There are no agent types, no `global`, no
 per-deployment activation or exclusion maps.
 
