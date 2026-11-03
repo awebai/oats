@@ -17,8 +17,9 @@ description: >-
 
 You are the person's own coding agent. This skill takes them from nothing to
 a running **setup expert**: an OATS agent of their workspace that does the
-rest of the setup with them (their repositories, their own coordination,
-knowledge and tasks capabilities, their first agents). You ask, install,
+rest of the setup with them (their repositories, their own coordination
+and knowledge capabilities, a tracker they already use, their first
+agents). You ask, install,
 write a few files and spawn it. Then you are done.
 
 A **workspace** is one Git repository declaring which repositories belong to
@@ -64,7 +65,8 @@ stop instead: the person answers nothing after step 1.
   per user, under `~/.local`; on macOS with Homebrew), the line that puts
   them on their PATH in their shell's startup file (`~/.local/bin` on Linux;
   on macOS, Homebrew's `brew shellenv` line, only when Homebrew is new), the
-  aweb channel plugin in Claude (Claude only), the folder where their agents
+  aweb channel plugin in Claude (Claude only) or pi's aweb extension,
+  without its skills (pi only), the folder where their agents
   live (`D`, spelled out) marked as trusted by their coding agent, OATS
   Desktop with its app-launcher entry, each system package step 2 found
   missing, with what it is for, Git told to use their GitHub login (`gh auth
@@ -145,7 +147,8 @@ files live (the host, in plain words: "kept with your notes-app code on
 GitHub", or "in a new private space on your GitHub, `<workspace>-oats`"),
 the messaging account, the folder where their agents live, OATS Desktop
 installed and opened, the name on their commits (only when Git has none),
-and the changes to their computer ("How to work"). Don't ask for the GitHub
+where their agents keep track of work (tasks, below), and the changes to
+their computer ("How to work"). Don't ask for the GitHub
 owner (below), or for the coding agent the setup expert runs on: it is you,
 when you are `claude`, `codex` or `pi`. When an answer changes a default (a
 name, a host, a fresh start or a join), derive every default again and show
@@ -210,6 +213,37 @@ the final values in one short message before you go on. The rules:
   (`Ubuntu` for `ubuntu`), their GitHub profile name, found after step 3
   (`gh api user --jq '.name // .login'`), and the line says "your GitHub
   name". Step 7 uses it without asking again.
+- **Tasks, a new workspace with aweb only:** where the agents track work.
+  The default is aweb's task list (`oats.aweb-tasks`). It gives way only to
+  a tracker the person already uses, which you find, never ask about. The
+  first message can't know their projects yet, so its line says "aweb's
+  task list, unless your projects already use a tracker"; once they have
+  named them, look, and the final-values message (above) gives the result.
+  A tracker is:
+  - **GitHub issues:** a project's GitHub repository with an issue, open or
+    closed, updated in the last 180 days and not opened by a bot:
+    `gh issue list -R <owner>/<repo> --state all --limit 1 --json number --jq length --search "updated:>=<date 180 days ago> -author:app/renovate -author:app/dependabot"`
+    prints `1`. Issues switched on but unused are no tracker, and so is a
+    repository with issues switched off (the command says they are
+    disabled). If gh isn't logged in yet, step 3 runs this check after its
+    login.
+  - **Jira, Linear or another tracker:** the person named it in their
+    answers, or ticket keys are in the project's recent branch names or
+    commit subjects (`git -C <dir> log -50 --format=%s`,
+    `git -C <dir> branch -a --format='%(refname:short)'`): one prefix
+    matching `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]*` with two different numbers,
+    other than `UTF`, `SHA`, `ISO`, `RFC`, `CVE`, `ES`, `HTTP`, `TLS`,
+    `PEP` and `GPT`.
+
+  With a tracker, the agents keep using it: the line says so ("your agents
+  use your GitHub issues; the setup assistant connects them") and step 7
+  writes `tasks: none`; the setup expert connects the tracker with the
+  person later. Without one, the line says "aweb's task list, shared by your
+  agents". Ask only when unsure, as the final-values message's one open
+  line, prefilled with the answer you'd pick: ticket keys the person didn't
+  name, a project kept somewhere other than GitHub (its issues can't be
+  read), or a `gh issue list` that failed for another reason. An existing
+  workspace or a machine found-list has no tasks line: its owner decided.
 
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
@@ -372,7 +406,12 @@ cat "$HOME/.oats-gh-login.txt"
 gh auth status && gh auth setup-git && rm -f "$HOME/.oats-gh-login.txt"
 ```
 
-The token stays in gh's store and never reaches you. That is all the Git
+The token stays in gh's store and never reaches you. Now run step 1's
+GitHub-issues check if it waited for this login; a tracker it finds changes
+the tasks line, so tell the person in one sentence. If the check fails for
+another reason (access refused, say), ask now in one line, prefilled with
+their GitHub issues (`tasks: none`): never aweb's task list beside a
+tracker you couldn't rule out. That is all the Git
 setup this needs: an SSH key, commit signing and the DCO sign-off are the
 setup expert's `/oats-git-setup`, when Git access is broken or the person
 wants them.
@@ -426,8 +465,14 @@ release. Never write a setup soul into the workspace in its place.
 **With aweb, the messaging CLI `aw`, and the harness's aweb channel,** which
 wakes an agent when mail arrives (skip this without messaging): Claude
 `claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace`;
-pi `pi install npm:@awebai/pi`; Codex nothing (the setup expert sets up its
-wake).
+pi `pi install npm:@awebai/pi`, then its entry in pi's `settings.json` set
+to load none of the skills it bundles (OATS puts no machine-wide skills on
+a computer; each agent gets its own); Codex nothing (the setup expert sets
+up its wake). The pi entry, which prints it so you can check `"skills":[]`:
+
+```bash
+node -e 'const fs=require("fs"),path=require("path"),os=require("os");const f=path.join(process.env.PI_CODING_AGENT_DIR||path.join(os.homedir(),".pi","agent"),"settings.json");const s=JSON.parse(fs.readFileSync(f,"utf8"));const ours=(e)=>(typeof e==="string"?e:e&&e.source||"").startsWith("npm:@awebai/pi");s.packages=(s.packages||[]).map((e)=>ours(e)?{...(typeof e==="object"?e:{}),source:typeof e==="string"?e:e.source,skills:[]}:e);fs.writeFileSync(f,JSON.stringify(s,null,2)+"\n");console.log(JSON.stringify(s.packages.filter(ours)))'
+```
 
 ```bash
 npm install -g @awebai/aw && aw version
@@ -644,6 +689,7 @@ defaults:
   capabilities:
     oats.core: { from: package }
   messaging: { oats.aweb: { from: package } }
+  tasks: { oats.aweb-tasks: { from: package } }   # or `tasks: none` (step 1)
 teams:
   acme: { description: The acme workspace's team, team: "T" }
 defaultTeam: acme                     # every soul starts in this team
@@ -657,11 +703,12 @@ defaultTeam: acme                     # every soul starts in this team
   (here `acme`) is the workspace name.
 - **The `oats.machine` line,** at the catalog's
   `packages."oats.machine".ref`, only on a machine found-list.
+- **The `tasks` line** is step 1's tasks answer: `oats.aweb-tasks` without
+  a tracker, `tasks: none` with one. On a machine found-list, leave it out.
 - **Without messaging,** leave out the `oats.aweb` line, the `messaging`
-  line, `teams` and `defaultTeam`.
+  line, the `tasks` line, `teams` and `defaultTeam`.
 - **Add nothing else:** no soul (the setup expert is `oats.framework`'s), no
-  `tasks:` default, no knowledge; the setup expert authors those with the
-  person.
+  knowledge; the setup expert authors those with the person.
 
 `oats-membership.yaml`:
 
@@ -832,7 +879,6 @@ readiness still reports a problem.
    their own agent whether that name is in the group (its agent reads
    `oats aweb roster --label L`); the fix (a new invite and a name for this
    machine) is the workspace owner's. Never take the other machine's name.
-
 The setup expert does the rest of this machine's messaging
 (`/oats-host-delivery`).
 
@@ -905,6 +951,10 @@ are cloned, knowledge tools, messaging wanted or not>
   messaging)
 - Harness channel mode: development, confirmed by OATS at each start
   (Claude with aweb) | none (Codex, pi or no messaging)
+- Tasks (new workspace with aweb): oats.aweb-tasks | none: the agents use
+  <GitHub issues in <repo> | <tracker the person named> | ticket keys
+  <PREFIX>-n>, for you to connect with the person; aweb's task list stays
+  empty
 
 ## Left to you
 Everything else, starting with /oats-setup-expert.
@@ -1030,7 +1080,14 @@ and say yes to it in the hand-over below.
   installed, shows it;
 - what the setup assistant does next, in one line: it learns how they work,
   then sets up their projects and their first agents with them, and it
-  opens a small hidden prompt when they need to type a password or a key.
+  opens a small hidden prompt when they need to type a password or a key;
+- a new workspace with aweb only, where their agents track work, in one
+  line, with how to change it: "Your agents share aweb's task list; to use
+  another tracker later, ask the setup assistant to switch." With a
+  tracker: "Your agents use your <GitHub issues | tracker>; the setup
+  assistant connects them. Leave aweb's task list empty: one task there
+  opts your whole group in to it. To use aweb's task list instead, ask the
+  setup assistant."
 
 Don't list homes, paths, versions or commands in this message. You are
 done.

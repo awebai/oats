@@ -225,3 +225,42 @@ test("a common hostname gets a keyed hash of the machine id, never the id itself
   assert.ok(flat.includes("Never the id itself: the whole team sees this name, and the id is confidential (machine-id(5))."));
   assert.doesNotMatch(flat, /first eight characters of `\/etc\/machine-id`|IOPlatformUUID` on macOS, lowercased/);
 });
+
+test("a new workspace with aweb defaults to aweb tasks, and to `tasks: none` only beside a tracker it found", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  // The skeleton carries the tasks default; the rule says when it is `none`.
+  assert.match(skill, /\n  tasks: \{ oats\.aweb-tasks: \{ from: package \} \}\s+# or `tasks: none` \(step 1\)\n/);
+  assert.ok(flat.includes("The default is aweb's task list (`oats.aweb-tasks`). It gives way only to a tracker the person already uses, which you find, never ask about"));
+  // Issues switched on are GitHub's default, so only a used issue list is a tracker.
+  assert.ok(flat.includes("`gh issue list -R <owner>/<repo> --state all --limit 1 --json number --jq length --search "));
+  assert.ok(flat.includes("Issues switched on but unused are no tracker"));
+  assert.ok(flat.includes("step 7 writes `tasks: none`"));
+  assert.ok(flat.includes("Ask only when unsure, as the final-values message's one open line, prefilled with the answer you'd pick: ticket keys the person didn't name"));
+  assert.doesNotMatch(flat, /no `tasks:` default/);
+  // Onboarding neither edits the team's instructions nor installs the wake broker: the first task opts the
+  // team in, and /oats-host-delivery installs the broker where a home needs it.
+  assert.doesNotMatch(skill, /AWEB_TASKS_LINE|aw instructions set|oats aweb wake install/);
+  // Beside a tracker, the hand-off keeps aweb's list empty.
+  assert.ok(flat.includes("Leave aweb's task list empty: one task there opts your whole group in to it. To use aweb's task list instead, ask the setup assistant."));
+  // Every path reaches item 6, the hand-over records the choice, and the found-list and no-messaging skeletons carry no tasks line.
+  assert.ok(flat.includes("- Tasks (new workspace with aweb): oats.aweb-tasks | none: the agents use"));
+  assert.ok(flat.includes("`tasks: none` with one. On a machine found-list, leave it out."));
+  assert.ok(flat.includes("leave out the `oats.aweb` line, the `messaging` line, the `tasks` line, `teams` and `defaultTeam`"));
+  // The issues check is pinned to recent, human issues, and a non-GitHub project is a question, not a default.
+  assert.ok(flat.includes(`--search "updated:>=<date 180 days ago> -author:app/renovate -author:app/dependabot"`));
+  assert.ok(flat.includes("a project kept somewhere other than GitHub (its issues can't be read)"));
+  assert.ok(flat.includes("Now run step 1's GitHub-issues check if it waited for this login"));
+  assert.ok(flat.includes("ask now in one line, prefilled with their GitHub issues (`tasks: none`)"));
+  // The setup expert's tailor skill keeps the default rather than adding a second tasks provider.
+  const tailor = read("oats-package/capabilities/oats-onboarding/skills/oats-tailor-workspace/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(tailor.includes("with `oats.aweb-tasks`, keep it unless the person switches"));
+  assert.ok(tailor.includes("(`E_SLOT_CONFLICT`)"));
+});
+
+test("pi's aweb extension is installed without its bundled skills", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("then its entry in pi's `settings.json` set to load none of the skills it bundles"));
+  assert.ok(skill.includes('process.env.PI_CODING_AGENT_DIR||path.join(os.homedir(),".pi","agent")'));
+  assert.ok(skill.includes("skills:[]}:e)"));
+  assert.ok(flat.includes("pi's aweb extension, without its skills (pi only)"));
+});

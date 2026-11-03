@@ -70,7 +70,12 @@ step 1's findings and its starting point:
 - **Tasks**, from the tracker they use: the official tasks providers in the
   catalog (with aweb, the default, `oats.aweb-tasks`; `oats.jira`,
   `oats.linear`). It must expose what agents can operate, and say what stays
-  with humans.
+  with humans. A new workspace from the getting-started skill already has a
+  tasks default (`defaults.tasks` in `oats-workspace.yaml`, and the
+  hand-over's Tasks line): with `oats.aweb-tasks`, keep it unless the person
+  switches; with `none` beside a tracker, the tracker's capability replaces
+  `none` as the default. Never name a second tasks provider in a soul's
+  `capabilities:` beside a default (`E_SLOT_CONFLICT`).
 
 Check each draft against step 1 before you commit it: our default's
 assumptions that this team does not share come out.
