@@ -287,6 +287,11 @@ test("getting-started: the time budget, and the Desktop's download waited on for
   assert.ok(flat.includes("**The time budget.** The whole setup should take a few minutes, and only seconds of the person's time"));
   assert.ok(flat.includes("Don't wait more than about a minute for the Desktop's background download once the CLI is installed: if it hasn't verified by then, go on without the Desktop and record that in the hand-over (the person can install it later with the setup expert, through `/oats-upgrade`)."));
   assert.ok(!flat.includes("the setup expert installs it later"), "the setup expert has no Desktop step of its own");
+  // /oats-upgrade is the route that installs it later: its Desktop step covers a host without one.
+  const upgrade = read("oats-package/capabilities/oats-setup/skills/oats-upgrade/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(upgrade.includes("On a host without it, ask whether they want it installed: a getting-started hand-over whose Desktop line says \"not installed\" left it to this skill."));
+  assert.ok(upgrade.includes("**The Desktop**, where it is installed, and on a host without it when the person wants it: version `$V`"));
+  assert.ok(upgrade.includes("A first install is the same step, and the same release's Desktop"));
   assert.ok(flat.includes("Run this once: it waits up to a minute for a `DONE` line"));
   assert.ok(!flat.includes("up to five times"), "no five-minute wait for the download");
   assert.ok(skill.includes(`for i in $(seq 60); do grep -qx DONE "<W>.log" && break; sleep 1; done`));
