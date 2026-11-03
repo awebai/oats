@@ -17,8 +17,9 @@ description: >-
 
 You are the person's own coding agent. This skill takes them from nothing to
 a running **setup expert**: an OATS agent of their workspace that does the
-rest of the setup with them (their repositories, their own coordination,
-knowledge and tasks capabilities, their first agents). You ask, install,
+rest of the setup with them (their repositories, their own coordination
+and knowledge capabilities, a tracker they already use, their first
+agents). You ask, install,
 write a few files and spawn it. Then you are done.
 
 A **workspace** is one Git repository declaring which repositories belong to
@@ -69,8 +70,11 @@ stop instead: the person answers nothing after step 1.
   Desktop with its app-launcher entry, each system package step 2 found
   missing, with what it is for, Git told to use their GitHub login (`gh auth
   setup-git`, in `~/.gitconfig`), on Linux npm's per-user folder (in
-  `~/.npmrc`), and, for a new workspace whose host step 6 creates, the
-  private repository `<owner>/<repo>` on GitHub.
+  `~/.npmrc`), for a new workspace whose agents use aweb's task list (step
+  1), a background service that wakes their agents (`oats aweb wake
+  install`, which they start in a terminal you open, in about 10 seconds),
+  and, for a new workspace whose host step 6 creates, the private
+  repository `<owner>/<repo>` on GitHub.
   Name each change by what and where, not by kind: a permission check that
   reads the conversation lets a step through only when their yes named it.
   Never run `sudo` for something that was not on that list, even where no
@@ -213,25 +217,33 @@ the final values in one short message before you go on. The rules:
   name". Step 7 uses it without asking again.
 - **Tasks, a new workspace with aweb only:** where the agents track work.
   The default is aweb's task list (`oats.aweb-tasks`). It gives way only to
-  a tracker the person already uses, which you find, never ask about:
-  - **GitHub issues:** a project's GitHub repository that has at least one
-    issue, open or closed (`gh issue list -R <owner>/<repo> --state all
-    --limit 1 --json number --jq length` prints `1`). Issues switched on but
-    never used are no tracker. Before step 3's login, check after it, and
-    the line says "aweb's task list, unless your GitHub repositories use
-    issues (checked after the GitHub login)".
+  a tracker the person already uses, which you find, never ask about. The
+  first message can't know their projects yet, so its line says "aweb's
+  task list, unless your projects already use a tracker"; once they have
+  named them, look, and the final-values message (above) gives the result.
+  A tracker is:
+  - **GitHub issues:** a project's GitHub repository with an issue, open or
+    closed, updated in the last 180 days and not opened by a bot:
+    `gh issue list -R <owner>/<repo> --state all --limit 1 --json number --jq length --search "updated:>=<date 180 days ago> -author:app/renovate -author:app/dependabot"`
+    prints `1`. Issues switched on but unused are no tracker, and so is a
+    repository with issues switched off (the command says they are
+    disabled). Before step 3's login, step 3 runs this check.
   - **Jira, Linear or another tracker:** the person named it in their
-    answers, or ticket keys (`ABC-123`, the same prefix at least twice) are
-    in the project's recent branch names or commit subjects
-    (`git -C <dir> log -50 --format=%s`,
-    `git -C <dir> branch -a --format='%(refname:short)'`).
+    answers, or ticket keys are in the project's recent branch names or
+    commit subjects (`git -C <dir> log -50 --format=%s`,
+    `git -C <dir> branch -a --format='%(refname:short)'`): one prefix
+    matching `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]*` with two different numbers,
+    other than `UTF`, `SHA`, `ISO`, `RFC`, `CVE`, `ES`, `HTTP`, `TLS` and
+    `PEP`.
 
   With a tracker, the agents keep using it: the line says so ("your agents
   use your GitHub issues; the setup assistant connects them") and step 7
   writes `tasks: none`; the setup expert connects the tracker with the
   person later. Without one, the line says "aweb's task list, shared by your
-  agents". Ask, with that line as the prefilled answer, only when the one
-  sign of a tracker is ticket keys the person didn't name. An existing
+  agents". Ask only when unsure, as the final-values message's one open
+  line, prefilled with the answer you'd pick: ticket keys the person didn't
+  name, a project kept somewhere other than GitHub (its issues can't be
+  read), or a `gh issue list` that failed for another reason. An existing
   workspace or a machine found-list has no tasks line: its owner decided.
 
 **The machine's round.** Read the found-list, then ask only these choices,
@@ -395,7 +407,9 @@ cat "$HOME/.oats-gh-login.txt"
 gh auth status && gh auth setup-git && rm -f "$HOME/.oats-gh-login.txt"
 ```
 
-The token stays in gh's store and never reaches you. That is all the Git
+The token stays in gh's store and never reaches you. Now run step 1's
+GitHub-issues check if it waited for this login; a tracker it finds changes
+the tasks line, so tell the person in one sentence. That is all the Git
 setup this needs: an SSH key, commit signing and the DCO sign-off are the
 setup expert's `/oats-git-setup`, when Git access is broken or the person
 wants them.
@@ -781,7 +795,7 @@ readiness still reports a problem.
    channel as in step 4, then check again; anything else: stop and tell the
    person why). Its `defaultTeam.label` is `L`, the setup expert's team.
    - **A new workspace that signed in at step 5** expects `"member": true`
-     here: step 5 installed the root. Then this step is done.
+     here: step 5 installed the root. Then go on to item 6.
      Every other new workspace (the default, and a machine found-list)
      has no root yet, so its `"member": false` here is expected: go on to
      item 2.
@@ -866,11 +880,17 @@ readiness still reports a problem.
 
      While it reads "not yet published", skip this write, and the hand-over
      says the opt-in waits on aweb's line. Otherwise, from `D`, read the
-     team's instructions (`aw instructions show --json`). If they don't
-     already carry the line, write a new version that is the current text
-     with the line added at the end, through a file in a new temporary
+     team's instructions (`aw instructions show --json`, the text in
+     `team_instructions.document.body_md`, which may be empty). If they
+     don't already carry the line, write a new version that is the current
+     text with the line added at the end, through a file in a new temporary
      folder (`aw instructions set --body-file <file>`), then show them again
-     and check that the line is there.
+     and check that the line is there. These are the whole team's
+     instructions: on step 5's route, `team ensure` may have returned a
+     team that already existed, so add the line there only when the person
+     said this is a new workspace for that team. If `set` is refused (the
+     root may not edit them), write nothing else, and the hand-over says
+     so.
    - **The host wake broker,** which wakes agents when work or mail arrives,
      and whose heartbeat aweb's task claims will rely on. From `D`,
      `aw version` and `aw wake status --json`: it is current when
@@ -1095,7 +1115,8 @@ and say yes to it in the hand-over below.
   another tracker later, ask the setup assistant to switch." With a
   tracker: "Your agents use your <GitHub issues | tracker>; the setup
   assistant connects them. Leave aweb's task list empty: one task there
-  switches your whole group over to it."
+  opts your whole group in to it. To use aweb's task list instead, ask the
+  setup assistant."
 
 Don't list homes, paths, versions or commands in this message. You are
 done.
