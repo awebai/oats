@@ -1198,6 +1198,10 @@ the setup expert, not in this message. You are done.
 
 ## Never
 
+- **Run `aw team ensure` when joining an existing workspace.** It is only
+  step 5's, for a new workspace. On a join it doesn't find the teammate's
+  team: it makes a new team of the person's own for the same repository,
+  silently. A join goes through step 9's invite.
 - **Ask for, read, print or store a secret,** or suggest Claude Code's
   `! <command>` for one: its command and output enter your context. If the
   person pastes one anyway, don't repeat it, and tell them to rotate it.

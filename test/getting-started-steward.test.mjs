@@ -426,3 +426,16 @@ test("getting-started: a person with no GitHub account is helped to make one, an
   // The sign-up comes before the device login, which runs unchanged after it.
   assert.ok(flat.indexOf("open GitHub's sign-up page") < flat.indexOf("nohup gh auth login --web"));
 });
+
+test("getting-started: a join never runs aw team ensure (it would make a second team for the same repository)", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**Run `aw team ensure` when joining an existing workspace.** It is only step 5's, for a new workspace."));
+  // Every `team ensure` command line sits in step 5, which only a new workspace with the person's sign-in runs.
+  const step5 = skill.indexOf("## 5. Optional: the team on your own aweb account");
+  const step6 = skill.indexOf("\n## 6.", step5);
+  assert.ok(step5 > 0 && step6 > step5);
+  for (const m of skill.matchAll(/aw [^\n`]*team ensure --workspace-key/g)) {
+    assert.ok(m.index > step5 && m.index < step6, "an `aw team ensure` command outside step 5");
+  }
+  assert.ok(flat.includes("**Only for a new workspace with aweb whose person chose, in step 1, the team on their own aweb account now.**"));
+});
