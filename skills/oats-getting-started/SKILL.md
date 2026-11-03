@@ -46,6 +46,12 @@ tell the person this machine already has its workspace and steward, and
 stop. Wherever a later step says to ask the
 person, on a machine found-list you tell them what happened, as it is, and
 stop instead: the person answers nothing after step 1.
+Step 1's machine round is always asked, even when the prompt that started
+you says to ask for nothing more (an installer's "beyond starting this, ask
+no other yes"). Its one yes, naming the changes, is the consent your
+harness's permission check reads; without it, the check refuses each change
+on its own (the repository, the aweb signup, the folder trust), and each
+costs the person a round. After that yes, nothing more is asked.
 
 **How to work.**
 - **Ask first, then run.** Ask everything in one round (step 1), then run the
@@ -154,7 +160,9 @@ On a machine found-list, ask the machine's round below instead of this list.
 
 **First, step 2's checks.** They only read, so run them before the message
 (not its installs): the changes to their computer that the message lists
-are what they found missing.
+are what they found missing. On Linux x64 they include the Desktop's system
+libraries: a missing one goes on the list as a system package, so the
+Desktop's install needs no second yes.
 
 **The message.** Ask three things, and in the same message propose
 everything else as defaults they accept with "ok" or change:
@@ -275,8 +283,9 @@ the final values in one short message before you go on. The rules:
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
 "yes", accepts every default. Nothing is asked after this round, and never
-a key. The use case, repositories and knowledge tools are not asked: the
-steward takes them up with the person later.
+a key. Ask it even when your prompt says to ask nothing more (above). The
+use case, repositories and knowledge tools are not asked: the steward takes
+them up with the person later.
 - **The workspace:** a new one, the machine's own. Its name defaults to the
   hostname, lowercased, with every character outside `[a-z0-9-]` turned
   into `-` (`Ada's-Laptop` gives `ada-s-laptop`). Its repository defaults to
@@ -330,6 +339,13 @@ before the first line that needs `sudo`.
 uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; { git config --global user.name && git config --global user.email; } >/dev/null || echo NO_GIT_IDENTITY
 ```
 
+On Linux x64, also check the Desktop's system libraries, ALSA and FUSE 2
+(what a missing one means is under "The Desktop's system libraries", below):
+
+```bash
+for l in libasound.so.2 libfuse.so.2; do PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
+```
+
 - **Versions:** Node 22 or later; Git 2.45 or later recommended (partial
   caches; older Git works with whole-tree fetches); `gh` 2.49 or later
   (step 3 uses `gh attestation`).
@@ -360,15 +376,12 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
     ```bash
     sudo add-apt-repository -y ppa:git-core/ppa && sudo apt-get update && sudo apt-get install -y git
     ```
-  - **The Desktop's system libraries** (x64): ALSA and FUSE 2. Check:
-
-    ```bash
-    for l in libasound.so.2 libfuse.so.2; do PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -q "$l" || echo "MISSING $l"; done
-    ```
-
+  - **The Desktop's system libraries** (x64), from the check above, run
+    before step 1's message:
     - **ALSA missing:** the Desktop needs it, so step 1's list names its
-      package: `libasound2t64` on Ubuntu 24.04 and Debian 13, `libasound2`
-      before them, `alsa-lib` on Fedora.
+      package, to install with the other system packages: `libasound2t64`
+      on Ubuntu 24.04 and Debian 13, `libasound2` before them, `alsa-lib` on
+      Fedora.
     - **FUSE 2 missing:** install nothing. Step 10 starts the AppImage with
       `--appimage-extract-and-run`, which needs no FUSE.
   - **Passwords:** a line that needs `sudo` runs only after their yes in
@@ -806,14 +819,22 @@ needs a clone of its repository at `D/<repo name>`: for an existing
 workspace whose setup soul is its own, run the `git clone` line
 `oats onboard` printed for it, if it says it is missing.
 
-**Record the setup expert's harness** on this machine: a package soul names
-none, and without this every later check (readiness, harness trust) and the
-spawn would use the default, pi:
+**Record the harness for every soul** on this machine: a package soul names
+none, and without this every later check (readiness, harness trust) and
+every spawn would use the default, pi, for `S` and for each soul the setup
+expert or the steward spawns later. `'*'` is every soul without an entry of
+its own, souls added later included, `S` among them:
 
 ```bash
-oats soul launch set S --harness <harness> --dir D --plan
-oats soul launch set S --harness <harness> --dir D
+oats soul launch set '*' --harness <harness> --dir D --plan
+oats soul launch set '*' --harness <harness> --dir D
 ```
+
+`'*'` wins over a soul's own `launch:` on this machine. In an existing
+workspace, read `oats souls --dir D --json` first: for each soul whose
+`launch.declared` is not `null`, also give it its own entry with that
+harness (and `--model`, when it names one), plan first, so it keeps its
+choice: `oats soul launch set <soul> --harness <its harness> --dir D`.
 
 ## 9. Messaging on this machine
 
@@ -968,7 +989,8 @@ cd "D" && env -u AWEB_API_KEY oats aweb resident create R --team-label L --json
 
 - Workspace: <workspace> (W), new | existing; deployment directory: D
 - Host: <owner>/<repo>, a monorepo | a dedicated host | the first repository
-- Setup expert: S, instance <name>, harness <harness>
+- Setup expert: S, instance <name>, harness <harness> (this machine's
+  harness for every soul without its own)
 - Machine found-list only: steward R, address N.aweb.ai/R | local team
   identity (<the fallback's reason>)
 

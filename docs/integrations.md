@@ -107,7 +107,10 @@ operations in full.
   skill writes this default (the team's first aweb task opts it in), unless
   the person's projects
   already use a tracker (GitHub issues in use, Jira, Linear and the like),
-  when it writes `tasks: none` and the setup expert connects the tracker.
+  when it writes `tasks: none`. The setup expert then offers to make a tasks
+  capability of the workspace's own for that tracker, from how the team uses
+  it, and makes it the tasks default on the person's yes; it pins no
+  generic provider in its place.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code
