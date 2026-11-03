@@ -10,7 +10,7 @@
 // Stages, each with its own error codes: arguments, deployment, aw, preflight
 // (no remote effect), key, init (one run, no retry), verify, custody, record.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { awFloorMessage, onPath } from "./binding-wire.mjs";
@@ -31,6 +31,10 @@ const MAX_KEY_LENGTH = 4096; // aw's own limit for a workspace API key
 /** The files a complete identity has in its .aw (aw init's certificate connect). */
 const COMPLETE = ["identity.yaml", "signing.key", "workspace.yaml"];
 const CAPTURE_DIR = ".oats-resident";
+const LOCK = "partial-init.yaml.lock";
+/** A real directory or regular file at path, by lstat: never through a link. */
+const realDir = (path) => { try { return lstatSync(path).isDirectory(); } catch { return false; } };
+const realFile = (path) => { try { return lstatSync(path).isFile(); } catch { return false; } };
 
 const failure = (code, stage, message, details = {}) => Object.assign(new Error(message), { code, stage, details });
 const hostname = (s) => typeof s === "string" && s.length <= 253 && s.split(".").every((l) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(l));
@@ -64,9 +68,11 @@ export function parseResidentArgs(argv) {
   return opts;
 }
 
-/** What R holds: create (empty or missing), continue (aw's partial init),
- *  rejected (quarantined signing material), adopt (a complete identity), or
- *  anything else, which is refused naming what is there. */
+/** What R holds: create (empty or missing, or what an init that minted
+ *  nothing leaves: our captures and at most an .aw holding only aw's recovery
+ *  lock), continue (aw's partial init), rejected (quarantined signing
+ *  material), adopt (a complete identity), or anything else, which is refused
+ *  naming what is there. */
 export function rootState(root) {
   if (!existsSync(root)) return { state: "create" };
   if (!statSync(root).isDirectory()) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is not a directory`);
@@ -78,9 +84,17 @@ export function rootState(root) {
   const partial = inAw.includes("partial-init.yaml");
   const complete = COMPLETE.every((n) => inAw.includes(n));
   const others = entries.filter((n) => n !== ".aw" && n !== CAPTURE_DIR);
+  // Our captures are a real directory or nothing: never a file or a link that
+  // a capture write would follow out of R.
+  if (entries.includes(CAPTURE_DIR) && !realDir(join(root, CAPTURE_DIR))) throw failure("E_RESIDENT_ROOT", "preflight", `${join(root, CAPTURE_DIR)} is not a directory of this command's captures: never write into it: choose another --root or empty it yourself`);
   if (rejected.length) return { state: "rejected", rejected: join(dotAw, rejected[0]) };
   if (complete && !partial) return { state: "adopt" };
   if (partial && !complete && !others.length) return { state: "continue" };
+  // aw 1.36.53 takes .aw/partial-init.yaml.lock before an API key's team read;
+  // a refused read mints nothing and leaves that lock. Only those exact
+  // remnants count, by type, never through a link; nothing is deleted.
+  const nothingMinted = !others.length && (!entries.includes(".aw") || (realDir(dotAw) && inAw.every((n) => n === LOCK && realFile(join(dotAw, n)))));
+  if (nothingMinted) return { state: "create" };
   throw failure("E_RESIDENT_ROOT", "preflight", `${root} is neither empty, a partial aw init nor a complete global identity: it contains ${entries.join(", ")}; never init into it: choose another --root or empty it yourself`);
 }
 const needsInit = (state) => state === "create" || state === "continue" || state === "rejected";
@@ -125,17 +139,24 @@ function promptHidden(stdin, stderr) {
 }
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
-/** Keeps aw init's streams and exit under R only, owner-readable. */
-function writeCaptures(root, r, scrub) {
+const KINDS = ["stdout", "stderr", "exit"];
+/** Whether anything, a link included, is at path. */
+const present = (path) => { try { lstatSync(path); return true; } catch { return false; } };
+/** Keeps aw init's streams and exit under R only, owner-readable. Every file
+ *  is new: a stem any earlier capture used, complete or not, is skipped, and
+ *  each file is created exclusively, so nothing is overwritten or followed. */
+export function writeCaptures(root, r, scrub, second = stamp()) {
   const dir = join(root, CAPTURE_DIR);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!realDir(dir)) throw failure("E_RESIDENT_ROOT", "init", `${dir} is not a directory of this command's captures`);
   chmodSync(dir, 0o700);
-  const at = stamp();
+  let at = second;
+  for (let n = 2; KINDS.some((kind) => present(join(dir, `init-${at}.${kind}`))); n++) at = `${second}-${n}`;
   const exit = r.error ? (r.error.code === "ETIMEDOUT" ? `timed out after ${INIT_TIMEOUT_MS / 1000} s` : `failed: ${r.error.code || r.error.message}`) : r.signal ? `signal ${r.signal}` : `exit ${r.status}`;
   const files = { stdout: scrub(r.stdout || ""), stderr: scrub(r.stderr || ""), exit: `${exit}\n` };
   const written = Object.entries(files).map(([kind, text]) => {
     const file = join(dir, `init-${at}.${kind}`);
-    writeFileSync(file, text, { mode: 0o600 });
+    writeFileSync(file, text, { mode: 0o600, flag: "wx" });
     chmodSync(file, 0o600);
     return file;
   });
@@ -414,6 +435,8 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
         const partial = join(root, ".aw", "partial-init.yaml");
         const awText = stderrText.trim() || stdoutText.trim() || `aw init ${written.exit}`;
         const details = { root, captures, partial: existsSync(partial) ? partial : null };
+        // Nothing minted: a rerun inits again, once what aw reports is fixed.
+        if (after === "create") throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nnothing was created; fix what aw reports above, then rerun the same command (aw's output is kept in ${captures[1]})`, details);
         if (!["continue", "rejected", "adopt"].includes(after)) {
           throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nprovisioning left nothing to continue; ${root} contains ${readdirSync(root).sort().join(", ") || "nothing"}; contact aweb with ${captures[1]}`, details);
         }

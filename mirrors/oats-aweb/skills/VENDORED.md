@@ -15,6 +15,8 @@ Vendored trees:
 - /aweb-team-membership (directory `skills/aweb-team-membership/`, adapted for OATS: team changes go through `oats aweb teams|join|leave`)
 - /aweb-identity (directory `skills/aweb-identity/`)
 
+All three trees are adapted for OATS: they carry no task-coordination text, since this messaging capability never teaches it. A sync restores upstream's text; `test/no-task-coordination.test.mjs` fails until it is adapted again.
+
 Not vendored: /oats-aweb (directory `skills/oats-aweb/`) is this package's own OATS playbook (identity,
 default and joined teams, roster, delivery and wakes, etiquette,
 troubleshooting). Every `aw` invocation it and the vendored skills cite is
@@ -25,7 +27,7 @@ To update, check out the named upstream repository at the intended reviewed comm
 ```bash
 node scripts/sync-vendored-skills.mjs --source /path/to/aweb
 npm test
-git diff -- capabilities/oats-aweb/skills
+git diff -- oats-package/capabilities/oats-aweb/skills
 ```
 
 The sync command refuses a checkout whose `HEAD` differs from its pinned commit. Review the complete generated diff, upstream license, and triggering descriptions before changing the recorded version/ref. Runtime acquisition never fetches these resources.

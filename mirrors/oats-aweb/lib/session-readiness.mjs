@@ -24,11 +24,11 @@ export function kernelMeetsHomeRouteFloor(version){
 }
 /** Use the caller-owned CLI location, never search PATH or import private kernel
  * indexes. Binding execution must receive the same OATS_CLI_BIN as hooks. */
-export function querySelectedKernel(args,{env=process.env,cwd}={}){
+export function querySelectedKernel(args,{env=process.env,cwd,timeout=10000}={}){
   const cli=env.OATS_CLI_BIN;
   if(typeof cli!=='string'||!isAbsolute(cli)||resolve(cli)!==cli||cli.includes('\0'))error();
   let bytes;
-  try{bytes=execFileSync(process.execPath,[cli,...args],{env:kernelQueryEnvironment(env),cwd,timeout:10000,maxBuffer:BINDING_WIRE_LIMITS.bytes,stdio:['ignore','pipe','pipe']});}catch{error();}
+  try{bytes=execFileSync(process.execPath,[cli,...args],{env:kernelQueryEnvironment(env),cwd,timeout,maxBuffer:BINDING_WIRE_LIMITS.bytes,stdio:['ignore','pipe','pipe']});}catch{error();}
   try{return parseBindingJson(bytes,BINDING_WIRE_LIMITS);}catch{error();}
 }
 /** Reads only public version/retained selection. A missing profile projection
