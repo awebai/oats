@@ -570,6 +570,12 @@ deployment declares. Each row says why (`via`: `default`, `workspace`,
 `local`). At spawn an instance joins its **default** only; the others are
 eligible: offered, and joined on request through the provider (`join=` at
 spawn, or its own verbs later), which refuses a team that is not eligible.
+A seat whose provider cannot join teams has its default only. oats.aweb's
+GLOBAL mode is one: it acts through one session grant. For such a seat, a
+`souls:` default decides its one team, ahead of the deployment's local
+`defaultTeam`, and no other team is within its reach. Providers receive the
+live default at every start, so a provider that picks its team again at start
+moves such a seat when the default changes.
 A local default no file declares is `E_TEAM_UNKNOWN`. Capabilities compose
 from the workspace defaults and the soul only, the same for everyone. **A
 label never gates, restricts, changes trust or partitions the knowledge
