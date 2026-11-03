@@ -71,11 +71,8 @@ stop instead: the person answers nothing after step 1.
   Desktop with its app-launcher entry, each system package step 2 found
   missing, with what it is for, Git told to use their GitHub login (`gh auth
   setup-git`, in `~/.gitconfig`), on Linux npm's per-user folder (in
-  `~/.npmrc`), for a new workspace whose agents use aweb's task list (step
-  1), a background service that wakes their agents (`oats aweb wake
-  install`, which they start in a terminal you open, in about 10 seconds),
-  and, for a new workspace whose host step 6 creates, the private
-  repository `<owner>/<repo>` on GitHub.
+  `~/.npmrc`), and, for a new workspace whose host step 6 creates, the
+  private repository `<owner>/<repo>` on GitHub.
   Name each change by what and where, not by kind: a permission check that
   reads the conversation lets a step through only when their yes named it.
   Never run `sudo` for something that was not on that list, even where no
@@ -806,7 +803,7 @@ readiness still reports a problem.
    channel as in step 4, then check again; anything else: stop and tell the
    person why). Its `defaultTeam.label` is `L`, the setup expert's team.
    - **A new workspace that signed in at step 5** expects `"member": true`
-     here: step 5 installed the root. Then go on to item 6.
+     here: step 5 installed the root. Then this step is done.
      Every other new workspace (the default, and a machine found-list)
      has no root yet, so its `"member": false` here is expected: go on to
      item 2.
@@ -882,43 +879,6 @@ readiness still reports a problem.
    their own agent whether that name is in the group (its agent reads
    `oats aweb roster --label L`); the fix (a new invite and a name for this
    machine) is the workspace owner's. Never take the other machine's name.
-6. **A new workspace whose tasks are aweb's (step 1, `oats.aweb-tasks`):**
-   - **Opt the team in to aweb tasks.** aweb opts a team in when its team
-     instructions carry aweb's tasks line (or at its first task). The line,
-     aweb's exact text, kept here in one place:
-
-     > AWEB_TASKS_LINE: not yet published by aweb.
-
-     While it reads "not yet published", skip this write, and the hand-over
-     says the opt-in waits on aweb's line. Otherwise, from `D`, read the
-     team's instructions (`aw instructions show --json`, the text in
-     `team_instructions.document.body_md`, which may be empty). If they
-     don't already carry the line, write a new version that is the current
-     text with the line added at the end, through a file in a new temporary
-     folder (`aw instructions set --body-file <file>`), then show them again
-     and check that the line is there. These are the whole team's
-     instructions: write only when `team_instructions.version` is `1`, the
-     server's untouched default, as on a team made here. A higher version
-     (step 5's `team ensure` can return a team that already existed) means
-     someone wrote them: write nothing, and the hand-over says so. If `set` is refused (the
-     root may not edit them), write nothing else, and the hand-over says
-     so.
-   - **The host wake broker,** which wakes agents when work or mail arrives,
-     and whose heartbeat aweb's task claims will rely on. From `D`,
-     `aw version` and `aw wake status --json`: it is current when
-     `daemon_running` is `true`, `daemon_version_state` is `"reported"` and
-     `daemon_version` equals the version `aw version` printed. Otherwise
-     open their own terminal ("How to work") running
-     `cd "D" && oats aweb wake install`: it runs as their own background
-     service with their shell's settings, so they start it, and it asks
-     nothing. Then read `aw wake status --json` again. Still not current:
-     say so in one sentence, go on, and the hand-over says the setup expert
-     installs it (`/oats-host-delivery`, Choice 2).
-
-   With a tracker (`tasks: none`), change neither: one aweb task would opt
-   the whole team in, so the hand-off asks them to leave aweb's task list
-   empty.
-
 The setup expert does the rest of this machine's messaging
 (`/oats-host-delivery`).
 
@@ -991,11 +951,10 @@ are cloned, knowledge tools, messaging wanted or not>
   messaging)
 - Harness channel mode: development, confirmed by OATS at each start
   (Claude with aweb) | none (Codex, pi or no messaging)
-- Tasks (new workspace with aweb): oats.aweb-tasks, the team opted in |
-  opt-in waiting on aweb's line; host wake broker current | not installed
-  (why) — or none: the agents use <GitHub issues in <repo> | <tracker the
-  person named> | ticket keys <PREFIX>-n>, for you to connect with the
-  person; aweb's task list stays empty
+- Tasks (new workspace with aweb): oats.aweb-tasks | none: the agents use
+  <GitHub issues in <repo> | <tracker the person named> | ticket keys
+  <PREFIX>-n>, for you to connect with the person; aweb's task list stays
+  empty
 
 ## Left to you
 Everything else, starting with /oats-setup-expert.
