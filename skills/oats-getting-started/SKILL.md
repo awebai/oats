@@ -850,8 +850,12 @@ oats soul launch set '*' --harness <harness> --dir D
 `'*'` wins over a soul's own `launch:` on this machine. So read
 `oats souls --dir D --json` first, in a new workspace too (a package soul
 may name its harness). For each row whose `launch.declared.harness`
-differs from `<harness>`, give that soul its own entry with its declared
-harness, so it keeps its choice. Use the row's `key` (`<package>/<soul>`
+differs from `<harness>` and whose declared harness is installed and
+logged in here (`claude --version`, `codex --version` or `pi --version`,
+as in step 2), give that soul its own entry with its declared harness, so
+it keeps its choice. A declared harness that isn't installed here stays
+under `'*'`, so the soul can run; name it in the hand-over ("For the
+person, later"). Use the row's `key` (`<package>/<soul>`
 for a package's soul, so the name is never ambiguous), add
 `--model <its model>` only when `launch.declared.model` names one, and plan
 first:

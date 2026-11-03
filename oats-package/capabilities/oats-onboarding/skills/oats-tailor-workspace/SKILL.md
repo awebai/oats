@@ -109,10 +109,11 @@ oats spawn <soul> --preview --json
 This machine's `souls.launch."*"` (the getting-started skill sets it) wins
 over a new soul's own `launch:`. For each new soul whose
 `launch.declared.harness` in `oats souls --json` differs from that
-default, give it its own entry with its declared harness before its first
+default and is installed and logged in on this machine, give it its own entry with its declared harness before its first
 spawn, by the row's `key`, with `--model <its model>` when it names one,
 plan first: `oats soul launch set <key> --harness <its harness> --plan`,
-then without `--plan`.
+then without `--plan`. A declared harness that isn't installed here stays
+under `'*'`, so the soul can run; tell the person.
 
 ## 3. Attach the person to the messaging account
 

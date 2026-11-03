@@ -100,7 +100,9 @@ test("the steward's harness is recorded before readiness and harness trust read 
   // '*' is every soul without its own entry, S and the souls spawned later included (#1665, further runs).
   const set = "oats soul launch set '*' --harness <harness> --dir D";
   const flat = skill.replace(/\s+/g, " ");
-  assert.ok(flat.includes("So read `oats souls --dir D --json` first, in a new workspace too (a package soul may name its harness). For each row whose `launch.declared.harness` differs from `<harness>`, give that soul its own entry with its declared harness"), "a soul's declared harness keeps its own entry in every workspace");
+  assert.ok(flat.includes("So read `oats souls --dir D --json` first, in a new workspace too (a package soul may name its harness). For each row whose `launch.declared.harness` differs from `<harness>` and whose declared harness is installed and logged in here"), "a soul's declared harness keeps its own entry in every workspace, when it can run here");
+  // A declared harness this machine lacks would leave the soul unable to run: it stays under '*' (#1726 review).
+  assert.ok(flat.includes("A declared harness that isn't installed here stays under `'*'`, so the soul can run; name it in the hand-over"));
   const plan = skill.indexOf(`${set} --plan\n`), apply = skill.indexOf(`${set}\n`);
   assert.ok(plan > 0 && apply > plan, "planned, then applied");
   // A soul whose declared harness differs: its own entry, by the row's unambiguous key, with its model, plan first.
@@ -410,6 +412,8 @@ test("a soul whose declared harness differs from this machine's '*' gets its own
     assert.match(text, /`souls\.launch\."\*"`[^.]*wins over [^.]*own `launch:`/, `${name} says '*' wins over a new soul's launch:`);
     assert.ok(text.includes("`oats soul launch set <key> --harness <its harness> --plan`, then without `--plan`"), `${name} plans the per-soul entry first`);
     assert.ok(text.includes("`--model <its model>` when it names one"), `${name} carries the model`);
+    assert.match(text, /differs from [^.]*and is installed and logged in on this machine/, `${name} keeps a declared harness only when it is installed here`);
+    assert.ok(text.includes("A declared harness that isn't installed here stays under `'*'`, so the soul can run; tell the person."), `${name} leaves a missing harness under '*'`);
   }
 });
 
