@@ -205,12 +205,15 @@ test("the Desktop's background download is installed only once its checksum and 
 test("the skill's minimums are framework 1.19.0 and oats.aweb 1.33.1, and the catalog meets both", () => {
   const flat = skill.replace(/\s+/g, " ");
   assert.ok(flat.includes("**A new workspace needs `oats.framework` 1.19.0 or later**"));
-  assert.ok(flat.includes("is below `1.19.0`, this OATS release is older than this skill"));
+  assert.ok(flat.includes("is below `1.19.0`, or with aweb `oats.aweb`'s is below `v1.33.1`, this OATS release is older than this skill"));
   assert.ok(flat.includes("its owner pins `oats.framework` 1.19.0 or later"));
   assert.ok(flat.includes("that one never below `v1.33.1`"));
-  assert.doesNotMatch(flat, /oats\.framework` 1\.18\.0 or later|never below `v1\.31\.0`/);
+  assert.doesNotMatch(flat, /1\.18\.0|v1\.3[12]\.\d/);
   const fw = catalog.packages["oats.framework"].ref.replace(/^oats-framework\/v/, "");
   const aweb = catalog.packages["oats.aweb"].ref.replace(/^v/, "");
+  // The step 4 example and the skeleton's pins show the catalog's versions.
+  assert.ok(flat.includes(`for example \`oats-framework/v${fw} v${aweb}\``));
+  assert.ok(flat.includes(`oats.framework: v${fw} `) && flat.includes(`oats.aweb: v${aweb} `));
   assert.ok(atLeast(fw, "1.19.0"), `catalog framework ${fw} is below the skill's minimum`);
   assert.ok(atLeast(aweb, "1.33.1"), `catalog oats.aweb ${aweb} is below the skill's floor`);
 });

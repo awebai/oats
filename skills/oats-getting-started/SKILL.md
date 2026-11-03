@@ -400,15 +400,17 @@ pi install "npm:@awebai/oats-pi@V"      # only when the harness is pi
 ```
 
 **A new workspace needs `oats.framework` 1.19.0 or later** (its setup
-expert attaches the person to the workspace's messaging account). Read the installed CLI's catalog:
+expert attaches the person to the workspace's messaging account). Read the
+installed CLI's catalog:
 
 ```bash
 node -e 'const c=require(process.argv[1]);console.log(c.packages["oats.framework"].ref,c.packages["oats.aweb"].ref)' "$(oats root)/package-catalog.json"
 ```
 
 It prints the two refs, for example `oats-framework/v1.19.0 v1.33.1`. If the
-framework's version (after the `/`) is below `1.19.0`, this OATS release is
-older than this skill: stop, and tell the person to wait for the next OATS
+framework's version (after the `/`) is below `1.19.0`, or with aweb
+`oats.aweb`'s is below `v1.33.1`, this OATS release is older than this
+skill: stop, and tell the person to wait for the next OATS
 release. Never write a setup soul into the workspace in its place.
 
 **With aweb, the messaging CLI `aw`, and the harness's aweb channel,** which
@@ -700,8 +702,8 @@ the text output of `oats onboard` says why.
   workspace that doesn't offer it: stop, and say that its owner adds
   `oats.machine` to its `packages:`.
 - **An existing workspace with no setup soul** (`next.spawn` is `null`):
-  stop, and say that its owner pins `oats.framework` 1.19.0 or later, which
-  ships `oats-setup-expert`. Once that is merged, run `oats sync --dir D` and
+  stop, and say that its owner pins `oats.framework` 1.19.0 or later, whose
+  `oats-setup-expert` attaches the person to the account. Once that is merged, run `oats sync --dir D` and
   look again.
 
 **The clone.** `oats-setup-expert` needs none. A soul with `work: worktree`
