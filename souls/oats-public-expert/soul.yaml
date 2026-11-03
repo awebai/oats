@@ -18,6 +18,8 @@ messaging:
     resident: oats-expert
     scopes: [mail.read, mail.send, chat.read, chat.send, events.read, presence.write]
     renew: launch
+# No tasks layer: its grant carries no coord.* scopes, so every aweb task command would be refused.
+tasks: none
 # Instance notes hold other workspaces' material; never harvest them into the shared knowledge base.
 knowledge:
   harvest: off

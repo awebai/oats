@@ -5,3 +5,4 @@
 ## Changed
 
 - **The OATS development workspace gives its souls aweb tasks.** `oats-workspace.yaml` sets `defaults.tasks: { oats.aweb-tasks: { from: package } }` in place of `tasks: none`, from the pinned `oats.aweb: v1.33.1`. Agents spawned in it get the `oats.aweb-tasks` inject and the `/aweb-tasks` skill. They find, claim, assign and hand off work as aweb tasks, as their oats.aweb identity in its default team. GitHub issues and pull requests stay the record. A soul opts out with `tasks: none` in its `soul.yaml` ([Official providers](../integrations.md#official-providers)).
+  - `oats-public-expert` opts out with `tasks: none`. Its session grant carries no `coord.*` scopes, so aweb refuses every task read and write it would make.
