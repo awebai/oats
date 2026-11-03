@@ -42,14 +42,16 @@ souls:
 
 # The framework's own souls consume the official core, knowledge and messaging
 # providers as packages, exactly as an adopter does. Every soul gets messaging:
-# review asks and coordination arrive by mail. A soul opts out with
-# `messaging: none` in its soul.yaml.
+# review asks and coordination arrive by mail. Every soul also gets aweb tasks,
+# its work queue, as its oats.aweb identity in its default team; GitHub issues
+# and pull requests stay the record. A soul opts out with `messaging: none` or
+# `tasks: none` in its soul.yaml.
 defaults:
   capabilities:
     oats.core: { from: package }
   knowledge: { oats.okf: { from: package } }
   messaging: { oats.aweb: { from: package } }
-  tasks: none
+  tasks: { oats.aweb-tasks: { from: package } }
 
 # Knowledge stores. The provider does not read this block; each machine binds
 # the bases in its knowledge bindings file. The store names below are also the
