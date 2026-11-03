@@ -11,7 +11,7 @@ These reviewed resources are vendored from the MIT-licensed aweb repository:
 
 Vendored trees:
 
-- /aweb-messaging (directory `skills/aweb-messaging/`)
+- /aweb-messaging (directory `skills/aweb-messaging/`, adapted for OATS: a sync rewrites its Pi channel line to say OATS installs `@awebai/pi` with its bundled skills filtered out, and a home's skills come from OATS)
 - /aweb-team-membership (directory `skills/aweb-team-membership/`, adapted for OATS: team changes go through `oats aweb teams|join|leave`)
 - /aweb-identity (directory `skills/aweb-identity/`)
 

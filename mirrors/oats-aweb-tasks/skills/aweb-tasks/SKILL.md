@@ -23,7 +23,8 @@ OATS does not ship aweb's own `aweb-coordination` skill; this skill takes its
 place for day-to-day work coordination, and the messaging skills never teach it.
 
 Run commands from your **instance home**, with your own oats.aweb identity in
-its default team. This capability creates no identity and joins no team. If
+the tasks team: its default team, or the team your TASK.md names ("Tasks
+team" below). This capability creates no identity and joins no team. If
 messaging is not oats.aweb or your identity is missing, ask your human. Load
 `/oats-aweb` for the team roster and `/aweb-team-membership` for team selection.
 For a team you already joined, use that team's explicit identity home:
@@ -36,6 +37,31 @@ Apply that same prefix to every task/work command for the joined team. Never
 use another instance's identity. The human is an assignee like any team member;
 use the exact alias from the roster, never a display-name guess. If the human
 is absent from that roster, ask for their exact member alias rather than guess.
+
+## Tasks team
+
+Skip this section unless your TASK.md's Tasks line names a team. That team's
+task list is the deployment's, and it is never your default team's. Find the
+identity that acts in it from your instance home:
+
+```bash
+oats aweb teams --json
+```
+
+- If `defaultTeam.label` is that label, it is your default team: plain
+  `aw task` and `aw work` commands are right, as above.
+- Otherwise the identity home is `joined[].identityHome` of the entry whose
+  `label` is that label. Use it on **every** task and work command, the
+  identity check included:
+
+  ```bash
+  aw --identity-home <identityHome> whoami
+  aw --identity-home <identityHome> work ready
+  ```
+
+- If no joined entry has that label, or it has no `identityHome`, report it to
+  your human and stop. Never fall back to the default team, and never build
+  the path yourself.
 
 ## Find and inspect work
 

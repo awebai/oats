@@ -24,11 +24,13 @@ const atLeast = (v, min) => {
   return true;
 };
 
-// The floors the skill names for the root route: oats.aweb 1.35.0 at the earliest
-// ships it (#147; 1.33.x and 1.34.0 do not), and
-// its aw floor is 1.36.48 (oats.aweb's AW_RESIDENT_ROOT_MIN).
-const PROVIDER_ROOT_ROUTE = "1.35.0";
+// The root route ships in no oats.aweb release yet (awebai/oats-aweb#147 is not
+// merged; 1.33.x to 1.35.0 lack it), so the skill names no provider version and
+// always takes the fallback. The release prep that pins #147's release sets
+// that version once. Its aw floor is 1.36.48 (oats.aweb's AW_RESIDENT_ROOT_MIN).
+const NO_ROOT_ROUTE_YET = "None is released yet: until one is, take the fallback below";
 const AW_ROOT_ROUTE = "1.36.48";
+const mirrorHasRootRoute = residentSource.includes('route: "root"');
 
 test("the catalog lists oats.machine at v0.1.1, and oats.machine-care resolves to it", () => {
   assert.deepEqual(catalog.packages["oats.machine"], { url: "https://github.com/awebai/oats-machine.git", ref: "v0.1.1", path: "oats-package" });
@@ -67,13 +69,17 @@ test("the steward is spawned with the provider's printed grant-seat options", ()
 test("the fallback names the floors, and says it in one line, with no question and no key", () => {
   assert.match(skill, /Tell the person in one line,\s+without asking anything/);
   assert.ok(skill.includes("Never ask for a key."));
-  assert.ok(skill.includes(`\`oats.aweb\` ${PROVIDER_ROOT_ROUTE} or later`));
   assert.ok(skill.includes(`aw ${AW_ROOT_ROUTE} or later`));
   assert.match(skill, /GLOBAL residents and grant\s+seats section of `\/oats-aweb`/, "the line names /oats-aweb's section that moves it later");
-  // Once the mirror carries the root route, its floor and route literal must be the skill's.
-  if (atLeast(providerVersion, PROVIDER_ROOT_ROUTE)) {
+  // While the mirror lacks the root route, the skill always takes the fallback; once
+  // it carries it (#147 released and pinned), the skill must name that release
+  // instead, and the route's aw floor must be the skill's.
+  const skillText = skill.replace(/\s+/g, " ");
+  if (!mirrorHasRootRoute) {
+    assert.ok(skillText.includes(NO_ROOT_ROUTE_YET), `oats.aweb ${providerVersion} has no root route: the skill must always take the fallback`);
+  } else {
+    assert.ok(!skillText.includes(NO_ROOT_ROUTE_YET), `oats.aweb ${providerVersion} carries the root route: name its release in the skill`);
     assert.match(read("mirrors/oats-aweb/lib/aw-floor.mjs"), new RegExp(`AW_RESIDENT_ROOT_MIN = '${AW_ROOT_ROUTE.replaceAll(".", "\\.")}'`));
-    assert.ok(residentSource.includes('route: "root"'), "the plan reports the root route as init.route");
   }
 });
 
