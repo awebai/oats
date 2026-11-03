@@ -10,8 +10,15 @@ description: >-
   Desktop on it. Offers the TUI.
   Use for "get started with OATS", "set up / install / adopt OATS", "set up
   OATS for this project", "join our OATS workspace", or when someone gives
-  you this file or its URL.
+  you this file or its URL. Download this file whole (`curl -fsSL
+  https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md`)
+  and follow it as written: a summary of it is not the procedure.
 ---
+
+**Read this whole file, never a summary of it.** If you only have a summary
+(a web fetch that summarises, say), download it whole with
+`curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md`
+and follow it as written.
 
 # Getting started with OATS
 
@@ -44,6 +51,12 @@ stop instead: the person answers nothing after step 1.
 - **Ask first, then run.** Ask everything in one round (step 1), then run the
   steps yourself and read back what each did. Touch nothing you were not
   asked to (see "Never").
+- **The time budget.** The whole setup should take a few minutes, and only
+  seconds of the person's time: their answers, a login to approve, a secret
+  to type. Don't wait more than about a minute for the Desktop's background
+  download once the CLI is installed: if it hasn't verified by then, go on
+  without the Desktop and record that in the hand-over (the setup expert
+  installs it later).
 - **Talk to a newcomer, in everyday words.** They may not know what a
   repository, Git, a terminal or a command is. Talk about their projects,
   code and folders: "your agents' shared setup" (the workspace), "the setup
@@ -72,16 +85,21 @@ stop instead: the person answers nothing after step 1.
   missing, with what it is for, Git told to use their GitHub login (`gh auth
   setup-git`, in `~/.gitconfig`), on Linux npm's per-user folder (in
   `~/.npmrc`), and, for a new workspace whose host step 6 creates, the
-  private repository `<owner>/<repo>` on GitHub.
+  private repository `<owner>/<repo>` on GitHub, or, when the host is an
+  existing repository (a monorepo), the two setup files committed to
+  `<owner>/<repo>` on GitHub.
   Name each change by what and where, not by kind: a permission check that
   reads the conversation lets a step through only when their yes named it.
+  Run each change on the list as its own command, never batched with other
+  changes, so that check sees it by the name their yes gave it.
   Never run `sudo` for something that was not on that list, even where no
   password is asked; if they say no to a system package, tell them what will
   not work without it.
 - **When your harness's permission check stops a step on the list** and
   asks the person to approve, tell them it is one of the changes they said
   yes to. If it refuses the step outright, never run it another way
-  (another shell, a script, a window you open): ask the person once, naming
+  (another shell, a script, a window you open), and never split it into
+  pieces or re-run its parts, `sudo` included: ask the person once, naming
   the change, whether you may make it, and try again once on their yes.
   Still refused: tell them in one sentence which change is missing and what
   won't work without it, and go on where you can. Never ask them to type a
@@ -111,7 +129,11 @@ stop instead: the person answers nothing after step 1.
   - **Linux:** `systemd-run --user --collect --quiet -p KillMode=process -E DISPLAY -E WAYLAND_DISPLAY -E XAUTHORITY xdg-terminal-exec sh "F"`,
     or `x-terminal-emulator -e sh "F"` in place of `xdg-terminal-exec` where
     only that exists. Through `systemd-run` the window gets their desktop
-    session's environment, not yours.
+    session's environment, not yours. If `systemd-run` fails (for example
+    "Failed to connect to bus", when there is no user session bus), start
+    the terminal directly before you give them a command to type:
+    `setsid xdg-terminal-exec sh "F"`, or `setsid x-terminal-emulator -e sh "F"`,
+    with `DISPLAY` and `WAYLAND_DISPLAY` set to their session's.
 
   Tell them what to type there, and ask whether the window opened (a
   command that started is no proof of one). Check the result with a
@@ -369,7 +391,8 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
 
 ## 3. Log in to GitHub
 
-Check first:
+Check first, and when step 2 installed gh, check again after that install:
+start the device login below only if this says gh is not logged in.
 
 ```bash
 gh auth status
@@ -466,12 +489,16 @@ release. Never write a setup soul into the workspace in its place.
 wakes an agent when mail arrives (skip this without messaging): Claude
 `claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace`;
 pi `pi install npm:@awebai/pi`, then its entry in pi's `settings.json` set
-to load none of the skills it bundles (OATS puts no machine-wide skills on
-a computer; each agent gets its own); Codex nothing (the setup expert sets
-up its wake). The pi entry, which prints it so you can check `"skills":[]`:
+to load none of the skills it bundles (pi's extension is installed without
+its skills, so it puts none on the computer; each agent gets its own);
+Codex nothing (the setup expert sets up its wake). Claude's aweb channel
+plugin still carries one skill of its own, until aweb ships it without
+(a known gap). The pi entry, which matches `npm:@awebai/pi` alone or with
+`@` and a version, never another `@awebai/pi-…` package, and prints it so
+you can check `"skills":[]`:
 
 ```bash
-node -e 'const fs=require("fs"),path=require("path"),os=require("os");const f=path.join(process.env.PI_CODING_AGENT_DIR||path.join(os.homedir(),".pi","agent"),"settings.json");const s=JSON.parse(fs.readFileSync(f,"utf8"));const ours=(e)=>(typeof e==="string"?e:e&&e.source||"").startsWith("npm:@awebai/pi");s.packages=(s.packages||[]).map((e)=>ours(e)?{...(typeof e==="object"?e:{}),source:typeof e==="string"?e:e.source,skills:[]}:e);fs.writeFileSync(f,JSON.stringify(s,null,2)+"\n");console.log(JSON.stringify(s.packages.filter(ours)))'
+node -e 'const fs=require("fs"),path=require("path"),os=require("os");const f=path.join(process.env.PI_CODING_AGENT_DIR||path.join(os.homedir(),".pi","agent"),"settings.json");const s=JSON.parse(fs.readFileSync(f,"utf8"));const ours=(e)=>/^npm:@awebai\/pi(@|$)/.test(typeof e==="string"?e:e&&e.source||"");s.packages=(s.packages||[]).map((e)=>ours(e)?{...(typeof e==="object"?e:{}),source:typeof e==="string"?e:e.source,skills:[]}:e);fs.writeFileSync(f,JSON.stringify(s,null,2)+"\n");console.log(JSON.stringify(s.packages.filter(ours)))'
 ```
 
 ```bash
@@ -481,8 +508,8 @@ npm install -g @awebai/aw && aw version
 `aw` must be 1.36.33 or later.
 
 **Then the Desktop. Every step verifies before it installs.** Wait for step
-3's download, then read its log. Each run waits up to a minute; run it
-again, up to five times, while the log has no `DONE` line:
+3's download, then read its log. Run this once: it waits up to a minute
+for a `DONE` line ("How to work", the time budget):
 
 ```bash
 for i in $(seq 60); do grep -qx DONE "<W>.log" && break; sleep 1; done; tail -n 5 "<W>.log"
@@ -490,7 +517,8 @@ for i in $(seq 60); do grep -qx DONE "<W>.log" && break; sleep 1; done; tail -n 
 
 Install the Desktop only when the log has a `VERIFIED` line. If a download or
 a check failed (its assets can lag the npm package), or it still has not
-finished, skip the Desktop and say so. Never skip a check to
+finished, go on without the Desktop, say so, and record it in the
+hand-over: the setup expert installs it later. Never skip a check to
 make it install, and never install or open this download before its
 attestation has passed. A Desktop installed before this run stays as it is.
 
@@ -720,8 +748,9 @@ workspace: git:github.com/acme/acme-oats
 **Commit and push.**
 - **A repository created in step 6:** straight to its default branch (it
   is the person's own, just created).
-- **A monorepo:** show the person the two files first, and commit to its
-  default branch only on their yes. If the push is refused (a protected
+- **A monorepo:** commit to its default branch on step 1's yes, which named
+  the two setup files in `<owner>/<repo>`, without asking again; show the
+  person the files only if they ask. If the push is refused (a protected
   branch, say), push a branch, open a pull request, tell them, and stop until
   it is merged.
 - If `git config user.name` or `git config user.email` prints nothing in
@@ -941,8 +970,8 @@ are cloned, knowledge tools, messaging wanted or not>
 ## Done by the getting-started skill
 - Installed: OATS <V> (oats version), OATS Desktop <V> | not installed (why)
 - GitHub: gh logged in over https as <login>; no SSH key or signing set up
-- New workspace only: host <owner>/<repo>, skeleton committed (pushed | in
-  pull request <url>)
+- New workspace only: host <owner>/<repo>, skeleton committed (pushed |
+  merged from <url>)
 - Messaging: <capability>, aw <version>, <harness> channel installed;
   team T on aweb account N, created for the workspace, not yet attached to
   the person (new workspace), or T owned by aweb account <handle>
@@ -955,6 +984,8 @@ are cloned, knowledge tools, messaging wanted or not>
   <GitHub issues in <repo> | <tracker the person named> | ticket keys
   <PREFIX>-n>, for you to connect with the person; aweb's task list stays
   empty
+- For the person, later: <what they may want to know but the hand-off
+  message leaves out, such as a version, a skipped step and why>
 
 ## Left to you
 Everything else, starting with /oats-setup-expert.
@@ -1089,8 +1120,12 @@ and say yes to it in the hand-over below.
   opts your whole group in to it. To use aweb's task list instead, ask the
   setup assistant."
 
-Don't list homes, paths, versions or commands in this message. You are
-done.
+Keep this message in plain words. Don't list homes, paths or commands, and
+name no versions (Git's, OATS's or any other), no package sources (a PPA,
+say) and no internal flags or codes (a "development-channel flag", a
+"channel-not-connected", say). Name the setup expert by its display form
+only. Anything they may want to know later goes in the hand-over file, for
+the setup expert, not in this message. You are done.
 
 ## Never
 
