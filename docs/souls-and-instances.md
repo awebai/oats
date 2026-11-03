@@ -187,7 +187,8 @@ For current settings and the respawn/cleanup sequence, see [knowledge.md](knowle
   digest. `oats status` compares these with the workspace's current state and
   shows `moved` / `missing` per module (drift is shown, not prevented).
 - `providers.<cap>`: the merged provider payload the capability was bound with
-  (soul ⊕ machine settings ⊕ `--provider`), so a later inspection can tell
+  (manifest defaults ⊕ the workspace's `messaging:` or `tasks:` ⊕ soul ⊕
+  machine settings ⊕ `--provider`), so a later inspection can tell
   which instance holds a retained seat or a one-off state root. `spawn
   --preview` shows the same map before anything exists, as `settings.<cap>`,
   beside `providers` (the `--provider` flags as given).

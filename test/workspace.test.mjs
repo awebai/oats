@@ -222,6 +222,33 @@ test("workspace schema refusals each name the offending path", () => {
   refuse({ packages: { "oats.okf": "" } }, "/packages/oats.okf");
 });
 
+test("#1719: a top-level tasks: payload is an opaque object; a non-object and byTeam in it are refused", () => {
+  const remote = northwind();
+  assert.deepEqual(validateWorkspace(workspaceFile({ tasks: { team: "engineering", nested: { any: ["thing"] } } }), { remote }), []);
+  for (const bad of ["engineering", ["a"], 1, null]) {
+    const hit = validateWorkspace(workspaceFile({ tasks: bad }), { remote }).find((p) => p.path === "/tasks");
+    assert.ok(hit, `tasks: ${JSON.stringify(bad)} is refused at /tasks`);
+  }
+  assert.deepEqual(validateWorkspace(workspaceFile({ tasks: { byTeam: {} } }), { remote }).map((p) => [p.path, p.reason]), [["/tasks/byTeam", "removed-key"]]);
+});
+
+test("amendment 1 (#1719): an unknown ROOT key says the workspace may be newer than the kernel; a nested one, and a removed key, keep their own message", async () => {
+  const remote = northwind();
+  const { KERNEL_VERSION } = await import("../lib/resolve.mjs");
+  const [root] = validateWorkspace(workspaceFile({ knowledge: { a: 1 } }), { remote });
+  assert.deepEqual(root, { path: "/knowledge", reason: "unknown-root-key", message: `unknown property "knowledge" — if this is not a typo, the workspace uses a feature newer than this kernel (OATS ${KERNEL_VERSION}): upgrade OATS` });
+  const nested = validateWorkspace(workspaceFile({ teams: { engineering: { id: "x" } } }), { remote }).find((p) => p.path === "/teams/engineering/id");
+  assert.deepEqual(nested, { path: "/teams/engineering/id", message: 'unknown property "id"' });
+  const removed = validateWorkspace(workspaceFile({ defaults: { ...workspaceFile().defaults, byTeam: {} } }), { remote }).find((p) => p.path === "/defaults/byTeam");
+  assert.equal(removed.reason, "removed-key"); assert.doesNotMatch(removed.message, /newer than this kernel/);
+  // Read from a remote, the error lifts the single reason.
+  await assert.rejects(observeWorkspace(WS, { remote: northwind({ workspace: workspaceFile({ frobnicate: true }) }) }), (e) => {
+    assert.equal(e.code, "E_WORKSPACE_SCHEMA"); assert.equal(e.details.reason, "unknown-root-key");
+    assert.match(e.message, /\/frobnicate: unknown property "frobnicate" — if this is not a typo, the workspace uses a feature newer than this kernel \(OATS [^)]+\): upgrade OATS/);
+    return true;
+  });
+});
+
 test("workspace schema hint names schemaVersion 2 when a v1 file sits at the v2 path", async () => {
   const remote = northwind({ workspace: { schemaVersion: 1, name: "northwind", members: [] } });
   await assert.rejects(observeWorkspace(WS, { remote }), (e) => {

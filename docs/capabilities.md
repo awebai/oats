@@ -805,6 +805,25 @@ resolver accepts it only from the deployment's own `oats-local.yaml`
 Declare it for any key whose value points at something a committed file must
 never be able to choose.
 
+The mirror is `committedOnly: true`: a key that must be the same for every
+deployment of the workspace, such as which shared list a tasks provider uses.
+The resolver accepts it only from committed, reviewed files, and refuses it in
+the deployment's `oats-local.yaml` `settings.<capability>` and in a
+`--provider` flag (`E_WORKSPACE_SCHEMA`, reason `committed-only-key`). It is a
+refusal, not a warning, and the key's presence is enough, even with the
+committed value. Where it may be set follows the capability's layer: for a
+messaging or tasks capability, `oats-workspace.yaml` under `messaging:` or
+`tasks:`, or a soul's slot payload; for a knowledge capability, a soul's
+`knowledge:` payload; for a capability with no layer, only its manifest
+default. The refusal names the key, where it was set (`details.layer` `host` or
+`spawn`, `details.at`), where it may be set (`details.allowed`) and the fix. A
+key marked both `hostOnly` and `committedOnly` could be set by nothing but its
+default, so the resolver refuses the manifest (`E_PACKAGE_MANIFEST` for a
+package capability, `E_CAPABILITY_MISSING` for a member one, `details.why`
+`settings-flag-conflict`). The kernel does not validate manifests against the
+schema, so a kernel without the feature `settings-committed-only` ignores the
+flag and merges the key from any layer.
+
 A hook may return only names in its manifest's exact `environment` declaration.
 For package capabilities that declaration is part of the integrity-locked tree
 the workspace declared; for member capabilities it is part of what membership
