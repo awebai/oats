@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
-import { assessCapturedSessionReadiness } from './session-readiness.mjs';
+import { assessCapturedSessionReadiness, querySelectedKernel } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment, wakeDaemonAssessment, claudeChannelModeUnset, CLAUDE_CHANNEL_MODE_DEFAULT } from './wake-receive.mjs';
 import { channelConnection, channelReadiness } from './claude-channel.mjs';
@@ -177,7 +177,7 @@ function workspaceReadinessContext(value) {
 }
 export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export { AW_MIN } from './aw-floor.mjs';
-import { AW_MIN, parseVersion, versionAtLeast } from './aw-floor.mjs';
+import { AW_MIN, awNewerThanTestedMessage, parseVersion, versionAtLeast } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
@@ -245,6 +245,32 @@ function rootCandidate(settings,team,{deployment,env=process.env}={}) {
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }
+/** The service a root's `.aw/workspace.yaml` names (`aweb_url`), read only to
+ *  classify it, never shown: a valid URL the invite's disclosure filter rejects
+ *  (IPv6, an IDN, a trailing comment) is still a service. undefined when the
+ *  root names none or can't be read; aw's default service is the Cloud. */
+function rootServiceForClassification(root) {
+  let text;
+  try { text=readFileSync(join(root,'.aw','workspace.yaml'),'utf8'); } catch { return undefined; }
+  const m=/^aweb_url:[ \t]*(.*)$/m.exec(text);
+  if(!m) return undefined;
+  let value=m[1].replace(/\s+#.*$/,'').trim();
+  if(/^(["']).*\1$/.test(value)) value=value.slice(1,-1).trim();
+  return value || undefined;
+}
+/** The aw-newer-than-tested warning for a home, or undefined. Decided by the
+ *  home's own team roots (roots[team], as each minting root is chosen), not the
+ *  deployment's default root, so readiness and every spawn mode agree: the
+ *  default team's, and any `joinTeams` a spawn also mints into. One warning,
+ *  whichever root is off the Cloud. */
+export function awTestedWarning(settings,version,{deployment,env=process.env,joinTeams=[]}={}) {
+  for(const team of [teamFromSettings(settings,null,{env}),...joinTeams]) {
+    const {root}=rootCandidate(settings,team,{deployment,env});
+    const message=root && isAbsolute(root) ? awNewerThanTestedMessage(version,rootServiceForClassification(root)) : undefined;
+    if(message) return message;
+  }
+  return undefined;
+}
 function validHostname(value){const s=String(value||'');return s.length<=253&&s.split('.').every(label=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));}
 function validAwebTeamId(value){const m=/^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value||''));return !!m&&validHostname(m[2]);}
 function invalidAwebTeamId(env=process.env){const id=typeof env.OATS_DEFAULT_TEAM_ID==='string'&&env.OATS_DEFAULT_TEAM_ID.trim()?env.OATS_DEFAULT_TEAM_ID.trim():null;if(id&&!validAwebTeamId(id))return id;try{const rows=JSON.parse(env.OATS_TEAMS||'[]');if(Array.isArray(rows))for(const r of rows)if(r&&typeof r.team==='string'&&r.team.trim()&&!validAwebTeamId(r.team.trim()))return r.team.trim();}catch{}return null;}
@@ -267,6 +293,8 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
   const aw=await awFloorObservation();if(aw.message) problems.push({code:'needs-configuration',message:aw.message});
+  const tested=aw.message?undefined:awTestedWarning(settings,aw.version,{deployment,env});
+  if(tested) warnings.push({code:'aw-newer-than-tested',message:tested});
   if(!team) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
@@ -284,7 +312,9 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
 /** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
 export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
-async function awFloorObservation({env=process.env}={}) {
+/** The aw on PATH against AW_MIN: `{version, message}`, where message says why
+ *  it falls short and is undefined when it doesn't. */
+export async function awFloorObservation({env=process.env}={}) {
   if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
   const version=await readAwVersion({env});
   if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
@@ -299,6 +329,20 @@ function soulJoinsTeams(settings) {return typeof settings.join==='string' && set
 /** The kernel's captured per-leaf settings origins for a home (JSON pointer to
  *  {kind,at}); anything unparseable is no origin. */
 function settingsOrigins(env) {try {const origins=JSON.parse(env.OATS_SETTINGS_ORIGINS??'');return obj(origins)?origins:undefined;} catch {return undefined;}}
+/** Whether the deployment publishes health now: the soul's current oats.aweb
+ *  `health.publish`, the setting `oats aweb health publish` reads before it
+ *  counts unread mail each minute. False when the kernel can't say, or can't
+ *  say before the phase's deadline. */
+// The kernel's resolved view, never oats-local.yaml read here: layering is the resolver's, and the observer reads its payload.
+export function healthPublishesNow(ctx,env,deadline) {
+  const left=Math.min(10000,deadline-Date.now());
+  if(left<1) return false;
+  try {
+    const doc=querySelectedKernel(['inspect','--soul',ctx.soul,'--dir',ctx.deployment,'--json'],{env,cwd:ctx.deployment,timeout:left});
+    const rows=doc?.ok===true && Array.isArray(doc.result?.capabilities)?doc.result.capabilities.filter(c=>c?.id==='oats.aweb'):[];
+    return rows.length===1 && obj(rows[0].settings) && healthSettings(rows[0].settings).publish;
+  } catch {return false;}
+}
 async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // Phase-start clock bounds the calls and judges the already-recorded grant.
   const now=Date.now(),deadline=now+28000;
@@ -393,7 +437,9 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home. A Claude channel home reads its joined teams at task boundaries and needs no broker.'});
   }
   const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
-  if (primaryBroker && !excludedGrantSeat && !problems.length && req.settings.health?.publish === true) {
+  // A home's settings are its spawn's capture: it asks whether health
+  // publishes now, so a later `health enable` or `disable` counts.
+  if (primaryBroker && !excludedGrantSeat && !problems.length && (ctx.home ? healthPublishesNow(ctx,env,deadline) : req.settings.health?.publish === true)) {
     let countOnly = false;
     try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
     if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});

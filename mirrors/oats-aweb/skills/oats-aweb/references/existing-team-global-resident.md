@@ -247,10 +247,10 @@ After the selected authorized operation, validate these distinct outcomes:
 
 1. Captured module commit, settings/origins, resident identity and final grant
    locator/scopes/expiry/attachment match the reviewed plan.
-2. The actual worker has the intended knowledge/task context and acknowledges
+2. The actual worker has the intended knowledge and briefing and acknowledges
    its assigned work; a prepared source tree or preview is insufficient.
-3. Scoped receive readiness and a harmless explicitly authorized acceptance task
-   demonstrate incoming presentation, a verified reply and requester-consumed
+3. Scoped receive readiness and a harmless explicitly authorized acceptance
+   message exchange demonstrate incoming presentation, a verified reply and requester-consumed
    intake. Grant issuance, native connection configuration and `ready` alone do
    not establish these. No client-specific email-send or language policy is
    prescribed here.
