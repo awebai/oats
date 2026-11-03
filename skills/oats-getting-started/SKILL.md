@@ -244,9 +244,19 @@ steward takes them up with the person later.
 hostname (`hostname -s`, never the full domain name), normalised as in the
 machine's round: `ada-s-laptop`. When that is a name many machines share
 (`localhost`, `ubuntu`, `debian`, `fedora`, `raspberrypi`, or a model name
-such as `macbook-pro`), add the first eight characters of
-`/etc/machine-id` on Linux, or of `ioreg -rd1 -c IOPlatformExpertDevice`'s
-`IOPlatformUUID` on macOS, lowercased: `ubuntu-3f9c2a1b`.
+such as `macbook-pro`), add `-` and the first eight characters of a keyed
+hash of the machine's id: `ubuntu-7d41e0c9`. Never the id itself: the whole
+team sees this name, and the id is confidential (machine-id(5)). Linux:
+
+```bash
+printf 'oats-machine-name:%s' "$(cat /etc/machine-id)" | sha256sum | cut -c1-8
+```
+
+macOS:
+
+```bash
+printf 'oats-machine-name:%s' "$(ioreg -rd1 -c IOPlatformExpertDevice | awk -F'"' '/IOPlatformUUID/{print $4}')" | shasum -a 256 | cut -c1-8
+```
 
 ## 2. Check, and install what is missing
 

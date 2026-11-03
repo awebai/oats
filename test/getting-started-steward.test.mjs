@@ -217,3 +217,11 @@ test("the skill's minimums are framework 1.19.0 and oats.aweb 1.33.1, and the ca
   assert.ok(atLeast(fw, "1.19.0"), `catalog framework ${fw} is below the skill's minimum`);
   assert.ok(atLeast(aweb, "1.33.1"), `catalog oats.aweb ${aweb} is below the skill's floor`);
 });
+
+test("a common hostname gets a keyed hash of the machine id, never the id itself", () => {
+  assert.ok(skill.includes(`printf 'oats-machine-name:%s' "$(cat /etc/machine-id)" | sha256sum | cut -c1-8`));
+  assert.ok(skill.includes(`| shasum -a 256 | cut -c1-8`));
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("Never the id itself: the whole team sees this name, and the id is confidential (machine-id(5))."));
+  assert.doesNotMatch(flat, /first eight characters of `\/etc\/machine-id`|IOPlatformUUID` on macOS, lowercased/);
+});
