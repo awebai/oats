@@ -264,3 +264,84 @@ test("pi's aweb extension is installed without its bundled skills", () => {
   assert.ok(skill.includes("skills:[]}:e)"));
   assert.ok(flat.includes("pi's aweb extension, without its skills (pi only)"));
 });
+
+// The onboarding VM campaign's second round of newcomer runs on fresh VMs (#1665).
+test("getting-started: the whole file is read, never a summary", () => {
+  const raw = "curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md";
+  const [, front, body] = skill.split(/^---\n/m);
+  const description = front.replace(/\s+/g, " ");
+  assert.ok(description.includes(`Download this file whole (\`${raw}\`) and follow it as written: a summary of it is not the procedure.`), "the front-matter description says so");
+  assert.ok(body.trimStart().startsWith(`**Read this whole file, never a summary of it.**`), "the body's first line says so");
+  assert.ok(body.slice(0, body.indexOf("# Getting started")).replace(/\s+/g, " ").includes(`download it whole with \`${raw}\` and follow it as written`));
+  assert.ok(read("README.md").includes(raw), "the README's download command is the same URL");
+});
+
+test("getting-started: one change per command, and a refused command is asked about, never re-sliced", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("Run each change on the list as its own command, never batched with other changes, so that check sees it by the name their yes gave it (a fenced block below that makes one change on the list counts as one)."));
+  assert.ok(flat.includes("never run it another way (another shell, a script, a window you open), and never split it into pieces or re-run its parts, `sudo` included: ask the person once, naming the change, whether you may make it, and try again once on their yes."));
+});
+
+test("getting-started: the time budget, and the Desktop's download waited on for about a minute only", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**The time budget.** The whole setup should take a few minutes, and only seconds of the person's time"));
+  assert.ok(flat.includes("Don't wait more than about a minute for the Desktop's background download once the CLI is installed: if it hasn't verified by then, go on without the Desktop and record that in the hand-over (the person can install it later with the setup expert, through `/oats-upgrade`)."));
+  assert.ok(!flat.includes("the setup expert installs it later"), "the setup expert has no Desktop step of its own");
+  // /oats-upgrade is the route that installs it later: its Desktop step covers a host without one.
+  const upgrade = read("oats-package/capabilities/oats-setup/skills/oats-upgrade/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(upgrade.includes("On a host without it, ask whether they want it installed: a getting-started hand-over whose Desktop line says \"not installed\" left it to this skill."));
+  assert.ok(upgrade.includes("**The Desktop**, where it is installed, and on a host without it when the person wants it: version `$V`"));
+  assert.ok(upgrade.includes("A first install is the same step, and the same release's Desktop"));
+  assert.ok(flat.includes("Run this once: it waits up to a minute for a `DONE` line"));
+  assert.ok(!flat.includes("up to five times"), "no five-minute wait for the download");
+  assert.ok(skill.includes(`for i in $(seq 60); do grep -qx DONE "<W>.log" && break; sleep 1; done`));
+});
+
+test("getting-started: a terminal window that systemd-run can't open is started directly before a typed command", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes(`If \`systemd-run\` fails (for example "Failed to connect to bus", when there is no user session bus), start the terminal directly, detached, before you give them a command to type: \`setsid -f xdg-terminal-exec sh "F" </dev/null >/dev/null 2>&1\`, or \`setsid -f x-terminal-emulator -e sh "F" </dev/null >/dev/null 2>&1\`.`));
+  // Without -f and the redirections, setsid runs the terminal in the foreground and the agent's command blocks until the window closes.
+  assert.ok(!/setsid (?!-f )/.test(flat), "every setsid start is detached");
+  assert.ok(flat.includes(`when they are unset, don't guess them: take "When no window opens".`));
+  // Either way the window is asked about, never assumed.
+  const fallback = flat.indexOf("setsid -f xdg-terminal-exec");
+  assert.ok(fallback > 0 && fallback < flat.indexOf("ask whether the window opened (a command that started is no proof of one)"));
+});
+
+test("getting-started: gh's login is always checked, even right after step 2 installs gh, before a device login", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("Always run this check, even when step 2 just installed gh (an existing gh config or `GH_TOKEN` may already log it in), and start the device login below only if it says gh is not logged in."));
+  assert.ok(flat.indexOf("Always run this check, even when step 2 just installed gh") < flat.indexOf("nohup gh auth login --web"));
+});
+
+test("getting-started: a monorepo host's two setup files are on the one yes, and committed without asking again", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("or, when the host is an existing repository (a monorepo), the two setup files committed and pushed straight to `<owner>/<repo>`'s default branch, which runs its automatic checks or deploys if it has any (or a pull request, step 7)."));
+  assert.ok(flat.includes("**A monorepo:** push the commit to its default branch on step 1's yes, which named it, without asking again; show the person the files only if they ask."));
+  assert.ok(!flat.includes("commit to its default branch only on their yes"), "no second question for the monorepo commit");
+  // A shared repository, a protected branch or a refused push takes a pull request, and the hand-over is written only after it merged.
+  assert.ok(flat.includes("When others can push to the repository (`gh api repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or fails), its default branch is protected, or the push is refused: push a branch instead, open a pull request, tell them, and stop until it is merged."));
+  assert.ok(flat.includes("skeleton committed (pushed | merged from <url>)"));
+  assert.ok(!flat.includes("in pull request <url>"), "the spawn never waits on an open pull request");
+});
+
+test("getting-started: the hand-off is in plain words; what the person may want later goes to the hand-over file", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes(`name no versions (Git's, OATS's or any other), no package sources (a PPA, say) and no internal flags or codes (a "development-channel flag", a "channel-not-connected", say). When you name the setup expert as the Desktop lists it, use its display form, never its instance name. Anything they may want to know later goes in the hand-over file, for the setup expert, not in this message.`));
+  assert.ok(flat.includes("- For the person, later: <what they may want to know but the hand-off message leaves out"));
+});
+
+test("getting-started: pi's skills filter matches @awebai/pi exactly, and Claude's plugin skill is the named gap", () => {
+  const line = skill.match(/^node -e '(const fs=require\("fs"\).*)'$/m);
+  assert.ok(line, "the pi settings one-liner");
+  assert.ok(line[1].includes(String.raw`const ours=(e)=>/^npm:@awebai\/pi(@|$)/.test(`));
+  assert.ok(!line[1].includes('.startsWith("npm:@awebai/pi")'), "a prefix match would touch @awebai/pi-… packages");
+  // The regex the skill itself runs, not a copy of it.
+  const pattern = new RegExp(line[1].match(/const ours=\(e\)=>\/(.*?)\/\.test\(/)[1]);
+  for (const s of ["npm:@awebai/pi", "npm:@awebai/pi@0.4.0"]) assert.ok(pattern.test(s), s);
+  for (const s of ["npm:@awebai/pi-tools", "npm:@awebai/pi-x@1.0.0", "npm:@awebai/oats-pi@1.0.0"]) assert.ok(!pattern.test(s), s);
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("pi's extension is installed without its skills"));
+  assert.ok(flat.includes("Claude's aweb channel plugin still carries one skill of its own, until aweb ships it without (a known gap)."));
+  assert.ok(!flat.includes("OATS puts no machine-wide skills on a computer"), "no claim the Claude plugin contradicts");
+});
