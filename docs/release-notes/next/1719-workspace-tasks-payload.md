@@ -2,9 +2,8 @@
 
 - **A workspace sets `tasks:` only once every deployment that reads it runs a
   kernel listing `workspace-tasks-payload`** (`oats version --json`
-  features). An older kernel refuses the whole file, so every resolve, spawn
-  and start on that deployment stops. A file without `tasks:` resolves exactly
-  as before.
+  features). An older kernel refuses the whole file, so every resolve and spawn
+  on that deployment stops. A file without `tasks:` resolves exactly as before.
 - **A capability's `committedOnly` setting is enforced only by kernels with
   `settings-committed-only`.** An older kernel ignores the flag and still merges
   the key from oats-local.yaml and `--provider`. A provider that relies on it
