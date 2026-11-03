@@ -75,7 +75,13 @@ refuses the key on a trigger.
 - **spawn** `{…, agent, agentsRoot?, repo?, backend?, purpose?, task,
   launchConfig?, harness?, model?, yolo?, wake?}` — every due minute launches
   one disposable instance of `agent` with the options `oats spawn` takes.
-  `agentsRoot`, when given, must be the deployment's `agents/` root; `repo`
+  `agent` is resolved as `oats spawn <agent>` resolves it (a member or
+  package soul the workspace offers, see `oats souls`), whether or not this
+  deployment has spawned it before. `add` and `update` refuse a name `oats
+  spawn` would refuse (`E_SCHEDULE_INVALID`, field `agent`, with spawn's own
+  message and its code in `details.code`), or one whose resolution cannot be
+  confirmed; a soul this deployment has already spawned is accepted without
+  asking. `agentsRoot`, when given, must be the deployment's `agents/` root; `repo`
   is the work repository, as `--repo`. `backend` is `tmux`; `backend: herdr`
   is refused (`E_HERDR_REMOVED`, naming the file and key: Herdr was removed in
   0.31.0), and a stored job that names it is reported invalid and never runs.
@@ -771,7 +777,12 @@ exited, or its tmux server is gone), so its due minutes are skipped with
 `previous instance stopped: retire it (oats retire <instance>) or start it
 again (oats session start --home <home>)`, and
 `oats schedule run-now` refuses with the same words (`E_SCHEDULE_RUNNING`).
-While the instance runs, they are skipped as `still running`. After a reboot, a wake job
+While a spawn, command or operation job's run is live, `oats schedule run-now`
+refuses with `schedule <id> is still running` (`E_SCHEDULE_RUNNING`) and its
+due minutes are skipped as `still running`: a job runs once at a time, never
+overlapping its own run, and a skipped minute is not queued. A wake job is not
+held this way: delivering to a running home takes no slot (see **Slots**
+below). After a reboot, a wake job
 starts its instance's session at its next due minute, and a spawn job shows
 `stopped` with the command to retire or start its instance.
 

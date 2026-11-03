@@ -40,6 +40,19 @@ function fakeSpawn(ws, calls = []) {
   return (root, agent, opts) => { calls.push(opts); const name = `${agent.name}-${opts.purpose}`; const h = home(ws, name); return { instance: name, home: h, launched: true }; };
 }
 
+// A fake oats binary: logs each argv (one JSON line) and answers `spawn … --preview` with `preview`
+// (an object is printed as JSON, a string as is); a spawn without --preview creates the home it names.
+function fakeOats(ws, preview) {
+  const file = join(base, `fake-oats-${++n}.mjs`), log = `${file}.log`;
+  writeFileSync(file, `import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"; import { join } from "node:path";
+const argv = process.argv.slice(2); appendFileSync(${JSON.stringify(log)}, JSON.stringify(argv) + "\\n");
+if (argv.includes("--preview")) process.stdout.write(${JSON.stringify(typeof preview === "string" ? preview : JSON.stringify(preview))});
+else { const name = argv[1] + "-" + argv.find((a) => a.startsWith("--purpose=")).slice(10), h = join(${JSON.stringify(ws)}, "agents", "dev", "instances", name);
+  mkdirSync(h, { recursive: true }); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: name, home: h, agent: argv[1], createdAt: "2026-01-01T00:00:00.000Z" }));
+  process.stdout.write(JSON.stringify({ ok: true, result: { instance: name, home: h, launched: false } })); }\n`);
+  return { bin: file, calls: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : []) };
+}
+
 test("definitions are validated field by field, with croner and IANA zones", () => {
   const ws = workspace();
   const bad = (spec, field) => assert.throws(() => S.validateDefinition(ws, spec), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === field, `${field}`);
@@ -47,7 +60,8 @@ test("definitions are validated field by field, with croner and IANA zones", () 
   bad({ id: "a", cron: "* * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" }, "cron");
   bad({ id: "a", cron: "* * * * *", tz: "Mars/Olympus", kind: "spawn", agent: "dev", task: "t" }, "tz");
   bad({ id: "a", cron: "* * * * *", kind: "spawn", agent: "dev", task: "t" }, "tz");
-  bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "nobody", task: "t" }, "agent");
+  { const unknown = fakeOats(ws, { ok: false, error: { code: "E_SOUL_UNKNOWN", message: "no soul nobody" } }).bin;
+    assert.throws(() => S.validateDefinition(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "nobody", task: "t" }, { io: { oatsBin: unknown } }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agent", "agent"); }
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "" }, "task");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", harness: "bash" }, "harness");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "command", cwd: "/etc", argv: ["oats", "status"] }, "cwd");
@@ -141,6 +155,64 @@ test("cron evaluation follows the zone through DST and is due exactly on the min
   assert.equal(S.dueAt({ cron: "*/5 * * * *", tz: "UTC" }, at("2026-09-07T10:05:00Z")), true);
   assert.equal(S.dueAt({ cron: "*/5 * * * *", tz: "UTC" }, at("2026-09-07T10:06:00Z")), false);
   assert.equal(S.minuteKey(S.minuteStart(at("2026-09-07T10:05:42Z"))), "2026-09-07T10:05");
+});
+
+test("a local spawn job names its soul as oats spawn does: add and update ask spawn's preview, and runs launch it through spawn", () => {
+  const ws = workspace(), root = join(ws, "agents");
+  const job = { id: "rev", cron: "*/5 * * * *", tz: "UTC", kind: "spawn", agent: "reviewer", task: "Review.", harness: "pi", model: "m1", launchConfig: "fast" };
+  const invalid = (agent, message) => (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agent" && (typeof message === "string" ? e.message === message : message.test(e.message));
+  // A soul the workspace offers, never spawned here (no agents/reviewer/soul): spawn's preview resolves it.
+  const offered = fakeOats(ws, { ok: true, result: { agent: "reviewer" } });
+  assert.equal(existsSync(join(root, "reviewer")), false);
+  assert.equal(S.addSchedule(ws, job, { oatsBin: offered.bin }).soul.name, "reviewer");
+  // The soul only: no launch options, so save refuses nothing new about them.
+  assert.deepEqual(offered.calls(), [["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--preview", "--json"]]);
+  // A name spawn refuses is refused with spawn's own message, its code in details.
+  const unknown = fakeOats(ws, { ok: false, error: { code: "E_SOUL_UNKNOWN", message: "soul \"ghost\" is not offered by this workspace" } });
+  assert.throws(() => S.addSchedule(ws, { ...job, id: "ghost", agent: "ghost" }, { oatsBin: unknown.bin }), (e) => invalid("ghost", "agent: soul \"ghost\" is not offered by this workspace")(e) && e.details?.code === "E_SOUL_UNKNOWN");
+  // An answer that is no envelope confirms nothing: refused, saying why.
+  const silent = fakeOats(ws, "resolving…\n");
+  assert.throws(() => S.addSchedule(ws, { ...job, id: "mute", agent: "mute" }, { oatsBin: silent.bin }), invalid("mute", /^agent: soul "mute" could not be confirmed: the spawn preview answered no valid envelope/));
+  // An option-shaped name is refused before any child runs.
+  assert.throws(() => S.addSchedule(ws, { ...job, id: "opt", agent: "--yolo" }, { oatsBin: unknown.bin }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agent");
+  assert.equal(unknown.calls().length, 1, "only the ghost add ran the preview");
+  // The fast path: a soul under agents/<soul>/soul is accepted as before, without the child.
+  assert.equal(S.addSchedule(ws, { ...job, id: "local", agent: "dev" }, { oatsBin: unknown.bin }).soul.name, "dev");
+  assert.equal(unknown.calls().length, 1, "the fast path runs no preview");
+  // update keeps the same check.
+  assert.throws(() => S.updateSchedule(ws, "local", { ...job, agent: "ghost" }, { oatsBin: unknown.bin }), invalid("ghost", "agent: soul \"ghost\" is not offered by this workspace"));
+  assert.equal(S.describe(ws, "local").agent, "dev", "a refused update changes nothing");
+  assert.equal(S.updateSchedule(ws, "local", { ...job, agent: "reviewer" }, { oatsBin: offered.bin }).agent, "reviewer");
+  assert.equal(offered.calls().length, 2);
+  // schedule test reports the soul as resolving, through the same preview (with the job's launch options).
+  const t = S.testSchedule(ws, "rev", { oatsBin: offered.bin }, { now: at("2026-09-07T10:01:00Z") });
+  assert.equal(t.soul.resolves, true); assert.equal(t.soul.error, null);
+  assert.deepEqual(offered.calls()[2], ["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`, "--preview", "--json", "--launch-config=fast", "--harness=pi", "--model=m1"]);
+  assert.equal(S.testSchedule(ws, "rev", { oatsBin: unknown.bin }).soul.error.code, "E_SOUL_UNKNOWN");
+  S.removeSchedule(ws, "local");
+  // A due minute launches it: the tick runs no preview, it hands the soul to spawn.
+  const tick = fakeOats(ws, { ok: false, error: { code: "E_SOUL_UNKNOWN", message: "a tick must not run a preview" } });
+  const calls = [];
+  const io = { oatsBin: tick.bin, spawn: fakeSpawn(ws, calls), inspect: () => ({ present: true, state: "unknown" }) };
+  const c = S.tickWorkspace(ws, { now: at("2026-09-07T10:05:00Z"), io, reg: { maxConcurrent: 4 } });
+  assert.equal(c.find((x) => x.id === "rev").action, "launched");
+  assert.equal(calls.length, 1); assert.equal(tick.calls().length, 0);
+  // run-now launches it through the kernel's own `oats spawn`, still under the deployment's agents root.
+  rmSync(S.describe(ws, "rev", io).lastRun.home, { recursive: true, force: true });
+  const r = S.runNow(ws, "rev", { now: at("2026-09-07T10:07:00Z"), io: { oatsBin: tick.bin, noLaunch: true, inspect: io.inspect } });
+  assert.equal(r.schedule.lastRun.outcome, "launched");
+  const [spawned] = tick.calls();
+  assert.deepEqual(spawned.slice(0, 4), ["spawn", "reviewer", `--dir=${ws}`, `--agents-root=${root}`]);
+  assert.equal(spawned.includes("--preview"), false);
+  assert.equal(existsSync(join(root, "reviewer")), false, "nothing needed agents/reviewer/soul");
+});
+
+test("a local spawn job's soul is refused at add when the deployment's oats-local.yaml cannot be read", () => {
+  const ws = workspace();
+  writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: [\n");
+  const offered = fakeOats(ws, { ok: true, result: { agent: "reviewer" } });
+  assert.throws(() => S.addSchedule(ws, { id: "rev", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "reviewer", task: "t" }, { oatsBin: offered.bin }), (e) => e.code !== "E_SCHEDULE_INVALID" && /oats-local\.yaml|schema/i.test(e.message));
+  assert.equal(offered.calls().length, 0);
 });
 
 test("a due spawn job launches once, holds its lock while the instance lives, and skips missed minutes", () => {
