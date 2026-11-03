@@ -109,13 +109,119 @@ test("a root that is not a member of the team stops step 9 before the spawn, wit
   // The fields the stop reads are the ones `oats aweb setup --check-only` prints.
   const provider = read("mirrors/oats-aweb/bin/oats-aweb.mjs");
   assert.match(provider, /console\.log\(JSON\.stringify\(\{ aw, defaultTeam: label \|\| team \? \{ label, team \} : null, member, root: teamRoot \}\)\)/);
-  const stop = skill.indexOf("**`\"member\": false` on a new workspace, without a machine found-list:**\n     stop, spawn nothing");
+  const stop = skill.indexOf("**`\"member\": false` after step 5's sign-in:** stop, spawn nothing");
   assert.ok(stop > skill.indexOf("## 9. Messaging on this machine") && stop < skill.indexOf("## 10. Spawn the setup expert"), "in step 9, before the spawn");
   const fix = skill.slice(stop, skill.indexOf("\n2. ", stop));
   assert.match(fix, /With\s+`"root": null`, there is no root in `D\/\.aw`: step 5's team creation did\s+not finish there, so run its line for an interrupted run, then check\s+again\./);
   assert.match(fix, /the team id step 7 wrote must be step 5's `canonical_team_id` exactly/);
   assert.match(skill, /expect `"member": true`\.\n\s+On `"member": false`, stop and spawn nothing/);
-  // A machine found-list skips step 5 and signs up in item 2, so its first check is not a member and goes on.
-  assert.match(skill, /A machine found-list skipped step 5, so\s+its `"member": false` here is expected: go on to item 2\./);
-  assert.ok(stop < skill.indexOf("2. **Machine found-list: sign up its aweb account and team,**"), "the found-list's first check reaches the signup");
+  // Without step 5's sign-in there is no root yet: the first check is not a member and goes on to the signup.
+  assert.match(skill, /Every other new workspace \(the default, and a machine found-list\)\s+has no root yet, so its `"member": false` here is expected: go on to\s+item 2\./);
+  assert.ok(stop < skill.indexOf("2. **A new workspace without step 5's sign-in, and a machine found-list:"), "the first check reaches the signup");
+});
+
+test("the default new workspace signs up without a sign-in, and the team id it writes is checked against setup's answer", () => {
+  const signup = read("mirrors/oats-aweb/lib/setup-team-default.mjs");
+  // The skeleton's team is the provider's own predicted team, and the answer carries team and membershipVerified.
+  assert.ok(signup.includes("predictedTeam = `default:${username}.aweb.ai`"));
+  assert.ok(signup.includes("return { plan: false, label, team, root, steps, observed, membershipVerified: true };"));
+  assert.match(skill, /the messaging account's name `N`[^]*?default\s+`<workspace>-oats`/);
+  assert.match(skill, /## 5\. Optional: the team on your own aweb account/);
+  assert.match(skill, /- \*\*The team\*\* is `default:N\.aweb\.ai`, with `N` from step 1/);
+  const item2 = skill.slice(skill.indexOf("2. **A new workspace without step 5's sign-in, and a machine found-list:"), skill.indexOf("\n3. **Existing workspace"));
+  assert.ok(item2.includes("cd \"D\" && oats aweb setup --soul S --username N --name A --label L --plan --json"));
+  assert.match(item2, /`result\.team` must be\s+the team line step 7 wrote, `default:N\.aweb\.ai`, and\s+`result\.membershipVerified` must be `true`/);
+  const flat = item2.replace(/\s+/g, " ");
+  assert.ok(flat.includes("Ask the person for another `N`, change the team line in `D/<repo>/oats-workspace.yaml` to `default:<new N>.aweb.ai`, commit and push it, run `oats sync --dir D`, then run the preview and the signup again"));
+  // A changed N only when the failed run kept no root; a retained root keeps N and the team line.
+  assert.ok(flat.indexOf("test -e \"D/.aw\" && echo RETAINED") < flat.indexOf("Ask the person for another `N`"), "the rename is gated on no retained root");
+  assert.ok(flat.includes("**Nothing printed:** aw kept nothing, so `N` is free to change."));
+  assert.ok(flat.includes("**`RETAINED`:** the run left a root. Keep `N` and the team line, and run the preview again, unchanged."));
+  assert.ok(flat.includes("this is the workspace's team, on an aweb account created for it; they attach themselves to it later in the setup, with the setup expert"));
+  assert.ok(!flat.includes("setup expert's first steps"), "attaching comes later in the setup, not first (#1665 campaign, ux2)");
+});
+
+test("only the sign-in route says the team is owned by the person's account", () => {
+  const step5 = [skill.indexOf("## 5. "), skill.indexOf("## 6. ")];
+  for (let i = skill.indexOf("owned by"); i !== -1; i = skill.indexOf("owned by", i + 1)) {
+    const inStep5 = i > step5[0] && i < step5[1];
+    const tagged = /signed in at step 5/.test(skill.slice(i - 120, i + 120));
+    assert.ok(inStep5 || tagged, `"owned by" outside the sign-in route: ${skill.slice(i - 60, i + 60)}`);
+  }
+  assert.ok(!/owned by your account/.test(read("README.md")), "the README's default path says nothing about ownership");
+});
+
+// The onboarding VM campaign's newcomer runs (#1665): what the person is asked to do, and what changes on their computer.
+test("getting-started: one yes covers the computer's changes; a refused step is never run another way", () => {
+  const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(flat.includes("Never run `sudo` for something that was not on that list, even where no password is asked"));
+  // The list comes from step 2's read-only checks, run before step 1's message (#1665 campaign review).
+  assert.ok(flat.includes("**First, step 2's checks.** They only read, so run them before the message"));
+  assert.ok(flat.includes("**The changes to this computer:** the list in \"How to work\", from step 2's checks"), "the machine's round lists them too");
+  // A harness refusal is not routed around: ask once by name, retry once, else say what is missing.
+  assert.ok(flat.includes("never run it another way (another shell, a script, a window you open)"));
+  assert.ok(flat.includes("Never ask them to type a command with `!`."));
+  assert.ok(!flat.includes("run that command in their own terminal, which you open for them"), "a refused step does not move to a window");
+  assert.ok(flat.includes("PATH=\"$PATH:/sbin:/usr/sbin\" ldconfig -p"), "the Desktop's libraries are checked where a user's PATH lacks /sbin");
+  assert.ok(flat.includes("**FUSE 2 missing:** install nothing."));
+  assert.ok(flat.includes("`sudo -n true` is not one of those checks: it runs after the yes"), "no sudo, not even -n, before the yes");
+  assert.ok(!/\|\| true`\)/.test(flat), "checks keep their exit status");
+  assert.ok(!flat.includes("ask them to restart you"));
+  assert.ok(!flat.includes("ask for it, and suggest none"), "the folder where agents live has a default");
+  assert.ok(!/Ask for (?:its|their) (?:GitHub )?owner/.test(flat), "the host's owner is derived, not asked");
+});
+
+test("getting-started: an existing workspace names its setup expert after this machine, and joins with the invite's service URL", () => {
+  const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
+  assert.ok(flat.includes("`--name <workspace>-<this machine's name>-oats-setup-expert`"));
+  assert.ok(flat.includes("short hostname (`hostname -s`, never the full domain name)"));
+  assert.ok(flat.includes("so a rerun derives the same name"), "a long name is shortened deterministically, never left to spawn");
+  // The agent can't see the join's output, so a taken name is named at item 5's stop, never rerun around (#1665 re-review N1).
+  assert.ok(flat.includes("say that a taken name is a likely cause"));
+  assert.ok(!flat.includes("open the window again, with a new invite"), "no rerun of the join after a failure");
+  assert.ok(flat.includes("**An existing workspace's name** is its `--name` without the trailing `-oats-setup-expert`"));
+  assert.ok(flat.includes("A new workspace keeps `next.spawn` as it is."));
+  assert.ok(flat.includes("`I` is its instance name: the `--name` you spawned with"));
+  assert.ok(!/Choose with the person a name `A`/.test(flat), "the messaging root's name is derived, not asked");
+  // awebUrl is new in oats.aweb 1.33.1 and may be null: the join works without --service.
+  assert.ok(flat.includes("From oats.aweb 1.33.1 the answer's `result.awebUrl` is the service URL `U`"));
+  assert.ok(flat.includes("When it is `null` or absent, leave `--service U` out of item 4"));
+  assert.ok(!flat.includes("default service"), "the provider has no default service: the join fails without one");
+  const invite = read("mirrors/oats-aweb/lib/invite.mjs");
+  const [maj, min, pat] = providerVersion.split(".").map(Number);
+  if (maj > 1 || (maj === 1 && (min > 33 || (min === 33 && pat >= 1)))) assert.ok(invite.includes("awebUrl"), "the invite answer carries awebUrl from 1.33.1");
+});
+
+test("the Desktop's background download is installed only once its checksum and attestation passed", () => {
+  // The release lane's rule (D6, #1665): the download runs in the background, never unverified to the install.
+  const start = skill.match(/W="\$\(mktemp -d\)" && echo "\$W" && \{ nohup sh -c '([^']*)' sh "\$W" <\/dev\/null >"\$W\.log" 2>&1 & \}/);
+  assert.ok(start, "only the nohup runs in the background, so the command returns at once");
+  assert.ok(start[1].includes("gh attestation verify") && start[1].endsWith("&& echo VERIFIED; echo DONE"), "VERIFIED only after the checks; DONE always");
+  const installs = skill.match(/grep -qx VERIFIED "<W>\.log" && [^\n]*cd "<W>"/g) || [];
+  assert.equal(installs.length, 3, "the Linux install, the macOS check and the macOS install are each gated on VERIFIED");
+  assert.ok(skill.includes("never install or open this download before its\nattestation has passed"));
+});
+
+test("the skill's minimums are framework 1.19.0 and oats.aweb 1.33.1, and the catalog meets both", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("**A new workspace needs `oats.framework` 1.19.0 or later**"));
+  assert.ok(flat.includes("is below `1.19.0`, or with aweb `oats.aweb`'s is below `v1.33.1`, this OATS release is older than this skill"));
+  assert.ok(flat.includes("its owner pins `oats.framework` 1.19.0 or later"));
+  assert.ok(flat.includes("that one never below `v1.33.1`"));
+  assert.doesNotMatch(flat, /1\.18\.0|v1\.3[12]\.\d/);
+  const fw = catalog.packages["oats.framework"].ref.replace(/^oats-framework\/v/, "");
+  const aweb = catalog.packages["oats.aweb"].ref.replace(/^v/, "");
+  // The step 4 example and the skeleton's pins show the catalog's versions.
+  assert.ok(flat.includes(`for example \`oats-framework/v${fw} v${aweb}\``));
+  assert.ok(flat.includes(`oats.framework: v${fw} `) && flat.includes(`oats.aweb: v${aweb} `));
+  assert.ok(atLeast(fw, "1.19.0"), `catalog framework ${fw} is below the skill's minimum`);
+  assert.ok(atLeast(aweb, "1.33.1"), `catalog oats.aweb ${aweb} is below the skill's floor`);
+});
+
+test("a common hostname gets a keyed hash of the machine id, never the id itself", () => {
+  assert.ok(skill.includes(`printf 'oats-machine-name:%s' "$(cat /etc/machine-id)" | sha256sum | cut -c1-8`));
+  assert.ok(skill.includes(`| shasum -a 256 | cut -c1-8`));
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("Never the id itself: the whole team sees this name, and the id is confidential (machine-id(5))."));
+  assert.doesNotMatch(flat, /first eight characters of `\/etc\/machine-id`|IOPlatformUUID` on macOS, lowercased/);
 });
