@@ -321,19 +321,19 @@ test("retire: aliasReusable follows aw workspace delete --json (released, or not
     rmSync(join(home, ".oats-aweb", "default-retire.json"));
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: AW_VERSION, FAKE_ALIAS_RELEASED: "false" });
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential", joinedTeams: [] });
-    assert.match(r.doc.warning, /not released \(no_workspace_credential\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
+    assert.match(r.doc.warning, /not released \(no_workspace_credential\); spawn successors with a different --name or --purpose until it is released$/);
     // RETIRED (oats.aweb 1.16.1): the aw 1.36.0 pre-abim retire without --json (a removed older-aw branch).
     assert.equal(readFileSync(join(base, "aw.log"), "utf8").split("workspace delete probe --json").length - 1, 2);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("spawn: a join refused because the alias still holds a certificate is fatal with the retired-alias explanation and the name-or-purpose remedy", () => {
+test("spawn: a join refused because the alias still holds a certificate is fatal with the retired-alias explanation and the --name remedy", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base, "conflict"); const { root, home } = deployment(base);
     const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_SETTINGS: "{}" });
     assert.notEqual(r.status, 0);
-    assert.match(r.stdout, /already holds a certificate on t:example.test \(another machine's instance of that name, or a retired one until aweb-abim ships\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
+    assert.match(r.stdout, /alias \\"probe\\" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name\. Team: t:example\.test/);
     assert.equal(r.stdout.includes("TOK-secret"), false, "the invite token never reaches the log");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

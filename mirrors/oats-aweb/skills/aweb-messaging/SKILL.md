@@ -16,13 +16,13 @@ Interim plaintext boundary: in the current aw CLI release, mail and chat are ser
 
 Mixed-version boundary: old pre-E2E aw/channel/Pi clients may not have published recipient encryption keys yet. A current aw CLI can create/publish the sender's local encryption key for explicit `--e2ee` sends, but it cannot create keys for another recipient. If the recipient lacks a key, report that they need to upgrade aw/Pi/channel and publish a key. Plain default sends and `--plaintext` are server-readable.
 
-If the event says to use the aw CLI and the response is not obvious, continue with this skill. For broader work coordination, load `aweb-coordination`. For recipient addressability, inbound-mode policy, team membership, or multi-team identity questions, load `aweb-team-membership`.
+If the event says to use the aw CLI and the response is not obvious, continue with this skill. For recipient addressability, inbound-mode policy, team membership, or multi-team identity questions, load `aweb-team-membership`.
 
 ## Read the event first
 
 For channel awakenings, parse the injected metadata before acting:
 
-- `type`: mail, chat, control, work, or claim.
+- `type`: mail, chat, or control.
 - `from`: sender alias or global address.
 - `message_id`: durable message identifier.
 - `conversation_id` or `session_id`: thread/session to continue.
@@ -113,21 +113,19 @@ Harness support differs:
 
 - **Pi**: install `@awebai/pi`; the aweb channel and these skills are bundled together.
 - **Claude Code**: install the `aweb-channel` plugin from the `awebai/claude-plugins` marketplace. See <https://github.com/awebai/aweb/blob/main/docs/channel.md>.
-- **Codex**: no always-on channel install in v1. Use regular coordination polling loops or `aw run codex` for a session-bound runner.
+- **Codex**: no always-on channel install in v1. Check mail and chat at regular points in your work, or use `aw run codex` for a session-bound runner.
 
 The channel is inbound only. Use `aw mail` or `aw chat` to respond.
 
 For E2E messages, channel/Pi/`aw run` may show plaintext only after local decryption in the user's workspace or client process. Server notifications and SSE payloads should be metadata-only for encrypted content. Recipient E2E capability and encryption keys must be identity-authorized; a service signature can assert route support only. If an event or tool error says an encryption key/capability is missing, stale, or mismatched, fail closed and report the error. Do not silently resend as plaintext. If the local channel/Pi process was upgraded from a pre-E2E version, run `aw id encryption-key setup` in the workspace before expecting it to receive encrypted messages.
 
-## Control and work awakenings
+## Control awakenings
 
 For control signals:
 
 - `pause`: stop current work and wait for instructions.
 - `resume`: continue only if the previous context is still valid.
 - `interrupt`: stop and inspect the new instruction before proceeding.
-
-For work/claim notifications, avoid immediate action unless it affects current work. Queue or inspect on the next coordination loop.
 
 ## Recipient addressing
 

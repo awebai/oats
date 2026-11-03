@@ -15,9 +15,12 @@ aw whoami
 If it fails, report the exact failure to your human and do not use tasks.
 Continue only with a working identity; do not create or repair one here.
 
+This workspace tracks work in aweb tasks, and its agents use them.
 This skill implements the OATS tasks layer only when `oats.aweb-tasks` is
 selected. Conversation belongs to the deployment's messaging layer. Do not
 replace the selected tasks provider with aweb tasks in another deployment.
+OATS does not ship aweb's own `aweb-coordination` skill; this skill takes its
+place for day-to-day work coordination, and the messaging skills never teach it.
 
 Run commands from your **instance home**, with your own oats.aweb identity in
 its default team. This capability creates no identity and joins no team. If
@@ -76,6 +79,14 @@ Use that form to assign work to another member, including the human. Do not
 combine their assignment with the in-progress transition, which assigns you.
 Claim age alone does not invalidate ownership: contact the holder and record
 the agreed disposition before explicitly changing status or assignment.
+
+## Work and claim events
+
+aweb can present an event of type `work` or `claim` beside mail and chat. It
+reports a change in the team's work; it is not a message and needs no reply.
+Act on it at once only when it affects the work you are on. Otherwise note it
+and inspect it at your next task boundary with `aw work active` or
+`aw task show <ref>`.
 
 ## File-sourced text
 
