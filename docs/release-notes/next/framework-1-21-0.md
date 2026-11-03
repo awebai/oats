@@ -1,0 +1,3 @@
+## Changed
+
+- **`oats.framework` 1.21.0 ships two setup steps.** `oats.setup` 2.12.0's `/oats-host-delivery` gains the pi step of channel delivery: install `@awebai/pi`, then set its entry in the pi folder's `settings.json` to `{"source": "npm:@awebai/pi", "skills": []}`, so pi loads the extension without the skills it bundles (#1722). Its `/oats-upgrade` now covers a first Desktop install: on a host without the Desktop it asks whether the person wants it, and installs that release's Desktop (#1724). No command they name needs a newer OATS than `oats.setup` already admits ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).
