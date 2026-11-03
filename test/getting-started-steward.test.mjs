@@ -261,3 +261,11 @@ test("a new workspace with aweb defaults to aweb tasks, and to `tasks: none` onl
   assert.ok(tailor.includes("with `oats.aweb-tasks`, keep it unless the person switches"));
   assert.ok(tailor.includes("(`E_SLOT_CONFLICT`)"));
 });
+
+test("pi's aweb extension is installed without its bundled skills", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  assert.ok(flat.includes("then its entry in pi's `settings.json` set to load none of the skills it bundles"));
+  assert.ok(skill.includes('process.env.PI_CODING_AGENT_DIR||path.join(os.homedir(),".pi","agent")'));
+  assert.ok(skill.includes("skills:[]}:e)"));
+  assert.ok(flat.includes("pi's aweb extension, without its skills (pi only)"));
+});

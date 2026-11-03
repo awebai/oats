@@ -65,7 +65,8 @@ stop instead: the person answers nothing after step 1.
   per user, under `~/.local`; on macOS with Homebrew), the line that puts
   them on their PATH in their shell's startup file (`~/.local/bin` on Linux;
   on macOS, Homebrew's `brew shellenv` line, only when Homebrew is new), the
-  aweb channel plugin in Claude (Claude only), the folder where their agents
+  aweb channel plugin in Claude (Claude only) or pi's aweb extension,
+  without its skills (pi only), the folder where their agents
   live (`D`, spelled out) marked as trusted by their coding agent, OATS
   Desktop with its app-launcher entry, each system package step 2 found
   missing, with what it is for, Git told to use their GitHub login (`gh auth
@@ -467,8 +468,14 @@ release. Never write a setup soul into the workspace in its place.
 **With aweb, the messaging CLI `aw`, and the harness's aweb channel,** which
 wakes an agent when mail arrives (skip this without messaging): Claude
 `claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace`;
-pi `pi install npm:@awebai/pi`; Codex nothing (the setup expert sets up its
-wake).
+pi `pi install npm:@awebai/pi`, then its entry in pi's `settings.json` set
+to load none of the skills it bundles (OATS puts no machine-wide skills on
+a computer; each agent gets its own); Codex nothing (the setup expert sets
+up its wake). The pi entry, which prints it so you can check `"skills":[]`:
+
+```bash
+node -e 'const fs=require("fs"),path=require("path"),os=require("os");const f=path.join(process.env.PI_CODING_AGENT_DIR||path.join(os.homedir(),".pi","agent"),"settings.json");const s=JSON.parse(fs.readFileSync(f,"utf8"));const ours=(e)=>(typeof e==="string"?e:e&&e.source||"").startsWith("npm:@awebai/pi");s.packages=(s.packages||[]).map((e)=>ours(e)?{...(typeof e==="object"?e:{}),source:typeof e==="string"?e:e.source,skills:[]}:e);fs.writeFileSync(f,JSON.stringify(s,null,2)+"\n");console.log(JSON.stringify(s.packages.filter(ours)))'
+```
 
 ```bash
 npm install -g @awebai/aw && aw version
