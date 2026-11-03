@@ -6,6 +6,7 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from './session-r
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment, wakeDaemonAssessment, claudeChannelModeUnset, CLAUDE_CHANNEL_MODE_DEFAULT } from './wake-receive.mjs';
 import { channelConnection, channelReadiness } from './claude-channel.mjs';
+import { piExtensionSkillsWarning, recordedPiAgentDir } from './pi-extension.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
@@ -425,6 +426,10 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
       }
     }
   }
+  // A pi home's extension entry must filter out its bundled skills; the
+  // warning stands apart from receive, so it is read whatever else failed.
+  const piSkills=ctx.home?piExtensionSkillsWarning(recordedPiAgentDir(ctx.home,env)):undefined;
+  if(piSkills) warnings.push(piSkills);
   // Soul scope has no target row: only the daemon a spawn will need, read once.
   // It sees no harness either, so a join alone can't say the daemon is needed.
   const session=req.settings.delivery==='session';
