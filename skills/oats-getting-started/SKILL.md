@@ -55,8 +55,8 @@ stop instead: the person answers nothing after step 1.
   seconds of the person's time: their answers, a login to approve, a secret
   to type. Don't wait more than about a minute for the Desktop's background
   download once the CLI is installed: if it hasn't verified by then, go on
-  without the Desktop and record that in the hand-over (the setup expert
-  installs it later).
+  without the Desktop and record that in the hand-over (the person can
+  install it later with the setup expert, through `/oats-upgrade`).
 - **Talk to a newcomer, in everyday words.** They may not know what a
   repository, Git, a terminal or a command is. Talk about their projects,
   code and folders: "your agents' shared setup" (the workspace), "the setup
@@ -86,12 +86,14 @@ stop instead: the person answers nothing after step 1.
   setup-git`, in `~/.gitconfig`), on Linux npm's per-user folder (in
   `~/.npmrc`), and, for a new workspace whose host step 6 creates, the
   private repository `<owner>/<repo>` on GitHub, or, when the host is an
-  existing repository (a monorepo), the two setup files committed to
-  `<owner>/<repo>` on GitHub.
+  existing repository (a monorepo), the two setup files committed and
+  pushed straight to `<owner>/<repo>`'s default branch, which runs its
+  automatic checks or deploys if it has any (or a pull request, step 7).
   Name each change by what and where, not by kind: a permission check that
   reads the conversation lets a step through only when their yes named it.
   Run each change on the list as its own command, never batched with other
-  changes, so that check sees it by the name their yes gave it.
+  changes, so that check sees it by the name their yes gave it (a fenced
+  block below that makes one change on the list counts as one).
   Never run `sudo` for something that was not on that list, even where no
   password is asked; if they say no to a system package, tell them what will
   not work without it.
@@ -131,9 +133,12 @@ stop instead: the person answers nothing after step 1.
     only that exists. Through `systemd-run` the window gets their desktop
     session's environment, not yours. If `systemd-run` fails (for example
     "Failed to connect to bus", when there is no user session bus), start
-    the terminal directly before you give them a command to type:
-    `setsid xdg-terminal-exec sh "F"`, or `setsid x-terminal-emulator -e sh "F"`,
-    with `DISPLAY` and `WAYLAND_DISPLAY` set to their session's.
+    the terminal directly, detached, before you give them a command to type:
+    `setsid -f xdg-terminal-exec sh "F" </dev/null >/dev/null 2>&1`, or
+    `setsid -f x-terminal-emulator -e sh "F" </dev/null >/dev/null 2>&1`.
+    It uses the `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY` and
+    `XDG_RUNTIME_DIR` your environment already has; when they are unset,
+    don't guess them: take "When no window opens".
 
   Tell them what to type there, and ask whether the window opened (a
   command that started is no proof of one). Check the result with a
@@ -391,8 +396,9 @@ uname -sm; node --version; git --version; tmux -V; gh --version; npm prefix -g; 
 
 ## 3. Log in to GitHub
 
-Check first, and when step 2 installed gh, check again after that install:
-start the device login below only if this says gh is not logged in.
+Always run this check, even when step 2 just installed gh (an existing gh
+config or `GH_TOKEN` may already log it in), and start the device login
+below only if it says gh is not logged in.
 
 ```bash
 gh auth status
@@ -518,7 +524,8 @@ for i in $(seq 60); do grep -qx DONE "<W>.log" && break; sleep 1; done; tail -n 
 Install the Desktop only when the log has a `VERIFIED` line. If a download or
 a check failed (its assets can lag the npm package), or it still has not
 finished, go on without the Desktop, say so, and record it in the
-hand-over: the setup expert installs it later. Never skip a check to
+hand-over: the person can install it later with the setup expert, through
+`/oats-upgrade`. Never skip a check to
 make it install, and never install or open this download before its
 attestation has passed. A Desktop installed before this run stays as it is.
 
@@ -748,11 +755,13 @@ workspace: git:github.com/acme/acme-oats
 **Commit and push.**
 - **A repository created in step 6:** straight to its default branch (it
   is the person's own, just created).
-- **A monorepo:** commit to its default branch on step 1's yes, which named
-  the two setup files in `<owner>/<repo>`, without asking again; show the
-  person the files only if they ask. If the push is refused (a protected
-  branch, say), push a branch, open a pull request, tell them, and stop until
-  it is merged.
+- **A monorepo:** push the commit to its default branch on step 1's yes,
+  which named it, without asking again; show the person the files only if
+  they ask. When others can push to the repository (`gh api
+  repos/<owner>/<repo>/collaborators --jq length` prints more than 1, or
+  fails), its default branch is protected, or the push is refused: push a
+  branch instead, open a pull request, tell them, and stop until it is
+  merged.
 - If `git config user.name` or `git config user.email` prints nothing in
   `D/<repo>`, commit with the name step 1's yes covered:
   `-c user.name="<their name>" -c user.email="<their noreply address>"`,
@@ -1123,8 +1132,8 @@ and say yes to it in the hand-over below.
 Keep this message in plain words. Don't list homes, paths or commands, and
 name no versions (Git's, OATS's or any other), no package sources (a PPA,
 say) and no internal flags or codes (a "development-channel flag", a
-"channel-not-connected", say). Name the setup expert by its display form
-only. Anything they may want to know later goes in the hand-over file, for
+"channel-not-connected", say). When you name the setup expert as the
+Desktop lists it, use its display form, never its instance name. Anything they may want to know later goes in the hand-over file, for
 the setup expert, not in this message. You are done.
 
 ## Never
