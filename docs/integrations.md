@@ -102,7 +102,11 @@ operations in full.
   provider in `capabilities:` (`oats.jira`, `oats.linear`) then holds two and
   fails with `E_SLOT_CONFLICT`: to keep its own, it adds
   `oats.aweb-tasks: off` to its `capabilities:`. A soul opts out of tasks
-  entirely with `tasks: none`.
+  entirely with `tasks: none`. **A new workspace** made by the `oats-getting-started`
+  skill with aweb has it by default: the skill writes this default and opts
+  the team in through its team instructions, unless the person's projects
+  already use a tracker (GitHub issues in use, Jira, Linear and the like),
+  when it writes `tasks: none` and the setup expert connects the tracker.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code

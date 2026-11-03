@@ -225,3 +225,24 @@ test("a common hostname gets a keyed hash of the machine id, never the id itself
   assert.ok(flat.includes("Never the id itself: the whole team sees this name, and the id is confidential (machine-id(5))."));
   assert.doesNotMatch(flat, /first eight characters of `\/etc\/machine-id`|IOPlatformUUID` on macOS, lowercased/);
 });
+
+test("a new workspace with aweb defaults to aweb tasks, and to `tasks: none` only beside a tracker it found", () => {
+  const flat = skill.replace(/\s+/g, " ");
+  // The skeleton carries the tasks default; the rule says when it is `none`.
+  assert.match(skill, /\n  tasks: \{ oats\.aweb-tasks: \{ from: package \} \}\s+# or `tasks: none` \(step 1\)\n/);
+  assert.ok(flat.includes("The default is aweb's task list (`oats.aweb-tasks`). It gives way only to a tracker the person already uses, which you find, never ask about"));
+  // Issues switched on are GitHub's default, so only a used issue list is a tracker.
+  assert.ok(flat.includes("`gh issue list -R <owner>/<repo> --state all --limit 1 --json number --jq length`"));
+  assert.ok(flat.includes("Issues switched on but never used are no tracker"));
+  assert.ok(flat.includes("step 7 writes `tasks: none`"));
+  assert.ok(flat.includes("Ask, with that line as the prefilled answer, only when the one sign of a tracker is ticket keys the person didn't name"));
+  assert.doesNotMatch(flat, /no `tasks:` default/);
+  // aweb tasks: the team opts in through aweb's own line, held in one place, and the wake broker is current.
+  assert.equal((skill.match(/AWEB_TASKS_LINE:/g) || []).length, 1, "aweb's tasks line lives in one place");
+  assert.ok(flat.includes("`aw instructions set --body-file <file>`"));
+  assert.ok(flat.includes("`daemon_version` equals the version `aw version` printed"));
+  assert.ok(flat.includes("`cd \"D\" && oats aweb wake install`"));
+  // A tracker leaves the team's instructions alone, and the hand-off keeps aweb's list empty.
+  assert.ok(flat.includes("With a tracker (`tasks: none`), change neither"));
+  assert.ok(flat.includes("Leave aweb's task list empty: one task there switches your whole group over to it."));
+});

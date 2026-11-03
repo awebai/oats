@@ -145,7 +145,8 @@ files live (the host, in plain words: "kept with your notes-app code on
 GitHub", or "in a new private space on your GitHub, `<workspace>-oats`"),
 the messaging account, the folder where their agents live, OATS Desktop
 installed and opened, the name on their commits (only when Git has none),
-and the changes to their computer ("How to work"). Don't ask for the GitHub
+where their agents keep track of work (tasks, below), and the changes to
+their computer ("How to work"). Don't ask for the GitHub
 owner (below), or for the coding agent the setup expert runs on: it is you,
 when you are `claude`, `codex` or `pi`. When an answer changes a default (a
 name, a host, a fresh start or a join), derive every default again and show
@@ -210,6 +211,28 @@ the final values in one short message before you go on. The rules:
   (`Ubuntu` for `ubuntu`), their GitHub profile name, found after step 3
   (`gh api user --jq '.name // .login'`), and the line says "your GitHub
   name". Step 7 uses it without asking again.
+- **Tasks, a new workspace with aweb only:** where the agents track work.
+  The default is aweb's task list (`oats.aweb-tasks`). It gives way only to
+  a tracker the person already uses, which you find, never ask about:
+  - **GitHub issues:** a project's GitHub repository that has at least one
+    issue, open or closed (`gh issue list -R <owner>/<repo> --state all
+    --limit 1 --json number --jq length` prints `1`). Issues switched on but
+    never used are no tracker. Before step 3's login, check after it, and
+    the line says "aweb's task list, unless your GitHub repositories use
+    issues (checked after the GitHub login)".
+  - **Jira, Linear or another tracker:** the person named it in their
+    answers, or ticket keys (`ABC-123`, the same prefix at least twice) are
+    in the project's recent branch names or commit subjects
+    (`git -C <dir> log -50 --format=%s`,
+    `git -C <dir> branch -a --format='%(refname:short)'`).
+
+  With a tracker, the agents keep using it: the line says so ("your agents
+  use your GitHub issues; the setup assistant connects them") and step 7
+  writes `tasks: none`; the setup expert connects the tracker with the
+  person later. Without one, the line says "aweb's task list, shared by your
+  agents". Ask, with that line as the prefilled answer, only when the one
+  sign of a tracker is ticket keys the person didn't name. An existing
+  workspace or a machine found-list has no tasks line: its owner decided.
 
 **The machine's round.** Read the found-list, then ask only these choices,
 together, each with its default and one line on what it is. Enter, or
@@ -644,6 +667,7 @@ defaults:
   capabilities:
     oats.core: { from: package }
   messaging: { oats.aweb: { from: package } }
+  tasks: { oats.aweb-tasks: { from: package } }   # or `tasks: none` (step 1)
 teams:
   acme: { description: The acme workspace's team, team: "T" }
 defaultTeam: acme                     # every soul starts in this team
@@ -657,11 +681,12 @@ defaultTeam: acme                     # every soul starts in this team
   (here `acme`) is the workspace name.
 - **The `oats.machine` line,** at the catalog's
   `packages."oats.machine".ref`, only on a machine found-list.
+- **The `tasks` line** is step 1's tasks answer: `oats.aweb-tasks` without
+  a tracker, `tasks: none` with one. On a machine found-list, leave it out.
 - **Without messaging,** leave out the `oats.aweb` line, the `messaging`
-  line, `teams` and `defaultTeam`.
+  line, the `tasks` line, `teams` and `defaultTeam`.
 - **Add nothing else:** no soul (the setup expert is `oats.framework`'s), no
-  `tasks:` default, no knowledge; the setup expert authors those with the
-  person.
+  knowledge; the setup expert authors those with the person.
 
 `oats-membership.yaml`:
 
@@ -832,6 +857,35 @@ readiness still reports a problem.
    their own agent whether that name is in the group (its agent reads
    `oats aweb roster --label L`); the fix (a new invite and a name for this
    machine) is the workspace owner's. Never take the other machine's name.
+6. **A new workspace whose tasks are aweb's (step 1, `oats.aweb-tasks`):**
+   - **Opt the team in to aweb tasks.** aweb opts a team in when its team
+     instructions carry aweb's tasks line (or at its first task). The line,
+     aweb's exact text, kept here in one place:
+
+     > AWEB_TASKS_LINE: not yet published by aweb.
+
+     While it reads "not yet published", skip this write, and the hand-over
+     says the opt-in waits on aweb's line. Otherwise, from `D`, read the
+     team's instructions (`aw instructions show --json`). If they don't
+     already carry the line, write a new version that is the current text
+     with the line added at the end, through a file in a new temporary
+     folder (`aw instructions set --body-file <file>`), then show them again
+     and check that the line is there.
+   - **The host wake broker,** which wakes agents when work or mail arrives,
+     and whose heartbeat aweb's task claims will rely on. From `D`,
+     `aw version` and `aw wake status --json`: it is current when
+     `daemon_running` is `true`, `daemon_version_state` is `"reported"` and
+     `daemon_version` equals the version `aw version` printed. Otherwise
+     open their own terminal ("How to work") running
+     `cd "D" && oats aweb wake install`: it runs as their own background
+     service with their shell's settings, so they start it, and it asks
+     nothing. Then read `aw wake status --json` again. Still not current:
+     say so in one sentence, go on, and the hand-over says the setup expert
+     installs it (`/oats-host-delivery`, Choice 2).
+
+   With a tracker (`tasks: none`), change neither: one aweb task would opt
+   the whole team in, so the hand-off asks them to leave aweb's task list
+   empty.
 
 The setup expert does the rest of this machine's messaging
 (`/oats-host-delivery`).
@@ -905,6 +959,11 @@ are cloned, knowledge tools, messaging wanted or not>
   messaging)
 - Harness channel mode: development, confirmed by OATS at each start
   (Claude with aweb) | none (Codex, pi or no messaging)
+- Tasks (new workspace with aweb): oats.aweb-tasks, the team opted in |
+  opt-in waiting on aweb's line; host wake broker current | not installed
+  (why) — or none: the agents use <GitHub issues in <repo> | <tracker the
+  person named> | ticket keys <PREFIX>-n>, for you to connect with the
+  person; aweb's task list stays empty
 
 ## Left to you
 Everything else, starting with /oats-setup-expert.
@@ -1030,7 +1089,13 @@ and say yes to it in the hand-over below.
   installed, shows it;
 - what the setup assistant does next, in one line: it learns how they work,
   then sets up their projects and their first agents with them, and it
-  opens a small hidden prompt when they need to type a password or a key.
+  opens a small hidden prompt when they need to type a password or a key;
+- a new workspace with aweb only, where their agents track work, in one
+  line, with how to change it: "Your agents share aweb's task list; to use
+  another tracker later, ask the setup assistant to switch." With a
+  tracker: "Your agents use your <GitHub issues | tracker>; the setup
+  assistant connects them. Leave aweb's task list empty: one task there
+  switches your whole group over to it."
 
 Don't list homes, paths, versions or commands in this message. You are
 done.
