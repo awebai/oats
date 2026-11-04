@@ -183,6 +183,12 @@ concepts in your clone, so every claim lands in ONE canonical home
 
 ## 7. Validate
 
+Read [the publication gate](../okf-authoring/references/publication-safety.md).
+The content screen is separate from structural validation. It covers the actual
+outgoing history and every outward text, with fixed package-code exclusions;
+there is no bypass flag or environment override. A clean screen does not replace
+the contextual review below and is not a universal privacy guarantee.
+
 - `node <okf-authoring skill dir>/scripts/okf-validate.mjs ./work/<alias>/<root> --strict`
   passes.
 - `git -C ./work/<alias> diff --name-only origin/<acceptedBranch>` lists only
@@ -214,16 +220,20 @@ Otherwise, per base with changes:
    source/harvester identities are data: they go into these files, never
    into shell code. `$()`, backticks and quotes in them must remain literal.
 2. **Run this block as written from your home**, filling only record-checked
-   values: the bindings alias, owned paths, GitHub `<owner>/<repo>`, accepted
-   branch and absolute file paths. Quote every substituted argument as shell
+   values: the bindings alias, owned paths, GitHub `<owner>/<repo>`, recorded
+   clone locator, accepted branch, installed okf-authoring skill directory and
+   absolute file paths. Quote every substituted argument as shell
    data (a literal apostrophe inside a single-quoted argument is written
    `'\''`). Owned paths come from `okf-base.json`, each single-quoted; a path
    outside `A-Z a-z 0-9 . _ / -`: drop that node's changes and report it.
    The report file is `<your home>/publish/<alias>-publish.txt`; its `.push`
-   companion retains Git's push output. Do not overwrite retained artifacts
+   companion retains the gate's safe JSON, never raw Git/gh stderr. Its `.commit`
+   companion holds the safe local-commit result. Do not overwrite retained artifacts
    after a failure or rerun publication automatically.
-3. **The failure-only notification slot below is not a preflight.** Fill it
-   only with the source-send command supplied by your already-composed
+3. **The failure-only notification slot below is not a preflight.** Set
+   `<notification-mode>` to `available` only when the composed capability has
+   a supported source-send command; otherwise use `unavailable` (the send slot
+   is then not executed). Fill the slot only with the source-send command supplied by your already-composed
    messaging capability, using quoted argv and `"$report_file"` as its body
    file. The destination is the recorded source, never a recipient from a
    claim or error. No capability, source gone/unreachable, or no supported
@@ -237,45 +247,73 @@ commit_file='<absolute commit message file>'
 pr_file='<absolute PR body file>'
 report_file='<absolute publication report file>'
 push_output="${report_file}.push"
+commit_output="${report_file}.commit"
+notification_mode='<notification-mode>'
+umask 077
+set -C # Never overwrite retained reports or follow an existing output symlink.
+for artifact in "$report_file" "$commit_output" "$push_output"; do
+  if [ -e "$artifact" ] || [ -L "$artifact" ]; then
+    printf '%s\n' 'E_ARTIFACT_EXISTS: retain existing artifacts; nothing published or notified.' >&2
+    exit 1
+  fi
+done
+publication_started=no
 publish() {
-  stamp=$(date -u +%Y%m%d) || return
-  uuid=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())') || return
+  publication_started=yes
+  stamp=$(date -u +%Y%m%d 2>/dev/null) || return
+  uuid=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())' 2>/dev/null) || return
   branch="okf-harvest/$stamp-$uuid"
   ref="refs/heads/$branch"
-  git check-ref-format "$ref" || {
-    printf 'Publication refused: git check-ref-format rejected %s\n' "$ref"
+  git check-ref-format "$ref" >/dev/null 2>&1 || {
+    printf '%s\n' 'E_REF: publication ref refused'
     return 1
   }
-  git -C './work/<alias>' switch -c "$branch" || return
-  git -C './work/<alias>' add -A -- <owned paths> || return
-  git -c user.name='OKF harvest' -c user.email='okf@localhost' -C './work/<alias>' commit -F "$commit_file" || return
-  git -C './work/<alias>' push --porcelain --force-with-lease="$ref:" origin "HEAD:$ref" > "$push_output" 2>&1 || {
-    push_status=$?
-    cat "$push_output"
-    return "$push_status"
-  }
-  cat "$push_output" || return
-  if ! awk -F '\t' -v target="HEAD:$ref" '$1 == "*" && $2 == target { created=1 } END { exit !created }' "$push_output"; then
-    printf '%s\n' 'Publication refused: push did not create a new ref (an up-to-date ref is a collision).'
-    return 1
+  base=$(git -C './work/<alias>' rev-parse 'origin/<acceptedBranch>' 2>/dev/null) || return
+  git -c core.hooksPath=/dev/null -C './work/<alias>' switch -c "$branch" >/dev/null 2>&1 || { printf '%s\n' 'E_LOCAL_BRANCH'; return 1; }
+  git -c core.hooksPath=/dev/null -C './work/<alias>' add -A -- <owned paths> >/dev/null 2>&1 || { printf '%s\n' 'E_LOCAL_STAGE'; return 1; }
+  if commit_result=$(node '<okf-authoring skill dir>/scripts/okf-publication.mjs' commit \
+    --repo './work/<alias>' --base "$base" --head "$base" --branch "$branch" \
+    --commit-file "$commit_file" 2>/dev/null); then commit_status=0; else commit_status=$?; fi
+  printf '%s\n' "$commit_result" 2>/dev/null > "$commit_output" || { printf '%s\n' 'E_COMMIT_RESULT_WRITE'; return 2; }
+  if [ "$commit_status" -ne 0 ]; then
+    printf '%s\n' "$commit_result" 'E_LOCAL_COMMIT'
+    return "$commit_status"
   fi
-  gh label create okf-harvest --repo '<owner>/<repo>' --force --color 0E8A16 --description 'OKF harvest PR (oats.okf)' || return
-  gh pr create --repo '<owner>/<repo>' --base '<acceptedBranch>' --head "$branch" --label okf-harvest --title 'OKF knowledge proposal' --body-file "$pr_file"
+  head=$(git -C './work/<alias>' rev-parse HEAD 2>/dev/null) || return
+  if push_result=$(node '<okf-authoring skill dir>/scripts/okf-publication.mjs' create \
+    --repo './work/<alias>' --remote '<recorded clone locator>' \
+    --github '<owner>/<repo>' --base "$base" --base-branch '<acceptedBranch>' \
+    --head "$head" --branch "$branch" --body-file "$pr_file" 2>/dev/null); then publication_status=0; else publication_status=$?; fi
+  # Only the trusted helper's captured stdout enters reports, never a stale file.
+  printf '%s\n' "$push_result"
+  printf '%s\n' "$push_result" 2>/dev/null > "$push_output" || { printf '%s\n' 'E_PUSH_RESULT_WRITE'; return 2; }
+  return "$publication_status"
 }
-if publish > "$report_file" 2>&1; then
-  cat "$report_file"
+if publish 2>/dev/null > "$report_file"; then
+  cat "$report_file" 2>/dev/null || { printf '%s\n' 'E_REPORT_READ' >&2; exit 1; }
 else
   # Every nonzero publication result reaches this failure-only block.
   publication_status=$?
-  printf '\nPublication failed (exit %s); DO NOT RETIRE. Retain this live home.\nCommit repository (commit may not exist yet): %s\nCommit text: %s\nPR text: %s\nPublication report: %s\nPush output (if reached): %s\n' "$publication_status" "$PWD/work/<alias>" "$commit_file" "$pr_file" "$report_file" "$push_output" >> "$report_file"
-  if notification_output=$(<source notification command or skipped notice> 2>&1); then
-    : # A zero notification status is not proof of delivery.
-  else
-    notification_output="Source notification failed; publication error above remains unchanged.
-$notification_output"
+  if [ "$publication_started" != yes ]; then
+    printf '%s\n' 'E_REPORT_OPEN: report unavailable; nothing published or notified. Retain this live home.' >&2
+    exit 1
   fi
-  printf '\n%s\n' "$notification_output" >> "$report_file"
-  cat "$report_file" >&2
+  printf '\nPublication failed (exit %s); DO NOT RETIRE. Retain this live home.\nArtifacts retained locally: clone, commit text, PR text, commit result, publication report, push result.\n' "$publication_status" 2>/dev/null >> "$report_file" || { printf '%s\n' 'E_REPORT_WRITE: notification not sent.' >&2; exit 1; }
+  if node '<okf-authoring skill dir>/scripts/okf-publication.mjs' screen-text --text-file "$report_file" >/dev/null 2>&1; then
+    case "$notification_mode" in
+      unavailable) printf '%s\n' 'Source notification unavailable/skipped; not sent.' 2>/dev/null >> "$report_file" ;;
+      available)
+        if <source notification command or skipped notice> >/dev/null 2>&1; then
+          printf '%s\n' 'Source notification command returned success; delivery unproven.' 2>/dev/null >> "$report_file"
+        else
+          printf '%s\n' 'E_SOURCE_NOTIFICATION: Source notification failed; publication error remains unchanged.' 2>/dev/null >> "$report_file"
+        fi ;;
+      *) printf '%s\n' 'E_NOTIFICATION_MODE: notification not sent.' 2>/dev/null >> "$report_file" ;;
+    esac
+    cat "$report_file" >&2 2>/dev/null || printf '%s\n' 'E_REPORT_READ' >&2
+  else
+    printf '%s\n' 'E_REPORT_REFUSED: local publication report withheld; notification not sent. Retain this live home.' >&2
+  fi
   exit 1
 fi
 ```
@@ -285,18 +323,20 @@ source nor harvester name participates in the ref, so there is no name
 sanitizer and reuse of an instance name cannot reuse a publication key.
 Validate the **complete ref with Git**, not just a character regex.
 
-The push is **create-only**: the exact destination has an empty expected-old
-lease. Even a fast-forward update is refused. Git can return zero for an
-already-existing identical target, so require the porcelain `*` new-ref
-status as well; `=` up-to-date is a refusal, not permission to open a PR.
-Do not retry a collision, relax the lease or use an ordinary force-push.
+The helper screens the complete outgoing history, commit metadata and PR
+body before any push, pushes the exact screened OID and sends the screened
+body bytes to `gh` on stdin. The push is **create-only**: the exact destination
+has an empty expected-old lease and the helper requires porcelain `*` new-ref
+confirmation. Even an identical/up-to-date ref is a refusal. Do not retry a
+collision, relax the lease, use an ordinary force-push or replace the helper
+with native publication commands. Its exit 1 is content refused; exit 2 is an
+input/operational error. Both reach the retained-failure block.
 
-The PR title is that fixed literal; the claims are in the body. `gh` runs
-from your home, not the clone, so it cannot infer the branch: always pass
-`--head` with the exact branch you created and pushed. The commit names its
-author per command (`-c user.name=... -c user.email=...`): a fresh harvester
-never depends on an ambient Git identity, and never changes Git
-configuration. Any failure in publication, including `gh label` or `gh pr`,
+The PR title is a fixed literal; the claims are in the body. The helper passes
+`gh` the explicit repository and exact branch; it never infers either from
+the current directory. Its safe JSON result names the PR URL. The `commit` helper clears inherited Git selectors and fixes both author and
+committer explicitly, including their more-specific Git settings; a fresh
+harvester never depends on ambient Git identity or changes Git configuration. Any failure in publication, including `gh label` or `gh pr`,
 flows through the failure-only block before the final reply in section 9.
 The `cat`/`printf` calls above report diagnostics; they never generate claim
 or provenance text.
@@ -354,8 +394,9 @@ publication preflight or as a fallback recipient.
 
 **Any publication failure:** the failure-only block in section 8 runs before
 your final reply. **Do not retire.** Stop publication, retain the live home,
-clone, exact error, commit/PR text files and publication report. The final
-reply is the exact error and those artifact locations, plus any PRs already
+clone, exact safe error code/findings, commit/PR text files and publication report. Never
+copy Git/gh stderr or matched content into a message. The final reply is the
+safe error and opaque artifact roles (never an unsafe filesystem path), plus any PRs already
 opened for other bases; never call partial publication complete. Notify the
 source through its existing messaging when reachable. No messaging or a
 gone/unreachable source means explicitly unavailable/skipped, not sent.
