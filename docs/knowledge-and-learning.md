@@ -27,10 +27,10 @@ A lesson is kept when both answers are yes:
 
 ## Souls divide the knowledge base
 
-- The knowledge base is divided into areas, such as the release process, the API contract or the design system.
-- Each area has exactly one owning soul. That soul keeps the area current and answers for it, and lessons are proposed only to the area their soul owns.
+- The knowledge base is divided into areas, such as the release process, the kernel or the design system.
+- Each area has exactly one owning soul. Its instances' lessons are proposed to that area, and other souls hand lessons for it to its owner. Keeping the base consistent is maintenance, done by a knowledge maintainer or a person.
 - Other souls read an area when their work touches it, and link to it rather than copying it.
-- So every agent starts with a well-defined context: the area its soul owns, and the few it reads. Every area lives in one place, kept by one kind of agent.
+- So every agent starts with a well-defined context: the area its soul owns, and the few it reads. Every area lives in one place, owned by one kind of agent.
 - Each instance of a soul keeps its own working context and state for its own piece of work.
 - Adopting someone else's published soul does not send your learning back to its publisher.
 
@@ -38,7 +38,7 @@ A lesson is kept when both answers are yes:
 
 1. **Instances work and capture evidence.** Each one keeps notes on what it decided and discovered.
 2. **An independent harvester judges what is worth keeping,** at set moments such as a pull request handed over or a task finished.
-3. **The proposal is validated and delivered** through the knowledge base's acceptance process. For a Git-backed knowledge base that is a pull request, reviewed by a knowledge maintainer.
+3. **The proposal is validated and delivered** through the knowledge base's acceptance process. For a Git-backed knowledge base that is a pull request, reviewed by a knowledge maintainer agent or a person.
 4. **Future instances consult the accepted result.**
 
 Working instances never rewrite the accepted knowledge base directly. An open pull request is not yet accepted knowledge, and a delivery receipt does not prove that a person approved it or that another instance has read it.
@@ -46,7 +46,7 @@ Working instances never rewrite the accepted knowledge base directly. An open pu
 ## Our default: oats.okf
 
 - It uses **Open Knowledge Format**: readable Markdown concepts with metadata, links and history.
-- A team shares one knowledge base, divided among its souls as above.
+- A team shares its knowledge bases, one or more, divided among its souls as above.
 - It needs explicit bindings and setup; not every step is automatic.
 
 ## Your own way

@@ -1,8 +1,8 @@
 # OATS
 
-**The Open Agent Team Specification.** Platform, provider and model agnostic agent teams, hosted on your own Git forge, such as GitHub or GitLab. Define the agents your work needs in Git, and run them as a team on Claude Code, Codex, pi or whichever agent you use.
+**The Open Agent Team Specification.** Platform, provider and model agnostic agent teams, hosted on your own Git forge, such as GitHub or GitLab. Define the agents your work needs in Git, and run them as a team on Claude Code, Codex or pi.
 
-[![Release](https://img.shields.io/github/v/release/awebai/oats?display_name=tag)](https://github.com/awebai/oats/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/oats-project/oats?display_name=tag)](https://github.com/oats-project/oats/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Free and open source.
 
@@ -17,7 +17,7 @@ Free and open source.
 
 Everything is defined in Git, shared and access controlled by your forge. OATS needs no account, server or hosted service of its own.
 
-The agents are the ones you already use, such as Claude Code, Codex or pi. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
+The agents are ones you already use: Claude Code, Codex or pi. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
 
 OATS also provides **OATS Desktop**, a free agent development environment (ADE) that makes working with your agents and coordinating them easier. It is optional.
 
@@ -37,7 +37,7 @@ Each block uses the ones before it.
   - **its `AGENTS.md`:** the soul's own, then each capability's injection, then a short OATS section on where it works;
   - **its skills:** the soul's and every capability's;
   - **its scripts and command-line tools,** from its capabilities.
-- **Workspace.** The space that bounds your agents: their souls, capabilities, knowledge, schedules and triggers, and the **teams** they work in, groups of agents that can message each other. It can span several Git repositories. An organisation can have one workspace with several teams, or several workspaces with one team each.
+- **Workspace.** The space that bounds your agents: their souls, capabilities, knowledge, schedules and triggers, and the **teams** they work in, groups of agents that can message each other. It can span several Git repositories. An organisation has one workspace; its teams are labels within it, and the workspace can hold as many as it needs.
 
 ### An instance's home
 
@@ -65,7 +65,7 @@ code-reviewer instance home
 └── .work-<purpose>/              more branches or repositories, when the work needs them
 ```
 
-The agent then starts normally in its home and reads its `AGENTS.md` and skills as it always would. A change to a capability reaches the next instance of every soul that uses it; a change to a soul's `AGENTS.md` reaches only that soul's. Running instances keep what they started with.
+The agent then starts normally in its home and reads its `AGENTS.md` and skills as it always would. A change to a capability reaches the next instance of every soul that uses it (for a package, once its new version is pinned); a change to a soul's `AGENTS.md` reaches only that soul's. Running instances keep what they started with.
 
 ## Capabilities
 
@@ -102,8 +102,8 @@ So:
 ## What OATS gives you
 
 - **Work bigger than one session.** Divided by responsibility and context, a team can take on work no single session could hold.
-- **One way of working on any agent.** Define once how your agents work; everyone's agents follow it, whatever agent they run on.
-- **Agents that keep working.** Schedules and triggers start agents without anyone typing.
+- **One way of working across agents.** Define once how your agents work; everyone's agents follow it, on Claude Code, Codex or pi.
+- **Automations.** Schedules and triggers start agents without anyone typing.
 - **Yours to keep.** Souls, knowledge and workflows live in your repositories, independent of any model or provider.
 
 ## Work the way you choose
@@ -140,7 +140,7 @@ You approve each piece of work once, at the expert's plan, and hear again only i
 
 ### The workspace
 
-The workspace's `oats-workspace.yaml` lists the repositories that take part, the packages at their pinned versions, its teams and which souls may join each, and the capabilities every soul gets by default. Each machine keeps only its own local settings beside it.
+The workspace's `oats-workspace.yaml` lists the repositories that take part, the packages at their pinned versions, its teams and which souls may join each, and the capabilities every soul gets by default. Each machine keeps its own settings, its lock and its agents' homes in a deployment directory of its own.
 
 ```mermaid
 flowchart LR
@@ -171,6 +171,7 @@ A soul is a folder in one of those repositories:
 souls/code-reviewer/
   soul.yaml     description, where it works, its capabilities
   AGENTS.md     its instructions
+  okf.json      the knowledge areas it owns and reads, when it uses oats.okf
   skills/       skills only this soul needs
 ```
 
@@ -224,11 +225,11 @@ We believe:
 
 OATS is where the organisation defines, once, how its agents work.
 
-- **One canonical way of working.** Everyone's agents start from the same souls at the same pinned versions. A code reviewer reviews the same way on every team.
-- **Any model, any agent.** People keep the agent they prefer, with its full power. OATS adds the organisation's souls without replacing it, and agents on different tools work alike and can message each other.
-- **No new tool to adopt.** No one has to use OATS Desktop: agents are ordinary sessions in their own terminals.
+- **One canonical way of working.** Everyone's agents start from the same souls, with packages at the same pinned versions. A code reviewer reviews the same way on every team.
+- **Any model, your choice of agent.** People keep the agent they prefer, with its full power. OATS adds the organisation's souls without replacing it, and agents on different tools work alike and can message each other.
+- **No new interface to learn.** No one has to use OATS Desktop: agents are ordinary sessions in their own terminals.
 - **Changes are reviewed like code.** A change to how agents work is a pull request to one of the workspace's repositories.
-- **Knowledge grows for everyone.** One person's agents' lessons reach every later instance of that soul.
+- **Knowledge grows for everyone.** Once accepted, one person's agents' lessons are there for every later instance of that soul.
 - **Agents of different people work together,** messaging each other across their areas while each asks its own person for decisions.
 - **No OATS server.** OATS works from Git, your forge and your agents; integrations you choose may run their own services.
 
@@ -236,15 +237,15 @@ OATS is where the organisation defines, once, how its agents work.
 
 Agents don't have to wait for someone to type. Schedules and triggers are part of the team, like its souls.
 
-- **A schedule** runs at set times in your time zone. It starts a new agent with a task, wakes a running one with a message, or runs maintenance such as a knowledge harvest.
+- **A schedule** runs at set times in the time zone it names. It starts a new agent with a task, runs a command, or wakes a running agent with a message.
 - **A trigger** starts a new agent when an event matches: a GitHub pull request opened, labelled or updated, or an event from a source a capability provides.
 - **Shared or local.** Kept in the workspace, they are reviewed like everything else and run on the machine they name; or keep them local to one machine. On a server they keep running while your laptop sleeps.
 
-For example, every knowledge-base pull request can get its own reviewer agent minutes after it opens.
+For example, every knowledge harvest pull request can get its own reviewer agent minutes after it opens.
 
 ## OATS Desktop
 
-A free agent development environment for macOS and Linux that puts a workspace in one window:
+A free agent development environment for macOS and Linux (x64) that puts a workspace in one window:
 
 - every soul and running agent, and which agent started which;
 - any agent's live terminal, files, notes and knowledge;
@@ -278,7 +279,7 @@ Download it rather than web-fetching it: a summarising fetch would lose its exac
 
 ## Contributing
 
-Source, issues and pull requests live at [awebai/oats](https://github.com/awebai/oats). The [implementation guide](docs/implementation.md) covers the repository and the [release lane](docs/release-lane.md) how releases are verified and published. Read the [release notes](docs/release-notes/) before changing an existing deployment.
+Source, issues and pull requests live at [oats-project/oats](https://github.com/oats-project/oats). The [implementation guide](docs/implementation.md) covers the repository and the [release lane](docs/release-lane.md) how releases are verified and published. Read the [release notes](docs/release-notes/) before changing an existing deployment.
 
 ## Origins and licence
 
