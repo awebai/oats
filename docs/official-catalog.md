@@ -9,9 +9,9 @@ or workspace membership alone does not make a package official.
 
 | package | release | capabilities | package souls |
 |---|---|---|---|
-| `oats.framework` | `oats-framework/v1.21.0` (this repository) | `oats.core`, `oats.setup`, `oats.onboarding`, `oats.support`, `oats.knowledge-theory` | `knowledge-theory-expert`, `oats-setup-expert` |
+| `oats.framework` | `oats-framework/v1.22.1` (this repository) | `oats.core`, `oats.setup`, `oats.onboarding`, `oats.support`, `oats.knowledge-theory` | `knowledge-theory-expert`, `oats-setup-expert` |
 | `oats.okf` | `v5.8.0` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
-| `oats.aweb` | `v1.35.0` | `oats.aweb` (messaging), `oats.aweb-tasks` (tasks) | |
+| `oats.aweb` | `v1.37.0` | `oats.aweb` (messaging), `oats.aweb-tasks` (tasks) | |
 | `oats.engineering` | `v1.18.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review`, `oats.maintainer` | `code-reviewer` |
 | `oats.authoring` | `v1.0.3` | `oats.authoring` | |
 | `oats.cloning` | `v1.1.0` | `oats.cloning` | `cloner` |

@@ -25,7 +25,7 @@ const atLeast = (v, min) => {
 };
 
 // The root route ships in no oats.aweb release yet (awebai/oats-aweb#147 is not
-// merged; 1.33.x to 1.35.0 lack it), so the skill names no provider version and
+// merged; 1.33.x to 1.37.0 lack it), so the skill names no provider version and
 // always takes the fallback. The release prep that pins #147's release sets
 // that version once. Its aw floor is 1.36.48 (oats.aweb's AW_RESIDENT_ROOT_MIN).
 const NO_ROOT_ROUTE_YET = "None is released yet: until one is, take the fallback below";

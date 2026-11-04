@@ -12,6 +12,12 @@ their alias from the roster, never guess it. Tasks are not messages: task
 state belongs here, not in mail, and conversation belongs to the deployment's
 messaging layer. `aw lock` and `aw roles` stay outside OATS.
 
+Your claims stay present only while something heartbeats them: the host's
+wake daemon from aw 1.36.54, or on a Claude or pi channel home the aweb-channel
+plugin from 1.8.2 or the aweb pi extension from 0.4.1. If readiness warns
+`wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated`,
+report it to your human.
+
 **Tasks team.** If your TASK.md's Tasks line names a team, your tasks live in
 that team, never in your default team. From your instance home, run
 `oats aweb teams --json`. If its `defaultTeam.label` is that label, plain

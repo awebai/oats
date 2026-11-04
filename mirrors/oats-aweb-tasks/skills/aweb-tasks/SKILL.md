@@ -106,6 +106,12 @@ combine their assignment with the in-progress transition, which assigns you.
 Claim age alone does not invalidate ownership: contact the holder and record
 the agreed disposition before explicitly changing status or assignment.
 
+Your claims stay present only while something heartbeats them: the host's
+wake daemon from aw 1.36.54, or on a Claude or pi channel home the aweb-channel
+plugin from 1.8.2 or the aweb pi extension from 0.4.1. If readiness warns
+`wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated`,
+report it to your human.
+
 ## Work and claim events
 
 aweb can present an event of type `work` or `claim` beside mail and chat. It
