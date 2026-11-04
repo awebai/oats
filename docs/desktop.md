@@ -25,8 +25,18 @@ the app was tested on.
 Windows and Linux arm64 are not supported.
 
 Verify downloads against the release's `SHA256SUMS.txt`. GitHub
-build-provenance attestations are published for every asset
-(`gh attestation verify <file> --repo awebai/oats`).
+build-provenance attestations are published for every asset. Where they live
+depends on where the release was built:
+
+- **Releases after 0.69.12**, built in `oats-project/oats`:
+  `gh attestation verify <file> --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml`.
+- **Releases up to 0.69.12**, built in `awebai/oats` before the repository
+  moved. Their attestations stayed with the `awebai` organisation, so
+  `--repo` finds none (`HTTP 404`):
+  `gh attestation verify <file> --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml`.
+
+Both forms accept only that repository's release workflow as the signer, not
+any workflow of the owner.
 
 ### macOS: ad-hoc signed build
 

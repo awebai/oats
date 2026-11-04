@@ -7,7 +7,9 @@
 // provider's own source (mirrors/oats-aweb), so they cannot drift from what the
 // provider prints.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -223,6 +225,49 @@ test("the Desktop's background download is installed only once its checksum and 
   const installs = skill.match(/grep -qx VERIFIED "<W>\.log" && [^\n]*cd "<W>"/g) || [];
   assert.equal(installs.length, 3, "the Linux install, the macOS check and the macOS install are each gated on VERIFIED");
   assert.ok(skill.includes("never install or open this download before its\nattestation has passed"));
+});
+
+test("the download names the new owner, and VERIFIED follows only a passing download, checksum and one pinned attestation", () => {
+  // After the move to oats-project, attestations of releases up to 0.69.12 stayed with the awebai
+  // organisation; later ones are in oats-project/oats. Either form passes, each pinned to its own
+  // repository's release workflow, and neither stands in for a failed download or checksum.
+  const start = skill.match(/\{ nohup sh -c '([^']*)' sh "\$W"/);
+  assert.ok(start);
+  const body = start[1].replaceAll('"vV"', '"v0.69.12"').replaceAll('"F"', '"f.AppImage"').replaceAll(" F\\$", " f.AppImage\\$");
+  assert.ok(body.includes('gh release download "v0.69.12" -R oats-project/oats '));
+  assert.doesNotMatch(body, /-R awebai\/oats|--repo awebai\/oats/);
+  const forms = body.match(/gh attestation verify [^;|&]*/g).map((f) => f.trim());
+  assert.deepEqual(forms, [
+    'gh attestation verify "f.AppImage" --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml',
+    'gh attestation verify "f.AppImage" --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml',
+  ]);
+  // Run the real command line with stand-ins for gh and sha256sum, failing each step in turn.
+  const dir = mkdtempSync(join(tmpdir(), "oats-verify-"));
+  try {
+    const bin = join(dir, "bin"); mkdirSync(bin);
+    writeFileSync(join(bin, "gh"), `#!/bin/sh
+case "$1 $2" in
+  "release download") [ "$DL" = ok ] || exit 1; echo "x  f.AppImage" > SHA256SUMS.txt; : > f.AppImage;;
+  "attestation verify") case "$*" in *"--repo oats-project/oats"*) [ "$NEW" = ok ];; *"--owner awebai"*) [ "$OLD" = ok ];; *) exit 9;; esac;;
+  *) exit 9;;
+esac
+`, { mode: 0o755 });
+    writeFileSync(join(bin, "sha256sum"), `#!/bin/sh\ncat >/dev/null; [ "$SUM" = ok ]\n`, { mode: 0o755 });
+    const run = (env) => {
+      const w = mkdtempSync(join(dir, "w-"));
+      const r = spawnSync("sh", ["-c", body, "sh", w], { env: { PATH: `${bin}:${process.env.PATH}`, ...env }, encoding: "utf8" });
+      return r.stdout.split("\n").filter((l) => l === "VERIFIED" || l === "DONE").join(" ");
+    };
+    const ok = { DL: "ok", SUM: "ok", NEW: "ok", OLD: "ok" };
+    assert.equal(run(ok), "VERIFIED DONE");
+    assert.equal(run({ ...ok, NEW: "no" }), "VERIFIED DONE", "a release attested in awebai passes by the second form");
+    assert.equal(run({ ...ok, OLD: "no" }), "VERIFIED DONE");
+    assert.equal(run({ ...ok, NEW: "no", OLD: "no" }), "DONE", "no attestation, no VERIFIED");
+    assert.equal(run({ ...ok, SUM: "no" }), "DONE", "a failed checksum never falls through to the second form");
+    assert.equal(run({ ...ok, DL: "no" }), "DONE");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the skill's minimums are framework 1.19.0 and oats.aweb 1.33.1, and the catalog meets both", () => {
