@@ -229,41 +229,53 @@ test("the Desktop's background download is installed only once its checksum and 
 
 test("the download names the new owner, and VERIFIED follows only a passing download, checksum and one pinned attestation", () => {
   // After the move to oats-project, attestations of releases up to 0.69.12 stayed with the awebai
-  // organisation; later ones are in oats-project/oats. Either form passes, each pinned to its own
-  // repository's release workflow, and neither stands in for a failed download or checksum.
+  // organisation; later ones are in oats-project/oats. The awebai form is tried only for those
+  // versions, each form is pinned to its own repository's release workflow at the release's tag,
+  // and neither stands in for a failed download or checksum.
   const start = skill.match(/\{ nohup sh -c '([^']*)' sh "\$W"/);
   assert.ok(start);
-  const body = start[1].replaceAll('"vV"', '"v0.69.12"').replaceAll('"F"', '"f.AppImage"').replaceAll(" F\\$", " f.AppImage\\$");
+  const bodyFor = (v) => start[1].replaceAll("vV", `v${v}`).replaceAll('"F"', '"f.AppImage"').replaceAll(" F\\$", " f.AppImage\\$");
+  const body = bodyFor("0.69.12");
   assert.ok(body.includes('gh release download "v0.69.12" -R oats-project/oats '));
   assert.doesNotMatch(body, /-R awebai\/oats|--repo awebai\/oats/);
   const forms = body.match(/gh attestation verify [^;|&]*/g).map((f) => f.trim());
   assert.deepEqual(forms, [
-    'gh attestation verify "f.AppImage" --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml',
-    'gh attestation verify "f.AppImage" --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml',
+    'gh attestation verify "f.AppImage" --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml --source-ref refs/tags/v0.69.12',
+    'gh attestation verify "f.AppImage" --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml --source-ref refs/tags/v0.69.12',
   ]);
-  // Run the real command line with stand-ins for gh and sha256sum, failing each step in turn.
+  // Run the real command line with stand-ins for gh and sha256sum, failing each step in turn. The
+  // stand-ins answer only for the expected file, tag and checksum line.
   const dir = mkdtempSync(join(tmpdir(), "oats-verify-"));
   try {
     const bin = join(dir, "bin"); mkdirSync(bin);
     writeFileSync(join(bin, "gh"), `#!/bin/sh
 case "$1 $2" in
-  "release download") [ "$DL" = ok ] || exit 1; echo "x  f.AppImage" > SHA256SUMS.txt; : > f.AppImage;;
-  "attestation verify") case "$*" in *"--repo oats-project/oats"*) [ "$NEW" = ok ];; *"--owner awebai"*) [ "$OLD" = ok ];; *) exit 9;; esac;;
+  "release download") [ "$DL" = ok ] || exit 1; echo "x  \${SUMS_FILE:-f.AppImage}" > SHA256SUMS.txt; : > f.AppImage;;
+  "attestation verify")
+    case "$*" in *"f.AppImage"*"--source-ref refs/tags/$TAG") ;; *) exit 9;; esac
+    case "$*" in *"--repo oats-project/oats --signer-workflow oats-project/oats/"*) [ "$NEW" = ok ];; *"--owner awebai --signer-workflow awebai/oats/"*) [ "$OLD" = ok ];; *) exit 9;; esac;;
   *) exit 9;;
 esac
 `, { mode: 0o755 });
-    writeFileSync(join(bin, "sha256sum"), `#!/bin/sh\ncat >/dev/null; [ "$SUM" = ok ]\n`, { mode: 0o755 });
-    const run = (env) => {
+    // Like macOS's sha256sum, it passes empty input; only the expected line and SUM=ok pass otherwise.
+    writeFileSync(join(bin, "sha256sum"), `#!/bin/sh\nin=$(cat); [ -z "$in" ] && exit 0; [ "$in" = "x  f.AppImage" ] && [ "$SUM" = ok ]\n`, { mode: 0o755 });
+    const run = (env, v = "0.69.12") => {
       const w = mkdtempSync(join(dir, "w-"));
-      const r = spawnSync("sh", ["-c", body, "sh", w], { env: { PATH: `${bin}:${process.env.PATH}`, ...env }, encoding: "utf8" });
+      const r = spawnSync("sh", ["-c", bodyFor(v), "sh", w], { env: { PATH: `${bin}:${process.env.PATH}`, TAG: `v${v}`, ...env }, encoding: "utf8" });
       return r.stdout.split("\n").filter((l) => l === "VERIFIED" || l === "DONE").join(" ");
     };
     const ok = { DL: "ok", SUM: "ok", NEW: "ok", OLD: "ok" };
     assert.equal(run(ok), "VERIFIED DONE");
     assert.equal(run({ ...ok, NEW: "no" }), "VERIFIED DONE", "a release attested in awebai passes by the second form");
+    assert.equal(run({ ...ok, NEW: "no" }, "0.9.1"), "VERIFIED DONE");
     assert.equal(run({ ...ok, OLD: "no" }), "VERIFIED DONE");
+    assert.equal(run({ ...ok, OLD: "no" }, "0.70.0"), "VERIFIED DONE");
     assert.equal(run({ ...ok, NEW: "no", OLD: "no" }), "DONE", "no attestation, no VERIFIED");
+    for (const v of ["0.69.13", "0.70.0", "1.0.0", "0.100.0"]) {
+      assert.equal(run({ ...ok, NEW: "no" }, v), "DONE", `${v} is not trusted on an awebai attestation`);
+    }
     assert.equal(run({ ...ok, SUM: "no" }), "DONE", "a failed checksum never falls through to the second form");
+    assert.equal(run({ ...ok, SUMS_FILE: "other.AppImage" }), "DONE", "a SHA256SUMS.txt with no line for the file is no checksum");
     assert.equal(run({ ...ok, DL: "no" }), "DONE");
   } finally {
     rmSync(dir, { recursive: true, force: true });

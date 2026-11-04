@@ -489,15 +489,20 @@ file: `oats-desktop-V-linux-x86_64.AppImage` on Linux x64,
 checksum and the release's attestation all pass:
 
 ```bash
-W="$(mktemp -d)" && echo "$W" && { nohup sh -c 'cd "$1" && gh release download "vV" -R oats-project/oats -p "F" -p SHA256SUMS.txt && grep " F\$" SHA256SUMS.txt | sha256sum -c - && { gh attestation verify "F" --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml || gh attestation verify "F" --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml; } && echo VERIFIED; echo DONE' sh "$W" </dev/null >"$W.log" 2>&1 & }
+W="$(mktemp -d)" && echo "$W" && { nohup sh -c 'cd "$1" && gh release download "vV" -R oats-project/oats -p "F" -p SHA256SUMS.txt && L=$(grep " F\$" SHA256SUMS.txt) && printf "%s\n" "$L" | sha256sum -c - && { gh attestation verify "F" --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml --source-ref refs/tags/vV || case vV in v0.[0-9].*|v0.[1-5][0-9].*|v0.6[0-8].*|v0.69.[0-9]|v0.69.1[0-2]) gh attestation verify "F" --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml --source-ref refs/tags/vV;; *) false;; esac; } && echo VERIFIED; echo DONE' sh "$W" </dev/null >"$W.log" 2>&1 & }
 ```
 
-The attestation has two forms because the repository moved. Releases from
-`oats-project/oats` are attested there. Releases up to 0.69.12 were signed in
-`awebai/oats`, and their attestations stayed with the `awebai` organisation.
-Each form accepts only its own repository's release workflow as the signer.
-On an older release the log shows the first form's `HTTP 404` before the
-second passes; that is not a failure.
+The attestation has two forms because the repository moved:
+- **Releases after 0.69.12** are attested in `oats-project/oats`.
+- **Releases up to 0.69.12** were signed in `awebai/oats`, and their
+  attestations stayed with the `awebai` organisation. The `case` tries this
+  second form only for those versions.
+
+Each form accepts only its own repository's release workflow, run for the
+tag `vV`. On an older release the log shows the first form's `HTTP 404`
+before the second passes; that is not a failure. The checksum counts only
+when `SHA256SUMS.txt` has a line for `F`, because on macOS `sha256sum` passes
+empty input.
 
 Write the folder it prints in as `<W>` in step 4.
 
