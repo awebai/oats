@@ -502,7 +502,7 @@ Each form accepts only its own repository's release workflow, run for the
 tag `vV`. On an older release the log shows the first form's `HTTP 404`
 before the second passes; that is not a failure. The checksum counts only
 when `SHA256SUMS.txt` has a line for `F`, because on macOS `sha256sum` passes
-empty input.
+empty or malformed input; the attestation checks the file itself.
 
 Write the folder it prints in as `<W>` in step 4.
 
