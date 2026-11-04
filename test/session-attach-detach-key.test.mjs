@@ -94,6 +94,14 @@ process.stdout.write("pane-ready:");
 const grabbingProgram = join(base, "agent-pane-mouse.mjs");
 writeFileSync(grabbingProgram, readFileSync(paneProgram, "utf8").replace('process.stdout.write("pane-ready:");', 'process.stdout.write("\\u001b[?1000h\\u001b[?1006hpane-ready:");'));
 tmuxOn(AGENTS, "new-session", "-d", "-s", SESSION, "-n", "hq", "-x", "120", "-y", "40", "-c", base, "cat");
+// press() sends a whole key sequence at once. Before 3.7, tmux takes keys it handles less than
+// `assume-paste-time` (1 ms) apart for a paste and, from the third key, gives them to the pane
+// without reading any key table: 3.4 as keys, 3.6 as the terminal's bytes (Up is `^[OA` from a
+// terminal in keypad mode). tmux 3.7 no longer guesses for a terminal that brackets its pastes, as
+// TERM does. Off, every key pressed here goes through the viewer's tables on every tmux, whatever
+// its timing. Typed keys that reach tmux buffered (a slow link) can still meet the guess on 3.6:
+// that is tmux's, with or without a viewer (tmux/tmux#5031), not what these tests check (#1735).
+tmuxOn(AGENTS, "set-option", "-g", "assume-paste-time", "0");
 // The terminals. A pane stays after its command so that a failure can show what it printed.
 tmuxOn(TERM, "new-session", "-d", "-s", "term", "-n", "hold", "-x", "120", "-y", "40", "-c", base, "cat");
 tmuxOn(TERM, "set-option", "-g", "remain-on-exit", "on");
