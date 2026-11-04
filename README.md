@@ -69,8 +69,9 @@ The agent then starts normally in its home and reads its `AGENTS.md` and skills 
 
 ## Capabilities
 
-- **Three are core: knowledge, messaging and tasks.** OATS defines a contract for each, the capability decides how it works, and an agent has at most one of each.
+- **Three are core: knowledge, messaging and tasks.** They turn separate agents into a team: what they know, how they reach each other and people, and what work they share. Other capabilities build on them, so OATS defines a contract for each. Any capability that meets it can fill it, such as Jira or Linear for tasks, and an agent has **at most one of each**.
 - **Any other capability** adds other know-how and behaviours you want your agents to have, such as planning engineering work or reaching your own systems.
+- **Coordination** is the one that shapes a team most: how agents divide work, hand it over, review it and bring in a person. It is a capability, not part of OATS, so each team can work its own way and change it by pull request. Today `oats.engineering` provides it, and default coordination templates are coming.
 - **Use a ready-made one or write your own.** Ready-made capabilities, and sometimes souls, come in **packages**. You pin each package to a version, so every agent gets exactly the same thing.
 - **Official packages** cover engineering (expert, developer, code review, maintainer), knowledge, messaging, and tasks including Jira and Linear.
 
