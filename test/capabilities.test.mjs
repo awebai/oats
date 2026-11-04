@@ -3219,7 +3219,11 @@ test("capability instructions and package skills give an independent harvester t
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
   assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
   const skill = readFileSync(join(run.home, ".agents/skills/knowledge-harvest/SKILL.md"), "utf8");
-  assert.match(skill, /commit -F/); assert.match(skill, /--title 'OKF knowledge proposal'/);
+  assert.match(skill, /okf-publication\.mjs' commit/);
+  assert.match(skill, /okf-publication\.mjs' create/);
+  assert.match(skill, /okf-publication\.mjs' screen-text/);
+  const publisher = readFileSync(join(run.home, ".agents/skills/okf-authoring/scripts/okf-publication.mjs"), "utf8");
+  assert.match(publisher, /'--title', 'OKF knowledge proposal'/, "the publication gate retains the fixed PR title");
   assert.match(skill, /retire/);
   assert.equal(existsSync(join(run.home, "work/input.json")), false);
   assert.equal(existsSync(join(run.home, "work/staging.json")), false);

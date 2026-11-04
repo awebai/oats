@@ -107,6 +107,17 @@ node <skill-dir>/scripts/okf-validate.mjs <bundle-dir> --strict   # + producer l
 
 Lints in a bundle you're *consuming* are noise — read on regardless.
 
+## Screening and publication
+
+Structural validation is not a content screen. Before publishing, read
+[publication safety](references/publication-safety.md) and use the bundled
+`scripts/okf-publication.mjs` gate. It screens exact Git objects and outward
+text bytes before push/comment/merge, with code-only exclusions and no bypass.
+It is a bounded detector, not a universal privacy guarantee. Contextual review
+still applies. A v2 amendment rebuilds a clean head from the accepted base,
+uses an exact old-head lease, and requires a fresh head-bound verdict. Legacy
+v1 removals close/delete the branch and route remaining exposure privately.
+
 ## Portable source and store declarations
 
 When the portable binding interface is active (planned OATS >=0.24.0; not yet a
