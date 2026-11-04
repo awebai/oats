@@ -291,16 +291,17 @@ test("a stale settings.oats.aweb.team is refused by spawn (before any aw call) a
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-// oats.aweb 1.17 removed `oats aweb setup --invite <token>` joining at the single messaging root: an invite now
-// needs --join <label>, so the team gets its own root.
-test("setup --invite without --join is refused and spends no invite", () => {
+// oats.aweb 1.17 removed `oats aweb setup --invite <token>` joining at the single messaging root. From oats.aweb
+// 1.36.0 (#56) an invite without --join is setup from the invite alone, into a per-team root of a deployment: with
+// no deployment here (no oats-local.yaml) it is refused before any aw call, and still spends no invite.
+test("setup --invite without --join and without a deployment is refused and spends no invite", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
     const bin = fakeAw(base);
     const workspace = join(base, "workspace"); awRoot(workspace);
     const refused = spawnSync(process.execPath, [HOOK, "setup", "--invite", "TOK-secret"], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "setup", OATS_WORKSPACE: workspace, OATS_SETTINGS: "{}", ...defaultTeamEnv() } });
-    assert.equal(refused.status, 2, refused.stdout + refused.stderr);
-    assert.match(refused.stderr, /--invite requires --join <label> so the team gets its own root/);
+    assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+    assert.match(refused.stderr, /E_SETUP_DEPLOYMENT: selected deployment is missing, unreadable or inconsistent/);
     assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => /^(team join|id team accept-invite)/.test(l.argv.join(" "))), false, "no invite was spent");
     assert.equal((refused.stdout + refused.stderr).includes("TOK-secret"), false);
   } finally { rmSync(base, { recursive: true, force: true }); }

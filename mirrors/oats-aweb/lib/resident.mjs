@@ -467,7 +467,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       const foreign = residentUnits(where, name).find((u) => u.label !== label);
       if (foreign) throw failure("E_RESIDENT_UNIT_CONFLICT", "custody", foreignUnitMessage(foreign, root, where));
       try {
-        const unit = ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env, xdgConfigHome: env.XDG_CONFIG_HOME });
+        const unit = await ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env, xdgConfigHome: env.XDG_CONFIG_HOME, rerun: `oats aweb resident create ${name}` });
         custody = { manager: unit.manager, label: unit.label, path: unit.path };
       } catch (e) {
         if (e.code !== "E_RESIDENT_UNIT_UNSUPPORTED") throw failure(e.code || "E_RESIDENT_UNIT", "custody", e.message);

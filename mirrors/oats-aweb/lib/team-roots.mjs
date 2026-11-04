@@ -35,47 +35,56 @@ export function selectedDeployment(env = process.env, explicitDir) {
   }
 }
 
-export function currentJoinRoot(team, home, options) { return currentJoinRootChoice(team, home, options).root; }
-
 /** The current root for `team` and the setting that chose it: `roots[team]`, or
- *  the shared `root`. Refuses unless that root proves membership in the team. */
-export function currentJoinRootChoice(team, home, { env = process.env, query = querySelectedKernel, membership } = {}) {
-  const fail = cause => { throw new Error(`cannot join team ${team}: ${cause}; check settings.oats.aweb.roots[${JSON.stringify(team)}] in the selected deployment and run oats aweb setup --join <label> --invite-stdin --dir <deployment> --soul <soul> there with an appropriate owner invite`); };
-  let deployment, selectedHome;
+ *  the shared `root`, read from the deployment's LIVE settings (a root recorded
+ *  after this home's spawn counts). Refuses before any invite is minted unless
+ *  that root proves membership in the team, naming the cause and its fix: an
+ *  unreadable live read is repaired at `oats inspect`, a missing or non-member
+ *  root at setup (awebai/oats-aweb#52). */
+export function currentJoinRootChoice(team, home, { env = process.env, query = querySelectedKernel, membership, label } = {}) {
+  let deployment, soul;
+  const refuse = (cause, remedy) => { throw new Error(`cannot join team ${team}: ${cause}; nothing was minted; ${remedy}`); };
+  // The live settings could not be read: the kernel's read is what to repair.
+  const unreadable = cause => refuse(`the deployment's live settings could not be read (${cause})`, `run oats inspect ${soul ? `--soul ${soul}` : `--home ${home}`} --dir ${deployment || '<deployment>'} --json in the deployment, fix what it reports, then retry`);
+  // The live settings name no usable member root for this team: setup makes one.
+  const noRoot = cause => refuse(cause, `check settings.oats.aweb.roots[${JSON.stringify(team)}] in the selected deployment and run oats aweb setup --join ${label || '<label>'} --invite-stdin --dir ${deployment || '<deployment>'} --soul ${soul || '<soul>'} there with an appropriate owner invite`);
+  let selectedHome;
   try { deployment = selectedDeployment(env); selectedHome = canonical(home); }
-  catch { fail('selected deployment or instance home is unavailable or inconsistent'); }
+  catch { unreadable('the selected deployment or instance home is unavailable or inconsistent'); }
   const inspect = args => {
     let doc;
     try { doc = query(['inspect', ...args, '--dir', deployment, '--json'], { env, cwd: deployment }); }
-    catch { fail('current root query unavailable'); }
-    if (!object(doc) || doc.schemaVersion !== 1 || doc.ok !== true || !object(doc.result)) fail('current root query returned an invalid envelope');
+    catch { unreadable('oats inspect did not answer'); }
+    if (!object(doc) || doc.schemaVersion !== 1 || doc.ok !== true || !object(doc.result)) unreadable('oats inspect returned no usable answer');
     try { if (canonical(doc.result.workspace?.deployment) !== canonical(deployment)) throw new Error(); }
-    catch { fail('current root query selected a different deployment'); }
+    catch { unreadable('oats inspect selected a different deployment'); }
     return doc.result;
   };
   // Old dispatchers inherit OATS_AGENT. The public home subject supplies the
   // recorded soul name; neither ambient OATS_AGENT nor OATS_SOUL_ID is authority.
   const recorded = inspect(['--home', selectedHome]);
-  const soul = recorded.subject?.soul;
   try {
-    if (recorded.subject?.kind !== 'instance' || canonical(recorded.subject.home) !== selectedHome || typeof soul !== 'string' || !soul.trim()) throw new Error();
-  } catch { fail('recorded home soul is missing or ambiguous'); }
+    if (recorded.subject?.kind !== 'instance' || canonical(recorded.subject.home) !== selectedHome || typeof recorded.subject?.soul !== 'string' || !recorded.subject.soul.trim()) throw new Error();
+  } catch { unreadable('oats inspect names no recorded soul for this home'); }
+  soul = recorded.subject.soul;
   const current = inspect(['--soul', soul]);
-  if (current.subject?.kind !== 'soul' || current.subject.soul !== soul || current.teamsSource !== 'live') fail('current soul query is mismatched or stale');
-  if (!Array.isArray(current.problems) || current.problems.some(p => !object(p) || !p.capability || p.capability === 'oats.aweb')) fail('current soul has unresolved configuration problems');
+  if (current.subject?.kind !== 'soul' || current.subject.soul !== soul) unreadable('oats inspect answered for a different soul');
+  if (current.teamsSource !== 'live') unreadable('oats inspect answered from recorded, not live, settings');
+  if (!Array.isArray(current.problems) || current.problems.some(p => !object(p) || !p.capability || p.capability === 'oats.aweb')) unreadable('the soul has unresolved configuration problems');
   const rows = Array.isArray(current.capabilities) ? current.capabilities.filter(c => c?.id === 'oats.aweb') : [];
-  if (rows.length !== 1 || rows[0].layer !== 'messaging' || current.layers?.messaging?.id !== 'oats.aweb' || rows[0].compatibility?.ok !== true || !object(rows[0].settings)) fail('current oats.aweb settings or compatibility unavailable');
+  if (rows.length !== 1 || rows[0].layer !== 'messaging' || current.layers?.messaging?.id !== 'oats.aweb' || rows[0].compatibility?.ok !== true || !object(rows[0].settings)) unreadable('oats.aweb settings or compatibility unavailable for this soul');
   const settings = rows[0].settings;
-  if (Object.hasOwn(settings, 'roots') && !object(settings.roots)) fail('current roots setting is invalid');
+  if (Object.hasOwn(settings, 'roots') && !object(settings.roots)) noRoot('the live settings.oats.aweb.roots is not a map');
   const source = object(settings.roots) && Object.hasOwn(settings.roots, team) ? 'roots[team]' : 'root';
   const root = source === 'roots[team]' ? settings.roots[team] : settings.root;
+  if (root === undefined) noRoot("no root for this team in the deployment's live settings (neither roots[team] nor root is set)");
   let selectedRoot;
   try {
     selectedRoot = canonical(root);
     if (!statSync(join(selectedRoot, '.aw')).isDirectory()) throw new Error();
-  } catch { fail('current team root is missing, invalid or unreadable'); }
+  } catch { noRoot(`the live ${source} root is missing, not absolute or has no readable .aw`); }
   let member = false;
   try { member = membership(selectedRoot, team) === true; } catch { /* no native output in the error */ }
-  if (!member) fail(`current root ${selectedRoot} cannot prove membership in this exact team`);
+  if (!member) noRoot(`current root ${selectedRoot} cannot prove membership in this exact team`);
   return { root: selectedRoot, source };
 }

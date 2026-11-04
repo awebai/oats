@@ -1,19 +1,29 @@
-// The readiness check for the `team` setting. With `team` absent it answers
-// ready with nothing else and reads nothing. With `team` set it answers from
-// configuration: for a home, oats.aweb's own `oats aweb teams --json`, run
-// from the home through the kernel that runs this check (OATS_CLI_BIN); for a
-// soul, the eligible teams the kernel gives every check (OATS_TEAMS). Whether
-// the seat is GLOBAL is the kernel's resolved oats.aweb setting
-// `identity.mode`, read with `oats inspect`, never oats.aweb's instance.json
-// meta. Anything that cannot be read fails closed: never ready.
+// The readiness check: the `team` setting, and the floors that keep a home's
+// task claims present. With `team` absent the team answer is ready with nothing else.
+// With `team` set it answers from configuration: for a home, oats.aweb's own
+// `oats aweb teams --json`, run from the home through the kernel that runs this
+// check (OATS_CLI_BIN); for a soul, the eligible teams the kernel gives every
+// check (OATS_TEAMS). Whether the seat is GLOBAL is the kernel's resolved
+// oats.aweb setting `identity.mode`, read with `oats inspect`, never oats.aweb's
+// instance.json meta. Anything the team answer cannot read fails closed: never
+// ready. A home's check then adds the claim-floor warnings to that answer,
+// ready or not (lib/claim-floors.mjs): whatever keeps the home's task claims
+// present (the host wake daemon, the aweb-channel plugin or the pi extension)
+// below the version that heartbeats them. What it cannot read adds nothing.
 import { spawnSync } from 'node:child_process';
 import { teamSetting } from './team.mjs';
+import { claimFloorWarnings, readWakeStatus } from './claim-floors.mjs';
 
 const CAPABILITY = 'oats.aweb-tasks';
 const SLOT = 'tasks';
 // Each kernel call is bounded well inside the check's 30 s, and all provider
 // checks of one readiness read share 60 s.
 const CALL_TIMEOUT_MS = 10_000;
+// A home's `aw wake status` read follows up to two kernel calls, so it gets
+// what is left of this budget, at most CALL_TIMEOUT_MS, and the whole check
+// still answers inside the kernel's 30 s.
+const CHECK_BUDGET_MS = 25_000;
+const MIN_AW_CALL_MS = 500;
 const MAX_INPUT = 1 << 20;
 
 const REMEDY_NONE = 'or set `tasks: none` for this soul';
@@ -143,13 +153,32 @@ function checkSoul(label, context, opts) {
     message: `oats.aweb-tasks: team ${label} is eligible, and a home must join it: spawn with oats.aweb \`join=${label}\`, or run \`oats aweb join --labels ${label}\` from the home` }]);
 }
 
-/** The check's result for a decoded request. */
-export function checkResult(request, opts = {}) {
+function teamResult(request, opts) {
   const team = teamSetting(request.settings);
   if (team.absent) return ready();
   if (team.problem) return refuse('team-invalid', `oats.aweb-tasks ${team.problem}`);
   const context = request.input.context;
   return context.home ? checkHome(team.label, context, opts) : checkSoul(team.label, context, opts);
+}
+
+/** The claim-floor warnings for the context. `aw wake status` runs from the
+ *  home, bounded by what is left of the check's budget, and not at all when
+ *  too little is left. */
+function claimFloors(context, { env = process.env, runAw, now = Date.now, startedAt = now() } = {}) {
+  const readStatus = () => {
+    const timeout = Math.min(CALL_TIMEOUT_MS, CHECK_BUDGET_MS - (now() - startedAt));
+    return timeout < MIN_AW_CALL_MS ? undefined : readWakeStatus({ cwd: context.home, timeout, env, ...(runAw ? { run: runAw } : {}) });
+  };
+  return claimFloorWarnings(context, { readStatus, env });
+}
+
+/** The check's result for a decoded request: the team answer, ready or not,
+ *  with the claim-floor warnings added to its warnings. */
+export function checkResult(request, opts = {}) {
+  const startedAt = (opts.now || Date.now)();
+  const result = teamResult(request, opts);
+  const floors = claimFloors(request.input.context, { ...opts, startedAt });
+  return floors.length ? { ...result, warnings: [...(result.warnings || []), ...floors] } : result;
 }
 
 const answer = (phase, body) => ({ schemaVersion: 1, phase, slot: SLOT, capability: CAPABILITY, ...body });

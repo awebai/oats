@@ -1,3 +1,0 @@
-## Changed
-
-- **`oats.framework` 1.22.0 ships the second round of newcomer fixes to the setup expert.** `oats.setup` 2.13.0's `/oats-setup-expert`, `/oats-setup-model` and `/oats-package-pins`, `oats.onboarding` 1.2.0's `/oats-tailor-workspace`, and the `oats-setup-expert` soul carry them: the hand-over and hand-back, the tasks rule for each case, human attribution, both instance-name forms, and a harness entry for each new soul whose declared harness differs (#1726, #1729). The onboarding round-two entry in these notes describes each fix. The per-soul launch lines say from OATS 0.53.0. No other command they name needs a newer OATS than each capability already admits ([awebai/oats#1665](https://github.com/awebai/oats/issues/1665)).

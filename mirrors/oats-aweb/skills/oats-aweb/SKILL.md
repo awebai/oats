@@ -354,13 +354,14 @@ minting authority for its canonical T. Run from H, not the caller's worktree.
 |---|---|---|---|
 | Inspect | `oats aweb teams --json` | Read-only default/eligible/joined/left facts; success: intended target is identified. Next: selected authorized join or leave. | Unknown label → `/oats-teams` resolves policy, never a guessed team. |
 | Plan a join | `oats aweb join --labels L --plan [--json]` | Read-only: per label, team, root, the setting that chose it (`roots[team]` or `root`) and whether membership was confirmed; no invite or state. Next: the join below. | `refused: …` names why the join would refuse → section 8 LOCAL join. |
-| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; root failure → section 8 LOCAL join. |
+| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; `cannot join team …: the deployment's live settings could not be read (…); nothing was minted` → run the `oats inspect … --json` it names and fix what it reports; `cannot join team …: <no or non-member root>; nothing was minted` → section 8 LOCAL join; `aw team invite failed … nothing was joined; … root R (from S)` → the cause in the parentheses, then `--plan`. |
 | Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
 
 Homes composed before provider 1.22.0 can hold stale captured minting roots;
 require the 1.22.0 fix to be composed instead of borrowing another identity.
 In 1.22.0, explicit join queries current exact-team root authority; launch/retire still use captured
-settings. Existing joined receipts do not require another acceptance. GLOBAL
+settings. A team root recorded in `oats-local.yaml` after the home's spawn is joined
+without a respawn. Existing joined receipts do not require another acceptance. GLOBAL
 `E_TEAM_GLOBAL_MODE` means `joined teams need local per-team identities; this home
 acts as a resident identity through a session grant (identity.mode "global")`:
 stop at #60's owner-pending grant contract, never use native switch/join in-seat.
@@ -516,7 +517,8 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Provider 1.26.1, OATS >=0.48 for `resident create` | `resident create` maps the resident's team without `--team-label` (under the team's name) and makes it the default team where there is none; another default is kept and `oats teams default <label>` is printed as the first step. That step moves the whole deployment's default team (every later spawn of a soul without its own default goes to the resident's team), so it is the operator's decision: an agent prints it and asks, and never runs it on its own. A grant seat gets `AWID_REGISTRY_URL` from its resident's identity when that registry is not aw's default. |
 | Provider 1.28.0, OATS >=0.52.0, aw >=1.36.33 | `oats aweb wake install`, `status` and `uninstall` install the host wake broker as a per-user service ("Host wake broker service" below). Readiness warns `claude-channel-mode-default` for a Claude channel home whose mode nobody chose, and checks the broker at soul scope when the spawn will need it (section 7). |
 | Provider 1.32.0, OATS >=0.68.0, aw >=1.36.33 | A stopped seat moves to the locked package with `oats instance upgrade`. Upgrade preserves identity and grant state without host calls; the next start re-registers and renews according to the seat's settings. |
-| Future provider #56 / #60 | Token-only setup and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
+| Provider 1.36.0, OATS >=0.68.0, aw >=1.36.53 | Setup from an invite alone: `--invite-stdin` without `--join` reads the team and service with `aw team invite inspect` ("LOCAL team join and resume" below). Older aw refuses it with `E_SETUP_AW_VERSION`; labelled join is unchanged. |
+| Future provider #60 | GLOBAL wider-team join is not an installed procedure here. Stop at its named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
 `T` = canonical `name:namespace` team ID, `H` = selected instance home,
@@ -562,6 +564,8 @@ root is a placement blocker: select and compose 1.22.0 or later before effects. 
 uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
+Existing nested roots keep working and are not migrated; to move one, ask your
+aweb lead.
 
 ### attach yourself to the account
 
@@ -621,16 +625,18 @@ appropriate member invite, root alias/service and required team policy from inta
 
 | Act | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
+| Join from the invite alone (#56, aw >=1.36.53) | `oats aweb setup --soul S --invite-stdin --name <root-alias>` | `aw team invite inspect --json` reads the token on stdin and redeems nothing: team T and service from the invite; L = the label D already maps to T (`Using label L`), else T's name normalized as `--create` does. A hosted invite of scope `unknown` joins with `--local`. Then as Join below. Success: as Join; the last line is the one next step, from `oats soul teams S`: `oats spawn S --preview` when L is S's default, `oats spawn S --provider oats.aweb join=L --preview` when L is eligible for S, else make L eligible for S in the workspace's `souls:` (a shared-file change, `/oats-teams`). If that read fails, the spawn line says it assumes L is eligible. A kept default of D, and moving it (the operator's call), are in the note. `--install-aw` upgrades an older aw first. | `E_SETUP_AW_VERSION` → upgrade aw to 1.36.53 or later (or add `--install-aw`), or use Join below. `E_SETUP_INVITE_INSPECT` (names aw's refusal code, e.g. `exhausted`) → a new invite, or the exact `--join L --service <url>` resume it names (L as D maps T) for a join an earlier run accepted. `E_SETUP_INVITE_CONTROLLER` → Join below with `--service`. `E_SETUP_INVITE_SCOPE` (a GLOBAL invite) → ask for a LOCAL member invite, or use the existing-team GLOBAL resident journey; not `--service`. `E_SETUP_ALREADY_MEMBER` → D already has T's root, nothing redeemed: with T mapped, spawn; unmapped, run the tokenless `--join L --service <url>` resume it names (a per-team root an earlier run left), or the `oats teams add L --team T --no-default` it names (in a workspace without local teams, the `teams:` commit to oats-workspace.yaml it names). `E_SETUP_MEMBERSHIP` → a root's `aw team list` could not be read: fix aw there (`oats aweb setup --check-only`), then retry. `E_SETUP_SERVICE_MISMATCH` → drop `--service`. `E_SETUP_DEFAULT_PRESERVE` → the operator decides on the exact `oats teams add` it names. `E_SETUP_LABEL_COLLISION` → add `--join <label>`; never a suffixed label. |
 | Join | `oats aweb setup --soul S --join L --invite-stdin --name <root-alias> --service <selected-url>` | Reads first trimmed stdin line; accepts into the per-team `.aw`, connects workspace, records `roots[T]`. Success: matching canonical membership, connected root and recorded path. Next: `/oats-teams` mapping/default readback (the provider 1.23.1 composition above performs it automatically within its stated limits). | `--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule` → supply the selected alias. |
 | Resume accepted but unconnected, or connected but unrecorded root | `oats aweb setup --soul S --join L --service <selected-url>` | Uses retained matching identity; connects or records it, without another redemption. Success: membership/connect/root record all agree. Next: provider check below after mapping. | `team root <path> already holds a connected aweb identity, but not for <team>` → stop and reconcile selected label/root; do not delete or buy another acceptance with a new token. |
 | Check selected default after mapping | `oats aweb setup --soul S --check-only --json` | Read-only `{aw, defaultTeam, member, root}`; success requires usable aw, intended default and `member: true` at intended root. Next: onboarding's staffing/completion stage. | `member: false` is a result, not an error code → reconcile selected root/team via the join card. |
 
 `--invite <token>` is still parsed, but stdin keeps the token off provider argv;
-never paste it in history, logs or messages. Native accept currently receives it
-in argv for that call's duration. `--invite` and `--invite-stdin` cannot combine.
-Token-only refusal remains `--invite-stdin requires --join <label> so the team
-gets its own root` (or `--invite requires --join <label> ...`). Use labelled join;
-#56 is a future cutover. `--service/--name require --join <label>` remains the
+never paste it in history, logs or messages. Setup passes it to native accept on
+stdin (`--token-stdin`, aw 1.36.33), never in argv. `--invite` and `--invite-stdin` cannot combine.
+Without `--join`, an invite needs aw 1.36.53 or later (the "Join from the invite
+alone" card); with `--join L` and aw 1.36.53, a mapped L that is not the
+invite's team refuses with `E_SETUP_JOIN_MISMATCH`, naming both, before
+redemption. `--service/--name require --join <label> or an invite` remains the
 refusal outside supported acts; #66 additionally permits explicit `--name` with
 LOCAL `--username`. These are not fresh GLOBAL creation options. The old invite-only verdict is stale:
 use the labelled command above, never `aw team join` in an OATS-owned root.

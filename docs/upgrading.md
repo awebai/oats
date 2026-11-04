@@ -6,11 +6,11 @@ host that comes from it.
 
 ## Upgrading to the latest version
 
-The latest version is **OATS 0.69.11** ([release notes](release-notes/v0.69.11.md)).
-The 0.69.11 Desktop accepts OATS CLIs `>=0.26.0 <0.70.0`.
+The latest version is **OATS 0.69.12** ([release notes](release-notes/v0.69.12.md)).
+The 0.69.12 Desktop accepts OATS CLIs `>=0.26.0 <0.70.0`.
 
 **First, read the `## Upgrade` section of every release after yours, up to
-0.69.11,** in the [release notes](release-notes/): it says what to do before
+0.69.12,** in the [release notes](release-notes/): it says what to do before
 the CLI changes, and what else must change with it (the Desktop, another
 tool, a package pin). [Coming from an older version](#coming-from-an-older-version)
 names the releases that ask for more than the steps below. `oats version`
@@ -19,8 +19,8 @@ prints the version you have.
 Then, on each host:
 
 ```sh
-                                     # 0. where the Desktop is installed: Desktop 0.69.11 first
-npm install -g @awebai/oats@0.69.11  # 1. the CLI
+                                     # 0. where the Desktop is installed: Desktop 0.69.12 first
+npm install -g @awebai/oats@0.69.12  # 1. the CLI
 oats update                          # 2. in each deployment: the plan, then it asks before it runs
 oats doctor                          # 3. in the same deployment
 ```
@@ -202,6 +202,12 @@ of the Desktop and the CLI, and an optional package pin. A change a script
 must follow is in its release's Upgrade section whether or not it is listed
 here.
 
+- **[0.69.12](release-notes/v0.69.12.md#upgrade):** the catalog pins
+  oats.okf 5.8.0, oats.aweb 1.37.0 and oats.framework 1.22.1. Where
+  `oats.aweb-tasks` is composed, readiness warns until the host wake daemon
+  runs aw 1.36.54 (install it by version while npm's `latest` is 1.36.53),
+  aweb-channel 1.8.2 or @awebai/pi 0.4.1; on macOS, reload running custody
+  jobs by hand after the aw upgrade.
 - **[0.69.11](release-notes/v0.69.11.md#upgrade):** the catalog pins
   oats.framework 1.21.0 and oats.aweb 1.35.0. Upgrade every deployment of a
   workspace before its shared `oats-workspace.yaml` sets `tasks:` (an older

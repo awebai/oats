@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.7.0** (OATS **>=0.69.2**). Provider implementation and
+This is the operator guide for **oats.okf 5.8.0** (OATS **>=0.69.2**). Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -25,7 +25,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.7.0
+  oats.okf: v5.8.0
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -54,7 +54,7 @@ just editing a version line. From 5.6.0 it requires OATS >=0.69.2: its
 `knowledge-harvester` and `knowledge-maintainer` souls say `background: true`,
 which an older kernel refuses. Upgrade OATS first, then the package.
 
-**Upgrade:** pin `oats.okf: v5.7.0` and run `oats sync`. Only new spawns get
+**Upgrade:** pin `oats.okf: v5.8.0` and run `oats sync`. Only new spawns get
 the capability-owned harvest duty, skill and spawn-recorded policy. Existing
 homes keep their copied provider even after a session restart; from 5.4.0, a
 stopped 5.x home can move with `oats instance upgrade` (OATS 0.68.0 and
@@ -71,6 +71,13 @@ propose. 5.6.0 lists new harvesters and knowledge maintainers under the
 clients' Background section; existing ones do not move. 5.7.0 stops parking
 harvest PRs under `okf-needs-human` (step 4 of [the flow](#the-flow)); PRs an
 older maintainer parked are re-reviewed by the steps in okf's CHANGELOG.
+5.8.0 screens what harvest and maintenance publish (the outgoing history,
+paths, blobs and text) before any push, comment or merge, and reports only
+the location, line and rule; a harvest PR behind the accepted tip is
+rewritten onto it for a fresh exact-head verdict, never merged on an
+approximate squash. Structural validation is unchanged. A harvester or
+knowledge maintainer spawned after the sync uses it; existing homes keep
+their copy until respawned or upgraded.
 
 ### Bindings document
 
