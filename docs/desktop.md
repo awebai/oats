@@ -9,7 +9,7 @@ retires and schedules agents.
 ## Install
 
 Download the installer for your platform from the
-[GitHub Release](https://github.com/awebai/oats/releases) assets:
+[GitHub Release](https://github.com/oats-project/oats/releases) assets:
 
 | Platform | Artifacts | Notes |
 | --- | --- | --- |
@@ -25,8 +25,21 @@ the app was tested on.
 Windows and Linux arm64 are not supported.
 
 Verify downloads against the release's `SHA256SUMS.txt`. GitHub
-build-provenance attestations are published for every asset
-(`gh attestation verify <file> --repo awebai/oats`).
+build-provenance attestations are published for every asset. Where they live
+depends on where the release was built:
+
+- **Releases after 0.69.12**, built in `oats-project/oats`:
+  `gh attestation verify <file> --repo oats-project/oats --signer-workflow oats-project/oats/.github/workflows/release.yml --source-ref refs/tags/v<version>`.
+- **Releases up to 0.69.12**, built in `awebai/oats` before the repository
+  moved. Their attestations stayed with the `awebai` organisation, so
+  `--repo` finds none (`HTTP 404`):
+  `gh attestation verify <file> --owner awebai --signer-workflow awebai/oats/.github/workflows/release.yml --source-ref refs/tags/v<version>`.
+  Use it only for these versions. For a later release it would trust the old
+  organisation in place of the new one.
+
+Both forms accept only that repository's release workflow, run for the
+release's tag. They accept no other workflow of the owner and no run from a
+branch.
 
 ### macOS: ad-hoc signed build
 
