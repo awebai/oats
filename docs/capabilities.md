@@ -693,7 +693,10 @@ instance session they are the session's.
 soul-set value from a host-set one there, and never reads `soul.yaml` for it;
 a home with none recorded gives `{}`. A final JSON line may return `meta`,
 `brief`, `warning`, or harness-specific `launch` arguments; a preview-aware
-launch hook's preview answer may add `volatileEnv` (below). A **spawn or
+launch hook's preview answer may add `volatileEnv` (below). A retire hook's
+`warning` is in the retire's `warnings` and, as a `retire-warning` event, in
+the instance's workspace log, readable with `oats instance events` after the
+home is gone ([Events](desktop-cli-api.md#events)). A **spawn or
 launch hook** may also return an `env` object for the launched process;
 returning `env` from a retire or [worktree](#the-worktree-event) hook is an
 explicit contract error.

@@ -4352,6 +4352,12 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `branch-deleted` (not written since 0.41.0: no retire deletes a branch;
   older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
+  `retire-warning` (a retire hook's warning, `data: {message}`: one row per
+  entry of the retire hooks' `warnings`, a hook's own `warning` and the
+  kernel's lines about those hooks alike, in their order; written to the
+  workspace log only, as soon as the hooks return, so a retire that then
+  refuses or ends quarantined keeps them, and each run of the hooks, a retry
+  among them, adds its own; older clients read it as an unknown kind),
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
   [Waiting on you](#waiting-on-you)), `wake-held` (feature `wake-hold`: a
   scheduled wake began to hold, one row per hold, `data: {schedule, since,
@@ -4364,6 +4370,11 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   credentials, `member` a key or `null`, `hooks` the `worktree` hooks'
   receipt). `producer` is `kernel`, a capability id,
   or another producer id (`agent`). Older rows may carry `eventsApi: 1`.
+  The `message` of a `launch-warning` or `retire-warning` row is the
+  warning's text as stored: control, bidi and hidden characters replaced
+  with U+FFFD, cut to 2048 code points ending in `…`; a warning that is not
+  a string is stored as its JSON. Clients show it as plain text. The answer
+  that carried the warning (`warnings`) keeps it as it was said.
   `launched` is written by spawn and, since 0.40, once per session start or
   restart, as soon as the session exists (`data: {harness, backend,
   launchConfig, phase, startId}`; spawn's row has neither `phase` nor
@@ -4378,7 +4389,8 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 - `retired` (`data: {agent, keepDir, self, quarantine, workRecovery, hooks,
   reason?}`) is written to the workspace log only,
   `<deployment>/.agents/events/<agent>--<instance>.jsonl`, which outlives the
-  home. `reason` is present only when
+  home. What its hooks warned is not in it: those are the `retire-warning`
+  rows written before it. `reason` is present only when
   the retire completed a self-retire an older OATS recorded with
   `--delete-branch` (since 0.41.0: `this self-retire was requested with
   --delete-branch by an older OATS; retirement no longer deletes branches, so
