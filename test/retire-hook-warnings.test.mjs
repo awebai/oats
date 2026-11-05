@@ -10,7 +10,7 @@
 //   - a retire that ends quarantined, or refuses after the hooks ran, still keeps the rows, and a
 //     retry of a quarantined retire adds its own, the earlier ones kept byte for byte;
 //   - a row of either warning kind stores its message made safe and bounded (lib/refused-text.mjs
-//     safeText, WARNING_MESSAGE_MAX code points), and the answer keeps the text as the hook said it.
+//     REFUSED_TEXT, WARNING_MESSAGE_MAX UTF-16 code units), and the answer keeps the text as the hook said it.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -24,8 +24,8 @@ const A = "test.warn-a", B = "test.warn-b";
 const ACTION = "run: aw id team remove-member x --cert-id y";
 const SECOND = "revoke the grant by hand: aw id grant revoke g-1";
 /** A warning with a newline, an ESC and a bidi override, longer than a row keeps; and that warning
- *  as a row stores it: each of the three replaced with U+FFFD, cut to WARNING_MESSAGE_MAX code
- *  points ending in `…`. */
+ *  as a row stores it: each of the three replaced with U+FFFD, cut to WARNING_MESSAGE_MAX UTF-16
+ *  code units ending in `…`. */
 const DIRTY = `renew\nnow \u001b[2J \u202Eevil ${"x".repeat(3000)}`;
 const STORED = `${"renew\uFFFDnow \uFFFD[2J \uFFFDevil " + "x".repeat(3000)}`.slice(0, WARNING_MESSAGE_MAX - 1) + "…";
 
@@ -171,13 +171,22 @@ test("both warning kinds store a message made safe and bounded, whichever writer
   const home = join(base, "agents", "dev", "instances", "dev-1");
   mkdirSync(home, { recursive: true });
   writeFileSync(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-1", createdAt: "2026-01-01T00:00:00.000Z" }));
-  assert.equal([...STORED].length, WARNING_MESSAGE_MAX);
+  assert.equal(STORED.length, WARNING_MESSAGE_MAX);
   for (const kind of ["launch-warning", KIND]) {
     const message = (written) => { assert.equal(written.ok, true); return written.row.data.message; };
     assert.equal(message(appendEvent(home, { kind, data: { message: DIRTY } })), STORED, kind);
     assert.equal(message(appendEvent(home, { kind, data: { message: "x".repeat(WARNING_MESSAGE_MAX) } })), "x".repeat(WARNING_MESSAGE_MAX), `${kind}: one at the bound is kept whole`);
     assert.equal(message(appendEvent(home, { kind, data: { message: { action: "renew" } } })), '{"action":"renew"}', `${kind}: an object`);
   }
-  const rows = readEvents(home).events;
+  // Astral characters are two units each: the cut counts units, and never splits a pair.
+  const astral = "\u{1F600}".repeat(3000);
+  for (const kind of ["launch-warning", KIND]) {
+    const stored = appendEvent(home, { kind, data: { message: astral } }).row.data.message;
+    assert.ok(stored.length <= WARNING_MESSAGE_MAX, `${kind}: ${stored.length} units`);
+    assert.ok(stored.endsWith("…"), kind);
+    assert.equal(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(stored), false, `${kind}: no lone surrogate`);
+    assert.equal(stored, `${"\u{1F600}".repeat(1023)}…`, `${kind}: as many whole pairs as fit before the mark`);
+  }
+  const rows = readEvents(home).events.filter((e) => e.data.message !== `${"\u{1F600}".repeat(1023)}…`);
   assert.deepEqual(rows.map((e) => e.data.message), [STORED, "x".repeat(WARNING_MESSAGE_MAX), '{"action":"renew"}', STORED, "x".repeat(WARNING_MESSAGE_MAX), '{"action":"renew"}'], "as read back");
 });

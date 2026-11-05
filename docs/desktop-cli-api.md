@@ -4372,9 +4372,10 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   or another producer id (`agent`). Older rows may carry `eventsApi: 1`.
   The `message` of a `launch-warning` or `retire-warning` row is the
   warning's text as stored: control, bidi and hidden characters replaced
-  with U+FFFD, cut to 2048 code points ending in `…`; a warning that is not
-  a string is stored as its JSON. Clients show it as plain text. The answer
-  that carried the warning (`warnings`) keeps it as it was said.
+  with U+FFFD, cut to 2048 UTF-16 code units ending in `…` (never through a
+  surrogate pair); a warning that is not a string is stored as its JSON.
+  Clients show it as plain text. The answer that carried the warning
+  (`warnings`) keeps it as it was said.
   `launched` is written by spawn and, since 0.40, once per session start or
   restart, as soon as the session exists (`data: {harness, backend,
   launchConfig, phase, startId}`; spawn's row has neither `phase` nor

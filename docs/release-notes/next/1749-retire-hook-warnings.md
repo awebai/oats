@@ -19,7 +19,7 @@
 
 - **A `launch-warning` or `retire-warning` row stores its message made safe
   and bounded** (oats-project/oats#1749). Control, bidi and hidden characters
-  are replaced with U+FFFD, and the text is cut to 2048 code points ending in
-  `…`. A warning that is not a string is stored as its JSON. The row shape is
-  unchanged, and the answers' `warnings` keep each warning as it was said
+  are replaced with U+FFFD, and the text is cut to 2048 UTF-16 code units
+  ending in `…`. A warning that is not a string is stored as its JSON. The row
+  shape is unchanged, and the answers' `warnings` keep each warning as it was said
   ([Events](../desktop-cli-api.md#events)).
