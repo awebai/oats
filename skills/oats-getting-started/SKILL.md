@@ -11,13 +11,13 @@ description: >-
   Use for "get started with OATS", "set up / install / adopt OATS", "set up
   OATS for this project", "join our OATS workspace", or when someone gives
   you this file or its URL. Download this file whole (`curl -fsSL
-  https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md`)
+  https://raw.githubusercontent.com/oats-project/oats/main/skills/oats-getting-started/SKILL.md`)
   and follow it as written: a summary of it is not the procedure.
 ---
 
 **Read this whole file, never a summary of it.** If you only have a summary
 (a web fetch that summarises, say), download it whole with
-`curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md`
+`curl -fsSL https://raw.githubusercontent.com/oats-project/oats/main/skills/oats-getting-started/SKILL.md`
 and follow it as written.
 
 # Getting started with OATS
