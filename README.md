@@ -6,7 +6,7 @@
 
 Free and open source.
 
-> **Agent setting up OATS for someone?** Go to [Start here](#start-here).
+> **Try it:** open Claude Code, Codex or pi in a project's folder and say *"Set up OATS for this project, following https://github.com/oats-project/oats"*. What you need, and what happens, is under [Start here](#start-here). An agent setting up OATS for someone goes there too.
 
 ## What OATS is
 
@@ -258,12 +258,23 @@ It is optional: agents run, message each other and follow their schedules whethe
 
 ## Start here
 
-**If you are a person,** give your agent (Claude Code, Codex, pi or any other) this page and say "set up OATS for this project". It asks you a few questions in one round, installs OATS and OATS Desktop, writes your workspace in one commit, and starts the setup expert to adapt the defaults with you. You type only passwords, logins and tokens.
+**If you are a person,** your coding agent does the setup for you.
+
+1. **You need** macOS or Linux, a coding agent (Claude Code, Codex or pi) and a GitHub account. Without a GitHub account, you make a free one during setup. Windows is not supported.
+2. **Open your agent in the folder of a project** you want agents to help with, and say:
+
+   > Set up OATS for this project, following https://github.com/oats-project/oats
+
+3. **Answer its questions.** It asks everything in one round and lists the changes it will make to your computer; say yes to them. After that you only approve the GitHub login and type a password or token if one is asked for.
+
+Your agent then installs OATS, OATS Desktop and what they need. It creates a private GitHub repository for your agents' shared setup (the workspace), creates the group your agents message each other in (on [aweb](https://aweb.ai), with no sign-up), and starts the **setup expert**, an agent that adapts the defaults with you. OATS Desktop opens on it. Allow 5 to 10 minutes.
+
+**To join a workspace a teammate already runs,** say instead *"Join our OATS workspace at \<its GitHub repository\>, following https://github.com/oats-project/oats"*. Your teammate's agent makes you an invite, which your teammate passes to you privately; your agent tells you when to paste it.
 
 **If you are an agent** asked to set up, install or try OATS, download the `oats-getting-started` skill and follow it step by step. It is the whole procedure; don't improvise one from this README.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/oats-project/oats/main/skills/oats-getting-started/SKILL.md
 ```
 
 Download it rather than web-fetching it: a summarising fetch would lose its exact commands.

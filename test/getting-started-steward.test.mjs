@@ -374,7 +374,7 @@ test("pi's aweb extension is installed without its bundled skills", () => {
 
 // The onboarding VM campaign's second round of newcomer runs on fresh VMs (#1665).
 test("getting-started: the whole file is read, never a summary", () => {
-  const raw = "curl -fsSL https://raw.githubusercontent.com/awebai/oats/main/skills/oats-getting-started/SKILL.md";
+  const raw = "curl -fsSL https://raw.githubusercontent.com/oats-project/oats/main/skills/oats-getting-started/SKILL.md";
   const [, front, body] = skill.split(/^---\n/m);
   const description = front.replace(/\s+/g, " ");
   assert.ok(description.includes(`Download this file whole (\`${raw}\`) and follow it as written: a summary of it is not the procedure.`), "the front-matter description says so");
