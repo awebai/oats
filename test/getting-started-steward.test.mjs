@@ -219,7 +219,18 @@ test("getting-started: an existing workspace names its setup expert after this m
   const providerSources = setupInviteSources();
   for (const code of ["E_SETUP_INVITE_INSPECT", "E_SETUP_INVITE_SCOPE", "E_SETUP_LABEL_COLLISION", "E_SETUP_ALREADY_MEMBER"])
     assert.ok(providerSources.includes(code), `the provider refuses with ${code}`);
-  assert.ok(flat.includes("With `\"root\": null` after item 4's invite-only form, the join refused before redeeming anything"), "a refusal is not read as a root left outside L");
+  // A team the workspace doesn't name is refused before redeeming: E_SETUP_POLICY where local teams are closed, and
+  // E_SETUP_DEFAULT_PRESERVE where the default comes from the workspace file. Only a machine whose own oats-local.yaml
+  // sets the default redeems it and maps that team under a label of its own; item 5 tells the two apart read-only,
+  // because a per-team root is made only by a redemption.
+  assert.ok(flat.includes("one for a team this workspace doesn't name (unless the workspace allows local teams and this machine's own `oats-local.yaml` sets its default team)"));
+  const teamDefault = read("mirrors/oats-aweb/lib/setup-team-default.mjs");
+  assert.ok(teamDefault.includes("throw setupFailure('E_SETUP_POLICY', 'local-teams-closed"), "the provider refuses an unnamed team where local teams are closed");
+  assert.ok(teamDefault.includes("doc.defaultTeam.from !== 'deployment'") && teamDefault.includes("throw setupFailure('E_SETUP_DEFAULT_PRESERVE'"), "the provider refuses an unnamed team where the default is the workspace's");
+  assert.ok(flat.includes("In that exception, an invite for a team the workspace doesn't name is redeemed instead"));
+  assert.ok(setupInviteSources().includes('join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label))'), "a redemption makes the per-team root item 5 looks for");
+  assert.ok(flat.includes("With `\"root\": null` after item 4's invite-only form, look first, read-only: `ls -d \"D\"/.aweb-roots/*/.aw 2>/dev/null`. Nothing printed: the join refused before redeeming anything"), "a refusal is not read as a root left outside L");
+  assert.ok(flat.includes("A path printed for a label other than `L`: the invite was for that team, and this machine joined it instead"), "a redeemed invite for another team is not read as a refusal");
   const setupInvite = read("mirrors/oats-aweb/lib/setup-invite.mjs");
   const awFloor = setupInvite.match(/AW_INVITE_INSPECT = '([0-9.]+)'/);
   assert.ok(awFloor && flat.includes(`aw ${awFloor[1]} or later (\`aw.version\` in item 1's check)`), "the skill's aw floor is the provider's");
