@@ -75,7 +75,7 @@ test("doctor: with no retirement open there is no retire-incomplete problem, in 
 test("doctor lists one retire-incomplete problem per open retirement, with the command that finishes it and the capability whose hook failed last; it is read-only", async (t) => {
   const fx = v2Deployment({ t });
   const spawnAs = async (name) => { const { home } = await fx.spawn("dev", { name }); return { name, home, root: fx.root }; };
-  const names = ["quarantined", "selfhooks", "selferror", "interrupted", "refused", "broken", "running", "unknown", "spawning"];
+  const names = ["quarantined", "moved", "selfhooks", "selferror", "interrupted", "refused", "broken", "running", "unknown", "spawning"];
   const i = {};
   for (const name of names) i[name] = await spawnAs(name);
   const ended = await endedProcess();
@@ -84,6 +84,10 @@ test("doctor lists one retire-incomplete problem per open retirement, with the c
 
   // An ordinary retire whose hook failed: the quarantine owes oats.aweb's hook.
   write(marker(i.quarantined), quarantine("quarantined", { hooks: ["oats.aweb"], extra: { lastRetryAt: "2026-11-01T10:00:00.000Z" } }));
+  // A quarantine whose first hook (test.first) failed, and whose retry then failed on another
+  // (test.latest): `outstanding` is what it first owed, `incomplete` what the retry left. The
+  // capability to check is the one that failed last; the outcome's items say the same.
+  write(marker(i.moved), quarantine("moved", { hooks: ["test.first"], extra: { incomplete: ["retire hook test.latest: exited 1"], lastRetryAt: "2026-11-02T10:00:00.000Z" } }));
   // A self-retire whose cleanup did not finish (#1747): its marker and outcome stay; the outcome's items
   // name the hook. The quarantine marker was removed by hand, so the outcome is what names it.
   write(retirePendingMarkerPath(i.selfhooks.home), pending(i.selfhooks, ended));
@@ -117,14 +121,18 @@ test("doctor lists one retire-incomplete problem per open retirement, with the c
   const found = retireProblems(doc);
   const of = (h) => found.filter((p) => p.message.includes(`(${h.home})`));
   const command = (h) => `oats retire ${h.name} --home ${h.home}`;
-  for (const name of ["quarantined", "selfhooks", "selferror", "interrupted", "refused", "broken"]) assert.equal(of(i[name]).length, 1, `${name}: one problem`);
+  for (const name of ["quarantined", "moved", "selfhooks", "selferror", "interrupted", "refused", "broken"]) assert.equal(of(i[name]).length, 1, `${name}: one problem`);
   for (const name of ["running", "unknown", "spawning"]) assert.equal(of(i[name]).length, 0, `${name}: not listed`);
-  assert.equal(found.length, 6, `exactly the open ones: ${JSON.stringify(found, null, 2)}`);
+  assert.equal(found.length, 7, `exactly the open ones: ${JSON.stringify(found, null, 2)}`);
   for (const p of found) assert.deepEqual(Object.keys(p).sort(), ["code", "message", "remedy"], "the existing problem form");
 
   const [q] = of(i.quarantined);
   assert.equal(q.message, `the retirement of quarantined (${i.quarantined.home}) is not finished: it is quarantined, owing retire hooks of oats.aweb (since 2026-11-01T10:00:00.000Z)`);
   assert.equal(q.remedy, `check the service of oats.aweb, whose retire hook failed last, then run: ${command(i.quarantined)}`);
+
+  const [mv] = of(i.moved);
+  assert.equal(mv.message, `the retirement of moved (${i.moved.home}) is not finished: it is quarantined, owing retire hooks of test.first (since 2026-11-02T10:00:00.000Z)`);
+  assert.equal(mv.remedy, `check the service of test.latest, whose retire hook failed last, then run: ${command(i.moved)}`, "the hook that failed last, not the one first owed");
 
   const [sh] = of(i.selfhooks);
   assert.equal(sh.message, `the retirement of selfhooks (${i.selfhooks.home}) is not finished: its self-retire failed at ${COMPLETED}: its cleanup did not finish`);
@@ -148,7 +156,7 @@ test("doctor lists one retire-incomplete problem per open retirement, with the c
 
   // Text: each as `! retire-incomplete: <message>` and the remedy on its own line.
   for (const p of found) assert.ok(text.includes(`\n! retire-incomplete: ${p.message}\n  ${p.remedy}\n`), `text holds ${p.message}`);
-  assert.equal(text.split("! retire-incomplete:").length - 1, 6, "one line per problem");
+  assert.equal(text.split("! retire-incomplete:").length - 1, 7, "one line per problem");
 
   // oats status still lists the outcomes whose home is gone.
   const status = fx.cli(["status", "--json"]);

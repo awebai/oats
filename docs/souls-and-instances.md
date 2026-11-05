@@ -1263,11 +1263,13 @@ run.
 - **Every attempt has its own `retired` event** with its `hooks` list, so
   `oats instance events <instance>` shows each one and how its hooks ended.
 - **What is never retried.** A quarantine that also owes a Git step,
-  directory preservation or an orphaned work directory. A capability that
-  declares no retire hook, or hooks that cannot be rerun. The retries also
-  stop at an attempt that answers an error, at one whose debt is no longer
-  hooks alone, when the home is gone, and when the pending marker is no
-  longer this completion's.
+  directory preservation or an orphaned work directory, or whose descriptor
+  could not be stored in the home. A capability that declares no retire
+  hook, or hooks that cannot be rerun. The retries also stop at an attempt
+  that answers an error, and at one whose debt is no longer hooks alone. No
+  retry starts once the home is gone or the pending marker is no longer this
+  completion's: the retry checks that after its wait and again under the
+  home's claim, and leaves a later scheduling's marker as it is.
 - **While the completion waits**, `oats status` reads the retire as
   `running`. Any other retire of the home is refused with `E_LIFECYCLE_BUSY`,
   for up to about 21 minutes after a hook failure. The refusal names the next

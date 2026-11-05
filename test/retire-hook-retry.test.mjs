@@ -21,7 +21,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { RETIRE_RETRY_DELAYS_MS, deferredRetireResultPath, retireInstance, retirePendingMarkerPath } from "../lib/core.mjs";
@@ -290,4 +290,69 @@ test("while it waits: status reads the retire as running, and another retire is 
   } finally { await run.finish(); }
   assert.equal(existsSync(i.home), false, "the retry passed and removed the home");
   assert.deepEqual(f.beside(i), []);
+});
+
+/** What a held completion of `i` leaves when its pending marker is removed or replaced while it waits
+ *  (`change`), and checked where `at` says: "wait" once its wait has ended, before the retry; "claim"
+ *  only by the retry itself, under the home's claim (the marker changes after the check that follows
+ *  the wait has read it). */
+async function markerChanged(t, change, at) {
+  const f = deployment(t);
+  const i = await f.spawn("dev", `${change}-${at}`);
+  f.failRuns(1);
+  const intent = f.schedule(i);
+  const armed = join(f.fx.base, "armed");
+  const gates = [{ name: "waits", fn: "writeFileSync", path: i.retryState, when: "after", waitMs: COMPLETION_MS },
+    ...(at === "claim" ? [{ name: "checked", fn: "readFileSync", path: i.marker, when: "after", armed, waitMs: COMPLETION_MS }] : [])];
+  const run = f.completeGated(intent, gates);
+  // A later scheduling's marker: another requestedAt, naming no completion.
+  const replacement = JSON.stringify({ ...intent, requestedAt: "2026-11-05T01:00:00.000Z" }, null, 2) + "\n";
+  const doChange = () => { if (change === "replaced") writeFileSync(i.marker, replacement); else rmSync(i.marker); };
+  let done;
+  try {
+    await run.waitGate("waits", COMPLETION_MS);
+    if (at === "wait") doChange();
+    else writeFileSync(armed, "");
+    run.release("waits");
+    if (at === "claim") {
+      await run.waitGate("checked", COMPLETION_MS);
+      doChange();
+      run.release("checked");
+    }
+    done = await run.done;
+    assert.deepEqual(done.timedOut, []);
+  } finally { await run.finish(); }
+  assert.equal(done.code, 1, done.stdout + done.stderr);
+  assert.equal(f.hookRuns(), 1, "no second attempt ran");
+  assert.equal(existsSync(i.home), true, "the home is kept");
+  assert.ok(done.stderr.includes("attempt 2 of 4 is not started") && done.stderr.includes("its pending marker is no longer this completion's"), done.stderr);
+  if (change === "replaced") assert.equal(readFileSync(i.marker, "utf8"), replacement, "the later scheduling's marker is left as it is");
+  else assert.equal(existsSync(i.marker), false, "no marker is written back");
+  const outcome = readJson(i.result);
+  assert.deepEqual([outcome.ok, Object.hasOwn(outcome, "attempts")], [false, false], "the first attempt's outcome: no retry ran");
+  assert.deepEqual(f.trace(i), [["retired", [[CAP, false]]], ["retire-refused", null, true]]);
+  assert.equal(existsSync(i.retryState), false);
+}
+for (const change of ["removed", "replaced"]) {
+  for (const at of ["wait", "claim"]) {
+    test(`a pending marker ${change} while the completion waits (seen ${at === "wait" ? "after the wait" : "under the retry's claim"}): no retry runs, and the outcome is the first attempt's`, (t) => markerChanged(t, change, at));
+  }
+}
+
+test("a quarantine whose descriptor could not be stored in the home is not retried: its restoration is debt of its own", async (t) => {
+  if (ROOT) { t.skip("root writes whatever the mode says: this shape cannot fail"); return; }
+  const f = deployment(t);
+  const i = await f.spawn("dev", "unwritable");
+  f.failRuns("all");
+  const intent = f.schedule(i);
+  // The quarantine marker cannot be written into the home: it is kept beside it, and the items say so.
+  chmodSync(i.home, 0o500);
+  f.fx.beforeCleanup(() => chmodSync(i.home, 0o700));
+  const r = f.complete(intent);
+  chmodSync(i.home, 0o700);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const outcome = readJson(i.result);
+  assert.ok(outcome.result.rollbackIncomplete.some((item) => item.startsWith("cleanup descriptor ")), `fixture premise: the writer reported its own item: ${JSON.stringify(outcome.result.rollbackIncomplete)}`);
+  assert.equal(f.hookRuns(), 1, "one attempt");
+  assert.equal(Object.hasOwn(outcome, "attempts"), false, "the outcome as before");
 });
