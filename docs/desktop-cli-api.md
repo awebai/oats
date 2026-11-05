@@ -1578,6 +1578,21 @@ line that gives each kind's total, and at most 50 items per kind
 ([After a retire](souls-and-instances.md#after-a-retire-inspect-restore-dispose)).
 Each element is one line of text with no newline. The answer has no new key.
 
+`oats doctor --json` lists each retirement left open as one
+`retire-incomplete` problem in `problems[]`, `{code, message, remedy}`
+(oats-project/oats#1747). Text prints it as `! retire-incomplete: <message>`
+with the remedy on the next line. A retirement is open when the home reads
+quarantined (`rollbackIncomplete`), when its self-retire is `failed` or
+`interrupted`, or when a failed self-retire left its outcome beside a home
+that is still there. A home whose retire is `running` or `unknown`, a spawn
+in progress, and an outcome whose home is gone are not listed. The message
+names the instance, the home, what is open and since when. The remedy is
+`oats retire <name> --home <home>`, each word quoted for a shell, and names
+the capability whose retire hook failed last, or says that none is recorded.
+Doctor reads this as `oats status` does, offline and read-only. Its exit
+status does not change: doctor exits 0 with problems. A deployment with no
+open retirement sees no change.
+
 ### Desktop facts
 
 Feature `desktop-facts`: facts the kernel reports so the Desktop never derives
