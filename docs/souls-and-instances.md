@@ -531,6 +531,11 @@ takes a final capture of notes and the session record into durable custody; an
 incomplete capture keeps the home for a retry. Retirement never waits for a
 model or GitHub: processing continues after the home is gone.
 
+A retire hook's warning, such as an action someone must still take, is in the
+retire's `warnings` and stays readable after the home is gone: each one is a
+`retire-warning` event in the instance's workspace log, read with
+`oats instance events <instance>` ([Events](desktop-cli-api.md#events)).
+
 One retire of an instance runs at a time. A retire holds the instance's claim
 from the moment it has resolved the home until it ends: the file
 `.oats-retirement/claims/<instance>.lock` in the agent's instances directory,

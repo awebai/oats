@@ -463,6 +463,15 @@ test("0.30 launch-hook warnings: session start and restart answer them (JSON `wa
   assert.doesNotMatch(r.stderr, /WARNING/);
   assert.ok(await waitFor(() => runningPid(home) !== null));
   assert.equal(warningEvents().length, 3, "no event for a hook without warnings");
+  // #1749: the row stores the warning made safe and bounded (a newline, an ESC and a bidi override
+  // replaced with U+FFFD, cut to 2048 UTF-16 code units ending in `…`); the answer keeps it as the hook said it.
+  const dirty = `renew\nnow \u001b[2J \u202Eevil ${"x".repeat(3000)}`;
+  hook({ warning: dirty });
+  r = run("restart"); out = JSON.parse(r.stdout.trim());
+  assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.deepEqual(out.result.warnings, [dirty], "the answer keeps the original");
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  assert.deepEqual(warningEvents().at(-1).data, { message: `${"renew\uFFFDnow \uFFFD[2J \uFFFDevil " + "x".repeat(3000)}`.slice(0, 2047) + "…" });
 });
 
 test("package module drift appears on start and restart in JSON and text without moving frozen modules", async (t) => {
