@@ -996,12 +996,11 @@ readiness still reports a problem.
    ```
 
 5. **After items 2 to 4, check again** (item 1), and expect `"member": true`.
-   On `"member": false` with `"root": null` after item 4's invite-only form,
-   the join refused before redeeming anything: stop and spawn nothing, ask
-   the person for the `E_SETUP_` code their window shows (a code, no
+   On `"member": false`, stop and spawn nothing. With `"root": null` after
+   item 4's invite-only form, the join refused before redeeming anything:
+   ask the person for the `E_SETUP_` code their window shows (a code, no
    secret), tell them in plain words what it means, and that a new invite
-   is the inviter's to send. Otherwise, on `"member": false`, stop and spawn
-   nothing: tell the person the run
+   is the inviter's to send. Otherwise tell the person the run
    left this machine's root outside `L`, with what the check shows, and
    don't rerun the signup or the join (you can't see the join's output).
    When another machine of the same name may already be in the team, say

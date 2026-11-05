@@ -219,7 +219,7 @@ test("getting-started: an existing workspace names its setup expert after this m
   const providerSources = setupInviteSources();
   for (const code of ["E_SETUP_INVITE_INSPECT", "E_SETUP_INVITE_SCOPE", "E_SETUP_LABEL_COLLISION", "E_SETUP_ALREADY_MEMBER"])
     assert.ok(providerSources.includes(code), `the provider refuses with ${code}`);
-  assert.ok(flat.includes("with `\"root\": null` after item 4's invite-only form, the join refused before redeeming anything"), "a refusal is not read as a root left outside L");
+  assert.ok(flat.includes("With `\"root\": null` after item 4's invite-only form, the join refused before redeeming anything"), "a refusal is not read as a root left outside L");
   const setupInvite = read("mirrors/oats-aweb/lib/setup-invite.mjs");
   const awFloor = setupInvite.match(/AW_INVITE_INSPECT = '([0-9.]+)'/);
   assert.ok(awFloor && flat.includes(`aw ${awFloor[1]} or later (\`aw.version\` in item 1's check)`), "the skill's aw floor is the provider's");
