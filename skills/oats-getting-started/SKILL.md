@@ -962,18 +962,33 @@ readiness still reports a problem.
    whose own agent runs
    `oats aweb invite --soul <their soul> --label L --json` in their
    deployment. The answer's `result.token` is the invite token,
-   passed to the person privately, never by ordinary mail. From oats.aweb
-   1.33.1 the answer's `result.awebUrl` is the service URL `U`, no secret,
-   which the member passes too. When it is `null` or absent, leave
-   `--service U` out of item 4: the join then takes the service from the
-   invite, or fails and item 5 stops. This machine's messaging root is
+   passed to the person privately, never by ordinary mail. **The token is
+   all they pass** when this machine has oats.aweb 1.36.0 or later (the
+   `version` of the `oats.aweb` row in the `oats inspect` answer's
+   `result.capabilities`, above) and aw 1.36.53 or later (`aw.version` in
+   item 1's check): the join reads the team and the service from the
+   invite itself. Otherwise the member passes the service URL `U` too:
+   from oats.aweb 1.33.1 the answer's `result.awebUrl`, no secret. When it
+   is `null` or absent, leave `--service U` out of item 4's labelled form:
+   the join then takes the service from the invite, or fails and item 5
+   stops. This machine's messaging root is
    `A` = `<workspace>-<this machine's name>` (step 1), with the workspace's
    name from step 8: don't ask. Only a hosted team works: if the invite is
    refused, or the join says the team is not hosted, stop; the workspace's
    owner decides.
 4. **Existing workspace: the person joins in their own terminal,** which you
-   open for them ("How to work"), typing the token at the hidden prompt,
-   with `D`, `S`, `L`, `A` and `U` filled in:
+   open for them ("How to work"), pasting the token at the hidden prompt,
+   with `D`, `S` and `A` filled in:
+
+   ```text
+   cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --invite-stdin --name A'
+   ```
+
+   Before redeeming anything, it refuses an invite that doesn't fit this
+   workspace: another team, a label already taken here, another service, or
+   a global identity's invite. The person sees why in the window, and item 5
+   stops. With an older oats.aweb or aw (item 3), open the labelled form
+   instead, with `L` and `U` filled in too:
 
    ```text
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'

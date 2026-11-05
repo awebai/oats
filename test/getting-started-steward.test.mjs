@@ -196,7 +196,7 @@ test("getting-started: one yes covers the computer's changes; a refused step is 
   assert.ok(!/Ask for (?:its|their) (?:GitHub )?owner/.test(flat), "the host's owner is derived, not asked");
 });
 
-test("getting-started: an existing workspace names its setup expert after this machine, and joins with the invite's service URL", () => {
+test("getting-started: an existing workspace names its setup expert after this machine, and joins with the invite alone", () => {
   const flat = read("skills/oats-getting-started/SKILL.md").replace(/\s+/g, " ");
   assert.ok(flat.includes("`--name <workspace>-<this machine's name>-oats-setup-expert`"));
   assert.ok(flat.includes("short hostname (`hostname -s`, never the full domain name)"));
@@ -208,9 +208,17 @@ test("getting-started: an existing workspace names its setup expert after this m
   assert.ok(flat.includes("A new workspace keeps `next.spawn` as it is."));
   assert.ok(flat.includes("`I` is its instance name: the `--name` you spawned with"));
   assert.ok(!/Choose with the person a name `A`/.test(flat), "the messaging root's name is derived, not asked");
-  // awebUrl is new in oats.aweb 1.33.1 and may be null: the join works without --service.
-  assert.ok(flat.includes("From oats.aweb 1.33.1 the answer's `result.awebUrl` is the service URL `U`"));
-  assert.ok(flat.includes("When it is `null` or absent, leave `--service U` out of item 4"));
+  // The one-paste join (awebai/oats-aweb#56, oats.aweb 1.36.0, aw 1.36.53): the token alone, no --join, no --service.
+  assert.ok(flat.includes("**The token is all they pass** when this machine has oats.aweb 1.36.0 or later"));
+  assert.ok(flat.includes("| oats aweb setup --soul S --invite-stdin --name A'"), "the joiner's command takes the token alone");
+  assert.ok(flat.includes("refuses an invite that doesn't fit this workspace"));
+  const setupInvite = read("mirrors/oats-aweb/lib/setup-invite.mjs");
+  const awFloor = setupInvite.match(/AW_INVITE_INSPECT = '([0-9.]+)'/);
+  assert.ok(awFloor && flat.includes(`aw ${awFloor[1]} or later (\`aw.version\` in item 1's check)`), "the skill's aw floor is the provider's");
+  // Older providers keep the labelled form; awebUrl is new in oats.aweb 1.33.1 and may be null: that join works without --service.
+  assert.ok(flat.includes("from oats.aweb 1.33.1 the answer's `result.awebUrl`, no secret"));
+  assert.ok(flat.includes("When it is `null` or absent, leave `--service U` out of item 4's labelled form"));
+  assert.ok(flat.includes("| oats aweb setup --soul S --join L --invite-stdin --name A --service U'"));
   assert.ok(!flat.includes("default service"), "the provider has no default service: the join fails without one");
   const invite = read("mirrors/oats-aweb/lib/invite.mjs");
   const [maj, min, pat] = providerVersion.split(".").map(Number);
