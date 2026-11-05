@@ -984,18 +984,24 @@ readiness still reports a problem.
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --invite-stdin --name A'
    ```
 
-   Before redeeming anything, it refuses an invite that doesn't fit this
-   workspace: another team, a label already taken here, another service, or
-   a global identity's invite. The person sees why in the window, and item 5
-   stops. With an older oats.aweb or aw (item 3), open the labelled form
-   instead, with `L` and `U` filled in too:
+   Before redeeming anything, it refuses an invite it can't use here: one
+   expired, used up or revoked, one for a team this workspace doesn't name,
+   one whose team's label is already another team here, one for a global
+   identity, or one for a team this machine is already in. The person sees
+   why in the window, and item 5 stops. With an older oats.aweb or aw
+   (item 3), open the labelled form instead, with `L` and `U` filled in too:
 
    ```text
    cd "D" && sh -c 'stty -echo; printf "Invite token: "; read -r T; stty echo; echo; printf "%s\n" "$T" | oats aweb setup --soul S --join L --invite-stdin --name A --service U'
    ```
 
 5. **After items 2 to 4, check again** (item 1), and expect `"member": true`.
-   On `"member": false`, stop and spawn nothing: tell the person the run
+   On `"member": false` with `"root": null` after item 4's invite-only form,
+   the join refused before redeeming anything: stop and spawn nothing, ask
+   the person for the `E_SETUP_` code their window shows (a code, no
+   secret), tell them in plain words what it means, and that a new invite
+   is the inviter's to send. Otherwise, on `"member": false`, stop and spawn
+   nothing: tell the person the run
    left this machine's root outside `L`, with what the check shows, and
    don't rerun the signup or the join (you can't see the join's output).
    When another machine of the same name may already be in the team, say

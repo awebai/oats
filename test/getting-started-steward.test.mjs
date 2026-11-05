@@ -20,6 +20,7 @@ const skill = read("skills/oats-getting-started/SKILL.md");
 const catalog = JSON.parse(read("package-catalog.json"));
 const residentSource = read("mirrors/oats-aweb/lib/resident.mjs");
 const providerVersion = JSON.parse(read("mirrors/oats-aweb/oats.json")).version;
+const setupInviteSources = () => read("mirrors/oats-aweb/lib/setup-invite.mjs") + read("mirrors/oats-aweb/bin/oats-aweb.mjs");
 const atLeast = (v, min) => {
   const a = v.split(".").map(Number), b = min.split(".").map(Number);
   for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
@@ -211,7 +212,14 @@ test("getting-started: an existing workspace names its setup expert after this m
   // The one-paste join (awebai/oats-aweb#56, oats.aweb 1.36.0, aw 1.36.53): the token alone, no --join, no --service.
   assert.ok(flat.includes("**The token is all they pass** when this machine has oats.aweb 1.36.0 or later"));
   assert.ok(flat.includes("| oats aweb setup --soul S --invite-stdin --name A'"), "the joiner's command takes the token alone");
-  assert.ok(flat.includes("refuses an invite that doesn't fit this workspace"));
+  // Each refusal the skill names is one the provider makes before redeeming; a service is refused only for an explicit
+  // --service, which the invite-only form never passes, so the skill names none.
+  assert.ok(flat.includes("Before redeeming anything, it refuses an invite it can't use here"));
+  assert.ok(!/refuses an invite[^.]*another service/.test(flat), "no service refusal is promised for the invite-only form");
+  const providerSources = setupInviteSources();
+  for (const code of ["E_SETUP_INVITE_INSPECT", "E_SETUP_INVITE_SCOPE", "E_SETUP_LABEL_COLLISION", "E_SETUP_ALREADY_MEMBER"])
+    assert.ok(providerSources.includes(code), `the provider refuses with ${code}`);
+  assert.ok(flat.includes("with `\"root\": null` after item 4's invite-only form, the join refused before redeeming anything"), "a refusal is not read as a root left outside L");
   const setupInvite = read("mirrors/oats-aweb/lib/setup-invite.mjs");
   const awFloor = setupInvite.match(/AW_INVITE_INSPECT = '([0-9.]+)'/);
   assert.ok(awFloor && flat.includes(`aw ${awFloor[1]} or later (\`aw.version\` in item 1's check)`), "the skill's aw floor is the provider's");
