@@ -3780,7 +3780,8 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     // The completion is an ORDINARY retirement: the hook runs, reports it did
     // not finish, and the home is retained under quarantine with an explicit
     // failed outcome beside it — never a silent success.
-    assert.equal(completeDeferredRetirement(retirePendingMarkerPath(home), { delaySec: 0 }), false);
+    // Not retried: what a retry does is test/retire-hook-retry.test.mjs's.
+    assert.equal(completeDeferredRetirement(retirePendingMarkerPath(home), { delaySec: 0, retryDelaysMs: [] }), false);
     assert.equal(existsSync(retireRan), true, "the retire hook ran in the completion");
     assert.equal(existsSync(home), true, "an incomplete hook retains the home");
     assert.equal(JSON.parse(readFileSync(r.resultPath, "utf8")).result?.workRecovery, undefined, "the caller changed no home bytes, so nothing was needlessly preserved");

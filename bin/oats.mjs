@@ -86,6 +86,7 @@ const { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, de
 const { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } = await kernelImport("retire-output", () => import("../lib/retire-output.mjs"));
 const { livenessWord, lostLine, statusWord, waitingLine } = await kernelImport("status-words", () => import("../lib/status-words.mjs"));
 const { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } = await kernelImport("retained-after-retire", () => import("../lib/retained-after-retire.mjs"));
+const { retireIncompleteProblems } = await kernelImport("retire-incomplete", () => import("../lib/retire-incomplete.mjs"));
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 const { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposition, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } = await kernelImport("instance-inspect", () => import("../lib/instance-inspect.mjs"));
 const { readEvents, setWaiting, incarnationOf } = await kernelImport("instance-events", () => import("../lib/instance-events.mjs"));
@@ -834,7 +835,7 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
   const launchPreferences = await doctorLaunchPreferences(ws);
   // With --soul, the soul's composition; without, the deployment's capabilities (doctorHookWarnings).
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
-  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems, ...operator.problems, ...launchPreferences.problems].filter(Boolean);
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems, ...operator.problems, ...launchPreferences.problems, ...retireIncompleteProblems(agentsRoot)].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
@@ -891,6 +892,8 @@ async function doctor(dir) {
   for (const p of operator.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
   const launchPreferences = await doctorLaunchPreferences(ws);
   for (const p of launchPreferences.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
+  // Retirements left open (#1747): the command that finishes each, and whose hook failed last.
+  for (const p of retireIncompleteProblems(agentsRoot)) console.log(`\n! ${p.code}: ${terminalText(p.message)}\n  ${terminalText(p.remedy)}`);
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
   if (!soulName) for (const w of doctorCaptureWarnings()) console.log(`\nwarning  ${w.code}  ${terminalText(w.message)}`);

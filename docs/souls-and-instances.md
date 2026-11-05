@@ -1245,9 +1245,46 @@ leaves what happened on disk (OATS 0.53.0):
 - **One event,** `retire-refused`, which says which of the two it was
   ([Events](desktop-cli-api.md#retire-refused-event)).
 
-Nothing retries by itself: `oats retire <instance>` does. A completion
-removes only the marker of its own scheduling, so the marker of a later
-`--self` is left for that one's completion.
+<a id="self-retire-hook-retry"></a>**A completion retries a cleanup that only
+retire hooks left incomplete** (oats-project/oats#1747), because a provider's
+failure is often transient. When the retire ends with the home quarantined,
+and what it owes is retire hooks and nothing else, the completion runs the
+same retire again: up to three times, about 1, 5 and 15 minutes after each
+failed attempt. Every attempt is an ordinary retire of the home, under its
+claim. Its quarantine retry clears only once the owed hooks are shown to have
+run.
+
+- **A retry whose hooks pass ends as a first success does.** The home is
+  removed and nothing is left beside it.
+- **After the last failed attempt** the completion leaves what it leaves
+  today: the outcome, the pending marker, the quarantine and one
+  `retire-refused` event. The outcome adds `attempts`, the number of attempts
+  that ran.
+- **Every attempt has its own `retired` event** with its `hooks` list, so
+  `oats instance events <instance>` shows each one and how its hooks ended.
+- **What is never retried.** A quarantine that also owes a Git step,
+  directory preservation or an orphaned work directory. A capability that
+  declares no retire hook, or hooks that cannot be rerun. The retries also
+  stop at an attempt that answers an error, at one whose debt is no longer
+  hooks alone, when the home is gone, and when the pending marker is no
+  longer this completion's.
+- **While the completion waits**, `oats status` reads the retire as
+  `running`. Any other retire of the home is refused with `E_LIFECYCLE_BUSY`,
+  for up to about 21 minutes after a hook failure. The refusal names the next
+  attempt and the earliest time the last one starts. The time is only a lower
+  bound: how long each attempt runs cannot be known in advance. The completion
+  keeps this in a file of its own beside the home,
+  `.oats-retire-retry-<instance>.json`, kernel-internal. It is removed on
+  every way out, and by any retire that removes the home.
+- **A completion killed while it waits** leaves the instance `interrupted`,
+  as before.
+
+After that, nothing retries by itself: `oats retire <instance>` does, and
+`oats doctor` lists every retirement left open as a `retire-incomplete`
+problem, with that command and the capability whose hook failed last
+([doctor](desktop-cli-api.md)). A completion removes only the marker of its
+own scheduling, so the marker of a later `--self` is left for that one's
+completion. Plain retires are not retried: their caller gets the answer.
 
 A completion does not start its retire while its scheduling still holds
 the home's claim (OATS 0.53.0). A scheduling that the host holds up
