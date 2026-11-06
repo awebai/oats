@@ -26,6 +26,9 @@ export const PHASE_BUDGET_MS = {
   // Phase 4b (smoke-probes.mjs runMainImportsProbe): one more start of the
   // packaged executable as Node, loading what main imports.
   mainImports: 60_000,
+  launchFixture: 90_000, // bounded real-kernel fixture setup for the AppImage launch
+  instanceLaunchReady: 90_000, // the second, independent first launch (fresh profile)
+  instanceCdpEvaluate: 20_000,
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };
