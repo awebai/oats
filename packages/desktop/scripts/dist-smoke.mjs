@@ -508,7 +508,7 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
                   if (viewers !== null && viewers > viewerBaseline) break;
                   await new Promise(resolve => setTimeout(resolve, 100));
                 } while (Date.now() < attachDeadline);
-                if (viewers === null || viewers <= viewerBaseline) throw new Error(`${label} terminal did not attach a viewer on the fixture socket`);
+                if (viewers !== viewerBaseline + 1) throw new Error(`${label} terminal must reuse exactly one viewer on the fixture socket (got ${viewers}, baseline ${viewerBaseline})`);
                 await command("Input.dispatchKeyEvent", { type: "keyDown", key: "q", code: "KeyQ", windowsVirtualKeyCode: 81, text: "q" });
                 await command("Input.dispatchKeyEvent", { type: "keyUp", key: "q", code: "KeyQ", windowsVirtualKeyCode: 81 });
               }
@@ -520,6 +520,7 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
                       focusedRow: document.activeElement?.closest?.('.ctx-inst')?.dataset.treeInstance ?? null,
                       activeInstance: document.querySelector('.ctx-inst.active')?.dataset.treeInstance ?? null,
                       terminalFocused: !!document.activeElement?.closest?.('.term-wrap'),
+                      terminalFocusesSinceFirst: window.__oatsSmokeTerminalFocuses ?? 0,
                       terminalTabs: [...document.querySelectorAll('.tab-trigger')].map(el => el.getAttribute('aria-label')),
                       activeTerminal: !!document.querySelector('.tab-pane.active:not([hidden]) .term-wrap'),
                       terminals: document.querySelectorAll('.term-wrap').length,
@@ -536,6 +537,27 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
               });
               console.log(`dist:smoke renderer launch ${instance} ${label}: ${JSON.stringify(observation)}`);
               await unchangedSource(`${label} launch and unfocused key`);
+              if (running && label === "first") {
+                // A repeated launch must visibly reactivate the retained tab; leaving it active would let a no-op pass.
+                // This synthetic navigation is setup, not operator input, and records even transient input focus.
+                const between = await command("Runtime.evaluate", {
+                  expression: `new Promise(resolve => {
+                    window.__oatsSmokeTerminalFocuses = 0;
+                    document.addEventListener('focusin', event => {
+                      if (event.target?.closest?.('.term-wrap')) window.__oatsSmokeTerminalFocuses++;
+                    }, true);
+                    document.querySelector('#nav .nav-item[data-view="spawn"]')?.click();
+                    setTimeout(() => resolve({
+                      mainNavigation: document.querySelector('#nav .nav-item.active')?.textContent?.trim() ?? null,
+                      activeTerminal: !!document.querySelector('.tab-pane.active:not([hidden]) .term-wrap'),
+                      terminals: document.querySelectorAll('.term-wrap').length,
+                    }), 0);
+                  })`, awaitPromise: true, returnByValue: true,
+                });
+                console.log(`dist:smoke before repeated running launch: ${JSON.stringify(between)}`);
+                if (between?.mainNavigation !== "Workspace overview" || between.activeTerminal || between.terminals !== 1)
+                  throw new Error("could not leave the retained terminal before the repeated launch");
+              }
               return observation;
             } finally {
               for (const { timer } of waiting.values()) clearTimeout(timer);
@@ -560,7 +582,7 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
           for (const [label, observation] of [["first", first], ["second", second]]) {
             if (observation.samples.at(-1)?.focusedRow !== expectedRow) throw new Error(`${label} launch did not keep the fixture's roster row focused`);
             if (!observation.observedForMs || observation.observedForMs < 35000) throw new Error(`${label} observation ended before the pending bound`);
-            if (observation.samples.some(sample => sample.terminalFocused || sample.dialogs || sample.notices.length)) throw new Error(`${label} launch took terminal focus, showed a dialog or a notice`);
+            if (observation.samples.some(sample => sample.terminalFocused || sample.terminalFocusesSinceFirst || sample.dialogs || sample.notices.length)) throw new Error(`${label} launch took terminal focus, showed a dialog or a notice`);
             if (running) {
               if (observation.samples.some(sample => sample.activeInstance !== expectedRow || !sample.activeTerminal || sample.terminals !== 1
                 || sample.terminalTabs.length !== 1 || sample.terminalTabs[0] !== "smoke-probe" || sample.mainNavigation !== null))
@@ -590,7 +612,11 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
             const now = await oatsdeskViewerCount();
             if (now !== null && now <= viewerBaseline) restored = true;
           }
-          if (!restored) throw new Error(`tmux viewer baseline not restored after ${launchError ? "forced failure" : "success"} (baseline ${viewerBaseline}, still elevated)`);
+          if (!restored) {
+            const error = new Error(`tmux viewer baseline not restored after ${launchError ? "forced failure" : "success"} (baseline ${viewerBaseline}, still elevated)`);
+            console.error(`dist:smoke cleanup FAIL — ${error.message}`); // retain this diagnostic even if an earlier launch error wins
+            throw error;
+          }
           ok(`tmux viewer baseline restored (${viewerBaseline}) after ${launchError ? "forced failure" : "success"}`);
         }
       }
