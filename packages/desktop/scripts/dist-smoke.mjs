@@ -29,7 +29,10 @@
 //      the AppImage's launcher or runtime;
 //   5. the packaged app bundle launches and its renderer reaches the shell
 //      (CDP probe), which also proves main spawned the bundled server and it
-//      answered — i.e. no source-checkout dependency.
+//      answered — i.e. no source-checkout dependency. Linux also launches the
+//      AppImage with a real CLI-created stopped row, first and then into the
+//      running app: main sends both requests, the row takes roster focus and
+//      no notice appears over each 35s observation.
 //
 // CI runs phases 1–4 on every installer leg: both installer workflows
 // (build-installers.yml and release.yml's desktop-build) set
@@ -39,10 +42,11 @@
 // smoke a second time that way on the Linux leg, under xvfb-run. No macOS leg
 // runs it (the workflows say why).
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createLaunchFixtureSource } from "../test/helpers/launch-fixture.mjs";
 import { createReaper } from "./proc-reaper.mjs";
 import { runAbiProbe, runBackendProbe, runMainImportsProbe, sharedHomeInventory } from "./smoke-probes.mjs";
 import { verifyAppSignature } from "./codesign-verify.mjs";
@@ -245,107 +249,239 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
   // port is app-selected: main.mjs's ensureServer runs its own freePort
   // from OATS_DESKTOP_PORT, so a random start value cannot collide fatally.
   // stdio is captured (bounded rolling tail) and drained on 'close' before
-  // any crash tail is reported; startup exit fails fast; one launch, one
-  // bounded wait — never a blind retry.
-  const userData = mkdtempSync(join(tmpdir(), "oats-desktop-smoke-"));
-  const args = [`--remote-debugging-port=0`, `--user-data-dir=${userData}`,
-    "--no-sandbox", "--disable-gpu", "--dir", userData /* empty workspace: picker path, no deployment needed */];
-  const child = spawnTracked(app.exe, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, OATS_DESKTOP_PORT: String(10000 + Math.floor(Math.random() * 1500)) } });
-  let childLog = "", childExit = null;
-  child.stdout?.on("data", (d) => { childLog = boundedTail(childLog, d); });
-  child.stderr?.on("data", (d) => { childLog = boundedTail(childLog, d); });
-  child.on("exit", (code, sig) => { childExit = { code, sig }; });
-  // Slice G resource-containment baseline: capture the `oatsdesk-*` tmux
-  // viewer count before launch and assert it is RESTORED after the app is
-  // reaped — on BOTH the success and the forced-failure/timeout paths.
-  // Proves the app's shutdown + orphan sweep leave no viewer residue.
-  // (async count — the smoke bans synchronous child execution.)
-  async function oatsdeskViewerCount() {
-    const r = await runTracked("tmux", ["list-sessions", "-F", "#{session_name}"], { timeout: 5000 });
-    if (r.timedOut) return null;                     // tmux wedged — skip (unusual)
-    return String(r.stdout).split("\n").filter((s) => s.startsWith("oatsdesk-")).length;
-  }
-  const viewerBaseline = await oatsdeskViewerCount(); // 0 when tmux is absent/no-server (ENOENT/nonzero → empty stdout → 0); null only on a tmux timeout
-  let launchError = null;
-  // drainTail: return the current bounded output tail. Only wait for a
-  // final flush when the child has ALREADY EXITED (a live child's tail is
-  // already current, and awaiting its 'close' would block until the
-  // watchdog — review 7bdaf1e-r2 finding 2). awaitClose is total-bounded
-  // regardless, so even the exited path cannot hang.
-  const drainTail = async () => { if (childExit !== null) await awaitClose(child, { drainMs: 2000 }); return childLog.slice(-1500); };
-  try {
-    // ONE shared launchReady deadline across the port wait AND the /json
-    // poll (review 7bdaf1e-r2 finding 1: spending launchReady twice made
-    // worst-case success 240s > the 180s watchdog — the premature-kill this
-    // commit exists to prevent). /json answers ~immediately after
-    // DevToolsActivePort is written, so sharing the budget is ample.
-    const launchDeadline = Date.now() + PHASE_BUDGET_MS.launchReady;
-    const portRes = await readDevToolsPort(userData, { join, existsSync, readFileSync, now: () => Date.now(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)) }, {
-      timeoutMs: Math.max(0, launchDeadline - Date.now()), pollMs: 250, childExited: () => childExit !== null,
-    });
-    if (portRes.error) throw new Error(`${portRes.error} (app alive=${!childExit}); output tail:\n${await drainTail()}`);
-    const port = portRes.port;
-    let targets = null, lastDiag = 0;
-    while (!targets && Date.now() < launchDeadline) {
-      if (childExit) throw new Error(`packaged app exited during startup (code=${childExit.code} sig=${childExit.sig}); output tail:\n${await drainTail()}`);
-      await new Promise((r) => setTimeout(r, 500));
-      try {
-        const res = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(2000) });
-        const list = await res.json();
-        targets = list.find((t) => t.type === "page" && /index\.html/.test(t.url || ""));
-      } catch { /* not up yet */ }
-      if (!targets && Date.now() - lastDiag > 10_000) {
-        lastDiag = Date.now();
-        console.log(`dist:smoke … waiting for CDP (${Math.round((launchDeadline - Date.now()) / 1000)}s budget left; app alive=${!childExit})`);
-      }
+  // any crash tail is reported; each startup has one bounded readiness wait.
+  // The picker and AppImage use separate profiles; the repeated AppImage launch
+  // deliberately uses the running app's profile.
+  async function probeWindow({ instance = false } = {}) {
+    const root = mkdtempSync(join(tmpdir(), "oats-desktop-smoke-"));
+    const userData = join(root, "profile");
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) {
+      if (/^(OATS_|AWEB_)/.test(key) || ["TMUX", "TMUX_PANE", "WAYLAND_DISPLAY", "ELECTRON_RUN_AS_NODE", "APPIMAGE", "APPDIR"].includes(key)) delete env[key];
     }
-    if (!targets) throw new Error(`packaged app never exposed its renderer over CDP within ${PHASE_BUDGET_MS.launchReady / 1000}s (app alive=${!childExit}); output tail:\n${await drainTail()}`);
-    // Evaluate in the page: the shell booted if the nav rail rendered.
-    const ws = new WebSocket(targets.webSocketDebuggerUrl);
-    const result = await new Promise((resolve, reject) => {
-      const to = setTimeout(() => reject(new Error("CDP evaluate timeout")), PHASE_BUDGET_MS.cdpEvaluate);
-      ws.onopen = () => ws.send(JSON.stringify({
-        id: 1, method: "Runtime.evaluate",
-        params: {
-          expression: `new Promise((ok) => {
-            const probe = () => {
-              const nav = document.querySelectorAll("#nav .nav-item").length;
-              if (nav > 0) ok("SHELL_OK nav=" + nav);
-              else setTimeout(probe, 500);
-            }; probe();
-            setTimeout(() => ok("SHELL_TIMEOUT html=" + document.body.innerHTML.slice(0, 200)), 15000);
-          })`,
-          awaitPromise: true, returnByValue: true,
-        },
-      }));
-      ws.onmessage = (m) => {
-        const d = JSON.parse(m.data);
-        if (d.id === 1) { clearTimeout(to); resolve(d.result?.result?.value || ""); }
-      };
-      ws.onerror = (e) => { clearTimeout(to); reject(new Error(`CDP socket error`)); };
+    Object.assign(env, { HOME: join(root, "home"), OATS_HOME_DIR: join(root, "oats"),
+      TMUX_TMPDIR: join(root, "tmux"), TMPDIR: join(root, "tmp"), XDG_CONFIG_HOME: join(root, "config"), XDG_CACHE_HOME: join(root, "cache"),
+      PATH: `${dirname(process.execPath)}:${process.env.PATH}`, OATS_DESKTOP_PORT: String(10000 + Math.floor(Math.random() * 1500)) });
+    for (const dir of [userData, env.HOME, env.OATS_HOME_DIR, env.TMUX_TMPDIR, env.TMPDIR]) mkdirSync(dir, { recursive: true });
+    const deployment = join(root, "deployment");
+    if (instance) {
+      // A real member soul and kernel-created stopped instance; no harness is launched.
+      const fixtureDeadline = Date.now() + PHASE_BUDGET_MS.launchFixture;
+      const fixtureTimeout = () => Math.max(1, fixtureDeadline - Date.now());
+      const { ref, bin } = await createLaunchFixtureSource(root, { env, runTracked, timeout: fixtureTimeout });
+      env.PATH = `${bin}:${env.PATH}`;
+      env.OATS_DESKTOP_OATS_BIN = join(PKG, "..", "..", "bin", "oats.mjs");
+      const onboard = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, "onboard", deployment,
+        "--workspace", ref, "--json"], { cwd: env.HOME, env, timeout: fixtureTimeout() });
+      let admitted; try { admitted = JSON.parse(onboard.stdout); } catch { /* reported below */ }
+      if (onboard.timedOut || onboard.code !== 0 || admitted?.ok !== true || admitted.result?.onboardApi !== 2
+        || admitted.result?.dir !== deployment) fail(`launch fixture onboard failed: ${boundedTail(onboard.stderr, onboard.stdout)}`);
+      const spawn = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, "spawn", "smoke", "--dir", deployment,
+        "--name", "smoke-probe", "--work", "directory", "--harness", "claude", "--launch-config", "none", "--model", "@native-default",
+        "--no-launch", "--task", "Packaged launch selection probe.", "--json"], { cwd: deployment, env, timeout: fixtureTimeout() });
+      let created; try { created = JSON.parse(spawn.stdout); } catch { /* reported below */ }
+      if (spawn.timedOut || spawn.code !== 0 || created?.ok !== true || created.result?.instance !== "smoke-probe"
+        || created.result?.launched !== false) fail(`launch fixture spawn failed: ${boundedTail(spawn.stderr, spawn.stdout)}`);
+      for (const verb of [["status"], ["workspace", "status"]]) {
+        const r = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, ...verb, "--dir", deployment, "--json"],
+          { cwd: deployment, env, timeout: fixtureTimeout() });
+        let answer; try { answer = JSON.parse(r.stdout); } catch { /* reported below */ }
+        // status predates the envelope; workspace status uses the v1 result envelope.
+        const workspace = answer?.ok === true ? answer.result : null;
+        const rows = Array.isArray(answer?.agents) ? answer.agents.flatMap(agent => agent.instances ?? []) : [];
+        const row = rows.find(row => row.instance === "smoke-probe");
+        const valid = verb.length === 1
+          ? answer?.workspace?.reachable === true && rows.length === 1 && row?.agent === "smoke"
+            && row.home === join(deployment, "agents", "smoke", "instances", "smoke-probe")
+            && row.launched === false && row.running === false
+          : workspace?.workspaceStatusApi === 1 && workspace.workspace?.name === "smoke"
+            && workspace.workspace?.local === join(deployment, "oats-local.yaml") && workspace.problems?.length === 0;
+        if (r.timedOut || r.code !== 0 || !valid) fail(`launch fixture CLI ${verb.join(" ")} failed: ${boundedTail(r.stderr, r.stdout)}`);
+      }
+      ok("real kernel fixture lists smoke-probe, never launched and not running");
+      // CI need not provide FUSE. This still runs the shipped AppImage runtime and AppRun launcher.
+      // The runtime caches both launches under the AppImage digest in TMPDIR. A secondary
+      // runtime must not remove that tree when its handoff process exits: the primary still
+      // loads from it. Our private TMPDIR is removed after both process groups have been reaped.
+      env.NO_CLEANUP = "1";
+      const runtime = await runTracked(artifacts.AppImage, ["--appimage-version"], { cwd: env.HOME, env, timeout: fixtureTimeout() });
+      if (runtime.timedOut || runtime.code !== 0) fail(`AppImage runtime version failed: ${runtime.stderr}`);
+      ok(`AppImage runtime: ${String(runtime.stdout + runtime.stderr).trim()}`);
+      // This runtime handles the extraction environment before --appimage-* arguments.
+      env.APPIMAGE_EXTRACT_AND_RUN = "1";
+    }
+    const args = [`--remote-debugging-port=0`, `--user-data-dir=${userData}`,
+      "--no-sandbox", "--disable-gpu", "--ozone-platform=x11", "--dir", instance ? deployment : userData];
+    if (instance) args.push("--instance", "smoke-probe");
+    // Slice G resource-containment baseline: capture the `oatsdesk-*` tmux
+    // viewer count before launch and assert it is RESTORED after the app is
+    // reaped — on BOTH the success and the forced-failure/timeout paths.
+    // Proves the app's shutdown + orphan sweep leave no viewer residue.
+    // (async count — the smoke bans synchronous child execution.)
+    async function oatsdeskViewerCount() {
+      const r = await runTracked("tmux", ["list-sessions", "-F", "#{session_name}"], { env, timeout: 5000 });
+      if (r.timedOut) return null;                     // tmux wedged — skip (unusual)
+      return String(r.stdout).split("\n").filter((s) => s.startsWith("oatsdesk-")).length;
+    }
+    const viewerBaseline = await oatsdeskViewerCount(); // 0 when tmux is absent/no-server (ENOENT/nonzero → empty stdout → 0); null only on a tmux timeout
+    const child = spawnTracked(instance ? artifacts.AppImage : app.exe, args,
+      { cwd: env.HOME, stdio: ["ignore", "pipe", "pipe"], env });
+    let childLog = "", childExit = null, startupLog = "", stdoutPending = "";
+    child.stdout?.on("data", (d) => {
+      childLog = boundedTail(childLog, d);
+      stdoutPending += String(d);
+      const lines = stdoutPending.split("\n"); stdoutPending = boundedTail("", lines.pop());
+      for (const line of lines) if (line.startsWith("oats-desktop: launch --instance")) startupLog = boundedTail(startupLog, line + "\n");
     });
-    ws.close();
-    if (!String(result).startsWith("SHELL_OK")) throw new Error(`renderer did not reach the shell: ${result}`);
-    ok(`packaged app launched; ${result}`);
-  } catch (e) {
-    launchError = e;
-  } finally {
-    reapGroup(child);
-    // Baseline restoration assertion — runs on success AND failure (the
-    // catch above converted every launch failure to a caught error so this
-    // finally always executes; no fail()/process.exit skips it).
-    if (viewerBaseline !== null) {
-      let restored = false;
-      for (let i = 0; i < 10 && !restored; i++) {
+    child.stderr?.on("data", (d) => { childLog = boundedTail(childLog, d); });
+    child.on("exit", (code, sig) => { childExit = { code, sig }; });
+    let launchError = null;
+    // drainTail: return the current bounded output tail. Only wait for a
+    // final flush when the child has ALREADY EXITED (a live child's tail is
+    // already current, and awaiting its 'close' would block until the
+    // watchdog — review 7bdaf1e-r2 finding 2). awaitClose is total-bounded
+    // regardless, so even the exited path cannot hang.
+    const drainTail = async () => { if (childExit !== null) await awaitClose(child, { drainMs: 2000 }); return childLog.slice(-1500); };
+    try {
+      // ONE shared launchReady deadline across the port wait AND the /json
+      // poll (review 7bdaf1e-r2 finding 1: spending launchReady twice made
+      // worst-case success 240s > the 180s watchdog — the premature-kill this
+      // commit exists to prevent). /json answers ~immediately after
+      // DevToolsActivePort is written, so sharing the budget is ample.
+      const launchReadyMs = instance ? PHASE_BUDGET_MS.instanceLaunchReady : PHASE_BUDGET_MS.launchReady;
+      const launchDeadline = Date.now() + launchReadyMs;
+      const portRes = await readDevToolsPort(userData, { join, existsSync, readFileSync, now: () => Date.now(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)) }, {
+        timeoutMs: Math.max(0, launchDeadline - Date.now()), pollMs: 250, childExited: () => childExit !== null,
+      });
+      if (portRes.error) throw new Error(`${portRes.error} (app alive=${!childExit}); output tail:\n${await drainTail()}`);
+      const port = portRes.port;
+      let targets = null, lastDiag = 0;
+      while (!targets && Date.now() < launchDeadline) {
+        if (childExit) throw new Error(`packaged app exited during startup (code=${childExit.code} sig=${childExit.sig}); output tail:\n${await drainTail()}`);
         await new Promise((r) => setTimeout(r, 500));
-        const now = await oatsdeskViewerCount();
-        if (now !== null && now <= viewerBaseline) restored = true;
+        try {
+          const res = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(2000) });
+          const list = await res.json();
+          targets = list.find((t) => t.type === "page" && /index\.html/.test(t.url || ""));
+        } catch { /* not up yet */ }
+        if (!targets && Date.now() - lastDiag > 10_000) {
+          lastDiag = Date.now();
+          console.log(`dist:smoke … waiting for CDP (${Math.round((launchDeadline - Date.now()) / 1000)}s budget left; app alive=${!childExit})`);
+        }
       }
-      if (!restored) fail(`tmux viewer baseline not restored after ${launchError ? "forced failure" : "success"} (baseline ${viewerBaseline}, still elevated)`);
-      ok(`tmux viewer baseline restored (${viewerBaseline}) after ${launchError ? "forced failure" : "success"}`);
+      if (!targets) throw new Error(`packaged app never exposed its renderer over CDP within ${launchReadyMs / 1000}s (app alive=${!childExit}); output tail:\n${await drainTail()}`);
+      // Evaluate in the page: the shell booted if the nav rail rendered.
+      const ws = new WebSocket(targets.webSocketDebuggerUrl);
+      const result = await new Promise((resolve, reject) => {
+        const to = setTimeout(() => reject(new Error("CDP evaluate timeout")), instance ? PHASE_BUDGET_MS.instanceCdpEvaluate : PHASE_BUDGET_MS.cdpEvaluate);
+        ws.onopen = () => ws.send(JSON.stringify({
+          id: 1, method: "Runtime.evaluate",
+          params: {
+            expression: `new Promise((ok) => {
+              const probe = () => {
+                const nav = document.querySelectorAll("#nav .nav-item").length;
+                if (nav > 0) ok("SHELL_OK nav=" + nav);
+                else setTimeout(probe, 500);
+              }; probe();
+              setTimeout(() => ok("SHELL_TIMEOUT html=" + document.body.innerHTML.slice(0, 200)), 15000);
+            })`,
+            awaitPromise: true, returnByValue: true,
+          },
+        }));
+        ws.onmessage = (m) => {
+          const d = JSON.parse(m.data);
+          if (d.id === 1) { clearTimeout(to); resolve(d.result?.result?.value || ""); }
+        };
+        ws.onerror = (e) => { clearTimeout(to); reject(new Error(`CDP socket error`)); };
+      });
+      ws.close();
+      if (!String(result).startsWith("SHELL_OK")) throw new Error(`renderer did not reach the shell: ${result}`);
+      if (instance) {
+        const expected = `oats-desktop: launch --instance smoke-probe: selecting it in ${deployment}`;
+        // did-finish-load sends the request; allow its stdout pipe to drain after the shell appears.
+        while (!startupLog && !childExit && Date.now() < launchDeadline) await new Promise((r) => setTimeout(r, 100));
+        console.log(startupLog.trim() || "dist:smoke launch disposition missing");
+        // Read the rendered outcome without input, pointer or focus commands. Sample for longer
+        // than the launch request's 30s wait so a late failure notice cannot look like success.
+        async function observeRenderer(label) {
+          const socket = new WebSocket(targets.webSocketDebuggerUrl);
+          try {
+            const observation = await new Promise((resolve, reject) => {
+              const to = setTimeout(() => reject(new Error(`CDP ${label} observation timeout`)), label === "first" ? PHASE_BUDGET_MS.instanceObservation : PHASE_BUDGET_MS.repeatedObservation);
+              socket.onopen = () => socket.send(JSON.stringify({ id: 2, method: "Runtime.evaluate", params: {
+                expression: `new Promise(resolve => {
+                  const samples = [], started = Date.now(); let previous = null;
+                  function capture() {
+                    const state = {
+                      focusedRow: document.activeElement?.closest?.('.ctx-inst')?.dataset.treeInstance ?? null,
+                      mainNavigation: document.querySelector('#nav .nav-item.active')?.textContent?.trim() ?? null,
+                      notices: [...document.querySelectorAll('.app-toast-text')].map(el => el.textContent),
+                    };
+                    const encoded = JSON.stringify(state);
+                    if (encoded !== previous) { samples.push({ ms: Date.now() - started, ...state }); previous = encoded; }
+                    if (Date.now() - started >= 35000) resolve({ samples, observedForMs: Date.now() - started });
+                    else setTimeout(capture, 250);
+                  }
+                  capture();
+                })`, awaitPromise: true, returnByValue: true,
+              } }));
+              socket.onmessage = message => {
+                const reply = JSON.parse(message.data);
+                if (reply.id !== 2) return;
+                clearTimeout(to);
+                if (reply.error || reply.result?.exceptionDetails) reject(new Error(`CDP observation failed: ${JSON.stringify(reply)}`));
+                else resolve(reply.result?.result?.value);
+              };
+              socket.onerror = () => { clearTimeout(to); reject(new Error(`CDP ${label} observation socket error`)); };
+            });
+            console.log(`dist:smoke renderer launch ${label}: ${JSON.stringify(observation)}`);
+            return observation;
+          } finally { socket.close(); }
+        }
+        const first = await observeRenderer("first");
+        const repeated = await runTracked(artifacts.AppImage, args, { cwd: env.HOME, env, timeout: PHASE_BUDGET_MS.repeatedLaunch });
+        if (repeated.timedOut || repeated.code !== 0) throw new Error(`second AppImage launch failed: ${boundedTail(repeated.stderr, repeated.stdout)}`);
+        const second = await observeRenderer("second");
+        const extraction = readdirSync(env.TMPDIR).filter(name => name.startsWith("appimage_extracted_"));
+        if (extraction.length !== 1 || !existsSync(join(env.TMPDIR, extraction[0], "AppRun")))
+          throw new Error("AppImage extraction did not survive the repeated launch");
+        ok("private AppImage extraction retained through the repeated launch");
+        const lines = startupLog.trim().split("\n");
+        console.log(`dist:smoke launch dispositions: ${JSON.stringify(lines)}`);
+        if (lines.length !== 2 || lines.some(line => line !== expected)) throw new Error(`AppImage launch disposition: ${startupLog.trim() || "missing"}; output tail:\n${await drainTail()}`);
+        const expectedRow = join(deployment, "agents", "smoke", "instances", "smoke-probe");
+        for (const [label, observation] of [["first", first], ["second", second]]) {
+          if (observation.samples.at(-1)?.focusedRow !== expectedRow) throw new Error(`${label} launch did not keep the fixture's roster row focused`);
+          if (observation.samples.some(sample => sample.mainNavigation !== "Workspace overview"))
+            throw new Error(`${label} launch left Workspace overview`);
+          if (observation.samples.some(sample => sample.notices.length)) throw new Error(`${label} launch showed a notice`);
+        }
+      }
+      ok(`packaged ${instance ? "AppImage instance request" : "empty-dir picker"} launched; ${result}`);
+    } catch (e) {
+      launchError = e;
+    } finally {
+      reapGroup(child);
+      await awaitClose(child);
+      // Baseline restoration assertion — runs on success AND failure (the
+      // catch above converted every launch failure to a caught error so this
+      // finally always executes; no fail()/process.exit skips it).
+      if (viewerBaseline !== null) {
+        let restored = false;
+        for (let i = 0; i < 10 && !restored; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          const now = await oatsdeskViewerCount();
+          if (now !== null && now <= viewerBaseline) restored = true;
+        }
+        if (!restored) fail(`tmux viewer baseline not restored after ${launchError ? "forced failure" : "success"} (baseline ${viewerBaseline}, still elevated)`);
+        ok(`tmux viewer baseline restored (${viewerBaseline}) after ${launchError ? "forced failure" : "success"}`);
+      }
     }
+    rmSync(root, { recursive: true, force: true });
+    if (launchError) fail(launchError.message);
   }
-  if (launchError) fail(launchError.message);
+  await probeWindow(); // preserve the empty-dir picker path
+  if (process.platform === "linux") await probeWindow({ instance: true });
 }
 
 reapAll();

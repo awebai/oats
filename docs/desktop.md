@@ -1138,6 +1138,14 @@ unknown or unreported harness shows "?". Sources and licences are in
 
 For bugs, attach the terminal output of the app (`OATS Desktop` prints
 server and CLI-discovery logs to stdout) and your platform/arch.
+On Linux, a launch from a terminal writes to that terminal; redirect stdout
+and stderr to a file to capture it. A launch through a systemd user unit
+(including `systemd-run --user`) normally goes to that unit's journal:
+`journalctl --user -u <unit>`. Desktop does not maintain a separate log file.
+A launch carrying `--instance` prints one disposition line: `selecting it in
+<dir>` when main sends the selection request, or `not selected (<reason>)`
+when it cannot. This records the request, not whether the renderer has found
+the instance yet.
 
 ## Building from source
 
@@ -1154,8 +1162,22 @@ the bundled backend, of its liveness collector and of every module main
 imports, from `app.asar` and the `client/` directory beside it, no GUI
 launch). The Linux leg then runs the
 smoke once more with its launch phase, under a virtual display; no macOS leg
-launches the window. A local interactive run may also exercise the launch
-phase. The headless run starts the backend as the app does, checks that it
-answers and that it exits when its stdin closes, and runs the collector once;
+launches the window. The GUI phase retains the empty-directory picker launch
+and adds a fresh AppImage launch with `--dir <fixture> --instance smoke-probe`,
+asserting main's selection-request diagnostic. A repeated launch of the same
+arguments reaches the running app. Each is observed over CDP for 35 seconds:
+first launch must focus the stopped row, and the repeated launch must keep
+that focus; neither may show a notice or leave Workspace overview. Launch
+selection only focuses the roster; opening a terminal requires a separate
+action. The fixture's workspace/member source, soul definition and inert
+harness executable are authored by the test-only
+[`launch-fixture.mjs`](../packages/desktop/test/helpers/launch-fixture.mjs).
+The checkout's CLI creates the deployment and lock through `onboard`, creates
+the stopped `smoke-probe` instance through `spawn --no-launch`, and checks it
+through its status reads. Each fresh app uses private home,
+OATS, tmux and profile directories. The AppImage runtime extracts and runs
+without requiring FUSE, retaining its private extraction until both launches
+are reaped. The headless run starts the backend as the app does,
+checks that it answers and that it exits when its stdin closes, and runs the collector once;
 it does not exercise the GUI or, on Linux, the AppImage's launcher and
 runtime (the glibc floor runs the runtime only to unpack the AppImage).

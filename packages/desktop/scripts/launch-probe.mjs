@@ -26,6 +26,16 @@ export const PHASE_BUDGET_MS = {
   // Phase 4b (smoke-probes.mjs runMainImportsProbe): one more start of the
   // packaged executable as Node, loading what main imports.
   mainImports: 60_000,
+  launchFixture: 90_000, // bounded real-kernel fixture setup for the AppImage launch
+  instanceLaunchReady: 90_000, // the second, independent first launch (fresh profile)
+  instanceCdpEvaluate: 20_000,
+  instanceObservation: 40_000, // 35s of read-only renderer observations, with CDP margin
+  repeatedLaunch: 90_000,
+  repeatedObservation: 40_000,
+  // Each launch also counts viewers (5s), drains close (2s), then allows ten
+  // restoration checks (500ms sleep + 5s tmux timeout each).
+  launchCleanup: 65_000,
+  instanceLaunchCleanup: 65_000,
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };
