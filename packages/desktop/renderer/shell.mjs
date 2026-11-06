@@ -3369,6 +3369,20 @@ const launchFocus = createLaunchFocus({
   select: (row) => showInRoster(row, { read: false }),
   notify: (text) => notifications.notify(text),
 });
+// TEMPORARY Step 1b probe; read only over CDP, remove before hand-back.
+globalThis.__oatsLaunchState = () => {
+  const focused = document.activeElement?.closest?.('.ctx-inst');
+  return {
+    focusedInstance: focused ? rosterInstance(focused.dataset.treeInstance)?.instance ?? null : null,
+    focusedRow: focused?.dataset.treeInstance ?? null,
+    activeInstance: tabs.get(activeTab)?.instanceRef?.instance ?? null,
+    mainView: tabLayerVisible ? { tab: tabs.get(activeTab)?.kind ?? null }
+      : { stage: stage?.name ?? null, workspaceTab: stage?.mod?.currentWorkspaceTab?.() ?? null },
+    roster: contextInstances.map(row => ({ name: row.instance, running: row.running })),
+    pending: launchFocus.pending(),
+    input: operator.input(), pointer: operator.pointer(),
+  };
+};
 window.addEventListener('pagehide', () => launchFocus.dispose(), { once: true });
 
 // Persistent recursive instance tree: always available between the list of

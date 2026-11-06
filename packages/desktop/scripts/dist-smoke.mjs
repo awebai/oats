@@ -39,7 +39,7 @@
 // smoke a second time that way on the Linux leg, under xvfb-run. No macOS leg
 // runs it (the workflows say why).
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -260,33 +260,52 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
     for (const dir of [userData, env.HOME, env.OATS_HOME_DIR, env.TMUX_TMPDIR]) mkdirSync(dir, { recursive: true });
     const deployment = join(root, "deployment");
     if (instance) {
-      // A real, empty workspace observed through the checkout's kernel CLI, never a file that only
-      // passes main's admission check. No packages, harnesses, sessions or network are needed.
+      // A real member soul and kernel-created stopped instance; no harness is launched.
       const fixtureDeadline = Date.now() + PHASE_BUDGET_MS.launchFixture;
       const fixtureTimeout = () => Math.max(1, fixtureDeadline - Date.now());
       const repo = join(root, "workspace");
       mkdirSync(repo); mkdirSync(deployment); mkdirSync(join(deployment, "agents"));
-      writeFileSync(join(repo, "oats-workspace.yaml"), "schemaVersion: 2\nname: smoke\nmembers: []\n");
+      const ref = pathToFileURL(repo).href;
+      mkdirSync(join(repo, "souls", "smoke"), { recursive: true });
+      writeFileSync(join(repo, "oats-workspace.yaml"), `schemaVersion: 2\nname: smoke\nmembers: [${JSON.stringify(ref)}]\n`);
+      writeFileSync(join(repo, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${JSON.stringify(ref)}\n`);
+      writeFileSync(join(repo, "souls", "smoke", "soul.yaml"), "schemaVersion: 2\nname: smoke\ndescription: Packaged launch selection probe.\nwork: directory\nknowledge: none\nmessaging: none\ntasks: none\n");
+      writeFileSync(join(repo, "souls", "smoke", "AGENTS.md"), "Inert packaged launch selection fixture.\n");
+      // --no-launch still checks the harness executable. This stand-in is never invoked.
+      const bin = join(root, "bin"); mkdirSync(bin);
+      writeFileSync(join(bin, "claude"), "#!/bin/sh\nexit 0\n"); chmodSync(join(bin, "claude"), 0o755);
+      env.PATH = `${bin}:${env.PATH}`;
       const gitEnv = { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
-      for (const args of [["init", "-b", "main"], ["add", "oats-workspace.yaml"],
+      for (const args of [["init", "-b", "main"], ["add", "."],
         ["-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Smoke workspace"]]) {
         const r = await runTracked("git", args, { cwd: repo, env: gitEnv, timeout: fixtureTimeout() });
         if (r.timedOut || r.code !== 0) fail(`launch fixture git failed: ${r.stderr}`);
       }
       writeFileSync(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${JSON.stringify(pathToFileURL(repo).href)}\n`);
       env.OATS_DESKTOP_OATS_BIN = join(PKG, "..", "..", "bin", "oats.mjs");
+      const spawn = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, "spawn", "smoke", "--dir", deployment,
+        "--name", "smoke-probe", "--work", "directory", "--harness", "claude", "--launch-config", "none", "--model", "@native-default",
+        "--no-launch", "--task", "Packaged launch selection probe.", "--json"], { cwd: deployment, env, timeout: fixtureTimeout() });
+      let created; try { created = JSON.parse(spawn.stdout); } catch { /* reported below */ }
+      if (spawn.timedOut || spawn.code !== 0 || created?.ok !== true || created.result?.instance !== "smoke-probe"
+        || created.result?.launched !== false) fail(`launch fixture spawn failed: ${boundedTail(spawn.stderr, spawn.stdout)}`);
       for (const verb of [["status"], ["workspace", "status"]]) {
         const r = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, ...verb, "--dir", deployment, "--json"],
           { cwd: deployment, env, timeout: fixtureTimeout() });
         let answer; try { answer = JSON.parse(r.stdout); } catch { /* reported below */ }
         // status predates the envelope; workspace status uses the v1 result envelope.
         const workspace = answer?.ok === true ? answer.result : null;
+        const rows = Array.isArray(answer?.agents) ? answer.agents.flatMap(agent => agent.instances ?? []) : [];
+        const row = rows.find(row => row.instance === "smoke-probe");
         const valid = verb.length === 1
-          ? answer?.workspace?.reachable === true && Array.isArray(answer.agents) && answer.agents.length === 0
+          ? answer?.workspace?.reachable === true && rows.length === 1 && row?.agent === "smoke"
+            && row.home === join(deployment, "agents", "smoke", "instances", "smoke-probe")
+            && row.launched === false && row.running === false
           : workspace?.workspaceStatusApi === 1 && workspace.workspace?.name === "smoke"
             && workspace.workspace?.local === join(deployment, "oats-local.yaml") && workspace.problems?.length === 0;
         if (r.timedOut || r.code !== 0 || !valid) fail(`launch fixture CLI ${verb.join(" ")} failed: ${boundedTail(r.stderr, r.stdout)}`);
       }
+      ok("real kernel fixture lists smoke-probe, never launched and not running");
       // CI need not provide FUSE. This still runs the shipped AppImage runtime and AppRun launcher.
       env.APPIMAGE_EXTRACT_AND_RUN = "1";
     }
@@ -380,8 +399,55 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
         const expected = `oats-desktop: launch --instance smoke-probe: selecting it in ${deployment}`;
         // did-finish-load sends the request; allow its stdout pipe to drain after the shell appears.
         while (!startupLog && !childExit && Date.now() < launchDeadline) await new Promise((r) => setTimeout(r, 100));
-        if (startupLog.trim() !== expected) throw new Error(`AppImage launch disposition: ${startupLog.trim() || "missing"}; output tail:\n${await drainTail()}`);
-        console.log(startupLog.trim());
+        console.log(startupLog.trim() || "dist:smoke launch disposition missing");
+        // TEMPORARY Step 1b diagnostic fields come from the renderer's read-only probe. The CDP
+        // operations below only evaluate observations: no input, pointer or focus commands.
+        async function observeRenderer(label, traceOffset = 0) {
+          const socket = new WebSocket(targets.webSocketDebuggerUrl);
+          try {
+            const observation = await new Promise((resolve, reject) => {
+              const to = setTimeout(() => reject(new Error(`CDP ${label} observation timeout`)), label === "first" ? PHASE_BUDGET_MS.instanceObservation : PHASE_BUDGET_MS.repeatedObservation);
+              socket.onopen = () => socket.send(JSON.stringify({ id: 2, method: "Runtime.evaluate", params: {
+                expression: `new Promise(resolve => {
+                  const samples = [], started = Date.now(); let previous = null;
+                  function capture() {
+                    const state = { ...globalThis.__oatsLaunchState?.(),
+                      focusedRow: document.activeElement?.closest?.('.ctx-inst')?.dataset.treeInstance ?? null,
+                      mainNavigation: document.querySelector('#nav .nav-item.active')?.textContent?.trim() ?? null,
+                      notices: [...document.querySelectorAll('.app-toast-text')].map(el => el.textContent),
+                    };
+                    const encoded = JSON.stringify(state);
+                    if (encoded !== previous) { samples.push({ ms: Date.now() - started, ...state }); previous = encoded; }
+                    if (Date.now() - started >= 35000) resolve({ samples, trace: (globalThis.__oatsLaunchFocusTrace ?? []).slice(${traceOffset}) });
+                    else setTimeout(capture, 250);
+                  }
+                  capture();
+                })`, awaitPromise: true, returnByValue: true,
+              } }));
+              socket.onmessage = message => {
+                const reply = JSON.parse(message.data);
+                if (reply.id !== 2) return;
+                clearTimeout(to);
+                if (reply.error || reply.result?.exceptionDetails) reject(new Error(`CDP observation failed: ${JSON.stringify(reply)}`));
+                else resolve(reply.result?.result?.value);
+              };
+              socket.onerror = () => { clearTimeout(to); reject(new Error(`CDP ${label} observation socket error`)); };
+            });
+            console.log(`dist:smoke renderer launch ${label}: ${JSON.stringify(observation)}`);
+            return observation;
+          } finally { socket.close(); }
+        }
+        const first = await observeRenderer("first");
+        const repeated = await runTracked(artifacts.AppImage, args, { cwd: env.HOME, env, timeout: PHASE_BUDGET_MS.repeatedLaunch });
+        if (repeated.timedOut || repeated.code !== 0) throw new Error(`second AppImage launch failed: ${boundedTail(repeated.stderr, repeated.stdout)}`);
+        const second = await observeRenderer("second", first.trace.length);
+        const lines = startupLog.trim().split("\n");
+        console.log(`dist:smoke launch dispositions: ${JSON.stringify(lines)}`);
+        if (lines.length !== 2 || lines.some(line => line !== expected)) throw new Error(`AppImage launch disposition: ${startupLog.trim() || "missing"}; output tail:\n${await drainTail()}`);
+        const expectedRow = join(deployment, "agents", "smoke", "instances", "smoke-probe");
+        for (const [label, observation] of [["first", first], ["second", second]]) {
+          if (observation.samples.at(-1)?.focusedRow !== expectedRow) throw new Error(`${label} launch did not keep the fixture's roster row focused`);
+        }
       }
       ok(`packaged ${instance ? "AppImage instance request" : "empty-dir picker"} launched; ${result}`);
     } catch (e) {

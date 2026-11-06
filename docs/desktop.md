@@ -1164,8 +1164,10 @@ launch). The Linux leg then runs the
 smoke once more with its launch phase, under a virtual display; no macOS leg
 launches the window. The GUI phase retains the empty-directory picker launch
 and adds a fresh AppImage launch with `--dir <fixture> --instance smoke-probe`,
-asserting main's selection-request diagnostic. The fixture is a real empty
-workspace checked through the checkout's CLI; each launch uses private home,
+asserting main's selection-request diagnostic. A repeated launch of the same
+arguments reaches the running app. The fixture is a real workspace whose
+stopped `smoke-probe` instance is created and checked through the checkout's
+CLI; no harness is launched. Each fresh app uses private home,
 OATS, tmux and profile directories. The AppImage runtime extracts and runs
 without requiring FUSE. The headless run starts the backend as the app does, checks that it
 answers and that it exits when its stdin closes, and runs the collector once;
