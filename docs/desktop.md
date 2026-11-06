@@ -1166,12 +1166,15 @@ launches the window. The GUI phase retains the empty-directory picker launch
 and adds a fresh AppImage launch with `--dir <fixture> --instance smoke-probe`,
 asserting main's selection-request diagnostic. A repeated launch of the same
 arguments reaches the running app. Each is observed over CDP for 35 seconds:
-the stopped row must take roster focus and no notice may appear. The main
-view stays on Workspace overview; no terminal is opened. The fixture is a real workspace whose
+first launch must focus the stopped row, and the repeated launch must keep
+that focus; neither may show a notice or leave Workspace overview. Launch
+selection only focuses the roster; opening a terminal requires a separate
+action. The fixture is a real workspace whose
 stopped `smoke-probe` instance is created and checked through the checkout's
 CLI; no harness is launched. Each fresh app uses private home,
 OATS, tmux and profile directories. The AppImage runtime extracts and runs
-without requiring FUSE. The headless run starts the backend as the app does,
+without requiring FUSE, retaining its private extraction until both launches
+are reaped. The headless run starts the backend as the app does,
 checks that it answers and that it exits when its stdin closes, and runs the collector once;
 it does not exercise the GUI or, on Linux, the AppImage's launcher and
 runtime (the glibc floor runs the runtime only to unpack the AppImage).

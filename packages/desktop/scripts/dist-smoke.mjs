@@ -32,7 +32,7 @@
 //      answered — i.e. no source-checkout dependency. Linux also launches the
 //      AppImage with a real CLI-created stopped row, first and then into the
 //      running app: main sends both requests, the row takes roster focus and
-//      no notice appears over each 35s observation. Neither launch opens a terminal.
+//      no notice appears over each 35s observation.
 //
 // CI runs phases 1–4 on every installer leg: both installer workflows
 // (build-installers.yml and release.yml's desktop-build) set
@@ -259,9 +259,9 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
       if (/^(OATS_|AWEB_)/.test(key) || ["TMUX", "TMUX_PANE", "WAYLAND_DISPLAY", "ELECTRON_RUN_AS_NODE", "APPIMAGE", "APPDIR"].includes(key)) delete env[key];
     }
     Object.assign(env, { HOME: join(root, "home"), OATS_HOME_DIR: join(root, "oats"),
-      TMUX_TMPDIR: join(root, "tmux"), XDG_CONFIG_HOME: join(root, "config"), XDG_CACHE_HOME: join(root, "cache"),
+      TMUX_TMPDIR: join(root, "tmux"), TMPDIR: join(root, "tmp"), XDG_CONFIG_HOME: join(root, "config"), XDG_CACHE_HOME: join(root, "cache"),
       PATH: `${dirname(process.execPath)}:${process.env.PATH}`, OATS_DESKTOP_PORT: String(10000 + Math.floor(Math.random() * 1500)) });
-    for (const dir of [userData, env.HOME, env.OATS_HOME_DIR, env.TMUX_TMPDIR]) mkdirSync(dir, { recursive: true });
+    for (const dir of [userData, env.HOME, env.OATS_HOME_DIR, env.TMUX_TMPDIR, env.TMPDIR]) mkdirSync(dir, { recursive: true });
     const deployment = join(root, "deployment");
     if (instance) {
       // A real member soul and kernel-created stopped instance; no harness is launched.
@@ -312,6 +312,13 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
       ok("real kernel fixture lists smoke-probe, never launched and not running");
       // CI need not provide FUSE. This still runs the shipped AppImage runtime and AppRun launcher.
       env.APPIMAGE_EXTRACT_AND_RUN = "1";
+      // The runtime caches both launches under the AppImage digest in TMPDIR. A secondary
+      // runtime must not remove that tree when its handoff process exits: the primary still
+      // loads from it. Our private TMPDIR is removed after both process groups have been reaped.
+      env.NO_CLEANUP = "1";
+      const runtime = await runTracked(artifacts.AppImage, ["--appimage-version"], { cwd: env.HOME, env, timeout: fixtureTimeout() });
+      if (runtime.timedOut || runtime.code !== 0) fail(`AppImage runtime version failed: ${runtime.stderr}`);
+      ok(`AppImage runtime: ${String(runtime.stdout + runtime.stderr).trim()}`);
     }
     const args = [`--remote-debugging-port=0`, `--user-data-dir=${userData}`,
       "--no-sandbox", "--disable-gpu", "--ozone-platform=x11", "--dir", instance ? deployment : userData];
@@ -445,12 +452,18 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
         const repeated = await runTracked(artifacts.AppImage, args, { cwd: env.HOME, env, timeout: PHASE_BUDGET_MS.repeatedLaunch });
         if (repeated.timedOut || repeated.code !== 0) throw new Error(`second AppImage launch failed: ${boundedTail(repeated.stderr, repeated.stdout)}`);
         const second = await observeRenderer("second");
+        const extraction = readdirSync(env.TMPDIR).filter(name => name.startsWith("appimage_extracted_"));
+        if (extraction.length !== 1 || !existsSync(join(env.TMPDIR, extraction[0], "AppRun")))
+          throw new Error("AppImage extraction did not survive the repeated launch");
+        ok("private AppImage extraction retained through the repeated launch");
         const lines = startupLog.trim().split("\n");
         console.log(`dist:smoke launch dispositions: ${JSON.stringify(lines)}`);
         if (lines.length !== 2 || lines.some(line => line !== expected)) throw new Error(`AppImage launch disposition: ${startupLog.trim() || "missing"}; output tail:\n${await drainTail()}`);
         const expectedRow = join(deployment, "agents", "smoke", "instances", "smoke-probe");
         for (const [label, observation] of [["first", first], ["second", second]]) {
           if (observation.samples.at(-1)?.focusedRow !== expectedRow) throw new Error(`${label} launch did not keep the fixture's roster row focused`);
+          if (observation.samples.some(sample => sample.mainNavigation !== "Workspace overview"))
+            throw new Error(`${label} launch left Workspace overview`);
           if (observation.samples.some(sample => sample.notices.length)) throw new Error(`${label} launch showed a notice`);
         }
       }
