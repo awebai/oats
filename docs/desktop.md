@@ -1169,9 +1169,12 @@ arguments reaches the running app. Each is observed over CDP for 35 seconds:
 first launch must focus the stopped row, and the repeated launch must keep
 that focus; neither may show a notice or leave Workspace overview. Launch
 selection only focuses the roster; opening a terminal requires a separate
-action. The fixture is a real workspace whose
-stopped `smoke-probe` instance is created and checked through the checkout's
-CLI; no harness is launched. Each fresh app uses private home,
+action. The fixture's workspace/member source, soul definition and inert
+harness executable are authored by the test-only
+[`launch-fixture.mjs`](../packages/desktop/test/helpers/launch-fixture.mjs).
+The checkout's CLI creates the deployment and lock through `onboard`, creates
+the stopped `smoke-probe` instance through `spawn --no-launch`, and checks it
+through its status reads. Each fresh app uses private home,
 OATS, tmux and profile directories. The AppImage runtime extracts and runs
 without requiring FUSE, retaining its private extraction until both launches
 are reaped. The headless run starts the backend as the app does,

@@ -42,10 +42,11 @@
 // smoke a second time that way on the Linux leg, under xvfb-run. No macOS leg
 // runs it (the workflows say why).
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { createLaunchFixtureSource } from "../test/helpers/launch-fixture.mjs";
 import { createReaper } from "./proc-reaper.mjs";
 import { runAbiProbe, runBackendProbe, runMainImportsProbe, sharedHomeInventory } from "./smoke-probes.mjs";
 import { verifyAppSignature } from "./codesign-verify.mjs";
@@ -267,26 +268,14 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
       // A real member soul and kernel-created stopped instance; no harness is launched.
       const fixtureDeadline = Date.now() + PHASE_BUDGET_MS.launchFixture;
       const fixtureTimeout = () => Math.max(1, fixtureDeadline - Date.now());
-      const repo = join(root, "workspace");
-      mkdirSync(repo); mkdirSync(deployment); mkdirSync(join(deployment, "agents"));
-      const ref = pathToFileURL(repo).href;
-      mkdirSync(join(repo, "souls", "smoke"), { recursive: true });
-      writeFileSync(join(repo, "oats-workspace.yaml"), `schemaVersion: 2\nname: smoke\nmembers: [${JSON.stringify(ref)}]\n`);
-      writeFileSync(join(repo, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${JSON.stringify(ref)}\n`);
-      writeFileSync(join(repo, "souls", "smoke", "soul.yaml"), "schemaVersion: 2\nname: smoke\ndescription: Packaged launch selection probe.\nwork: directory\nknowledge: none\nmessaging: none\ntasks: none\n");
-      writeFileSync(join(repo, "souls", "smoke", "AGENTS.md"), "Inert packaged launch selection fixture.\n");
-      // --no-launch still checks the harness executable. This stand-in is never invoked.
-      const bin = join(root, "bin"); mkdirSync(bin);
-      writeFileSync(join(bin, "claude"), "#!/bin/sh\nexit 0\n"); chmodSync(join(bin, "claude"), 0o755);
+      const { ref, bin } = await createLaunchFixtureSource(root, { env, runTracked, timeout: fixtureTimeout });
       env.PATH = `${bin}:${env.PATH}`;
-      const gitEnv = { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
-      for (const args of [["init", "-b", "main"], ["add", "."],
-        ["-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Smoke workspace"]]) {
-        const r = await runTracked("git", args, { cwd: repo, env: gitEnv, timeout: fixtureTimeout() });
-        if (r.timedOut || r.code !== 0) fail(`launch fixture git failed: ${r.stderr}`);
-      }
-      writeFileSync(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${JSON.stringify(pathToFileURL(repo).href)}\n`);
       env.OATS_DESKTOP_OATS_BIN = join(PKG, "..", "..", "bin", "oats.mjs");
+      const onboard = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, "onboard", deployment,
+        "--workspace", ref, "--json"], { cwd: env.HOME, env, timeout: fixtureTimeout() });
+      let admitted; try { admitted = JSON.parse(onboard.stdout); } catch { /* reported below */ }
+      if (onboard.timedOut || onboard.code !== 0 || admitted?.ok !== true || admitted.result?.onboardApi !== 2
+        || admitted.result?.dir !== deployment) fail(`launch fixture onboard failed: ${boundedTail(onboard.stderr, onboard.stdout)}`);
       const spawn = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, "spawn", "smoke", "--dir", deployment,
         "--name", "smoke-probe", "--work", "directory", "--harness", "claude", "--launch-config", "none", "--model", "@native-default",
         "--no-launch", "--task", "Packaged launch selection probe.", "--json"], { cwd: deployment, env, timeout: fixtureTimeout() });
