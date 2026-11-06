@@ -19,7 +19,9 @@ With the right tools, OATS gives you fully functional agent teams that coordinat
 
 Everything is defined in Git, shared and access controlled by your forge. OATS needs no account, server or hosted service of its own.
 
-The agents are ones you already use: Claude Code, Codex or pi. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
+Each agent is a session of an **agent harness** you already use, such as Claude Code, Codex or pi, started in a folder of its own, with the full power of that harness. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
+
+With our default messaging, [aweb](https://aweb.ai), every agent gets a cryptographically verifiable identity and signed agent to agent messaging, across vendors and harnesses.
 
 OATS also provides **OATS Desktop**, a free agent development environment (ADE) that makes working with your agents and coordinating them easier. It is optional.
 
