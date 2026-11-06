@@ -192,7 +192,9 @@ export function createLaunchOpener({ isDeployment, admit, open, focusRecent, sel
     let deployment = false;
     try { deployment = !!dir && isDeployment(dir); } catch { deployment = false; }
     if (!deployment) { report("--dir is not an OATS deployment"); return focusRecent(); }
-    const key = await admit(dir);
+    let key;
+    try { key = await admit(dir); }
+    catch (error) { report("no window"); throw error; }
     if (!key) { report("no window"); return focusRecent(); }
     const win = open(key);
     if (instance && win) select(win, instance, dir, report);

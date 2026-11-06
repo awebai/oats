@@ -1052,7 +1052,14 @@ function selectLaunchInstance(win, instance, dir, report = () => {}) {
     win.webContents.send("window:focus-instance", message);
     report();
   };
-  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+  if (win.webContents.isLoading()) {
+    const closed = () => report("no window");
+    win.once("closed", closed);
+    win.webContents.once("did-finish-load", () => {
+      win.removeListener("closed", closed);
+      send();
+    });
+  }
   else send();
 }
 

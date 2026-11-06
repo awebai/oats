@@ -29,6 +29,10 @@ export const PHASE_BUDGET_MS = {
   launchFixture: 90_000, // bounded real-kernel fixture setup for the AppImage launch
   instanceLaunchReady: 90_000, // the second, independent first launch (fresh profile)
   instanceCdpEvaluate: 20_000,
+  // Each launch also counts viewers (5s), drains close (2s), then allows ten
+  // restoration checks (500ms sleep + 5s tmux timeout each).
+  launchCleanup: 65_000,
+  instanceLaunchCleanup: 65_000,
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };

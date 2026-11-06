@@ -280,6 +280,7 @@ function mainOpener({ loading = false } = {}) {
   const calls = [], once = new Map();
   const record = (name, value) => (...args) => { calls.push([name, ...args]); return typeof value === "function" ? value(...args) : value; };
   const win = (key) => ({ name: `window of ${key}`, isDestroyed: () => false,
+    once: (event, fn) => once.set(event, fn), removeListener: (event) => once.delete(event),
     webContents: { isLoading: () => loading, send: record("send"), once: (event, fn) => { calls.push(["once", event]); once.set(event, fn); } } });
   const ctx = { createLaunchOpener, realpathSync: record("realpath", (p) => p), wsValidate: record("validate", (p) => (p === "/d/a" ? { id: p, path: p } : null)),
     performAdd: record("add", async () => ({ ok: true, workspace: { id: "/d/a" } })), resolveView: record("resolve", "ws:a"),
@@ -496,4 +497,20 @@ test("a repeated launch reports a non-deployment or absent window without select
     assert.deepEqual(reasons, [reason]);
     assert.equal(o.log.some(([k]) => k === "select"), false);
   }
+});
+
+test("main: a loading window closed before delivery reports why it sent nothing", async () => {
+  const { openLaunch, calls, once } = mainOpener({ loading: true });
+  const lines = [], report = createLaunchReporter(["--dir", "/d/a", "--instance", "dev-2"], "/d/a", (s) => lines.push(s));
+  await openLaunch("/d/a", { ok: true, name: "dev-2" }, report);
+  once.get("closed")();
+  assert.deepEqual(lines, ["oats-desktop: launch --instance: not selected (no window for /d/a)"]);
+  assert.equal(calls.some(([k]) => k === "send"), false);
+});
+
+test("a rejected admission reports no window and preserves its rejection", async () => {
+  const reasons = [], error = new Error("backend failed");
+  const open = createLaunchOpener({ isDeployment: () => true, admit: async () => { throw error; } });
+  await assert.rejects(open("/d/a", { ok: true, name: "dev-2" }, (r) => reasons.push(r)), (e) => e === error);
+  assert.deepEqual(reasons, ["no window"]);
 });

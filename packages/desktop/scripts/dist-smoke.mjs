@@ -279,7 +279,11 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
         const r = await runTracked(process.execPath, [env.OATS_DESKTOP_OATS_BIN, ...verb, "--dir", deployment, "--json"],
           { cwd: deployment, env, timeout: fixtureTimeout() });
         let answer; try { answer = JSON.parse(r.stdout); } catch { /* reported below */ }
-        if (r.timedOut || r.code !== 0 || !answer?.ok) fail(`launch fixture CLI ${verb.join(" ")} failed: ${boundedTail(r.stderr, r.stdout)}`);
+        const valid = verb.length === 1
+          ? answer?.workspace?.reachable === true && Array.isArray(answer.agents) && answer.agents.length === 0
+          : answer?.workspaceStatusApi === 1 && answer.workspace?.name === "smoke"
+            && answer.workspace?.local === join(deployment, "oats-local.yaml") && answer.problems?.length === 0;
+        if (r.timedOut || r.code !== 0 || !valid) fail(`launch fixture CLI ${verb.join(" ")} failed: ${boundedTail(r.stderr, r.stdout)}`);
       }
       // CI need not provide FUSE. This still runs the shipped AppImage runtime and AppRun launcher.
       env.APPIMAGE_EXTRACT_AND_RUN = "1";
