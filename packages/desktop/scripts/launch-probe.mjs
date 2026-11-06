@@ -27,11 +27,12 @@ export const PHASE_BUDGET_MS = {
   // packaged executable as Node, loading what main imports.
   mainImports: 60_000,
   launchFixture: 90_000, // bounded real-kernel fixture setup for the AppImage launch
-  instanceLaunchReady: 90_000, // the second, independent first launch (fresh profile)
+  instanceLaunchReady: 90_000, // each fixture starts an independent app with a fresh profile
   instanceCdpEvaluate: 20_000,
-  instanceObservation: 40_000, // 35s of read-only renderer observations, with CDP margin
+  instanceObservation: 90_000, // terminal-ready wait + native unfocused key + 35s of renderer observations
   repeatedLaunch: 90_000,
-  repeatedObservation: 40_000,
+  repeatedObservation: 90_000,
+  fixtureStop: 25_000, // stop plan + apply before the owned private server is reaped
   // Each launch also counts viewers (5s), drains close (2s), then allows ten
   // restoration checks (500ms sleep + 5s tmux timeout each).
   launchCleanup: 65_000,
@@ -39,6 +40,9 @@ export const PHASE_BUDGET_MS = {
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };
+// The stopped fixture retains its own profile and repeats the same bounded launch phases.
+PHASE_BUDGET_MS.stoppedLaunches = ["launchFixture", "instanceLaunchReady", "instanceCdpEvaluate", "instanceObservation",
+  "repeatedLaunch", "repeatedObservation", "instanceLaunchCleanup"].reduce((sum, key) => sum + PHASE_BUDGET_MS[key], 0);
 export const PHASE_BUDGET_SUM = Object.values(PHASE_BUDGET_MS).reduce((a, b) => a + b, 0);
 export const WATCHDOG_MS = PHASE_BUDGET_SUM + 30_000; // margin over the summed budgets
 
