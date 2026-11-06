@@ -25,7 +25,7 @@ OATS also provides **OATS Desktop**, a free agent development environment (ADE) 
 
 ## A new way to think about agents
 
-Usually a repository has one `AGENTS.md`, the instructions every session reads, and a few **skills**, written procedures an agent loads when a task calls for one. Every session starts as the same generalist, and what it learns is lost when it ends.
+Usually a repository has one `AGENTS.md`, the instructions every session reads, and a few **skills**, written procedures an agent loads when a task calls for one. Every session starts as the same generalist, and what it learns is lost when it ends, or scattered across the systems of different vendors.
 
 OATS has you think of a project as worked on by several agents of different **kinds**, such as a code reviewer, a backend expert or a release manager. It is fully flexible: one generalist, or a whole team that coordinates its work. Each agent starts in a **home** of its own, a folder with its own `AGENTS.md`, the skills of its kind and only the instructions it needs. What it learns is kept for the next agent of its kind.
 
