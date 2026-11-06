@@ -145,7 +145,7 @@ You approve each piece of work once, at the expert's plan, and hear again only i
 
 ### The workspace
 
-The workspace's `oats-workspace.yaml` lists the repositories that take part, the packages at their pinned versions, its teams and which souls may join each, and the capabilities every soul gets by default. Each machine keeps its own settings, its lock and its agents' homes in a deployment directory of its own.
+The workspace's `oats-workspace.yaml` lists the repositories that take part, the packages at their pinned versions, its teams and which souls may join each, and the capabilities every soul gets by default. Each repository it lists links back with an `oats-membership.yaml` that names the repository holding `oats-workspace.yaml`, and that repository does too. A repository takes part only when both sides name each other, so neither can add the other on its own; a listed repository that doesn't link back contributes nothing. Each machine keeps its own settings, its lock and its agents' homes in a deployment directory of its own.
 
 ```mermaid
 flowchart LR
