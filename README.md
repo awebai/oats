@@ -197,9 +197,9 @@ A soul can name any capability, including the ones for knowledge, messaging and 
 - **Start one** with a task in plain words from OATS Desktop, or let another agent, a schedule or a trigger start it.
 - **OATS builds it** as above, gives it a working directory, and starts the agent normally. Nothing is wrapped or replaced.
 - **Talk to it** in its terminal, as with any session.
-- **Agents work together** by messaging each other and starting other agents, as their souls allow.
+- **Agents work together** by starting other agents, as their souls allow. With a messaging capability, they also message each other, as their teams and their controls allow.
 - **An agent can ask you** for a decision, and waits for the answer.
-- **It learns.** Lessons worth keeping reach its soul's area of the knowledge base by pull request.
+- **It learns.** Lessons worth keeping go back into a real knowledge base by pull request. It can be organised by soul, each owning its own area, or as a more general knowledge base, as your knowledge capability supports.
 - **It retires** when its work is done. The soul, and what it learned, remain.
 
 OATS was founded on one claim: **an agent's expertise should be a versioned project artifact, not a side effect of a session.**
