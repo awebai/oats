@@ -174,11 +174,16 @@ Launch flags for scripted use: `--dir <workspace>`, `--instance <name>` and
 `--instance <name>` beside `--dir <deployment>` opens the deployment's window
 with that instance selected in the roster, as **Show in roster** selects it:
 its row is revealed (a collapsed parent or the Background section opens) and
-takes the keyboard focus. Press Enter to open its terminal. On a first launch
-and on a launch while Desktop runs, it behaves the same way.
+takes the keyboard focus. If the row is running, its terminal tab opens in
+the main area through the same path as a click. Keyboard focus stays on the
+roster row: no key reaches the terminal until you click into it or use
+**Terminal: focus the active terminal input**. First and repeated launches
+behave the same way.
 
-- **It only selects.** Nothing starts, attaches or is written, and Desktop
-  reads nothing for it beyond the roster reads it makes anyway.
+- **Only a running local row opens.** Stopped, never-launched, unknown, held,
+  unavailable or stale rows stay selected only, with no Start dialog. Nothing
+  starts, stops, is written or receives input. The only kernel calls are the
+  roster reads and the viewer attach a click makes.
 - **The name must be an instance name**, the one `oats spawn --name` takes. Any
   other value is ignored, and the window says the instance named at launch
   isn't a valid instance name, without repeating the value.
@@ -186,7 +191,9 @@ and on a launch while Desktop runs, it behaves the same way.
   other workspaces never match. A name that isn't there yet (a spawn still
   finishing) is waited for, over the roster's next reads, for about 30
   seconds; then the window says "No instance <name> in this workspace". A name
-  two of its instances share selects nothing, and the window says so.
+  two of its instances share selects nothing, and the window says so. A row
+  first observed running opens; one first observed stopped stays selected
+  only even if it later starts.
 - **Your choice wins.** Selecting anything, typing or clicking while it waits
   drops it. A later launch's `--instance` replaces it.
 - Without `--dir`, with a `--dir` that isn't a deployment, or from a folder
@@ -1163,18 +1170,22 @@ imports, from `app.asar` and the `client/` directory beside it, no GUI
 launch). The Linux leg then runs the
 smoke once more with its launch phase, under a virtual display; no macOS leg
 launches the window. The GUI phase retains the empty-directory picker launch
-and adds a fresh AppImage launch with `--dir <fixture> --instance smoke-probe`,
-asserting main's selection-request diagnostic. A repeated launch of the same
-arguments reaches the running app. Each is observed over CDP for 35 seconds:
-first launch must focus the stopped row, and the repeated launch must keep
-that focus; neither may show a notice or leave Workspace overview. Launch
-selection only focuses the roster; opening a terminal requires a separate
-action. The fixture's workspace/member source, soul definition and inert
-harness executable are authored by the test-only
+and adds fresh AppImage probes with `--dir <fixture> --instance smoke-probe`,
+asserting main's selection-request diagnostic. Repeated launches of the same
+arguments reach the running app. Both launches of the running fixture must
+open its terminal tab in the main area while keeping keyboard focus on its
+roster row. Before the repeated running launch, the smoke switches to Workspace
+overview, then requires that launch to reactivate the retained tab with exactly
+one viewer and no terminal focus event. CDP sends a key to the window;
+independent tmux pane/output reads prove no input reached the inert harness. The stopped fixture stays selected
+only, with no tab or Start dialog, on Workspace overview. The smoke also
+asserts that viewer cleanup restores its private tmux baseline. The fixture's
+workspace/member source, soul definition and inert harness executable are authored by the test-only
 [`launch-fixture.mjs`](../packages/desktop/test/helpers/launch-fixture.mjs).
 The checkout's CLI creates the deployment and lock through `onboard`, creates
-the stopped `smoke-probe` instance through `spawn --no-launch`, and checks it
-through its status reads. Each fresh app uses private home,
+the stopped fixture through `spawn --no-launch` and the running fixture
+through an ordinary spawn using the inert harness, and checks their status.
+Each fresh app uses private home,
 OATS, tmux and profile directories. The AppImage runtime extracts and runs
 without requiring FUSE, retaining its private extraction until both launches
 are reaped. The headless run starts the backend as the app does,

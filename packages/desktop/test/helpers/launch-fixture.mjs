@@ -14,9 +14,22 @@ export async function createLaunchFixtureSource(root, { env, runTracked, timeout
   writeFileSync(join(repo, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${JSON.stringify(ref)}\n`);
   writeFileSync(join(repo, "souls", "smoke", "soul.yaml"), "schemaVersion: 2\nname: smoke\ndescription: Packaged launch selection probe.\nwork: directory\nknowledge: none\nmessaging: none\ntasks: none\n");
   writeFileSync(join(repo, "souls", "smoke", "AGENTS.md"), "Inert packaged launch selection fixture.\n");
-  // --no-launch still checks the harness executable. This stand-in is never invoked.
+  // A raw-input stand-in needs no login or provider. Every received byte changes both its
+  // receipt and pane output, so the smoke can independently prove a launch typed nothing.
   mkdirSync(bin);
-  writeFileSync(join(bin, "claude"), "#!/bin/sh\nexit 0\n");
+  const inputReceipt = join(root, "harness-input");
+  writeFileSync(join(bin, "claude"), `#!${process.execPath}
+const { writeFileSync, appendFileSync } = require('node:fs');
+const receipt = ${JSON.stringify(inputReceipt)};
+writeFileSync(receipt, '');
+process.stdin.setRawMode(true);
+process.stdin.resume();
+process.stdin.on('data', bytes => {
+  appendFileSync(receipt, bytes);
+  process.stdout.write('INPUT:' + bytes.toString('hex') + '\\n');
+});
+process.stdout.write('OATS_SMOKE_READY\\n');
+`);
   chmodSync(join(bin, "claude"), 0o755);
   const gitEnv = { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   for (const args of [["init", "-b", "main"], ["add", "."],
@@ -24,5 +37,5 @@ export async function createLaunchFixtureSource(root, { env, runTracked, timeout
     const result = await runTracked("git", args, { cwd: repo, env: gitEnv, timeout: timeout() });
     if (result.timedOut || result.code !== 0) throw new Error(`launch fixture git failed: ${String(result.stderr).slice(-4096)}`);
   }
-  return { ref, bin };
+  return { ref, bin, inputReceipt };
 }
