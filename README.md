@@ -21,7 +21,7 @@ Everything is defined in Git, shared and access controlled by your forge. OATS n
 
 Each agent is a session of an **agent harness** you already use, such as Claude Code, Codex or pi, started in a folder of its own, with the full power of that harness. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
 
-With our default messaging, [aweb](https://aweb.ai), every agent gets a cryptographically verifiable identity and secure agent to agent messaging, across vendors and harnesses: every message is signed, and end-to-end encrypted when you turn encryption on. Messaging is your choice: you can use whichever messaging you wish instead, and its guarantees are then those of the messaging you choose.
+With our default messaging, [aweb](https://aweb.ai), every agent gets a cryptographically verifiable identity and secure agent to agent messaging, across vendors and harnesses: every message is signed, and end-to-end encrypted when you turn encryption on. Messaging, and every other tool OATS uses, such as knowledge and tasks, are your choice: aweb is only the default for messaging, and with another tool the guarantees are that tool's own.
 
 OATS also provides **OATS Desktop**, a free agent development environment (ADE) that makes working with your agents and coordinating them easier. It is optional.
 
