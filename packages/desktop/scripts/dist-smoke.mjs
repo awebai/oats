@@ -311,7 +311,6 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
       }
       ok("real kernel fixture lists smoke-probe, never launched and not running");
       // CI need not provide FUSE. This still runs the shipped AppImage runtime and AppRun launcher.
-      env.APPIMAGE_EXTRACT_AND_RUN = "1";
       // The runtime caches both launches under the AppImage digest in TMPDIR. A secondary
       // runtime must not remove that tree when its handoff process exits: the primary still
       // loads from it. Our private TMPDIR is removed after both process groups have been reaped.
@@ -319,6 +318,8 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
       const runtime = await runTracked(artifacts.AppImage, ["--appimage-version"], { cwd: env.HOME, env, timeout: fixtureTimeout() });
       if (runtime.timedOut || runtime.code !== 0) fail(`AppImage runtime version failed: ${runtime.stderr}`);
       ok(`AppImage runtime: ${String(runtime.stdout + runtime.stderr).trim()}`);
+      // This runtime handles the extraction environment before --appimage-* arguments.
+      env.APPIMAGE_EXTRACT_AND_RUN = "1";
     }
     const args = [`--remote-debugging-port=0`, `--user-data-dir=${userData}`,
       "--no-sandbox", "--disable-gpu", "--ozone-platform=x11", "--dir", instance ? deployment : userData];
