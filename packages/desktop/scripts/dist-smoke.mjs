@@ -492,7 +492,7 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
               };
               if (running) {
                 const ready = await command("Runtime.evaluate", { expression: `new Promise(resolve => {
-                  const by = Date.now() + 15000;
+                  const by = Date.now() + 35000;
                   function check() {
                     const active = document.querySelector('.tab-pane.active:not([hidden]) .term-wrap');
                     if (active && active.querySelector('textarea')) resolve({ ready: true, terminalFocused: !!document.activeElement?.closest?.('.term-wrap') });
@@ -574,6 +574,10 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
       } catch (e) {
         launchError = e;
       } finally {
+        // Let main's existing signal/quit path dispose its viewers before the mandatory group reaper.
+        // SIGKILL alone leaves crashed-owner viewers for the next app's orphan sweep.
+        try { process.kill(-child.pid, "SIGTERM"); } catch { /* already exited */ }
+        await awaitClose(child, { drainMs: 5000 });
         reapGroup(child);
         await awaitClose(child);
         // Baseline restoration assertion — runs on success AND failure (the

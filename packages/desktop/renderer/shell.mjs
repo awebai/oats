@@ -2229,9 +2229,9 @@ async function openTerminalTab(ref, { quiet = false, inSplit = false, expected =
 
 async function openTerminalTabFlow(ref, notify, options = {}) {
   if (options.valid && !options.valid()) return;
-  // The post-spawn open (#1246): the roster read that showed the row ready is the current one (no read started
-  // since, same workspace), so the open resolves against its rows instead of reading /api/panel again. Taken
-  // before this open's own repaint below, which starts a read. Every other open reads.
+  // Opens following an observed row (post-spawn or launch) reuse that roster while it is current (no read
+  // started since, same workspace), instead of reading /api/panel again. Taken before this open's own repaint
+  // below, which starts a read. Other opens read for themselves.
   const shown = options.followed && shownRoster?.gen === contextRosterGen && shownRoster.ws === currentWorkspace() ? shownRoster : null;
   const planned = options.inSplit ? instanceSplitPlan(splitOpenState()) : null;
   const layoutIdentity = planned ? instanceSplitIdentity(splitOpenState()) : null;

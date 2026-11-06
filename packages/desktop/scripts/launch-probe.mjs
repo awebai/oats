@@ -29,14 +29,14 @@ export const PHASE_BUDGET_MS = {
   launchFixture: 90_000, // bounded real-kernel fixture setup for the AppImage launch
   instanceLaunchReady: 90_000, // each fixture starts an independent app with a fresh profile
   instanceCdpEvaluate: 20_000,
-  instanceObservation: 90_000, // terminal-ready wait + native unfocused key + 35s of renderer observations
+  instanceObservation: 120_000, // pending-window/attach wait + native unfocused key + 35s of renderer observations
   repeatedLaunch: 90_000,
-  repeatedObservation: 90_000,
+  repeatedObservation: 120_000,
   fixtureStop: 25_000, // stop plan + apply before the owned private server is reaped
-  // Each launch also counts viewers (5s), drains close (2s), then allows ten
+  // Each launch counts viewers (5s), allows quit (5s), drains close (2s), then allows ten
   // restoration checks (500ms sleep + 5s tmux timeout each).
-  launchCleanup: 65_000,
-  instanceLaunchCleanup: 65_000,
+  launchCleanup: 70_000,
+  instanceLaunchCleanup: 70_000,
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };

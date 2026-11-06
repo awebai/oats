@@ -22,7 +22,7 @@ test("WATCHDOG_MS exceeds the sum of phase budgets (finding 1 \u2014 no prematur
   "the stopped fixture has a separate full first and repeated launch budget");
   assert.ok(PHASE_BUDGET_MS.fixtureStop >= 10000 + 10000 + 2000, "fixture stop plan/apply and server close fit the watchdog");
   for (const key of ["launchCleanup", "instanceLaunchCleanup"]) {
-    assert.ok(PHASE_BUDGET_MS[key] >= 5000 + 2000 + 10 * (500 + 5000), `${key} includes bounded viewer checks and close drain`);
+    assert.ok(PHASE_BUDGET_MS[key] >= 5000 + 5000 + 2000 + 10 * (500 + 5000), `${key} includes bounded quit, viewer checks and close drain`);
   }
 });
 
