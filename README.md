@@ -19,13 +19,15 @@ With the right tools, OATS gives you fully functional agent teams that coordinat
 
 Everything is defined in Git, shared and access controlled by your forge. OATS needs no account, server or hosted service of its own.
 
-The agents are ones you already use: Claude Code, Codex or pi. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
+Each agent is a session of an **agent harness** you already use, such as Claude Code, Codex or pi, started in a folder of its own, with the full power of that harness. By choice, OATS runs them as **terminal agents**, agents that run in a terminal, on your machines: a laptop or a server.
+
+With our default messaging, [aweb](https://aweb.ai), every agent gets a cryptographically verifiable identity and secure agent to agent messaging, across vendors and harnesses: every message is signed, and end-to-end encrypted when you turn encryption on.
 
 OATS also provides **OATS Desktop**, a free agent development environment (ADE) that makes working with your agents and coordinating them easier. It is optional.
 
 ## A new way to think about agents
 
-Usually a repository has one `AGENTS.md`, the instructions every session reads, and a few **skills**, written procedures an agent loads when a task calls for one. Every session starts as the same generalist, and what it learns is lost when it ends.
+Usually a repository has one `AGENTS.md`, the instructions every session reads, and a few **skills**, written procedures an agent loads when a task calls for one. Every session starts as the same generalist, and what it learns is lost when it ends, or scattered across the systems of different vendors.
 
 OATS has you think of a project as worked on by several agents of different **kinds**, such as a code reviewer, a backend expert or a release manager. It is fully flexible: one generalist, or a whole team that coordinates its work. Each agent starts in a **home** of its own, a folder with its own `AGENTS.md`, the skills of its kind and only the instructions it needs. What it learns is kept for the next agent of its kind.
 
@@ -143,7 +145,7 @@ You approve each piece of work once, at the expert's plan, and hear again only i
 
 ### The workspace
 
-The workspace's `oats-workspace.yaml` lists the repositories that take part, the packages at their pinned versions, its teams and which souls may join each, and the capabilities every soul gets by default. Each machine keeps its own settings, its lock and its agents' homes in a deployment directory of its own.
+The workspace's `oats-workspace.yaml` lists the repositories that take part, the packages at their pinned versions, its teams and which souls may join each, and the capabilities every soul gets by default. Each repository it lists links back with an `oats-membership.yaml` that names the repository holding `oats-workspace.yaml`, and that repository does too. A repository takes part only when both sides name each other, so neither can add the other on its own; a listed repository that doesn't link back contributes nothing. Each machine keeps its own settings, its lock and its agents' homes in a deployment directory of its own.
 
 ```mermaid
 flowchart LR
@@ -195,9 +197,9 @@ A soul can name any capability, including the ones for knowledge, messaging and 
 - **Start one** with a task in plain words from OATS Desktop, or let another agent, a schedule or a trigger start it.
 - **OATS builds it** as above, gives it a working directory, and starts the agent normally. Nothing is wrapped or replaced.
 - **Talk to it** in its terminal, as with any session.
-- **Agents work together** by messaging each other and starting other agents, as their souls allow.
+- **Agents work together** by starting other agents, as their souls allow. With a messaging capability, they also message each other, as their teams and their controls allow.
 - **An agent can ask you** for a decision, and waits for the answer.
-- **It learns.** Lessons worth keeping reach its soul's area of the knowledge base by pull request.
+- **It learns.** Lessons worth keeping go back into a real knowledge base by pull request. It can be organised by soul, each owning its own area, or as a more general knowledge base, as your knowledge capability supports.
 - **It retires** when its work is done. The soul, and what it learned, remain.
 
 OATS was founded on one claim: **an agent's expertise should be a versioned project artifact, not a side effect of a session.**
