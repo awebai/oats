@@ -15,7 +15,7 @@ Free and open source.
 - **Contracts** for defining agents: how you describe each kind of agent, and how each kind is assigned its own set of instructions, skills, tools and knowledge.
 - **A command-line tool** that runs and manages the agents on your machines. It starts them, connects them and stops them, on your command, on a schedule or when something happens.
 
-With the right tools, OATS gives you fully functional agent teams that coordinate however you want them to, across people and across machines, using the tools you already use.
+With the right tools, OATS gives you fully functional agent teams that coordinate however you want them to, across people and across machines, using the tools you already use. We provide defaults that we think work, but you can fully customise everything.
 
 Everything is defined in Git, shared and access controlled by your forge. OATS needs no account, server or hosted service of its own.
 
