@@ -287,7 +287,7 @@ test("probeKernel refuses with acceptProbe's own reason, or with one of its four
     assert.equal(acceptProbe(refused).ok, false);
     assert.equal(await probe({ stdout: JSON.stringify(refused), stderr: STDERR }), acceptProbe(refused).reason);
   }
-  assert.equal(reasons[0][0], "not the oats CLI (name: other)");
+  assert.equal(reasons[0][0], "not the oats CLI (name: other, not @awebai/oats or @oats-project/oats)");
   assert.match(reasons[1][0], new RegExp("^version 0\\.1\\.0 outside >="));
   for (const garbage of ["this is not JSON {", "", "null", "42", `${JSON.stringify(record())} and more`]) assert.equal(await probe({ stdout: garbage, stderr: STDERR }), "it answered something that is not a version record", garbage);
   assert.equal(await probe({ stdout: JSON.stringify(record()), stderr: STDERR, exit: 1 }), "it failed", "a valid record and then exit 1");

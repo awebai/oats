@@ -135,9 +135,9 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const mirroredVersion = readJson(join(payload, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${mirroredVersion}`, "okf mirror and packed official catalog version drift");
-  assert.equal(mirroredVersion, "5.7.0");
+  assert.equal(mirroredVersion, "5.8.0");
   // The PACKED tarball's catalog carries this release's provider pins, each equal to the checkout's mirror of it.
-  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.32.1"], ["oats.engineering", "oats-developer", "1.17.2"], ["oats.apps", "oats-folio", "1.0.0"], ["oats.apps", "oats-library", "1.0.0"]]) {
+  for (const [id, slug, version] of [["oats.aweb", "oats-aweb", "1.37.0"], ["oats.engineering", "oats-developer", "1.18.0"], ["oats.apps", "oats-folio", "1.0.0"], ["oats.apps", "oats-library", "1.0.0"]]) {
     const mirrored = readJson(join(repo, "mirrors", slug, "oats.json")).version;
     assert.equal(mirrored, version, `${id}: the mirror is ${mirrored}`);
     assert.equal(packedCatalog.packages?.[id]?.ref, `v${version}`, `${id}: the packed catalog pins ${packedCatalog.packages?.[id]?.ref}`);
@@ -195,7 +195,7 @@ try {
   const core = await import(pathToFileURL(installedRequire.resolve("@awebai/oats")).href);
   // The package's declared capabilities, as the workspace sync below resolves and the
   // spawn of the theory's author soul copies them (the v2 path reads them there).
-  assert.deepEqual(distribution.capabilities.map((path) => readJson(join(theorySource, path, "oats.json")).capability), ["oats.knowledge-theory", "oats.core", "oats.setup", "oats.support"]);
+  assert.deepEqual(distribution.capabilities.map((path) => readJson(join(theorySource, path, "oats.json")).capability), ["oats.knowledge-theory", "oats.core", "oats.setup", "oats.support", "oats.onboarding"]);
 
   // ---- The workspace: one host repo that is also its single member, holding
   // the souls. The deployment is a separate directory with only oats-local.yaml.
@@ -318,7 +318,7 @@ try {
   assert.ok(!existsSync(join(deployment, ".oats", "modules")), "a refused dispatch fetches nothing");
   // The same soul answers with and without --soul (read-only: okf init refuses to run twice).
   const helpDefault = cliRun(["okf", "--help", "--json"]);
-  assert.match(helpDefault.stderr, /oats okf: no --soul given; running as soul [\w.-]+\/probe, the first soul of this deployment that provides "okf"/, helpDefault.stderr);
+  assert.match(helpDefault.stderr, /oats okf: using the settings and teams of soul [\w.-]+\/probe, the first soul by name in this deployment that provides "okf"/, helpDefault.stderr);
   assert.deepEqual(JSON.parse(helpDefault.stdout), JSON.parse(cli(["okf", "--help", "--soul", "probe", "--json"])), "without --soul the dispatch resolves as --soul probe");
   // The 5.0 package is synced, but the explicit old host key still blocks use.
   // Both a command and a new spawn must name the supported cleanup remedy.
@@ -343,7 +343,7 @@ try {
 
   // The init itself, without --soul: the default soul's run is the real one.
   const defaultInit = cliRun(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"]);
-  assert.match(defaultInit.stderr, /no --soul given; running as soul [\w.-]+\/probe,/, defaultInit.stderr);
+  assert.match(defaultInit.stderr, /using the settings and teams of soul [\w.-]+\/probe,/, defaultInit.stderr);
   const initEnvelope = JSON.parse(defaultInit.stdout);
   assert.equal(initEnvelope.schemaVersion, 1, defaultInit.stdout); assert.equal(initEnvelope.ok, true, defaultInit.stdout);
   const okfInitAnswer = initEnvelope.result;

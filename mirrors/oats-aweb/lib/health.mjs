@@ -11,6 +11,7 @@ import {recordAwebSetting} from './local-settings.mjs';
 import {selectedDeployment} from './team-roots.mjs';
 import {AW_STATUS_MIN, healthHost} from './health-host.mjs';
 import {clearDesignations, healthSettings, publishTick} from './health-publisher.mjs';
+import {observeUnreadAttention} from './unread-attention.mjs';
 
 export const HEALTH_JOB = 'oats-aweb-health';
 const NOTE = 'a newly started or restarted agent appears within a minute';
@@ -55,6 +56,11 @@ async function report(health, {deployment, host}) {
   let lastTick = null;
   try { lastTick = JSON.parse(await readFile(lastTickFile(deployment), 'utf8')); } catch { /* none yet */ }
   const problems = [];
+  const observer = {enabled: health.publish, waiting: await host.supportsWaiting(), countOnly: await host.supportsUnreadCount()};
+  observer.note = !health.publish ? 'off: no unread-delivery attention claims without health publishing and its per-minute host timer'
+    : !observer.waiting ? 'unavailable: kernel needs waiting-on-you'
+    : !observer.countOnly ? 'unavailable: aw mail inbox needs --count-only; failed counts preserve existing claims'
+    : 'runs with the per-minute health tick for registered session-delivery homes';
   if (health.publish) {
     if (!job) problems.push(`the job ${HEALTH_JOB} is not registered: run \`oats aweb health enable\``);
     else if (!sameJob(job, jobSpec(deployment))) problems.push(`the job ${HEALTH_JOB} does not run \`oats aweb health publish\` every minute from this deployment: run \`oats schedule remove ${HEALTH_JOB}\`, then \`oats aweb health enable\``);
@@ -69,7 +75,7 @@ async function report(health, {deployment, host}) {
     publish: health.publish, language: health.language, operator: health.operator,
     job: job ? {id: HEALTH_JOB, cron: job.cron, argv: job.argv} : null,
     timer: timer ? {installed: timer.installed, active: timer.active, registered: timer.registered} : null,
-    lastTick, floors: FLOORS, ready: health.publish && !problems.length, problems, note: NOTE,
+    lastTick, floors: FLOORS, ready: health.publish && !problems.length, problems, note: NOTE, observer,
   };
 }
 
@@ -84,12 +90,16 @@ async function enable(options, {deployment, host, settings}) {
 async function disable({deployment, host, settings}) {
   await host.removeSchedule(HEALTH_JOB);
   recordAwebSetting('health', 'publish', false, {start: deployment});
+  const unreadAttention = await observeUnreadAttention({host, clear: true});
   const designations = await clearDesignations({settings, host});
-  return {...(await report({...healthSettings(settings), publish: false}, {deployment, host})), designations};
+  return {...(await report({...healthSettings(settings), publish: false}, {deployment, host})), designations, unreadAttention};
 }
 
 async function publish({deployment, host, settings}) {
+  if (!healthSettings(settings).publish) return {disabled: true};
+  const unreadAttention = await observeUnreadAttention({host});
   const result = await publishTick({settings, now: Date.now, host});
+  result.unreadAttention = unreadAttention;
   if (!result.disabled) {
     await mkdir(join(deployment, '.oats-aweb', 'health'), {recursive: true, mode: 0o700});
     await writeFile(lastTickFile(deployment), `${JSON.stringify({at: new Date().toISOString(), published: result.published.length, refused: result.refused.length, skipped: result.skipped.length, failed: result.failed.length})}\n`, {mode: 0o600});
@@ -100,7 +110,7 @@ async function publish({deployment, host, settings}) {
 /** An action's exit status: 1 while publishing is on and something stops
  *  it, or when `disable` left a designation on the server; else 0. */
 export function healthExit(result) {
-  return (result.publish && result.ready === false) || result.designations?.failed.length ? 1 : 0;
+  return (result.publish && result.ready === false) || result.designations?.failed.length || result.unreadAttention?.failed ? 1 : 0;
 }
 
 /** Runs one action; prints one JSON envelope with --json, else plain lines.
@@ -130,11 +140,14 @@ export async function healthMain(argv, {env = process.env, stdout = process.stdo
 export function healthText(doc) {
   if (!doc.ok) return `oats aweb health: ${doc.error.message}`;
   const r = doc.result;
-  if ('published' in r) return `published ${r.published.length}, refused ${r.refused.length}, skipped ${r.skipped.length}, failed ${r.failed.length}`;
+  const attention = r.unreadAttention && `unread attention: set ${r.unreadAttention.set}, cleared ${r.unreadAttention.cleared}, unknown ${r.unreadAttention.unknown}, failed ${r.unreadAttention.failed}`;
+  if ('published' in r) return [`published ${r.published.length}, refused ${r.refused.length}, skipped ${r.skipped.length}, failed ${r.failed.length}`, attention].filter(Boolean).join('\n');
   if (r.disabled) return 'publishing is off (settings.oats.aweb.health.publish)';
   const lines = [`publishing: ${r.publish ? 'on' : 'off'}${r.publish ? (r.ready ? ', ready' : ', NOT ready') : ''}`];
   if (r.lastTick) lines.push(`last tick: ${r.lastTick.at} (published ${r.lastTick.published}, refused ${r.lastTick.refused}, skipped ${r.lastTick.skipped}, failed ${r.lastTick.failed ?? 0})`);
   for (const p of r.problems) lines.push(`problem: ${p}`);
+  if (r.observer) lines.push(`unread attention: ${r.observer.note}`);
+  if (attention) lines.push(attention);
   if (r.designations) {
     lines.push(`designations cleared: ${r.designations.cleared.length}, not cleared: ${r.designations.failed.length}`);
     const reason = (f) => f.message || (f.status ? `HTTP ${f.status}` : f.code);

@@ -94,11 +94,12 @@ function listing(dir, rel = "") {
 /** What the detached script of a self-retire runs, with no delay: from the marker's path when
  *  OATS_TEST_COMPLETION_MARKER names one, else from the intent in the environment. The bound of its
  *  wait for its scheduling is the kernel's, or the one OATS_TEST_SCHEDULING_WAIT_MS gives this
- *  script (the kernel reads no such variable: it is an option of the function). */
+ *  script (the kernel reads no such variable: it is an option of the function). It does not retry a
+ *  cleanup left incomplete by retire hooks: what a retry does is test/retire-hook-retry.test.mjs's. */
 const COMPLETION = `import { completeDeferredRetirement } from ${JSON.stringify(CORE)};
 const given = process.env.OATS_TEST_COMPLETION_MARKER || JSON.parse(process.env.OATS_RETIRE_INTENT);
 const bound = process.env.OATS_TEST_SCHEDULING_WAIT_MS;
-process.exitCode = completeDeferredRetirement(given, { delaySec: 0, ...(bound ? { schedulingWaitMs: Number(bound) } : {}) }) ? 0 : 1;`;
+process.exitCode = completeDeferredRetirement(given, { delaySec: 0, retryDelaysMs: [], ...(bound ? { schedulingWaitMs: Number(bound) } : {}) }) ? 0 : 1;`;
 
 /** `oats retire <name> --self` as the instance's own process runs it, its completion due at once:
  *  the answer on stdout, an error as `{ error: { code, message, reached } }` with exit 1.

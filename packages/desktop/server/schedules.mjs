@@ -2,6 +2,7 @@
 import { capabilityRequest } from "./capabilities.mjs";
 import { cliSchedule } from "../../client/cli-adapter.mjs";
 import { harnessKey } from "../../client/harness-names.mjs";
+import { sameRepo } from "../../client/repo-moves.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
@@ -30,7 +31,7 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       spec.description = value.description;
     }
     if (value.kind === "spawn") {
-      const matches = agents.filter(a => a.name === value.agent && a.agentsRoot === value.agentsRoot && (!value.repo || a.repo === value.repo));
+      const matches = agents.filter(a => a.name === value.agent && a.agentsRoot === value.agentsRoot && (!value.repo || sameRepo(a.repo, value.repo)));
       if (matches.length !== 1 || matches[0].work === "attached") fail("Select one standalone soul in this workspace");
       if (typeof value.task !== "string" || !value.task.trim()) fail("A scheduled agent needs a task");
       spec = { ...spec, kind: "spawn", agent: matches[0].name, agentsRoot: matches[0].agentsRoot, task: value.task };

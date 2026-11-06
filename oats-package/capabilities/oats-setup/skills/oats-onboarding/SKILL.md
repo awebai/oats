@@ -78,7 +78,7 @@ to bypass a refusal. See the [corrected compatibility cards](https://github.com/
 
 ## 2. Inventory and select reuse or new
 
-**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0); this card makes the first Git reads, so a person without a checked Git and GitHub setup first completes `/oats-git-setup` (its check passes).
+**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0); this card makes the first Git reads, which need Git access to the workspace's repositories (GitHub over https, as `oats-getting-started` sets it up, is enough). `/oats-git-setup` is optional: run it when these reads fail on access, or when the person wants an SSH key, signing or the DCO sign-off.
 **Commands (read-only):**
 
 ```bash
@@ -331,7 +331,7 @@ receipt repair.
 
 Set this up only after cards 1–8 succeed, and only when the intake authorizes harvested
 knowledge reviewed and merged by an agent. It needs kernel ≥ 0.69.2 (the first that
-reads the `background:` key oats.okf's package souls declare) and `oats.okf` 5.7.0. The contract is
+reads the `background:` key oats.okf's package souls declare) and `oats.okf` 5.8.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
 ("Triggers", "Workspace triggers and schedules") in the installed kernel, and
 okf's own README at the pinned tag; read them, and okf's own
@@ -339,7 +339,7 @@ okf's own README at the pinned tag; read them, and okf's own
 
 ### 1. Pin the package
 
-`packages: { oats.okf: v5.7.0 }` in the workspace file, then `oats sync`
+`packages: { oats.okf: v5.8.0 }` in the workspace file, then `oats sync`
 (`/oats-package-pins`). One pin brings, versioned and locked together:
 
 - the three capabilities: `oats.okf` (every working soul's knowledge slot),

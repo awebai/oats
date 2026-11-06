@@ -1,10 +1,9 @@
 // A host's version refusal must survive both routing and server-connect probes.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { checkRemote, connectServer } from "../lib/servers.mjs";
+import { fixtureBase } from "./helpers/host-fixture.mjs";
 
 const failure = {
   schemaVersion: 1, ok: false,
@@ -18,7 +17,7 @@ const target = { sshHost: "fixture-host", workspace: "/srv/workspace", oatsPath:
 
 function isolatedHome(t) {
   const previous = process.env.OATS_HOME_DIR;
-  const home = mkdtempSync(join(tmpdir(), "oats-probe-failure-"));
+  const home = fixtureBase("opf-"); // Leave room for SSH's expanded control socket path.
   process.env.OATS_HOME_DIR = home;
   t.after(() => {
     if (previous === undefined) delete process.env.OATS_HOME_DIR;

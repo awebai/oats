@@ -7,6 +7,7 @@ import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
 import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
+import { sameRepo } from "../../../client/repo-moves.mjs";
 import { spawnRefusal, cantSpawnLine, soulMatches } from "../../../client/soul-facts.mjs";
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
 import { sourceQuoteCSS } from "../source-quote.mjs";
@@ -259,7 +260,7 @@ function applyPreselect(s) {
   pendingPreselect = null; // consumed-once, match or not
   const matches = s.souls.agents.filter((x) => x.name === ref.name
     && (!ref.agentsRoot || x.agentsRoot === ref.agentsRoot) && (!ref.server || x.server === ref.server)
-    && (ref.key === undefined || x.key === ref.key) && (ref.repoKey === undefined || x.soulSource?.repoKey === ref.repoKey));
+    && (ref.key === undefined || x.key === ref.key) && (ref.repoKey === undefined || sameRepo(x.soulSource?.repoKey, ref.repoKey)));
   // an incomplete identity must not pick a twin; the caller says why nothing opened
   if (matches.length !== 1) { ref.onMiss?.(matches.length); return; }
   const a = matches[0];
@@ -1109,7 +1110,7 @@ function repoGroup(s, a) {
     return { key: `package:${name}`, rank: 2, icon: "package", name, qualifier: "package · pinned" };
   }
   if (a.soulKind === "external") return { key: "external", rank: 3, icon: "external", name: "external", qualifier: "not in a member repo" };
-  const host = !!a.repo && a.repo === hostKey(s);
+  const host = !!a.repo && sameRepo(a.repo, hostKey(s));
   if (a.soulKind === "member") return { key: `member:${a.repo || repoLabel(a)}`, rank: host ? 0 : 1, icon: "repo", name: repoLabel(a), qualifier: host ? "member repo · host" : "member repo" };
   return { key: `repo:${a.server || ""}:${repoLabel(a)}`, rank: 1, icon: "repo", name: repoLabel(a), qualifier: a.server ? `on ${a.server}` : "" };
 }

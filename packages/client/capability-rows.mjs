@@ -3,6 +3,7 @@
  * from. Which source a row comes from and the group it sits in, the view's sections and search, who
  * uses it ("Used by"), and a core capability's name. Nothing here makes DOM; nothing is resolved,
  * joined across the non-collapse boundary, or inferred. */
+import { sameRepo } from './repo-moves.mjs';
 
 const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' && value ? value : null;
@@ -50,7 +51,7 @@ export function rosterAgentName(soul) {
  * external row never does (the kernel reports no external entry). */
 export function composes(entry, row) {
   if (!entry || entry.name !== row?.name || entry.kind !== row.kind) return false;
-  return row.kind === 'package' ? !!text(row.package) && entry.package === row.package : !!text(row.repoKey) && entry.repoKey === row.repoKey;
+  return row.kind === 'package' ? !!text(row.package) && entry.package === row.package : !!text(row.repoKey) && sameRepo(entry.repoKey, row.repoKey);
 }
 /** The souls (the `oats souls` rows the Souls tab shows) whose composition includes this row; a soul that
  * did not resolve (`capabilities: null`) is never counted. */
@@ -66,7 +67,7 @@ export function capabilityGroup(row, names = new Map(), hostKey = null) {
   // A package group (the Packages section) names its pinned version: "package · v1.2.0".
   if (source.kind === 'package') return { key: source.key, rank: 3, icon: 'package', name: source.label, note: ['package', text(row.version) ? `v${row.version}` : null].filter(Boolean).join(' · '), mono: true };
   if (source.kind !== 'member') return { key: 'external', rank: 2, icon: 'external', name: 'external', note: 'not in a member repo', mono: false };
-  const host = !!hostKey && row.repoKey === hostKey;
+  const host = !!hostKey && sameRepo(row.repoKey, hostKey);
   return { key: source.key, rank: host ? 0 : 1, icon: 'repo', name: source.label, note: host ? 'member repo · host' : 'member repo', mono: true };
 }
 /** Rows in their repository groups, in the Souls tab's order: [{ key, rank, icon, name, note, mono, rows }]. */

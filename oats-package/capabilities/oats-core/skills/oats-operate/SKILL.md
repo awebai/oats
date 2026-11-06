@@ -366,7 +366,8 @@ oats instance attention --clear                                  # once you have
   and ALM marks are fine. Name what you need, not the whole story. A message that
   starts with `--` goes as `--message=--<rest>`.
 - `oats status` shows the claim on your row as
-  `! needs input (attention): <message>`.
+  `! needs input (attention) since <local start>, <elapsed>: <message>`
+  (from OATS 0.69.9; before that, without the `since` part).
 - Only `--clear` or the next session start, restart or stop clears it.
   Clear it yourself first thing when the answer arrives.
 - Only for input you wait on. Never for FYIs, progress or "done" reports:
@@ -393,7 +394,7 @@ one with text, such as a permission prompt's, is shown in its place.
 
 From OATS 0.69.7, a turn that ends in a provider error sets a claim the same
 way, because the error ends the turn and you can't: `Turn failed: <the error>`,
-from oats.core's hooks on Claude Code (oats.core 2.10.0 or later) and the
+from oats.core's hooks on Claude Code (oats.core 2.11.0 or later) and the
 `@awebai/oats-pi` bridge (producer `oats.pi`) on pi, after the harness's own
 retries. Your next turn clears it. Codex reports nothing, because no hook sees the failure. When you
 wait on a child, its row in `oats status --json` shows this as `waitingOnYou`.

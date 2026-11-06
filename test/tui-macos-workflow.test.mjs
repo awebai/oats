@@ -57,8 +57,8 @@ test("TUI tests on macOS: the token reads contents only, no secret is named, no 
   assert.ok(!ciNames.includes(job.name) && !ciNames.includes(jobKey), `the job's name or key is one of pull-request CI's: ${job.name}`);
 });
 
-test("TUI tests on macOS: on macos-14, tmux installed before the dependencies and the tests, every TUI test file run, one at a time, and no tmux server left on the default socket", () => {
-  assert.equal(job["runs-on"], "macos-14");
+test("TUI tests on macOS: on macos-15, tmux installed before the dependencies and the tests, every TUI test file run, one at a time, and no tmux server left on the default socket", () => {
+  assert.equal(job["runs-on"], "macos-15");
   assert.equal(read("macos-tests.yml").jobs.run["runs-on"], job["runs-on"], "the image of the hand-started macOS runs, whose evidence this job repeats");
   assert.ok(Number.isInteger(job["timeout-minutes"]) && job["timeout-minutes"] <= 30, `a bounded job: ${job["timeout-minutes"]}`);
   // The TUI's root tests skip without tmux: a run without it would be green and prove nothing of them.

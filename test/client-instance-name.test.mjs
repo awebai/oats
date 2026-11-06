@@ -3,7 +3,8 @@
 // the very same rows.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { soulRole, nameWithRole } from "../packages/client/instance-name.mjs";
+import { soulRole, nameWithRole, validInstanceName } from "../packages/client/instance-name.mjs";
+import { explicitInstanceName, MAX_INSTANCE_NAME } from "../lib/core.mjs";
 
 /** [soul name, role]: the last `-` word, after a package qualifier (the last `/` or `--`). */
 export const ROLE_CASES = Object.freeze([
@@ -54,4 +55,19 @@ test("nameWithRole: the role once as a suffix; a name already ending in it, or e
 
 test("nameWithRole is idempotent: a final name given again is unchanged (a restored draft holds the final name)", () => {
   for (const [typed, soul] of NAME_CASES) { const once = nameWithRole(typed, soul); assert.equal(nameWithRole(once, soul), once, `${typed} · ${soul}`); }
+});
+
+/** Names the kernel's `--name` rule takes and refuses, the same cases for both copies. */
+export const VALIDITY_CASES = Object.freeze([
+  "a", "dev-2", "desktop-instance-focus-developer", "0day", "x".repeat(64),
+  "x".repeat(65), "", "-a", "a-", "a--b", "A", "Dev", "a_b", "a b", "a.b", "../x", "a/b", "é", "a\n", " a", "--dir", "a\u0000",
+]);
+
+test("validInstanceName: the kernel's own --name check (lib/core.mjs explicitInstanceName) decides every case alike", () => {
+  const kernelTakes = (name) => { try { explicitInstanceName(name); return true; } catch (e) { assert.equal(e.code, "E_INSTANCE_NAME_INVALID"); return false; } };
+  const taken = VALIDITY_CASES.filter(kernelTakes);
+  assert.ok(taken.length >= 5 && taken.length < VALIDITY_CASES.length, "the cases hold names on both sides of the rule");
+  assert.equal(MAX_INSTANCE_NAME, 64);
+  for (const name of VALIDITY_CASES) assert.equal(validInstanceName(name), kernelTakes(name), JSON.stringify(name));
+  for (const v of [undefined, null, 7, {}, ["a"]]) assert.equal(validInstanceName(v), false);
 });

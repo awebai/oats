@@ -4,12 +4,15 @@
 // deployment (--dir, or a working directory that is one) opens or focuses
 // that workspace's window, admitting it through the validated add path if
 // needed; any other launch focuses the most recently focused window (#481).
+// A launch's --instance beside its --dir asks that window to select the
+// instance (launchInstance); nothing else changes.
 //
 // A launch of another version (an AppImage or DEB installed while an older Desktop runs) reaches the
 // running app too, which then says so and offers to restart into the launched copy: replacing the
 // installer never changes a running app. Nothing here imports Electron: main shows the box and
 // relaunches.
 import { isAbsolute, resolve } from "node:path";
+import { validInstanceName } from "../client/instance-name.mjs";
 
 const LAUNCH_ARGS_MAX = 1000;
 const VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
@@ -120,16 +123,34 @@ export function createVersionHandoff({ running, ask, isRegularFile, relaunch, qu
   };
 }
 
+/** The value a launch gives `flag` (`--dir <path>`), or null. A value that is itself a switch is no value (an
+ * argv whose switches were reordered). */
+function switchValue(argv, flag) {
+  const args = Array.isArray(argv) ? argv : [];
+  const i = args.indexOf(flag);
+  const value = i >= 0 ? args[i + 1] : undefined;
+  return typeof value === "string" && value && !value.startsWith("--") ? value : null;
+}
+
 /** The directory a launch names: its `--dir` (relative to its working directory), else that working
  * directory, else null. */
 export function launchDirectory(argv, workingDirectory) {
-  const args = Array.isArray(argv) ? argv : [];
-  const i = args.indexOf("--dir");
   const cwd = typeof workingDirectory === "string" && workingDirectory ? workingDirectory : null;
-  // A value that is itself a switch is no value (an argv whose switches were reordered).
-  const dir = i >= 0 && typeof args[i + 1] === "string" && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null;
+  const dir = switchValue(argv, "--dir");
   if (dir) return resolve(cwd || "/", dir);
   return cwd;
+}
+
+/** The instance a launch asks its workspace's window to select: `--instance <name>`, read only beside a `--dir`
+ * (the first launch's and a second launch's one reader). null when the launch names none, or names no `--dir`;
+ * `{ ok: true, name }` for a name the kernel's instance-name check takes; `{ ok: false }` for any other value,
+ * which is never kept: it is untrusted argv, and nothing shows it. Whether `--dir` is a deployment is the caller's
+ * check. */
+export function launchInstance(argv) {
+  if (!switchValue(argv, "--dir")) return null;
+  const value = switchValue(argv, "--instance");
+  if (value === null) return null;
+  return validInstanceName(value) ? { ok: true, name: value } : { ok: false };
 }
 
 /**
@@ -140,14 +161,20 @@ export function launchDirectory(argv, workingDirectory) {
  *                                                       holds the deployment, or null when it failed
  * @param {(key: string) => object} io.open             open or focus that workspace's window; it
  * @param {() => object|null} io.focusRecent            focus the most recently focused window; it, or null
- * The opener resolves with the window the launch opened or focused, or null.
+ * @param {(win: object, instance: object, dir: string) => void} io.select  ask that window to select the launch's
+ *                                                       instance (`launchInstance`) of the deployment `dir`
+ * The opener resolves with the window the launch opened or focused, or null. A launch's instance is selected only
+ * in the window of the deployment it names: a launch that focuses the most recent window selects nothing.
  */
-export function createLaunchOpener({ isDeployment, admit, open, focusRecent }) {
-  return async function openLaunch(dir) {
+export function createLaunchOpener({ isDeployment, admit, open, focusRecent, select }) {
+  return async function openLaunch(dir, instance = null) {
     let deployment = false;
     try { deployment = !!dir && isDeployment(dir); } catch { deployment = false; }
     if (!deployment) return focusRecent();
     const key = await admit(dir);
-    return key ? open(key) : focusRecent();
+    if (!key) return focusRecent();
+    const win = open(key);
+    if (instance && win) select(win, instance, dir);
+    return win;
   };
 }

@@ -6,11 +6,11 @@ host that comes from it.
 
 ## Upgrading to the latest version
 
-The latest version is **OATS 0.69.6** ([release notes](release-notes/v0.69.6.md)).
-The 0.69.6 Desktop accepts OATS CLIs `>=0.26.0 <0.70.0`.
+The latest version is **OATS 0.69.12** ([release notes](release-notes/v0.69.12.md)).
+The 0.69.12 Desktop accepts OATS CLIs `>=0.26.0 <0.70.0`.
 
 **First, read the `## Upgrade` section of every release after yours, up to
-0.69.6,** in the [release notes](release-notes/): it says what to do before
+0.69.12,** in the [release notes](release-notes/): it says what to do before
 the CLI changes, and what else must change with it (the Desktop, another
 tool, a package pin). [Coming from an older version](#coming-from-an-older-version)
 names the releases that ask for more than the steps below. `oats version`
@@ -19,8 +19,8 @@ prints the version you have.
 Then, on each host:
 
 ```sh
-                                     # 0. where the Desktop is installed: Desktop 0.69.6 first
-npm install -g @awebai/oats@0.69.6   # 1. the CLI
+                                     # 0. where the Desktop is installed: Desktop 0.69.12 first
+npm install -g @awebai/oats@0.69.12  # 1. the CLI
 oats update                          # 2. in each deployment: the plan, then it asks before it runs
 oats doctor                          # 3. in the same deployment
 ```
@@ -162,6 +162,36 @@ the one previous state, and retirement carries it into recovery.
 This act handles one local home at a time. A deployment loops over its homes;
 it does not upgrade automatically or through `--server`.
 
+## The move to the oats-project organisation
+
+OATS is moving from the `awebai` GitHub organisation and npm scope to
+`oats-project`, in stages. A GitHub transfer changes nothing a deployment
+reads, because the old URLs redirect. A changed string does: the kernel
+compares repository keys literally, and clients compare the CLI's npm name
+literally. So a bridge release comes first.
+
+**What the bridge does.** It makes the old and the new spelling of each moved
+repository one repository ([Moved repositories](workspaces.md#moved-repositories)),
+and it makes the kernel know the npm name it was installed under, so `oats
+update` stays on that name and never crosses to the other. Clients and the pi
+bridge accept both npm names.
+
+**A deployment on the bridge behaves as it did before.** It emits the same
+keys, uses the same cache directories and writes the same lock. Nothing asks
+you to change a string, and `oats version --json` keeps
+`"name":"@awebai/oats"` under either npm name, with the real name in its new
+`package` field.
+
+**Keep `@awebai/oats` installed.** This release installs over it, under the
+same name.
+
+- `npm rm -g @awebai/oats` leaves running sessions without their kernel until
+  they restart. A start rewrites each home's `.oats/bin/oats` and hooks.
+- The host's schedule unit stays on the old path until `oats schedule host
+  install` runs.
+- Installing the other name with `--force` and then removing the old one also
+  deletes the `oats` command.
+
 ## Coming from an older version
 
 Read the `## Upgrade` section of every release after yours, up to the
@@ -172,6 +202,34 @@ of the Desktop and the CLI, and an optional package pin. A change a script
 must follow is in its release's Upgrade section whether or not it is listed
 here.
 
+- **[0.69.12](release-notes/v0.69.12.md#upgrade):** the catalog pins
+  oats.okf 5.8.0, oats.aweb 1.37.0 and oats.framework 1.22.1. Where
+  `oats.aweb-tasks` is composed, readiness warns until the host wake daemon
+  runs aw 1.36.54 (install it by version while npm's `latest` is 1.36.53),
+  aweb-channel 1.8.2 or @awebai/pi 0.4.1; on macOS, reload running custody
+  jobs by hand after the aw upgrade.
+- **[0.69.11](release-notes/v0.69.11.md#upgrade):** the catalog pins
+  oats.framework 1.21.0 and oats.aweb 1.35.0. Upgrade every deployment of a
+  workspace before its shared `oats-workspace.yaml` sets `tasks:` (an older
+  kernel refuses the file). A pi home may warn `pi-extension-skills-loaded`
+  until its pi extension entry carries `"skills": []`.
+- **[0.69.10](release-notes/v0.69.10.md#upgrade):** the catalog pins
+  oats.framework 1.20.0 and oats.aweb 1.34.0. With oats.aweb 1.34.0, a
+  deployment that uses aweb tasks composes `oats.aweb-tasks`. Upgrade every
+  deployment of a workspace before its shared `oats-workspace.yaml` uses an
+  `ssh://user@host/...` reference.
+- **[0.69.9](release-notes/v0.69.9.md#upgrade):** the catalog pins
+  oats.framework 1.19.0, oats.aweb 1.33.1 and oats.engineering 1.18.0. With
+  oats.engineering 1.18.0, a stop doesn't hold while a checkpoint is pending:
+  `oats schedule disable <id>` keeps it stopped. Claude homes read their
+  joined teams at task boundaries, so an idle one doesn't wake for that mail.
+- **[0.69.8](release-notes/v0.69.8.md#upgrade):** the catalog pins
+  oats.framework 1.18.0.
+- **[0.69.7](release-notes/v0.69.7.md#upgrade):** the catalog pins
+  oats.framework 1.17.0. This release is the bridge of
+  [the move to the oats-project organisation](#the-move-to-the-oats-project-organisation):
+  keep `@awebai/oats` installed. Until a deployment runs this kernel, run no
+  wake jobs on a home that can open an approval or question dialog.
 - **[0.69.6](release-notes/v0.69.6.md#upgrade):** the catalog pins oats.okf
   5.7.0 and oats.framework 1.16.4. On the review host of a workspace's
   harvest-review trigger, re-review each knowledge PR parked on

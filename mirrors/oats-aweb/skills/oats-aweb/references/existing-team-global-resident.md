@@ -163,7 +163,7 @@ routine step.
 
 If the selected plan needs a LOCAL minting root, use its distinct authority and
 explicit deployment/root scope. `oats aweb setup --soul <messaging-soul>` with an
-operator-supplied API key runs **plain `aw init`** at the selected setup root;
+operator-supplied API key runs **`aw init --do-not-touch-agents-md`** at the selected setup root;
 it is not GLOBAL creation. Setup has no `--global`; `--service` stays join-only,
 and `--name` is supported for join and additionally required for `--username`
 with the #66 fix. Neither option configures API-key or GLOBAL initialization.
@@ -247,10 +247,10 @@ After the selected authorized operation, validate these distinct outcomes:
 
 1. Captured module commit, settings/origins, resident identity and final grant
    locator/scopes/expiry/attachment match the reviewed plan.
-2. The actual worker has the intended knowledge/task context and acknowledges
+2. The actual worker has the intended knowledge and briefing and acknowledges
    its assigned work; a prepared source tree or preview is insufficient.
-3. Scoped receive readiness and a harmless explicitly authorized acceptance task
-   demonstrate incoming presentation, a verified reply and requester-consumed
+3. Scoped receive readiness and a harmless explicitly authorized acceptance
+   message exchange demonstrate incoming presentation, a verified reply and requester-consumed
    intake. Grant issuance, native connection configuration and `ready` alone do
    not establish these. No client-specific email-send or language policy is
    prescribed here.

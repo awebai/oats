@@ -7,10 +7,19 @@ import { delimiter } from "node:path";
 import { readFileSync } from "node:fs";
 import {
   acceptProbe, parseSemver, parseProbeStdout, candidates, discover, cliRecord, DESKTOP_API,
-  ACCEPT_RANGE, ACCEPT_RANGE_TEXT,
+  ACCEPT_RANGE, ACCEPT_RANGE_TEXT, PROBE_NAME,
 } from "../../client/cli-locator.mjs";
 
 const PROBE = (v = "0.26.0") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
+
+test("acceptProbe: either npm name of the CLI is the oats CLI, and a refusal lists both", () => {
+  assert.deepEqual(PROBE_NAME, ["@awebai/oats", "@oats-project/oats"]);
+  for (const name of PROBE_NAME) assert.equal(acceptProbe({ ...PROBE(), name }).ok, true, name);
+  const refused = acceptProbe({ ...PROBE(), name: "@other/oats" });
+  assert.equal(refused.ok, false);
+  for (const name of [...PROBE_NAME, "@other/oats"]) assert.ok(refused.reason.includes(name), refused.reason);
+  assert.equal(acceptProbe({ ...PROBE(), name: undefined }).ok, false);
+});
 
 test("acceptProbe: exact v1 payload accepted; every deviation rejected with a reason", () => {
   assert.equal(acceptProbe(PROBE()).ok, true);

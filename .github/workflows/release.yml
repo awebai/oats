@@ -213,10 +213,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14          # macOS arm64: DMG + ZIP
+          - os: macos-15          # macOS arm64: DMG + ZIP
             arch: arm64
             builder_args: --arm64
-          - os: macos-14          # macOS x64 cross-build: DMG + ZIP (no sunset macos-13 dependency)
+          - os: macos-15          # macOS x64 cross-build: DMG + ZIP (no sunset macos-13 dependency)
             arch: x64
             builder_args: --x64
           - os: ubuntu-24.04      # Linux x64: AppImage + DEB
@@ -241,7 +241,7 @@ jobs:
         working-directory: packages/desktop
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
-      # macos-14 is arm64. The x64 leg cross-builds on it to avoid the
+      # macos-15 is arm64. The x64 leg cross-builds on it to avoid the
       # sunset/deprecating macos-13 runner; Rosetta executes the packaged x64
       # Electron + node-pty ABI probe and catches a wrong-arch native module.
       - name: Install Rosetta (macOS x64 cross-build only)

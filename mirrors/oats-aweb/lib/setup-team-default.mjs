@@ -70,6 +70,14 @@ export function selectedTeamKernel(deployment, env = process.env) {
     // Feature teams-conditional-default (OATS 0.48.0): a kernel without it ignores these flags.
     addMapping: (label, team) => invoke(['teams', 'add', label, `--team=${team}`, '--no-default']),
     setDefaultIfAbsent: label => invoke(['teams', 'default', label, '--if-absent']),
+    // `oats soul teams <soul> --json` (team-model-3, read only): the soul's default and eligible teams.
+    soulTeams: soul => {
+      const doc = invoke(['soul', 'teams', soul]);
+      if (doc.soulTeamsApi !== 2 || !Array.isArray(doc.teams) || !(doc.defaultTeam === null || object(doc.defaultTeam))) {
+        throw setupFailure('E_SETUP_QUERY', 'selected kernel soul teams schema is invalid');
+      }
+      return doc;
+    },
   };
 }
 
@@ -211,7 +219,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     if (!hasIdentity) {
       mkdirSync(root, { recursive: true });
       try {
-        run(['aw', 'init', '--new-account', '--username', username, '--name', name], root, 120000, {
+        run(['aw', 'init', '--new-account', '--username', username, '--name', name, '--do-not-touch-agents-md'], root, 120000, {
           secretSafe: true, secrets: [username], unsetEnv: ['AWEB_API_KEY', 'AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'],
         });
       } catch (error) {

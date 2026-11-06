@@ -105,7 +105,9 @@ souls, and keeping its messages to other instances few and short:
 `oats.framework`). Workspaces give it to every soul through
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
-knowledge an onboarding expert needs, and **`oats.support`** (same package)
+knowledge an onboarding expert needs, **`oats.onboarding`** (same package)
+is how the package soul `oats-setup-expert` tailors a new workspace to its use
+case, and **`oats.support`** (same package)
 is the support desk role: a publicly reachable soul that tickets requests and
 hands them to a support maintainer. None of them is kernel magic; the kernel still
 composes its own instance-boundary and work-mode briefings, and the "You run
@@ -185,7 +187,8 @@ For current settings and the respawn/cleanup sequence, see [knowledge.md](knowle
   digest. `oats status` compares these with the workspace's current state and
   shows `moved` / `missing` per module (drift is shown, not prevented).
 - `providers.<cap>`: the merged provider payload the capability was bound with
-  (soul ⊕ machine settings ⊕ `--provider`), so a later inspection can tell
+  (manifest defaults ⊕ the workspace's `messaging:` or `tasks:` ⊕ soul ⊕
+  machine settings ⊕ `--provider`), so a later inspection can tell
   which instance holds a retained seat or a one-off state root. `spawn
   --preview` shows the same map before anything exists, as `settings.<cap>`,
   beside `providers` (the `--provider` flags as given).
@@ -527,6 +530,11 @@ integration deletes the instance identity here. With harvest on, `oats.okf`
 takes a final capture of notes and the session record into durable custody; an
 incomplete capture keeps the home for a retry. Retirement never waits for a
 model or GitHub: processing continues after the home is gone.
+
+A retire hook's warning, such as an action someone must still take, is in the
+retire's `warnings` and stays readable after the home is gone: each one is a
+`retire-warning` event in the instance's workspace log, read with
+`oats instance events <instance>` ([Events](desktop-cli-api.md#events)).
 
 One retire of an instance runs at a time. A retire holds the instance's claim
 from the moment it has resolved the home until it ends: the file
@@ -1242,9 +1250,48 @@ leaves what happened on disk (OATS 0.53.0):
 - **One event,** `retire-refused`, which says which of the two it was
   ([Events](desktop-cli-api.md#retire-refused-event)).
 
-Nothing retries by itself: `oats retire <instance>` does. A completion
-removes only the marker of its own scheduling, so the marker of a later
-`--self` is left for that one's completion.
+<a id="self-retire-hook-retry"></a>**A completion retries a cleanup that only
+retire hooks left incomplete** (oats-project/oats#1747), because a provider's
+failure is often transient. When the retire ends with the home quarantined,
+and what it owes is retire hooks and nothing else, the completion runs the
+same retire again: up to three times, about 1, 5 and 15 minutes after each
+failed attempt. Every attempt is an ordinary retire of the home, under its
+claim. Its quarantine retry clears only once the owed hooks are shown to have
+run.
+
+- **A retry whose hooks pass ends as a first success does.** The home is
+  removed and nothing is left beside it.
+- **After the last failed attempt** the completion leaves what it leaves
+  today: the outcome, the pending marker, the quarantine and one
+  `retire-refused` event. The outcome adds `attempts`, the number of attempts
+  that ran.
+- **Every attempt has its own `retired` event** with its `hooks` list, so
+  `oats instance events <instance>` shows each one and how its hooks ended.
+- **What is never retried.** A quarantine that also owes a Git step,
+  directory preservation or an orphaned work directory, or whose descriptor
+  could not be stored in the home. A capability that declares no retire
+  hook, or hooks that cannot be rerun. The retries also stop at an attempt
+  that answers an error, and at one whose debt is no longer hooks alone. No
+  retry starts once the home is gone or the pending marker is no longer this
+  completion's: the retry checks that after its wait and again under the
+  home's claim, and leaves a later scheduling's marker as it is.
+- **While the completion waits**, `oats status` reads the retire as
+  `running`. Any other retire of the home is refused with `E_LIFECYCLE_BUSY`,
+  for up to about 21 minutes after a hook failure. The refusal names the next
+  attempt and the earliest time the last one starts. The time is only a lower
+  bound: how long each attempt runs cannot be known in advance. The completion
+  keeps this in a file of its own beside the home,
+  `.oats-retire-retry-<instance>.json`, kernel-internal. It is removed on
+  every way out, and by any retire that removes the home.
+- **A completion killed while it waits** leaves the instance `interrupted`,
+  as before.
+
+After that, nothing retries by itself: `oats retire <instance>` does, and
+`oats doctor` lists every retirement left open as a `retire-incomplete`
+problem, with that command and the capability whose hook failed last
+([doctor](desktop-cli-api.md)). A completion removes only the marker of its
+own scheduling, so the marker of a later `--self` is left for that one's
+completion. Plain retires are not retried: their caller gets the answer.
 
 A completion does not start its retire while its scheduling still holds
 the home's claim (OATS 0.53.0). A scheduling that the host holds up

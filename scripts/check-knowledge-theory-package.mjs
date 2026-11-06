@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CAPABILITY_PATH = "capabilities/oats-knowledge-theory";
 export const DISTRIBUTION_PACKAGE_ID = "oats.framework";
-export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup", "capabilities/oats-support"];
+export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup", "capabilities/oats-support", "capabilities/oats-onboarding"];
 // Dev-only validators load lazily so syntax-only checks (release lane, --syntax-only)
 // work in a checkout without node_modules; a missing dependency then fails only
 // the manifest/frontmatter checks that actually need it.
@@ -26,6 +26,16 @@ function parseYaml(text) { yamlParser ??= require("yaml").parse; return yamlPars
 export const SKILL_PATH = "skills/knowledge-capability-authoring";
 // The expert is an oats.framework PACKAGE SOUL (0.29.0: capability-defined agents were removed).
 export const EXPERT_PATH = "souls/knowledge-theory-expert";
+export const SETUP_EXPERT_PATH = "souls/oats-setup-expert";
+// Each package soul's definition, pinned: a new capability, slot, launch preference or work
+// mode is a boundary change. Neither declares a messaging slot or a launch preference.
+const PACKAGE_SOULS = [
+  { path: EXPERT_PATH, name: "knowledge-theory-expert", work: "checkout", capabilities: { "oats.knowledge-theory": { from: "here" } }, why: "the expert reads the authoring skill from its own package" },
+  // work: directory, because a package soul in worktree mode would work in a tree of the
+  // package's own repository; it clones the workspace's host into its work/ to change a shared file.
+  // No messaging slot: it takes the workspace's messaging default, so it stays the operator.
+  { path: SETUP_EXPERT_PATH, name: "oats-setup-expert", work: "directory", capabilities: { "oats.setup": { from: "here" }, "oats.onboarding": { from: "here" } }, why: "the setup expert reads oats.setup and oats.onboarding from its own package" },
+];
 
 function inside(root, path) {
   const rel = relative(realpathSync(root), realpathSync(path));
@@ -127,7 +137,7 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
   }
 }
 
-// Keep the operational capabilities narrow. oats.setup and oats.support are resource-only; oats.core
+// Keep the operational capabilities narrow. oats.setup, oats.support and oats.onboarding are resource-only; oats.core
 // adds exactly two executable surfaces. Its Claude Code waiting emitter: the spawn
 // and launch hooks of bin/oats-core.mjs (preview-aware), the bin/claude-waiting.sh
 // they wire into a Claude instance's settings, and the bin/claude-waiting-message.mjs
@@ -147,6 +157,8 @@ const OPERATIONAL_CAPABILITIES = [
   { slug: "oats-setup", names: ["oats-setup-model", "oats-onboarding", "oats-setup-expert", "oats-host-delivery", "oats-agent-permissions", "oats-git-setup", "oats-workspace-config", "oats-teams", "oats-package-pins", "oats-automations", "oats-upgrade"], injection: "injects/setup.md", compatibility: ">=0.30.0" },
   // 0.40.0: `oats instance attention`, which the skills use to ask the desk's human.
   { slug: "oats-support", names: ["support-intake", "support-safety", "support-ticket", "support-handoff", "support-relay"], injection: "injects/support.md", compatibility: ">=0.40.0" },
+  // No inject: the setup expert loads its one skill when oats.setup routes a new workspace to it.
+  { slug: "oats-onboarding", names: ["oats-tailor-workspace"], compatibility: ">=0.30.0" },
 ];
 export function checkOperationalCapabilities(packageRoot) {
   for (const { slug, names, injection, compatibility, executable } of OPERATIONAL_CAPABILITIES) {
@@ -204,18 +216,24 @@ export function checkKnowledgeTheoryPackage({ repoRoot = REPO_ROOT, packageRoot 
   checkOperationalCapabilities(packageRoot);
   assert.deepEqual(cap.requires, []);
   assert.deepEqual(cap.skills, [SKILL_PATH]);
-  assert.deepEqual(pkg.souls, [EXPERT_PATH]);
+  assert.deepEqual(pkg.souls, PACKAGE_SOULS.map((s) => s.path));
   treeFiles(packageRoot);
   treeFiles(capRoot);
-  const soul = join(packageRoot, EXPERT_PATH);
-  const soulYaml = parseYaml(readFileSync(join(soul, "soul.yaml"), "utf8"));
-  assert.equal(soulYaml.name, "knowledge-theory-expert");
-  assert.deepEqual(soulYaml.capabilities, { "oats.knowledge-theory": { from: "here" } }, "the expert reads the authoring skill from its own package");
-  const alias = join(soul, "CLAUDE.md");
-  assert.ok(existsSync(alias) && lstatSync(alias).isSymbolicLink(), "source CLAUDE.md must be a tracked relative symlink, never omitted or synthesized during acquisition");
-  assert.equal(readlinkSync(alias), "AGENTS.md");
-  assert.ok(lstatSync(join(soul, "AGENTS.md")).isFile(), "AGENTS.md is canonical");
-  assert.ok(!existsSync(join(soul, "knowledge")), "the expert does not carry a soul knowledge bundle");
+  for (const expected of PACKAGE_SOULS) {
+    const soul = join(packageRoot, expected.path);
+    const soulYaml = parseYaml(readFileSync(join(soul, "soul.yaml"), "utf8"));
+    assert.equal(soulYaml.name, expected.name);
+    assert.equal(soulYaml.work, expected.work, `${expected.name}: work mode`);
+    assert.equal(soulYaml.knowledge, "none", `${expected.name}: spawns before knowledge is set up`);
+    assert.ok(!("messaging" in soulYaml) && !("launch" in soulYaml), `${expected.name}: takes the workspace's messaging default and the machine's harness`);
+    assert.deepEqual(soulYaml.capabilities, expected.capabilities, expected.why);
+    const alias = join(soul, "CLAUDE.md");
+    assert.ok(existsSync(alias) && lstatSync(alias).isSymbolicLink(), "source CLAUDE.md must be a tracked relative symlink, never omitted or synthesized during acquisition");
+    assert.equal(readlinkSync(alias), "AGENTS.md");
+    assert.ok(lstatSync(join(soul, "AGENTS.md")).isFile(), "AGENTS.md is canonical");
+    assert.ok(!existsSync(join(soul, "knowledge")), `${expected.name} does not carry a soul knowledge bundle`);
+    assert.deepEqual(treeFiles(soul), ["AGENTS.md", "CLAUDE.md", "soul.yaml"], `${expected.name}: the soul is its definition and instructions only`);
+  }
   const skill = join(capRoot, SKILL_PATH);
   const closure = checkReferenceClosure(skill);
   if (parity) {

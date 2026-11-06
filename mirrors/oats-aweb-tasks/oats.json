@@ -1,6 +1,6 @@
 {
   "capability": "oats.aweb-tasks",
-  "version": "1.32.1",
+  "version": "1.37.0",
   "compatibility": {
     "oats": ">=0.68.0"
   },
@@ -17,8 +17,25 @@
     "skills/aweb-tasks"
   ],
   "inject": "injects/aweb-tasks.md",
+  "commands": {
+    "binding-normalize": "bin/oats-aweb-tasks-binding.mjs normalize",
+    "binding-bind": "bin/oats-aweb-tasks-binding.mjs bind",
+    "binding-check": "bin/oats-aweb-tasks-binding.mjs check"
+  },
+  "binding": {
+    "version": 1,
+    "normalize": "binding-normalize",
+    "bind": "binding-bind",
+    "check": "binding-check"
+  },
   "hooks": {
     "spawn": "bin/oats-aweb-tasks.mjs spawn",
     "upgrade": "bin/oats-aweb-tasks.mjs upgrade"
+  },
+  "settings": {
+    "team": {
+      "description": "The aweb team label whose task list this capability reads and writes, set only in the workspace's or a soul's tasks: payload. Absent (the default) means the home's default team. A label is a letter or digit, then up to 63 letters, digits, - or _. Every task command then runs as aw --identity-home <H>, H being joined[].identityHome for that label in oats aweb teams --json; readiness refuses a home that has not joined it, and a GLOBAL seat (#60). The default team's own label needs no join.",
+      "committedOnly": true
+    }
   }
 }

@@ -42,7 +42,9 @@ anything else, stop and show what npm answered. A CLI ahead of the latest (a
 checkout, an unpublished build) is not upgraded: say so and stop.
 
 Ask the person, with any other question you have, whether the Desktop is
-installed on this host, and at which version. When the CLI is already the
+installed on this host, and at which version. On a host without it, ask
+whether they want it installed: a getting-started hand-over whose
+Desktop line says "not installed" left it to this skill. When the CLI is already the
 latest there are no notes to read, but the Desktop, the bridges and the
 check may still lag: make the plan of section 3 without its notes steps.
 
@@ -94,10 +96,13 @@ asks for it:
    still installed, or before `oats sync` (a host tool such as aw, for
    one). Those steps run with the installed CLI, so they may use only
    commands it has.
-2. **The Desktop**, where it is installed: version `$V`, from the assets of
+2. **The Desktop**, where it is installed, and on a host without it when
+   the person wants it: version `$V`, from the assets of
    `https://github.com/awebai/oats/releases/tag/v$V`. The person installs
    it; you give the link and the CLIs it accepts. It goes before the CLI
-   because the older Desktop refuses the new CLI.
+   because the older Desktop refuses the new CLI. A first install is the
+   same step, and the same release's Desktop: when the CLI is already
+   `$V`, it is the whole plan with the check.
 3. **The CLI:** `npm install -g @awebai/oats@$V`, as the page says.
 4. **The pi bridges:** `oats update`, run by the new CLI, in every
    deployment on the host. Do not let the old CLI's `oats update` install
@@ -174,7 +179,8 @@ The upgrade is done when:
 - `oats version --json` reports `$V`;
 - each deployment's `oats doctor`, run after the last step, shows no
   version-skew warning, and you read its other warnings to the person;
-- where the Desktop is installed, it is version `$V` and lists the
+- where the Desktop is installed, or the person asked for it, it is
+  version `$V` and lists the
   deployment's instances;
 - every step of the plan is done, or the person declined it.
 

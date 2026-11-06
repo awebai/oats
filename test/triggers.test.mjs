@@ -44,11 +44,12 @@ echo "unexpected gh $*" >&2; exit 2
   return gh;
 }
 
-function fixture({ soul = {}, local = {} } = {}) {
+/** `capabilities`: more member capabilities ({ <id>: { manifest, files } }), each one the soul's too. */
+function fixture({ soul = {}, local = {}, capabilities = {} } = {}) {
   const fx = v2Deployment({
     name: "acme",
-    souls: { reviewer: { soul: { capabilities: { "acme-msg": { from: "here" } }, ...soul } } },
-    capabilities: { "acme-msg": { manifest: { layer: "messaging", settings: { join: { description: "team labels to join" } } } } },
+    souls: { reviewer: { soul: { capabilities: { "acme-msg": { from: "here" }, ...Object.fromEntries(Object.keys(capabilities).map((id) => [id, { from: "here" }])) }, ...soul } } },
+    capabilities: { "acme-msg": { manifest: { layer: "messaging", settings: { join: { description: "team labels to join" } } } }, ...capabilities },
     workspace: { teams: { global: { description: "Fixture" }, okf: { description: "Knowledge operations" } } },
     local,
   });
@@ -171,6 +172,28 @@ test("a failed spawn is retried on the next poll, and its key is recorded only o
   st = ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0];
   assert.equal(st.pending.length, 0); assert.equal(st.firedTotal, 1);
   assert.equal((await tick(fx, "2026-09-26T12:04:10Z")).filter((r) => r.action === "fired").length, 0);
+});
+
+test("a spawn its required spawn hook refuses leaves the event pending, and is retried once the hook admits it", async (t) => {
+  // A capability's own refusal (a messaging capability's revoked spawner chain, missing evidence) reaches a
+  // trigger as this. The hook admits a spawn once <the fixture's private HOME>/admit exists.
+  const hook = `import { existsSync } from "node:fs";
+if (!existsSync(process.env.HOME + "/admit")) { process.stderr.write("spawner chain refused\\n"); process.exit(1); }
+console.log("{}");`;
+  const fx = fixture({ capabilities: { "acme.gate": { manifest: { hooks: { spawn: { command: "hook.mjs", required: true } } }, files: { "hook.mjs": hook } } } });
+  t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition({ spawn: { ...definition().spawn, teams: [] } })), "--json"]), "trigger add");
+  fx.gh.pulls([pr(7)]);
+  const refused = await tick(fx, "2026-09-26T12:00:10Z");
+  assert.deepEqual(refused.map((r) => [r.action, r.code]), [["spawn-failed", "E_REQUIRED_HOOK_FAILED"]], JSON.stringify(refused));
+  let st = ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0];
+  assert.equal(st.pending.length, 1); assert.equal(st.firedTotal, 0); assert.equal(st.lastError.code, "E_REQUIRED_HOOK_FAILED");
+  assert.equal(homes(fx).length, 0, "the refused spawn left no home");
+  writeFileSync(join(fx.env.HOME, "admit"), "");
+  const retried = await tick(fx, "2026-09-26T12:02:10Z");
+  assert.deepEqual(retried.map((r) => r.action), ["fired"], JSON.stringify(retried));
+  st = ok(fx.cli(["trigger", "status", "--json"]), "status").triggers[0];
+  assert.equal(st.pending.length, 0); assert.equal(st.firedTotal, 1);
 });
 
 test("events: reopened, synchronize and labeled are inferred poll over poll; a closed PR's pending events are dropped", () => {

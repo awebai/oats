@@ -1,4 +1,4 @@
-// 5.0 has no kernel/provider publication worker or completion/retry journal.
+// 5.8 has no kernel/provider publication worker or completion/retry journal.
 // Execute the materialized skill's actual Git/gh command block against local
 // repositories (gh is a narrow argv-checking fake). This proves Git isolation
 // and the command template, NOT model judgment, real GitHub or owner review.
@@ -7,22 +7,38 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { fixture, write, json, readJSON } from './helpers/okf-v2.mjs';
 
 function github(f) {
   const prs = join(f.base, 'prs.json'), calls = join(f.base, 'gh.jsonl');
   json(prs, []);
+  // Match the released 5.8 helper's exact gh surface: stdin body and readback,
+  // not the pre-gate recipe's body pathname or an always-successful fake.
   write(join(f.bin, 'gh'), `#!${process.execPath}
-import * as fs from 'node:fs';import {execFileSync} from 'node:child_process';
+import * as fs from 'node:fs';import {execFileSync} from 'node:child_process';import assert from 'node:assert/strict';
 const a=process.argv.slice(2),v=k=>a[a.indexOf(k)+1],p=${JSON.stringify(prs)};
 fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(a)+'\\n');
-if(v('--repo')!=='fixture/knowledge') process.exit(92);
-if(a[0]==='label' && a[1]==='create' && a[2]==='okf-harvest' && a.includes('--force')) process.exit(0);
-if(a[0]!=='pr' || a[1]!=='create' || v('--base')!=='main' || !a.includes('--head') || v('--title')!=='OKF knowledge proposal' || !fs.statSync(v('--body-file')).isFile()) process.exit(91);
-const head=v('--head'),oid=execFileSync('git',['ls-remote',${JSON.stringify(f.accepted)},'refs/heads/'+head],{encoding:'utf8'}).trim().split(/\\s/)[0];
-if(!/^[0-9a-f]{40}$/.test(oid)) process.exit(93);
-const old=JSON.parse(fs.readFileSync(p)),number=old.length+1,url='https://github.com/fixture/knowledge/pull/'+number;
-old.push({number,url,state:'OPEN',headRefName:head,headRefOid:oid,baseRefName:v('--base')});fs.writeFileSync(p,JSON.stringify(old));console.log(url);
+const remoteHead=branch=>{
+  const rows=execFileSync('git',['ls-remote','--refs',${JSON.stringify(f.accepted)},'refs/heads/'+branch],{encoding:'utf8'}).trim().split('\\n');
+  assert.equal(rows.length,1);
+  const [oid,ref]=rows[0].split('\\t');assert.match(oid,/^[0-9a-f]{40}$/);assert.equal(ref,'refs/heads/'+branch);return oid;
+};
+if(a[0]==='label') {
+  assert.deepEqual(a,['label','create','okf-harvest','--repo','fixture/knowledge','--force','--color','0E8A16','--description','OKF harvest PR (oats.okf)']);
+} else if(a[0]==='pr' && a[1]==='create') {
+  const head=v('--head');assert.match(head,/^okf-harvest\\//);
+  assert.deepEqual(a,['pr','create','--repo','fixture/knowledge','--base','main','--head',head,'--label','okf-harvest','--title','OKF knowledge proposal','--body-file','-']);
+  const body=fs.readFileSync(0,'utf8');assert.ok(body.trim());
+  const old=JSON.parse(fs.readFileSync(p)),number=old.length+1,url='https://github.com/fixture/knowledge/pull/'+number;
+  old.push({number,url,state:'OPEN',headRefName:head,headRefOid:remoteHead(head),baseRefName:'main',isCrossRepository:false,title:'OKF knowledge proposal',body});
+  fs.writeFileSync(p,JSON.stringify(old));console.log(url);
+} else if(a[0]==='pr' && a[1]==='view') {
+  assert.deepEqual(a,['pr','view',a[2],'--repo','fixture/knowledge','--json','state,headRefOid,headRefName,baseRefName,isCrossRepository,title,body']);
+  assert.match(a[2],/^[1-9][0-9]*$/);
+  const pr=JSON.parse(fs.readFileSync(p)).find(x=>String(x.number)===a[2]);assert.ok(pr);
+  console.log(JSON.stringify({...pr,headRefOid:remoteHead(pr.headRefName)}));
+} else { process.exit(91); }
 `);
   fs.chmodSync(join(f.bin, 'gh'), 0o755);
   return { prs, calls };
@@ -31,6 +47,10 @@ function stage(f) {
   write(join(f.home, 'notes/lesson.md'), 'A bounded review decision.\n');
   const run = f.propose(), clone = join(run.home, 'work/project');
   f.git('clone', '-q', f.accepted, clone);
+  // The gate clears inherited GIT_* selectors. Keep the real transport local
+  // through repository config as well, without relying on inherited env.
+  f.git('-C', clone, 'config', 'protocol.allow', 'never');
+  f.git('-C', clone, 'config', 'protocol.file.allow', 'always');
   const base = join(clone, 'knowledge');
   write(join(base, 'expert/decision.md'), '---\ntype: Decision\ntitle: File based claims\ndescription: Why claim text is written as data.\n---\n\nClaims are data, never shell commands.\n');
   fs.appendFileSync(join(base, 'expert/index.md'), '* [File based claims](decision.md) - Why claim text is data.\n');
@@ -42,27 +62,45 @@ function publishTemplate(f, staged) {
   const message = join(staged.run.home, 'commit.txt'), body = join(staged.run.home, 'pr.md'), report = join(staged.run.home, 'publication.txt');
   // Native file writes, not shell interpolation of claims or source identity.
   write(message, `okf-harvest: file based claims\n\nSource: instance ${f.source.instance}\n`);
-  write(body, 'Fixture proposal; review is required.\n');
+  const provenance = {
+    version: 2,
+    source: { soul: 'source', owner: 'source-owner', instance: f.source.instance,
+      ownedNodes: ['project/expert'], readNodes: ['project/peer'],
+      bases: [{ alias: 'project', id: 'fixture-base', kind: 'git', root: 'knowledge', repository: 'fixture/knowledge' }] },
+    evidence: [{ note: 'notes/lesson.md', sha256: createHash('sha256').update(fs.readFileSync(join(f.home, 'notes/lesson.md'))).digest('hex') }],
+    tasks: { provider: null, refs: [] }, harvester: { instance: staged.run.instance, alias: null },
+  };
+  write(body, 'Fixture proposal; review is required.\n\n```okf-harvest\n' + JSON.stringify(provenance, null, 2) + '\n```\n');
   const shellData = value => value.replaceAll("'", "'\\''");
   const command = block.replaceAll('<alias>', 'project').replace('<owned paths>', "'knowledge/expert'")
     .replace('<absolute commit message file>', () => shellData(message)).replace('<absolute PR body file>', () => shellData(body))
     .replace('<absolute publication report file>', () => shellData(report))
+    .replace('<notification-mode>', 'unavailable')
+    .replaceAll('<okf-authoring skill dir>', () => shellData(join(staged.run.home, '.agents/skills/okf-authoring')))
+    .replaceAll('<recorded clone locator>', () => shellData(f.accepted))
     .replace('<source notification command or skipped notice>', () => "printf '%s\\n' 'Source notification unavailable/skipped; not sent.'")
-    .replaceAll('<owner>/<repo>', 'fixture/knowledge').replaceAll('<acceptedBranch>', 'main');
+    .replaceAll('<owner>', 'fixture').replaceAll('<repo>', 'knowledge').replaceAll('<acceptedBranch>', 'main');
   assert.doesNotMatch(command, /<[^<>]+>/);
   const env = { ...f.env, PATH: `${f.bin}:${process.env.PATH}` };
   const validator = spawnSync(process.execPath, [join(staged.run.home, '.agents/skills/okf-authoring/scripts/okf-validate.mjs'), staged.base, '--strict'], { cwd: staged.run.home, env, encoding: 'utf8' });
   assert.equal(validator.status, 0, validator.stdout + validator.stderr);
   const published = spawnSync('bash', ['-e', '-c', command], { cwd: staged.run.home, env, encoding: 'utf8' });
   assert.equal(published.status, 0, published.stdout + published.stderr);
+  const committed = readJSON(`${report}.commit`), created = readJSON(`${report}.push`);
+  assert.equal(committed.ok, true); assert.equal(committed.status, 'committed');
+  assert.equal(created.ok, true); assert.equal(created.status, 'created');
+  assert.equal(created.head, committed.head, 'create publishes the screened local commit');
+  assert.equal(readJSON(join(f.base, 'prs.json')).at(-1).body, fs.readFileSync(body, 'utf8'), 'gh receives exact body bytes on stdin');
   const branch = f.git('-C', staged.clone, 'branch', '--show-current');
   f.git('check-ref-format', `refs/heads/${branch}`);
+  assert.equal(created.branch, branch);
+  assert.equal(f.git('-C', staged.clone, 'rev-parse', 'HEAD'), committed.head);
   assert.match(branch, /^okf-harvest\/\d{8}-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
   assert.ok(f.git('-C', staged.clone, 'log', '-1', '--format=%B').includes(`Source: instance ${f.source.instance}`));
   return branch;
 }
 
-test('materialized 5.0 publishing commands create a Git proposal without changing accepted HEAD or reclaiming old branches', t => {
+test('materialized 5.8 publishing commands create a Git proposal without changing accepted HEAD or reclaiming old branches', t => {
   const f = fixture(t, { git: true }), gh = github(f), git = (...a) => f.git('-C', f.accepted, ...a);
   const head = git('rev-parse', 'HEAD'); git('branch', 'memory-harvest/source-probe');
   const staged = stage(f), branch = publishTemplate(f, staged), commit = git('rev-parse', branch);

@@ -10,7 +10,7 @@
  *      a link to the kernel that launched it) → realpath → its package root, whatever
  *      PATH pi has
  *   3. the `oats` binary on PATH → realpath → its package root
- *   4. `npm root -g`/@awebai/oats (binary not linked but package present)
+ *   4. `npm root -g`/<either npm name of the kernel> (binary not linked but package present)
  * Steps 2 and 3 find the package from the binary's real path: an `oats` that is
  * a script running the kernel from elsewhere names no package, and is passed
  * over. Step 2 takes only a link, and falls through silently without one.
@@ -20,12 +20,12 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const PKG_NAME = "@awebai/oats";
+const PKG_NAMES = ["@awebai/oats", "@oats-project/oats"];
 
 function isKernelRoot(dir) {
   const pj = join(dir, "package.json");
   if (!existsSync(pj) || !existsSync(join(dir, "lib", "core.mjs"))) return false;
-  try { return JSON.parse(readFileSync(pj, "utf8")).name === PKG_NAME; } catch { return false; }
+  try { return PKG_NAMES.includes(JSON.parse(readFileSync(pj, "utf8")).name); } catch { return false; }
 }
 
 /** The kernel package a binary's real path lies in (<pkg>/bin/oats.mjs → <pkg>), or undefined. */
@@ -54,8 +54,10 @@ function findKernelRoot() {
   } catch { /* not on PATH */ }
   try {
     const g = execSync("npm root -g", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-    const cand = join(g, PKG_NAME);
-    if (isKernelRoot(cand)) return cand;
+    for (const name of PKG_NAMES) {
+      const cand = join(g, name);
+      if (isKernelRoot(cand)) return cand;
+    }
   } catch { /* no npm */ }
   return undefined;
 }

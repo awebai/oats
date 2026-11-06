@@ -52,6 +52,10 @@
       "type": "object",
       "description": "Opaque provider payload consumed by the messaging core capability. A team's provider id is teams.<label>.team."
     },
+    "tasks": {
+      "type": "object",
+      "description": "Opaque provider payload consumed by the capability that fills the tasks slot, merged at the same layer as messaging: (above the manifest's defaults, below a soul's tasks: payload). Kernels before the workspace-tasks-payload feature refuse this key."
+    },
     "external": {
       "type": "array",
       "items": { "$ref": "#/$defs/external" },
@@ -72,12 +76,12 @@
     "memberRef": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
-      "description": "A repo ref (git:<host>/<path>, https://…, git@host:path.git, file:///…) with NO @revision."
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$",
+      "description": "A repo ref (git:<host>/<path>, https://…, git@host:path.git, ssh://<user>@<host>[:<port>]/<path> with no password, file:///…) with NO @revision."
     },
     "pinnedRef": {
       "type": "string",
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)@[0-9a-f]{40}$",
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)@[0-9a-f]{40}$",
       "description": "<repo ref>@<full 40-hex commit OID>."
     },
     "repoKey": {

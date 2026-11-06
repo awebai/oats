@@ -25,6 +25,11 @@ You hold no knowledge slot: you do not consult with `oats okf`; you read the
 base from your own checkout.
 
 Load **knowledge-theory** (the doctrine) and **okf-authoring** (the craft).
+Read [the publication gate](../okf-authoring/references/publication-safety.md).
+All publication goes through its executable helper: no direct push, comment,
+edit, close-with-comment or merge is a substitute. Exit 1 (content refused) and
+exit 2 (input/operational error) both stop publication; retain and report a
+safe code/location, never matched values or tool stderr.
 
 ## 1. Read the event and the provenance
 
@@ -48,8 +53,10 @@ review the PR as an unprovenanced change: request changes, or close it with
 that reason.
 
 **Tolerate a second run.** Triggers deliver at least once. If the PR is
-already merged or closed, or you already left an `okf-review` verdict for its
-current head, do not review it again: retire. An `okf-needs-human` label left
+already merged or closed, do not review it again: retire. A prior verdict on
+an **open** PR is not settlement: inspect the recorded result before any
+separately authorized recovery; do not repost or replay an uncertain write.
+A verdict for an old head never covers a rewritten head. An `okf-needs-human` label left
 from an older release stops nothing, and an older release's `needs-human`
 verdict is not a review: review the PR like any other.
 
@@ -61,6 +68,15 @@ gh pr checkout <number>
 git diff --stat origin/<base>...HEAD
 oats okf-maintenance review-context --pr <url> --checkout ./work/kb    # maps nodes to paths, lists changed files and neighbours
 ```
+
+Fetch and pin the current accepted branch tip. A PR can be behind it without
+being invalid: read the accepted tip's indexes, neighbours and intervening
+changes too (for example `git show <accepted-oid>:<path>`), not only the old PR
+checkout. The helper screens from the unique fork with that tip and keeps the
+live tip/head checks. A behind `merge` refuses with `E_REWRITE_REQUIRED`: v2
+must materialize an exact screened replacement using `rewrite` and receive a
+fresh verdict before merge; a behind legacy v1 PR closes for a new v2 proposal.
+Do not pretend a stale base OID is current or certify hosted merge semantics.
 
 Then read, in the checkout:
 - the changed concepts, in full;
@@ -100,9 +116,10 @@ Apply knowledge-theory to every changed concept:
   Naming the author of a published source you cite is fine. Check the
   changed concepts, the PR title and body, and the names in the provenance
   block (note file names, task refs, instance names). Your review comes
-  after the push: amending or closing keeps personal data out of the
-  accepted base, not out of the pushed branch or the pull request. Say that
-  in the verdict, without repeating the data;
+  after the push: rewriting can remove branch-only content from the PR branch's
+  reachable history, but cannot undo the initial exposure. Pull refs, old
+  diffs, caches and clones can retain it. Report real exposure privately by
+  location for rotation/platform remediation, without repeating the data;
 - `okf-validate.mjs --strict` passes on the whole base.
 
 ## 5. Superseding a human-accepted decision
@@ -174,7 +191,11 @@ own account's PR, and your host may share an account with the harvester's):
 Prose: what you checked, what you changed and why.
 ````
 
-`gh pr comment <number> --repo <repo> --body-file <file>`.
+Write the verdict to a file with native file tools. The `merge`, `close` or
+`close-unsafe` helper screens its bytes and posts it from stdin as part of the
+chosen settlement. Do not post it separately with raw `gh`. For a rewrite,
+write this verdict only after reviewing the **new** head: previous verdicts
+never carry forward.
 
 A 4.x source's `oats okf complete` reads this block to accept an amended
 merge of a version 1 PR. After an
@@ -184,12 +205,20 @@ merges, or from a member, collaborator or owner of the repository.
 
 The verdicts:
 - **merge**: every check passes.
-- **amend+merge**: fixable problems. Fix them yourself on the PR branch
-  (supersession edits in other concepts of the same base, index/log entries,
-  wording, a missing citation), validate the whole base, commit on top of
-  the PR head and push to the PR branch, then merge. Never rewrite or
-  force-push the branch: a 4.x `complete` accepts only a head that contains
-  the delivered commit. Never rewrite the harvester's evidence citations.
+- **amend+merge**: fixable problems. Fix them in your checkout (supersession
+  edits, index/log entries, wording or citations), validate the whole base and
+  stage the sanitized PR changes. For **v2**, use `rewrite` below: it applies
+  the fork-to-staged delta to the current accepted tree with three-way text
+  merging, preserving intervening accepted work. It never merely reparents the
+  old full checkout. The result is one new commit from the accepted tip, never
+  a parent pointing to the old PR head. Reconciliation conflicts stop before
+  publication; review/drop the conflicting change or close for re-proposal.
+  The exact old-head lease is required. Review the returned new head and bind
+  a fresh verdict to it before merge. Never invent or falsify evidence citations.
+  For **v1/4.x**, preserve completion ancestry: `amend-legacy` allows only
+  screened additions on top of the delivered head. A legacy PR needing content
+  removed is closed and its branch deleted with `close-unsafe`, not rewritten
+  or append-sanitized. Route actual exposure privately; pull refs survive.
 - **request-changes**: never wait for the harvester, whether retired or
   retained after publication failure. Put the question in the verdict
   comment for the record, then decide on what the PR
@@ -199,7 +228,9 @@ The verdicts:
 - **close**: the change fails the doctrine, or supersedes a human-accepted
   decision without an acceptance it can stand on (step 5). Close with the
   reason:
-  `gh pr close <number> --repo <repo> --comment "<reason>"`.
+  use the `close` helper with a screened, head-bound verdict file. For unsafe
+  content use `close-unsafe` so the reviewed branch is also deleted with its
+  exact old-head lease. This never deletes GitHub's retained pull ref.
 
 `checks.supersession` reports step 5: `verified` or `source-reported` when
 the PR supersedes a human-accepted concept on an acceptance you verified or
@@ -207,16 +238,61 @@ the source reported (a relay included), `fail` when you close it for want of one
 (`amended` when you made a supersession explicit yourself) when it touches no
 human-accepted concept.
 
-Merge with the host's credentials, tied to the head you judged:
+Use these commands from home, filling only record-checked values. The base
+and head are full OIDs, not symbolic refs; the base is the fetched current
+accepted tip and the head is the reviewed PR head. The remote is the recorded
+clone locator. A behind head is supported for v2 replacement via its unique fork
+with the base, never for direct merge. Do not change the accepted branch or
+refresh an OID merely to bypass a refusal.
+For an amendment, write a safe commit message and safe PR body first:
 
 ```sh
-oats okf-maintenance review-context --pr <url>     # again, right before merging: stop if settled
-gh pr merge <number> --repo <repo> --squash --match-head-commit <headSha>
+node '<okf-authoring skill dir>/scripts/okf-publication.mjs' rewrite \
+  --repo './work/kb' --remote '<recorded clone locator>' --github '<owner>/<repo>' \
+  --base '<accepted-oid>' --base-branch '<acceptedBranch>' --head '<old-head-oid>' \
+  --pr '<number>' --commit-file '<commit-file>' --body-file '<safe-PR-body-file>'
 ```
 
-`<headSha>` is the head you reviewed and named in the verdict (after an
-amend+merge push, the head you pushed and validated). If the PR moved since,
-the merge is refused: review the new head instead.
+For permitted legacy additions use `amend-legacy` instead of `rewrite`. For a
+v2 rewrite, fetch and check out the returned OID, verify the remote branch
+points to it with a single current-accepted-tip parent, validate the reconciled
+whole base and review it again, including preservation of intervening work.
+Compare the sanitized delta against the previously reviewed head with
+`git range-diff <old-fork>..<old-head> <current-accepted-tip>..<new-head>`.
+Read this locally: never paste rejected lines or identifying details from that
+comparison into the verdict. The fresh verdict must name `<new-head>`, not the
+previously reviewed SHA. The old head must not be its ancestor; removed
+branch-only blobs must be unreachable.
+Do not create backup refs. If contaminated content is already in accepted
+history, stop and route it: rewriting this PR cannot remove that ancestor.
+
+After re-review, write the new verdict file and merge with the host's
+credentials, tied to that head:
+
+```sh
+oats okf-maintenance review-context --pr <url>     # right before merging: stop if settled
+node '<okf-authoring skill dir>/scripts/okf-publication.mjs' merge \
+  --repo './work/kb' --remote '<recorded clone locator>' --github '<owner>/<repo>' \
+  --base '<accepted-oid>' --base-branch '<acceptedBranch>' --head '<reviewed-head-oid>' \
+  --pr '<number>' --verdict-file '<verdict-file>'
+```
+
+Use the same flags with `close` or `close-unsafe` and a `close` verdict for
+those outcomes. The helper screens before every supported write, uses the
+exact OID/old-head lease, sends immutable text bytes, and never uses an
+automatic merge summary of prior commits. It rechecks the screened head tree
+and that the accepted pin is current before merge. A moved accepted tip refuses
+again with `E_REWRITE_REQUIRED`, even after a completed rewrite; do not retry by
+automatically recomposing. A moved head also refuses. Prior accepted-branch advancement requires the v2 rewrite/fresh-review
+path, or closing a legacy v1 PR for re-proposal; no approximate local squash
+stands in for the exact tree being published. Its merge result is a submission: read back that the PR actually merged before reporting
+acceptance or retiring. A queued merge is not a completed review. A partial
+write/error keeps the live home for inspection, not an automatic retry.
+
+Deleting the branch leaves `refs/pull/N/head` and potentially other copies.
+Privately name real-exposure locations to the authorized maintainer for
+rotation and, when warranted, GitHub Support's ref/cache removal. Never repeat
+the data in the PR verdict, message, task note or report.
 
 ## 7. Retire
 

@@ -21,6 +21,7 @@ import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rea
 import { devNull } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { currentRepoKey } from "../lib/repo-moves.mjs";
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // okf 4.0.0 exports three capabilities: the knowledge slot (oats.okf) and the
@@ -352,12 +353,14 @@ export function generateOkfSourceInventory(standaloneRoot) {
 // Canonical GitHub transports identify the same repository. Do not silently
 // accept an origin rewritten via insteadOf to some unrelated remote. The
 // expected repository is injectable through the JS API for local bare fixtures;
-// the release CLI always requires the official source repository.
-function repositoryIdentity(url) {
-  if ([SOURCE_REPOSITORY, SOURCE_REPOSITORY.slice(0, -4),
-    "git@github.com:awebai/oats-okf.git", "git@github.com:awebai/oats-okf",
-    "ssh://git@github.com/awebai/oats-okf.git", "ssh://git@github.com/awebai/oats-okf"].includes(url)) return SOURCE_REPOSITORY;
-  return url;
+// the release CLI always requires the official source repository. A clone may
+// name it under either spelling of its move (lib/repo-moves.mjs): the identity,
+// and so the inventory's provenance, stays SOURCE_REPOSITORY.
+const SOURCE_URLS = ["github.com/awebai/oats-okf", currentRepoKey("github.com/awebai/oats-okf")]
+  .map((key) => key.slice("github.com/".length))
+  .flatMap((path) => [`https://github.com/${path}.git`, `https://github.com/${path}`, `git@github.com:${path}.git`, `git@github.com:${path}`, `ssh://git@github.com/${path}.git`, `ssh://git@github.com/${path}`]);
+export function repositoryIdentity(url) {
+  return SOURCE_URLS.includes(url) ? SOURCE_REPOSITORY : url;
 }
 function publishedRef(source, finalTag, finalCommit, repository) {
   const origins = sourceGit(source, ["remote", "get-url", "--all", "origin"]).trim().split("\n");

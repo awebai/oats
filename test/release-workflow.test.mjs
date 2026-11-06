@@ -190,8 +190,8 @@ test("ad-hoc signing posture: certificate auto-discovery disabled; supported mat
   assert.ok(!/runs-on:\s*windows|os:\s*windows/i.test(yml), "no Windows matrix/job in 0.18.x");
   assert.ok(!/os:\s*macos-13/.test(yml), "release never depends on the sunset macos-13 runner");
   const desktopJob = yml.slice(yml.indexOf("desktop-build:"), yml.indexOf("\n  publish:", yml.indexOf("desktop-build:")));
-  assert.match(desktopJob, /os:\s*macos-14[\s\S]*arch:\s*arm64[\s\S]*builder_args:\s*--arm64/, "macOS arm64 on macos-14");
-  assert.match(desktopJob, /os:\s*macos-14[\s\S]*arch:\s*x64[\s\S]*builder_args:\s*--x64/, "macOS x64 cross-build on macos-14");
+  assert.match(desktopJob, /os:\s*macos-15[\s\S]*arch:\s*arm64[\s\S]*builder_args:\s*--arm64/, "macOS arm64 on macos-15");
+  assert.match(desktopJob, /os:\s*macos-15[\s\S]*arch:\s*x64[\s\S]*builder_args:\s*--x64/, "macOS x64 cross-build on macos-15");
   assert.match(desktopJob, /os:\s*ubuntu-24\.04[\s\S]*arch:\s*x64/, "Linux x64");
   assert.match(desktopJob, /Install Rosetta[\s\S]*matrix\.arch == 'x64'/, "x64 leg installs Rosetta");
   assert.match(desktopJob, /npm run dist -- \$\{\{ matrix\.builder_args \}\}/, "matrix arch flag reaches electron-builder");
@@ -312,8 +312,8 @@ test("build-installers workflow is VERIFY-ONLY (no publish/release/tag surface)"
   // same 3-leg matrix as the release desktop-build, fail-fast:false
   assert.match(bi, /fail-fast:\s*false/, "independent per-leg evidence");
   assert.ok(!/os:\s*macos-13/.test(bi), "build verification never depends on the sunset macos-13 runner");
-  assert.match(bi, /os:\s*macos-14[\s\S]*arch:\s*arm64[\s\S]*builder_args:\s*--arm64/, "matrix includes mac arm64");
-  assert.match(bi, /os:\s*macos-14[\s\S]*arch:\s*x64[\s\S]*builder_args:\s*--x64/, "matrix includes mac x64 cross-build");
+  assert.match(bi, /os:\s*macos-15[\s\S]*arch:\s*arm64[\s\S]*builder_args:\s*--arm64/, "matrix includes mac arm64");
+  assert.match(bi, /os:\s*macos-15[\s\S]*arch:\s*x64[\s\S]*builder_args:\s*--x64/, "matrix includes mac x64 cross-build");
   assert.match(bi, /os:\s*ubuntu-24\.04[\s\S]*arch:\s*x64/, "matrix includes Linux x64");
   assert.match(bi, /Install Rosetta[\s\S]*matrix\.arch == 'x64'/, "x64 leg installs Rosetta before smoke");
   assert.match(bi, /npm run dist -- \$\{\{ matrix\.builder_args \}\}/, "matrix arch flag reaches electron-builder");

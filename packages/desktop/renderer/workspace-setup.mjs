@@ -9,6 +9,7 @@
 import { iconElement } from './shell-icons.mjs';
 import { memberState, MEMBER_PROBLEMS } from './workspace-catalog.mjs';
 import { packageOrigin } from '../../client/capability-facts.mjs';
+import { sameRepo } from '../../client/repo-moves.mjs';
 
 export const setupCSS = `
 /* Type scale (spec "Type hierarchy", shared with the Teams tab): screen title 24/700, section 18/650,
@@ -313,7 +314,7 @@ export function renderSetup(host, { status, instances = [], souls = [], cli = nu
 function hostName(status) {
   const ws = status?.workspace || {};
   if (!text(ws.key)) return null;
-  const host = list(status?.members).find(m => m.key === ws.key);
+  const host = list(status?.members).find(m => sameRepo(m.key, ws.key));
   return host ? memberName(host) : tail(ws.url || ws.key);
 }
 
@@ -373,7 +374,7 @@ function explainer(doc, status, host) {
   how.append("The host's ", named(wsFile, 'workspace file'), " lists each member, and each member's ", named(memberFile, 'membership file'),
     ' names the workspace back. A member counts only when both links are in place.');
   // The drawing repeats the paragraph with an example member: the first confirmed one that isn't the host.
-  const others = members.filter(m => !text(ws.key) || m?.key !== ws.key);
+  const others = members.filter(m => !text(ws.key) || !sameRepo(m?.key, ws.key));
   const example = others.find(m => memberState(m).ok) || others[0];
   const sample = example ? memberName(example) : 'a member repo', hostWord = name || 'the host repo';
   const repo = (role, title, key, value) => {
@@ -424,7 +425,7 @@ function sharedSection(doc, { status, onSelect, openExternal }) {
   const members = box(doc, 'Members', 'Each repository and whether both of its links are in place.', { heading: 'h4' });
   const memberRows = el(doc, 'div', null, 'setup-rows'); memberRows.dataset.rows = 'members';
   // The host first (it is a member too); the others in the kernel's order.
-  const isHost = m => !!text(ws.key) && m?.key === ws.key;
+  const isHost = m => !!text(ws.key) && sameRepo(m?.key, ws.key);
   for (const member of [...list(status?.members)].sort((a, b) => isHost(b) - isHost(a))) {
     const row = el(doc, 'div', null, 'setup-row'); row.dataset.member = member.key;
     const name = el(doc, 'span', null, 'setup-name'); name.append(iconElement(doc, 'repo', { size: 15 }));
@@ -625,7 +626,7 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
   const body = el(doc, 'div', null, 'setup-shared-body');
   const card = el(doc, 'div', null, 'setup-card setup-ws');
   card.append(el(doc, 'span', `Workspace ${text(ws.name) || ''}`.trim(), 'setup-card-title'));
-  const host = members.find(m => m.key === ws.key);
+  const host = members.find(m => sameRepo(m.key, ws.key));
   if (text(ws.key)) { const h = el(doc, 'span', host ? memberName(host) : tail(ws.url || ws.key), 'setup-card-meta mono'); h.title = ws.key; card.append(h); }
   card.append(el(doc, 'span', [plural(list(ws.teams).length, 'team'), plural(list(status?.packages).length, 'package')].join(' · '), 'setup-card-meta'));
   const tree = el(doc, 'ul', null, 'setup-tree'); tree.setAttribute('aria-label', 'What the workspace is built from');
@@ -642,7 +643,7 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
   if (members.length) label('Members, latest');
   for (const member of members) {
     const state = memberState(member), souls = list(member.souls).length;
-    const meta = state.ok ? [member.key === ws.key ? 'host · member' : null, plural(souls, 'soul')].filter(Boolean).join(' · ') : state.label;
+    const meta = state.ok ? [sameRepo(member.key, ws.key) ? 'host · member' : null, plural(souls, 'soul')].filter(Boolean).join(' · ') : state.label;
     const node = item('repo', memberName(member), meta, { bad: !state.ok, pressed: member.key === selected,
       run: () => onSelect(member.key === selected ? null : member.key), aria: `${memberName(member)}: ${meta} — show its membership` });
     node.dataset.member = member.key; leaf(node, !state.ok);

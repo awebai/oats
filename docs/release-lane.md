@@ -222,7 +222,7 @@ and packages it depends on, and what its entry points call of a cache.
   version of an id from the row, so it refuses a step without it.
 
 **`release.yml` and `build-installers.yml` name their runners by version
-too** (`ubuntu-24.04`, as they name `macos-14`), never by a label that GitHub
+too** (`ubuntu-24.04`, as they name `macos-15`), never by a label that GitHub
 moves to another system by itself (`ubuntu-latest`). The Linux installers are
 built on that runner, and what they need of a system follows the system that
 built them.
@@ -231,7 +231,7 @@ break on the new system shows in pull-request CI first and not at a release.
 
 The labels `release.yml` and `build-installers.yml` may name are a list beside
 the table of actions in `test/workflow-no-cache.test.mjs`: `ubuntu-24.04` and
-`macos-14`. Every job of the two runs on a label of that list, and both build
+`macos-15`. Every job of the two runs on a label of that list, and both build
 on the same Linux. A label is added to the list by whoever decides the runner,
 as an action's row is by whoever read it.
 
@@ -401,7 +401,7 @@ DMG/ZIP/AppImage/DEB artifacts exist, both packaged macOS `.app` bundles
 pass strict deep codesign verification of their complete ad-hoc signatures
 (`codesign --verify --deep --strict`), node-pty's packaged `spawn-helper` is
 executable, and node-pty loads and spawns under the packaged Electron ABI.
-The macOS x64 leg cross-builds on macos-14 and installs Rosetta 2 so that its
+The macOS x64 leg cross-builds on macos-15 and installs Rosetta 2 so that its
 x64 Electron + node-pty ABI probe really executes; a wrong-architecture
 native module fails that leg.
 
@@ -480,8 +480,8 @@ always records `release.status: pending`.
 ## Releasing `oats.framework`
 
 The distribution package in `oats-package/` (`oats.core`, `oats.setup`,
-`oats.support`, `oats.knowledge-theory`) is not published by `release.yml` or
-by this lane. A deployment takes it from this repository at the tag
+`oats.onboarding`, `oats.support`, `oats.knowledge-theory`) is not published
+by `release.yml` or by this lane. A deployment takes it from this repository at the tag
 `oats-framework/v<version>`, through the catalog ref or its workspace pin. A
 skill changed under `oats-package/` therefore reaches deployments only when
 that tag moves, whatever kernel version carried the change.

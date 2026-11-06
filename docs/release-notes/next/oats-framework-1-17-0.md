@@ -1,4 +1,0 @@
-## Provider updates
-
-- **oats.framework 1.17.0: oats.core 2.11.0, oats.setup 2.9.6.** oats.core's Claude hooks report a turn that ends in a provider error, and set the `permission` claim as a permission dialog opens, on a Claude Code that fires those hooks. `/oats-operate` says what a wake's hold covers and what it leaves open. oats.setup's `/oats-host-delivery` names the approved route for the development prompt, and `session` leaves its hand-back choices for Claude seats; `delivery: session` stays supported. The hooks need OATS 0.69.7: on an older kernel oats.core writes neither of them. The floors and the other capabilities are unchanged.
-- **Upgrade:** `oats sync` locks it once the workspace or the catalog pins `oats.framework: v1.17.0`. New spawns get it, and a stopped home moves with `oats instance upgrade`, from OATS 0.68.0.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { startSingleInstance, launchDirectory, createLaunchOpener, ownLaunch, versionHandoffBox, relaunchOptions,
+import { startSingleInstance, launchDirectory, launchInstance, createLaunchOpener, ownLaunch, versionHandoffBox, relaunchOptions,
   createVersionHandoff } from "../single-instance.mjs";
 
 function fixture(lock, version = "0.67.1") {
@@ -273,15 +273,56 @@ test("a box that fails (its window closed underneath) is logged and changes noth
 
 const main = readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
 
+/** main.mjs's launch opener and its --instance select, evaluated over fakes that record every call they get. */
+function mainOpener({ loading = false } = {}) {
+  const start = main.indexOf("function selectLaunchInstance("), end = main.indexOf("// A repeated launch of another version", start);
+  assert.ok(start >= 0 && end > start, "main.mjs builds the launch opener after its --instance select");
+  const calls = [], once = new Map();
+  const record = (name, value) => (...args) => { calls.push([name, ...args]); return typeof value === "function" ? value(...args) : value; };
+  const win = (key) => ({ name: `window of ${key}`, isDestroyed: () => false,
+    webContents: { isLoading: () => loading, send: record("send"), once: (event, fn) => { calls.push(["once", event]); once.set(event, fn); } } });
+  const ctx = { createLaunchOpener, realpathSync: record("realpath", (p) => p), wsValidate: record("validate", (p) => (p === "/d/a" ? { id: p, path: p } : null)),
+    performAdd: record("add", async () => ({ ok: true, workspace: { id: "/d/a" } })), resolveView: record("resolve", "ws:a"),
+    panelWorkspaces: record("panel", async () => []), servedList: [],
+    openWorkspaceWindow: record("open", (key) => ({ opened: true, win: win(key) })), windows: { focusRecent: record("focus-recent", "recent window") } };
+  return { openLaunch: runInNewContext(`${main.slice(start, end)}\nopenLaunch`, ctx), calls, once };
+}
+
 test("main: the opener resolves with the window the launch opened or focused", async () => {
-  const start = main.indexOf("const openLaunch = createLaunchOpener({"), end = main.indexOf("// A repeated launch of another version", start);
-  assert.ok(start >= 0 && end > start, "main.mjs builds the launch opener");
-  const ctx = { createLaunchOpener, realpathSync: (p) => p, wsValidate: (p) => p === "/d/a",
-    performAdd: async () => ({ ok: true, workspace: { id: "/d/a" } }), resolveView: () => "ws:a", panelWorkspaces: async () => [], servedList: [],
-    openWorkspaceWindow: (key) => ({ opened: true, win: `window of ${key}` }), windows: { focusRecent: () => "recent window" } };
-  const openLaunch = runInNewContext(`${main.slice(start, end)}\nopenLaunch`, ctx);
-  assert.equal(await openLaunch("/d/a"), "window of ws:a");
+  const { openLaunch } = mainOpener();
+  assert.equal((await openLaunch("/d/a")).name, "window of ws:a");
   assert.equal(await openLaunch("/home"), "recent window");
+});
+
+test("main: --instance sends the deployment's window its id and the validated name, or only that it was invalid", async () => {
+  for (const [instance, message] of [[{ ok: true, name: "dev-2" }, { deployment: "/d/a", name: "dev-2" }], [{ ok: false }, { invalid: true }]]) {
+    const { openLaunch, calls } = mainOpener();
+    await openLaunch("/d/a", instance);
+    assert.deepEqual(JSON.parse(JSON.stringify(calls.filter(([k]) => k === "send"))), [["send", "window:focus-instance", message]]);
+  }
+});
+
+test("main: a window still loading is asked once its page has loaded", async () => {
+  const { openLaunch, calls, once } = mainOpener({ loading: true });
+  await openLaunch("/d/a", { ok: true, name: "dev-2" });
+  assert.deepEqual(calls.filter(([k]) => k === "send"), []);
+  once.get("did-finish-load")();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.filter(([k]) => k === "send"))), [["send", "window:focus-instance", { deployment: "/d/a", name: "dev-2" }]]);
+});
+
+test("main: --instance adds only that one message: the launch's adds, reads and opens are the same without it", async () => {
+  const plain = mainOpener(), focused = mainOpener();
+  await plain.openLaunch("/d/a");
+  await focused.openLaunch("/d/a", { ok: true, name: "dev-2" });
+  const io = (calls) => calls.filter(([k]) => !["send", "realpath", "validate"].includes(k)).map((c) => JSON.stringify(c));
+  assert.deepEqual(io(focused.calls), io(plain.calls), "no add, read or open of its own");
+  assert.deepEqual(focused.calls.filter(([k]) => k === "send").length, 1);
+});
+
+test("main: the first launch's --instance is read with the same reader and goes to the --dir deployment's window", () => {
+  assert.match(main, /const startupInstance = launchInstance\(process\.argv\);\n  if \(startupInstance && launchKey\) selectLaunchInstance\(windows\.windowOf\(launchKey\), startupInstance, WORKSPACE\);/);
+  assert.ok(main.indexOf("const startupInstance") > main.indexOf("restoreWindows(launchKey);"), "after the launch's window is opened");
+  assert.match(main, /if \(startupIsDeployment\) launchKey = resolveView/, "launchKey is set only for a deployment");
 });
 
 test("main: the version box is native, over the launch's window when it is alive, and Restart relaunches then quits", async () => {
@@ -302,7 +343,7 @@ test("main: the version box is native, over the launch's window when it is alive
 
 test("main: the lock request sends ownLaunch and different versions go to the handoff", () => {
   assert.match(main, /\n\}, ownLaunch\(app\), offerVersionRestart\);\n\nif \(primaryInstance\) app\.on\("window-all-closed"/);
-  assert.match(main, /const primaryInstance = startSingleInstance\(app, \(argv, workingDirectory\) => openLaunch\(launchDirectory\(argv, workingDirectory\)\), async \(\) => \{/);
+  assert.match(main, /const primaryInstance = startSingleInstance\(app, \(argv, workingDirectory\) => openLaunch\(launchDirectory\(argv, workingDirectory\), launchInstance\(argv\)\), async \(\) => \{/);
 });
 
 test("a launch whose handler fails is reported, never swallowed", async () => {
@@ -330,16 +371,52 @@ test("launchDirectory: --dir (relative to the launch's working directory), else 
   assert.equal(launchDirectory(undefined, undefined), null);
 });
 
+test("launchInstance: --instance beside a --dir with a value; a valid name, an invalid one (never kept), or none", () => {
+  assert.deepEqual(launchInstance(["app", "--dir", "/d/a", "--instance", "dev-2"]), { ok: true, name: "dev-2" });
+  assert.deepEqual(launchInstance(["app", "--instance", "dev-2", "--dir", "rel/a"]), { ok: true, name: "dev-2" }, "either order");
+  for (const bad of ["Dev", "a--b", "-", "a b", "<b>x</b>", "x".repeat(65), ""]) {
+    const read = launchInstance(["app", "--dir", "/d/a", "--instance", bad]);
+    assert.deepEqual(read, bad ? { ok: false } : null, JSON.stringify(bad));
+  }
+  assert.equal(launchInstance(["app", "--instance", "dev-2"]), null, "no --dir: as today");
+  assert.equal(launchInstance(["app", "--dir", "--instance", "dev-2"]), null, "a --dir whose value is a switch is no --dir");
+  assert.equal(launchInstance(["app", "--dir", "/d/a", "--instance", "--dir"]), null, "a value that is itself a switch is no value");
+  assert.equal(launchInstance(["app", "--dir", "/d/a", "--instance"]), null);
+  assert.equal(launchInstance(["app", "--dir", "/d/a"]), null);
+  assert.equal(launchInstance(undefined), null);
+  assert.equal(launchInstance(["app", "--dir", "/d/a", "--instance", 7]), null);
+});
+
 function opener({ deployments = ["/d/new", "/d/open"], views = { "/d/new": "ws:new", "/d/open": "ws:open" }, admitFails = false } = {}) {
   const log = [];
   const open = createLaunchOpener({
     isDeployment: (dir) => deployments.includes(dir),
     admit: async (dir) => { log.push(["admit", dir]); return admitFails ? null : views[dir]; },
-    open: (key) => log.push(["open", key]),
-    focusRecent: () => log.push(["focus-recent"]),
+    open: (key) => { log.push(["open", key]); return `window of ${key}`; },
+    focusRecent: () => { log.push(["focus-recent"]); return "recent window"; },
+    select: (win, instance, dir) => log.push(["select", win, instance, dir]),
   });
   return { open, log };
 }
+
+test("second launch with --dir and --instance: the workspace's window is opened or focused, then asked to select", async () => {
+  for (const instance of [{ ok: true, name: "dev-2" }, { ok: false }]) {
+    const o = opener();
+    assert.equal(await o.open("/d/open", instance), "window of ws:open");
+    assert.deepEqual(o.log, [["admit", "/d/open"], ["open", "ws:open"], ["select", "window of ws:open", instance, "/d/open"]]);
+  }
+});
+
+test("--instance only selects in the --dir deployment's window: no deployment, or a failed add, selects nothing", async () => {
+  const instance = { ok: true, name: "dev-2" };
+  for (const [dir, o] of [["/Users/juan", opener()], [null, opener()], ["/d/new", opener({ admitFails: true })]]) {
+    assert.equal(await o.open(dir, instance), "recent window");
+    assert.ok(!o.log.some(([k]) => k === "select"), String(dir));
+  }
+  const o = opener();
+  await o.open("/d/new");
+  assert.deepEqual(o.log, [["admit", "/d/new"], ["open", "ws:new"]], "no --instance: as today, nothing to select");
+});
 
 test("second launch with --dir for a new workspace: admitted through the add path, then its window opened", async () => {
   const o = opener();

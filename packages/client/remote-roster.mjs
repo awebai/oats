@@ -4,6 +4,7 @@ import { madeByKernel } from "./kernel-made.mjs";
 import { waitingOnYouData } from "./waiting-on-you.mjs";
 import { retireData } from "./retire-state.mjs";
 import { readIdentity } from "./workspace-views.mjs";
+import { sameRepo } from "./repo-moves.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
   return {
@@ -149,12 +150,12 @@ export function remoteRosterState(previous, outcome, at) {
       ? env.result.groups : unavailableGroups(previous.remoteGroups, env.error || rosterError(ROSTER_UNAVAILABLE));
     for (const group of incoming) remotePanel(group, at); // validate before replacing the last readable roster
     if (env.ok && outcome.asked) {
-      const listed = new Set(incoming.map((g) => g?.id)), keys = new Set(outcome.asked.keys);
+      const listed = new Set(incoming.map((g) => g?.id)), keys = [...outcome.asked.keys];
       // Only a registered group can be outside the read: one known only from saved routes is always probed.
       const kept = previous.remoteGroups.filter((g) => {
         if (listed.has(g.id) || g.registrationPresent !== true) return false;
         const key = outcome.asked.keyOf(g);
-        return key !== null && !keys.has(key);
+        return key !== null && !keys.some((asked) => sameRepo(asked, key));
       });
       const groups = [...incoming, ...kept];
       return { remoteGroups: groups, rosterAnswered: true, rosterFailure: null, reported: groups, kept: kept.map((g) => g.id) };

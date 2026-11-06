@@ -54,8 +54,8 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
   - git:github.com/acme/tools              # a member that ALSO publishes a package (see below)
 
 packages:                                  # the ONLY versioned things
-  oats.framework: v1.16.4                  # bare version → resolves through the official catalog
-  oats.okf: v5.7.0
+  oats.framework: v1.22.1                  # bare version → resolves through the official catalog
+  oats.okf: v5.8.0
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
 teams:                                     # SHARED teams: the same provider team for everyone
@@ -78,6 +78,8 @@ stores:                                    # knowledge stores, declared once
 
 messaging:                                 # an opaque provider payload for the messaging slot
   private: per-human
+tasks:                                     # the same, for whichever capability fills the tasks slot
+  team: engineering                        # (ignored while the slot is empty, as here unless a soul fills it)
 
 external:                                  # souls borrowed from NON-members; revision REQUIRED
   - source: git:github.com/oss-collective/experts@9c4e1f2a9c4e1f2a9c4e1f2a9c4e1f2a9c4e1f2a
@@ -353,6 +355,41 @@ named `<package>/<soul>` (a bare name when unique), resolved like any soul
 (`from: here` = their own package at the locked commit) and trusted as the
 package is. See [packages](packages.md#package-souls).
 
+### Moved repositories
+
+Seven repositories moved from the `awebai` organisation to `oats-project`:
+`oats`, `oats-okf`, `oats-engineering`, `oats-cloning`, `oats-authoring`,
+`oats-omarchy` and `oats-knowledge`. The kernel holds the table, and keeps it
+for good, because old `oats-local.yaml` files, locks and homes name the old
+keys.
+
+**The old and the new key of a moved repository are one repository, wherever
+a key is compared.** That covers the backlink check, `clones:`, a clone's
+remotes, the key a home recorded at spawn, `from:`, a `git:` package source in
+the lock, a server's `workspaceKey`, the keys given to `--member`, `--repo` and
+`--workspace-key`, and a member's soul named `awebai/<repo>/<soul>` or
+`oats-project/<repo>/<soul>`. The Desktop and the release lane's mirror check
+compare the same way. So a workspace and its members can change
+their strings in any order: a member naming the workspace by the other key
+stays confirmed, and a home recorded under the other key keeps its drift rows.
+
+**The kernel compares and never rewrites.** Every key stays as it was declared
+or recorded: in each JSON answer, in the cache directories, in the lock and in
+`instance.json`. A URL goes to Git as it is written; GitHub redirects the old
+one. A deployment that changes no string behaves as it did before.
+
+Only these seven are moved. Every other `awebai` repository keeps its key, and
+a key that differs only by letter case is still a different key.
+
+**The seven old names in `awebai` are never reused, and nothing is created at
+them.** A repository at an old name, even one that only says "moved", ends
+GitHub's redirect for that name for good, and the kernel would treat it as the
+moved repository.
+
+**The table is closed.** It has these seven entries, and there is no general
+setting for moved repositories. An eighth entry needs a contract answer from
+both sides of the move.
+
 ## Member tier vs package tier: the non-collapse rule
 
 A repository may be a **member** (it completed the handshake; its `souls/*` and
@@ -590,10 +627,23 @@ Why it is shaped this way: [team model 3](design/2026-10-02-team-model-3.md).
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 
-The merged payload is `workspace.messaging` (messaging slot only) ⊕ soul slot
-payload ⊕ `local.settings[cap]` ⊕ `spawn.providers[cap]` — objects deep-merge,
-later wins on scalars and arrays. The provider's own `binding` contract
-(its readiness check) runs over the merged payload. Teams are **not** settings:
+The merged payload is the manifest's setting defaults ⊕ the workspace's
+`messaging:` (for the messaging-slot capability only) or `tasks:` (for the
+tasks-slot capability only) ⊕ soul slot payload ⊕ `local.settings[cap]` ⊕
+`spawn.providers[cap]` — objects deep-merge, later wins on scalars and arrays.
+There is no workspace `knowledge:` payload. A workspace `tasks:` needs a kernel
+with the feature `workspace-tasks-payload`: an older one refuses the file
+(unknown property). The provider's own `binding` contract (its readiness
+check) runs over the merged payload.
+
+A capability's manifest may pin a setting to one of these layers. A key it
+marks `hostOnly` comes only from `oats-local.yaml`; a key it marks
+`committedOnly` never comes from `oats-local.yaml` or `--provider`: it is set
+in the workspace's `messaging:` or `tasks:`, a soul's slot payload, or left at
+the manifest default, so every deployment shares one value. Either one set in
+the wrong layer is refused (`E_WORKSPACE_SCHEMA`, reason `host-only-key` or
+`committed-only-key`), naming the key, where it was set and where it may be set
+([Commands and hooks](capabilities.md#commands-and-hooks)). Teams are **not** settings:
 they reach the provider beside them, in its environment ([Teams](#teams)).
 Where a provider keeps its own state (for oats.aweb, its identity roots) is the
 provider's concern; see its documentation.

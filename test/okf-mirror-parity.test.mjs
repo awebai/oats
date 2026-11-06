@@ -94,7 +94,7 @@ function assertMirrorUnchanged(root, run, pattern) {
 
 test("checked-in mirror is a complete standalone inventory with consistent pending or published provenance", () => {
   const inventory = checkOkfMirror();
-  assert.equal(inventory.version, "5.7.0");
+  assert.equal(inventory.version, "5.8.0");
   assert.equal(inventory.source.repository, "https://github.com/awebai/oats-okf.git");
   assert.equal(inventory.release.plannedTag, `v${inventory.version}`);
   if (inventory.release.status === "pending") {
@@ -383,6 +383,11 @@ for (const [label, mutate, pattern] of [
   ["canonical URL rewritten to a fixture", (f, opts) => {
     f.git("remote", "set-url", "origin", "https://github.com/awebai/oats-okf.git");
     f.git("config", `url.${opts.repository}.insteadOf`, "https://github.com/awebai/oats-okf.git");
+    delete opts.repository;
+  }, /origin does not match expected repository/],
+  ["moved URL rewritten to a fixture", (f, opts) => {
+    f.git("remote", "set-url", "origin", "https://github.com/oats-project/oats-okf.git");
+    f.git("config", `url.${opts.repository}.insteadOf`, "https://github.com/oats-project/oats-okf.git");
     delete opts.repository;
   }, /origin does not match expected repository/],
 ]) {

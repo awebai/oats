@@ -13,10 +13,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { homedir, userInfo } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { AW_MIN, awFloorMessage, onPath, readAwVersion } from "./binding-wire.mjs";
-import { lingerEnabled, manage, managed, runningPid, samePath, searchPath, systemdQuoted, unitDir, unitManager, unitNode, unXml, xml } from "./custody-unit.mjs";
+import { lingerEnabled, manage, managed, reloadLaunchd, runningPid, samePath, searchPath, systemdQuoted, unitDir, unitManager, unitNode, unXml, xml } from "./custody-unit.mjs";
 import { kernelQueryEnvironment } from "./session-readiness.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
 import { expectedReceive, statusListsHome } from "./wake-receive.mjs";
+import { parseVersion, versionAtLeast } from "./aw-floor.mjs";
 
 export const WAKE_LABEL = "ai.aweb.wake";
 export const WAKE_USAGE = "usage: oats aweb wake install [--plan] [--linger-required] [--json] | oats aweb wake status [--json] | oats aweb wake uninstall [--plan] [--json]";
@@ -360,10 +361,15 @@ async function prepareInstall(opts, ctx) {
     const target = `gui/${uid}/${WAKE_LABEL}`;
     const loaded = manage(env, "launchctl", ["print", target]);
     if (loaded.missing) fail("E_WAKE_UNSUPPORTED", "launchctl is not available on this host");
-    // A bootstrap starts the job (RunAtLoad); a loaded, unchanged one restarts.
-    if (!loaded.ok) run("launchctl", ["bootstrap", `gui/${uid}`, path]);
-    else if (changed) { run("launchctl", ["bootout", target]); run("launchctl", ["bootstrap", `gui/${uid}`, path]); }
-    else run("launchctl", ["kickstart", "-k", target]);
+    // A bootstrap starts the job (RunAtLoad) and re-reads the binary's code
+    // requirement; a kickstart doesn't, so after an aw upgrade a kickstarted
+    // job exits 78 ("needs LWCR update"). A loaded job, changed or not, is
+    // booted out and bootstrapped again once it has unloaded.
+    if (loaded.ok) actions.push({
+      display: [describe("launchctl", ["bootout", target]), describe("launchctl", ["bootstrap", `gui/${uid}`, path])],
+      run: () => reloadLaunchd({ env, uid, label: WAKE_LABEL, path, codes: CODES, rerun: "oats aweb wake install", now: ctx.now, sleep: ctx.sleep, timeoutMs: ctx.unloadMs, intervalMs: ctx.unloadIntervalMs }),
+    });
+    else run("launchctl", ["bootstrap", `gui/${uid}`, path]);
   } else {
     // Enabled by its path, as the custody unit is; always restarted, so a
     // rerun after an aw upgrade restarts the broker on the new aw.
@@ -377,8 +383,8 @@ async function prepareInstall(opts, ctx) {
 export async function installWake(opts, ctx) {
   const p = await prepareInstall(opts, ctx);
   const unit = { manager: p.manager, label: WAKE_LABEL, path: p.path };
-  if (opts.plan) return { ok: true, plan: true, unit: { ...unit, written: false, changed: p.changed }, text: p.text, actions: p.actions.map((a) => a.display), warnings: p.warnings };
-  for (const action of p.actions) action.run();
+  if (opts.plan) return { ok: true, plan: true, unit: { ...unit, written: false, changed: p.changed }, text: p.text, actions: p.actions.flatMap((a) => a.display), warnings: p.warnings };
+  for (const action of p.actions) await action.run();
   const { now = Date.now, sleep = (ms) => new Promise((done) => setTimeout(done, ms)), verifyMs = VERIFY_MS, intervalMs = 500 } = ctx;
   const until = now() + verifyMs;
   let daemon;
@@ -420,7 +426,6 @@ export function uninstallWake(opts, ctx) {
   return { ok: true, unit: { ...unit, removed: true } };
 }
 
-const versionBelow = (a, b) => { const A = a.split(".").map(Number), B = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (A[i] !== B[i]) return A[i] < B[i]; return false; };
 
 /** The deployment's instance homes, from one read-only `oats status --json`
  *  through the kernel that dispatched this command (OATS_CLI_BIN). */
@@ -451,7 +456,7 @@ export async function wakeStatus(opts, ctx) {
   const reader = awOnPath ?? unit.aw;
   const status = reader ? readWakeStatus(reader, env, home) : undefined;
   const daemon = { ...daemonOf(status), readable: !!status, floor: { min: AW_MIN, ok: null } };
-  if (daemon.version && /^\d+\.\d+\.\d+$/.test(daemon.version)) daemon.floor.ok = !versionBelow(daemon.version, AW_MIN);
+  if (parseVersion(daemon.version)) daemon.floor.ok = versionAtLeast(daemon.version, AW_MIN);
   const found = deploymentHomes(env, opts.dir);
   let homes = { known: false, reason: found.reason };
   if (found.known) {

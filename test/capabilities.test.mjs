@@ -652,7 +652,7 @@ test("operational commands are gated by active instance metadata; doctor exposes
   // --soul's, or without it the first soul that provides the namespace (named on stderr).
   let r = fx.cli(["ops", "ping"]);
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /pong/);
-  assert.match(r.stderr, /oats ops: no --soul given; running as soul [\w.-]+\/dev,/);
+  assert.match(r.stderr, /oats ops: using the settings and teams of soul [\w.-]+\/dev,/);
   r = fx.cli(["ops", "ping", "--soul", "plain"]);
   assert.equal(r.status, 1); assert.match(r.stderr, /unknown command "ops"/);
   r = fx.cli(["ops", "ping", "--soul", "dev"]);
@@ -3219,7 +3219,11 @@ test("capability instructions and package skills give an independent harvester t
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
   assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
   const skill = readFileSync(join(run.home, ".agents/skills/knowledge-harvest/SKILL.md"), "utf8");
-  assert.match(skill, /commit -F/); assert.match(skill, /--title 'OKF knowledge proposal'/);
+  assert.match(skill, /okf-publication\.mjs' commit/);
+  assert.match(skill, /okf-publication\.mjs' create/);
+  assert.match(skill, /okf-publication\.mjs' screen-text/);
+  const publisher = readFileSync(join(run.home, ".agents/skills/okf-authoring/scripts/okf-publication.mjs"), "utf8");
+  assert.match(publisher, /'--title', 'OKF knowledge proposal'/, "the publication gate retains the fixed PR title");
   assert.match(skill, /retire/);
   assert.equal(existsSync(join(run.home, "work/input.json")), false);
   assert.equal(existsSync(join(run.home, "work/staging.json")), false);
@@ -3303,7 +3307,7 @@ test("the package mirrors carry the versions package-catalog.json pins", () => {
     assert.equal(catalog.capabilities[id], "oats.engineering", `${id} is supplied by the oats.engineering package`);
     assert.equal(Object.hasOwn(manifest, "agents"), false, `${id} declares no capability agent: the code-reviewer is oats.engineering's package soul`);
   }
-  assert.equal(catalog.packages["oats.engineering"].ref, "v1.17.2");
+  assert.equal(catalog.packages["oats.engineering"].ref, "v1.18.0");
   // oats.cloning exports one capability under the package's own id: no alias; the cloner is a package soul.
   // This workspace does not pin it, so it has no mirror here (as oats.machine).
   assert.equal(catalog.packages["oats.cloning"].ref, "v1.1.0");
@@ -3776,7 +3780,8 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     // The completion is an ORDINARY retirement: the hook runs, reports it did
     // not finish, and the home is retained under quarantine with an explicit
     // failed outcome beside it — never a silent success.
-    assert.equal(completeDeferredRetirement(retirePendingMarkerPath(home), { delaySec: 0 }), false);
+    // Not retried: what a retry does is test/retire-hook-retry.test.mjs's.
+    assert.equal(completeDeferredRetirement(retirePendingMarkerPath(home), { delaySec: 0, retryDelaysMs: [] }), false);
     assert.equal(existsSync(retireRan), true, "the retire hook ran in the completion");
     assert.equal(existsSync(home), true, "an incomplete hook retains the home");
     assert.equal(JSON.parse(readFileSync(r.resultPath, "utf8")).result?.workRecovery, undefined, "the caller changed no home bytes, so nothing was needlessly preserved");

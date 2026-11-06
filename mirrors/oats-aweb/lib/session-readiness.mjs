@@ -5,6 +5,7 @@ import {isAbsolute,resolve} from 'node:path';
 import {BINDING_WIRE_LIMITS,parseBindingJson} from './binding-wire.mjs';
 import {sameInvocationJson as same} from './invocation-shape.mjs';
 import {validateAwebBinding,validateAwebInvocationContext} from './portable-binding.mjs';
+import {versionAtLeast} from './aw-floor.mjs';
 // 0.24.1 supplies HOME custody; 0.24.2 also ships the required public projection
 // and same-kernel codec CLI locator. Source presence is not a released version.
 export const HOME_ROUTE_KERNEL_FLOOR='0.24.2';
@@ -19,18 +20,15 @@ export function kernelQueryEnvironment(inherited){
   return env;
 }
 export function kernelMeetsHomeRouteFloor(version){
-  if(typeof version!=='string'||!/^\d+\.\d+\.\d+$/.test(version))return false;
-  const parts=version.split('.').map(Number),floor=HOME_ROUTE_KERNEL_FLOOR.split('.').map(Number);if(!parts.every(Number.isSafeInteger))return false;
-  for(let i=0;i<3;i++)if(parts[i]!==floor[i])return parts[i]>floor[i];
-  return true;
+  return versionAtLeast(version,HOME_ROUTE_KERNEL_FLOOR);
 }
 /** Use the caller-owned CLI location, never search PATH or import private kernel
  * indexes. Binding execution must receive the same OATS_CLI_BIN as hooks. */
-export function querySelectedKernel(args,{env=process.env,cwd}={}){
+export function querySelectedKernel(args,{env=process.env,cwd,timeout=10000}={}){
   const cli=env.OATS_CLI_BIN;
   if(typeof cli!=='string'||!isAbsolute(cli)||resolve(cli)!==cli||cli.includes('\0'))error();
   let bytes;
-  try{bytes=execFileSync(process.execPath,[cli,...args],{env:kernelQueryEnvironment(env),cwd,timeout:10000,maxBuffer:BINDING_WIRE_LIMITS.bytes,stdio:['ignore','pipe','pipe']});}catch{error();}
+  try{bytes=execFileSync(process.execPath,[cli,...args],{env:kernelQueryEnvironment(env),cwd,timeout,maxBuffer:BINDING_WIRE_LIMITS.bytes,stdio:['ignore','pipe','pipe']});}catch{error();}
   try{return parseBindingJson(bytes,BINDING_WIRE_LIMITS);}catch{error();}
 }
 /** Reads only public version/retained selection. A missing profile projection

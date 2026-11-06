@@ -18,6 +18,7 @@ import { validWorkspaceId } from '../renderer/workspace-id.mjs';
 import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';
 import { fakeWindowClass } from './helpers/fake-window.mjs';
 import { serverSpawnSpec, LIFELINE_FLAG } from '../server-host.mjs';
+import { launchInstance } from '../single-instance.mjs';
 
 const RENDERER = 'file:///app/renderer/index.html';
 const HERE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -31,7 +32,7 @@ const spawnChildBlock = source.match(/spawnChild: (\(dirs, onPort\) => \{[^]*?\n
 const knownDirsBlock = source.match(/const knownDirs = new Set\(\);\nconst knowDirs = [^\n]*/)[0];
 const suggestionListBlock = source.match(/\n  list: (async \(\) => \{\n    const read = await deploymentList\([^]*?\n  \}),\n/)[1];
 const startupBody = (() => {
-  const head = 'const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory)), async () => {';
+  const head = 'const primaryInstance = startSingleInstance(app, (argv, workingDirectory) => openLaunch(launchDirectory(argv, workingDirectory), launchInstance(argv)), async () => {';
   return between(head, '\n}, ownLaunch(app), offerVersionRestart);\n\nif (primaryInstance)').slice(head.length);
 })();
 const FakeWindow = fakeWindowClass(RENDERER);
@@ -46,11 +47,11 @@ function machine() {
 }
 
 /** Run main's startup for a launch from `launch` (Finder: `/`) and return what it did. */
-async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile, listed = { ok: false, reason: { code: 'E_DEPLOYMENTS_FEATURE', message: 'no list' } } } = {}) {
+async function launch(m, { launch: WORKSPACE = '/', argv = ['/app/OATS Desktop'], openSet, windowsFile, listed = { ok: false, reason: { code: 'E_DEPLOYMENTS_FEATURE', message: 'no list' } } } = {}) {
   if (openSet !== undefined) writeFileSync(join(m.userData, 'workspace-open.json'), JSON.stringify(openSet));
   if (windowsFile !== undefined) writeFileSync(join(m.userData, 'windows.json'), JSON.stringify(windowsFile));
   FakeWindow.reset();
-  const spawned = [], handlers = new Map(), appEvents = new Map(), logs = [], listedAtStartup = [], kernel = [], resumeLaunches = [];
+  const spawned = [], handlers = new Map(), appEvents = new Map(), logs = [], listedAtStartup = [], kernel = [], resumeLaunches = [], selects = [];
   const context = {
     // Electron, at its boundary.
     app: { getPath: () => m.userData, on: (event, fn) => appEvents.set(event, fn) },
@@ -63,7 +64,7 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile, listed
       spawned.push({ bin, args: [...args], cwd: options.cwd, stdio: [...options.stdio] });
       return { stdin: { on() {} }, stdout: { on() {} }, stderr: { on() {} } };
     },
-    process: { execPath: '/app/OATS Desktop', env: {} }, homedir: () => m.home, readCliChoice: () => null, loginPath: { source: 'login-shell', error: null },
+    process: { execPath: '/app/OATS Desktop', env: {}, argv }, homedir: () => m.home, readCliChoice: () => null, loginPath: { source: 'login-shell', error: null },
     REMOTE_IDENTITY_FILE: () => join(m.userData, 'remote-identity.json'), HERE,
     // The real code main runs at startup.
     WORKSPACE, workspaceDirs: [], openDirs: [], join, existsSync, readFileSync, realpathSync, lstatSync, validateWorkspace,
@@ -73,6 +74,9 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile, listed
     RENDERER_URL: RENDERER, servedList: [], allowedWs: new Set(), advertisedBefore: new Set(), quitStarted: false,
     applyLoginPath: async () => {}, installAppMenu: () => {}, sweepOrphanViewers: () => {}, rememberWorkspaceParent: () => {},
     workspaceSuggestions, listState,
+    // A launch's --instance (single-instance.mjs launchInstance, the real reader): the window main asks to select it,
+    // recorded with what it asks.
+    launchInstance, selectLaunchInstance: (win, instance, dir) => selects.push({ win, instance, dir }),
     // This computer's deployments list (#1390), at the kernel's boundary: what is asked is recorded, the answer given.
     deploymentList: async (options) => { kernel.push(options); return listed; },
     startupDeploymentList: async (path) => { listedAtStartup.push(path); },
@@ -108,7 +112,7 @@ async function panelWorkspaces() {
   const read = (name) => { try { return JSON.parse(readFileSync(join(m.userData, name), 'utf8')); } catch { return undefined; } };
   const claim = async (win, id) => JSON.parse(JSON.stringify(await handlers.get('window:claim-workspace')(
     { sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame }, id, { focus: false, initial: true })));
-  return { spawned, windows: FakeWindow.all, main, claim, logs, noted, listedAtStartup, kernel, resumeLaunches, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
+  return { spawned, windows: FakeWindow.all, main, claim, logs, noted, listedAtStartup, kernel, resumeLaunches, selects, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
 }
 
 test('every served-list update tells main to post the window set (#1124): a new server, or a post that failed, gets it again', async () => {
@@ -189,6 +193,23 @@ test('a launch on a deployment (--dir, or a deployment cwd) serves it and opens 
     assert.deepEqual(r.windows.map((w) => [w.title, w.loaded.hash]), [['oats', workspaceHash(m.deployment).slice(1)]]);
     assert.deepEqual(r.openFile, [m.deployment]);
     assert.equal(basename(r.windowsFile[0].workspace), 'oats');
+  } finally { rmSync(m.root, { recursive: true, force: true }); }
+});
+
+test('a first launch with --dir on a deployment and --instance asks that deployment\'s window to select it, and only then', async () => {
+  const m = machine();
+  try {
+    const r = await launch(m, { launch: m.deployment, argv: ['/app/OATS Desktop', '--dir', m.deployment, '--instance', 'dev-2'] });
+    assert.equal(r.selects.length, 1);
+    assert.equal(r.selects[0].win, r.windows[0], 'the --dir deployment\'s own window');
+    assert.deepEqual(r.selects[0].instance, { ok: true, name: 'dev-2' });
+    assert.equal(r.selects[0].dir, m.deployment);
+    const plain = await launch(m, { launch: m.deployment, argv: ['/app/OATS Desktop', '--dir', m.deployment] });
+    assert.deepEqual(plain.selects, [], 'no --instance: as before');
+    const cwd = await launch(m, { launch: m.deployment, argv: ['/app/OATS Desktop', '--instance', 'dev-2'] });
+    assert.deepEqual(cwd.selects, [], 'a deployment cwd without --dir ignores --instance');
+    const folder = await launch(m, { launch: m.folders[0], argv: ['/app/OATS Desktop', '--dir', m.folders[0], '--instance', 'dev-2'] });
+    assert.deepEqual(folder.selects, [], 'a --dir that is not a deployment ignores --instance');
   } finally { rmSync(m.root, { recursive: true, force: true }); }
 });
 

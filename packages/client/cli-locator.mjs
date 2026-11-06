@@ -57,7 +57,8 @@ export const ACCEPT_RANGE = { min: [0, 26, 0], maxExclusive: [0, 70, 0] };
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */
 export const ACCEPT_RANGE_TEXT = `>=${ACCEPT_RANGE.min.join(".")} <${ACCEPT_RANGE.maxExclusive.join(".")}`;
-export const PROBE_NAME = "@awebai/oats";
+// The npm names of the oats CLI. `version --json` answers the first under either, until a later minor flips it.
+export const PROBE_NAME = Object.freeze(["@awebai/oats", "@oats-project/oats"]);
 // Spawn-time agent relations (--relation/--relative-to) AND the anchor
 // qualifier (--relative-root, a later contract addition in the same
 // unreleased feature) gate on ONE floor: the first release carrying BOTH.
@@ -114,7 +115,7 @@ const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 export function acceptProbe(payload) {
   if (!payload || typeof payload !== "object") return { ok: false, reason: "no probe payload" };
   if (payload.schemaVersion !== 1) return { ok: false, reason: `unexpected schemaVersion ${payload.schemaVersion}` };
-  if (payload.name !== PROBE_NAME) return { ok: false, reason: `not the oats CLI (name: ${payload.name || "missing"})` };
+  if (!PROBE_NAME.includes(payload.name)) return { ok: false, reason: `not the oats CLI (name: ${payload.name || "missing"}, not ${PROBE_NAME.join(" or ")})` };
   if (payload.desktopApi !== DESKTOP_API) return { ok: false, reason: `desktopApi ${payload.desktopApi ?? "missing"} (need ${DESKTOP_API})` };
   const v = parseSemver(payload.version);
   if (!v) return { ok: false, reason: `unparsable version "${payload.version}"` };

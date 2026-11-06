@@ -660,6 +660,15 @@ split into sections) is `packages/client/roster-sections.mjs`.
   `.ctx-name`'s `dataset.name`, never its `textContent` (which holds both). Everything else that names an
   instance keeps the real name: the hover card (`rosterTipFacts`), the row's tooltips and descriptions, the
   palette's label and match, tabs, dialogs and copies. The `.ctx-name` rule (ellipsis, one line) is unchanged.
+- **Needs-input reporting coverage** (`packages/client/needs-input-reporting-gap.mjs`): a Claude row whose
+  recorded `oats.core` comes from package `oats.framework` below `1.6.0` gets a hover-card fact on the
+  same grid: **Needs input** · "Claude's questions and permission requests aren't reported: its oats.core
+  is older than 2.4.0". The reader accepts the drift-row array and the recorded map, local and remote,
+  and uses `from.version`, never the current
+  lock version. A prerelease of `1.6.0` sorts below it. Other harnesses, sources or packages, missing
+  facts and malformed versions show nothing. This standing fact changes no row label or live-claim
+  mark, and adds nothing to the terminal pane. A live Waiting fact from the agent's own
+  `oats instance attention` claim can appear alongside it; neither fact suppresses the other.
 - **The Machines tab** (the Workspace page's, before Setup; the Deployments page until 2026-10-26, and the Active
   overview before that; stage `hierarchy` opens it): tabs from
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
@@ -1991,6 +2000,13 @@ and file/brain tabs do not inherit another terminal's context. Roster refresh
 matches the exact workspace/terminal identity and never selects or focuses a
 panel; a missing or ambiguous observation makes session state unknown.
 
+The **Session** card keeps its harness, model and session-age lines together. Under them, a muted
+DOM-text note uses the same needs-input coverage reader as the hover card: "This agent's Claude questions
+and permission requests don't show as needs input: its oats.core (oats.framework `<version>`) is older than
+2.4.0. Upgrade or respawn it to report them." The version is inserted as text. The note clears on the
+roster refresh after an upgrade or respawn moves the home's recorded version to a supporting release. It uses `--muted` on
+`--surface`, held to WCAG AA by the contrast inventory and computed theme tests.
+
 Workspace projects its actual selected-soul inspector into that same region.
 Workspace still owns its requests and lifetime. Collapse or covering the
 stage with a terminal preserves the inspector's DOM, local disclosure state and
@@ -2271,6 +2287,21 @@ never evidence (Stop ends it too); the viewer's `detach-on-destroy on`
 (`tmux-target.mjs`) makes sure a dying source ends the tab instead of moving it
 to another session. Tests: `retired-tabs.test.mjs` (the rule, over the server's
 own panels) and `retired-tabs-shell.test.mjs` (the shipped shell close).
+
+## A launch's `--instance` (`launch-focus.mjs`)
+
+Main reads `--instance <name>` beside `--dir` with one reader for both launch paths (`single-instance.mjs`
+`launchInstance`, the kernel's `--name` rule from `packages/client/instance-name.mjs` `validInstanceName`). It
+pushes the `--dir` deployment's window `window:focus-instance` with `{ deployment, name }`, or `{ invalid: true }`,
+which never carries the value. The push is one-way: no renderer→main call answers it. The preload keeps the latest
+ask until the shell subscribes (`onLaunchFocus`). `createLaunchFocus` holds the one pending request:
+- Each observed roster read of this computer's rows (`refreshContextRoster`, after the paint) is checked with
+  `launchFocusMatch`, which counts only that deployment's local rows (a spawning home included, a remote row never).
+- One match is selected through `showInRoster`, nothing else. Two or more say so. None waits
+  `LAUNCH_FOCUS_PENDING_MS`, then says "No instance <name> in this workspace" from a timer, with no read of its own.
+- A person's choice drops the request: the selection-ownership ticket (`tabOpenIntents.watch()`, taken at the first
+  roster read so the window's own binding does not count), or input or a pointer press (`watchOperator`).
+- A later ask replaces the request. Rows the window already shows answer an ask at once.
 
 ## Supporting read-only files
 

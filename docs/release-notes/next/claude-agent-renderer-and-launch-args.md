@@ -19,7 +19,7 @@
 ## Fixed
 
 - **Claude agent panes skip the fullscreen-renderer offer.** At spawn and
-  every launch, oats.core 2.12.0 adds `"tui": "default"` to a Claude home's
+  every launch, oats.core 2.13.0 adds `"tui": "default"` to a Claude home's
   `.claude/settings.json` if no `tui` key is present. Any existing value is
   kept. Agent panes use Claude's classic renderer even where Claude now
   defaults to fullscreen, and even over a user-level `"tui": "fullscreen"`;

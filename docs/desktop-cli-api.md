@@ -49,7 +49,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "status-retire-state","session-inspect-size","session-inspect-running","deployments-list"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
- "capabilityShowApi":1,"sessionViewer":{"prefixScroll":true}}
+ "capabilityShowApi":1,"sessionViewer":{"prefixScroll":true},"package":"@awebai/oats"}
 ```
 
 - The Desktop accepts `desktopApi === 1` and a released `version` inside
@@ -65,6 +65,10 @@ see the [official catalog](official-catalog.md) for current pins.
   probe before a routed mutation. From 0.31: `readiness`, `instance-events`,
   `instance-git` and `lifecycle-plans` name the
   [routed reads and plans](#routed-reads-and-plans).
+- `name` is the probe's contract value: `@awebai/oats` under either npm name,
+  and a reader refuses any other. `package` is the npm name this kernel was
+  installed under, `@awebai/oats` or `@oats-project/oats`, and is absent from a
+  kernel before the bridge.
 - `sessionViewer` (feature `session-attach-prefix-scroll`) is a fact of
   this host, not of the binary: `prefixScroll` is `true` when a viewer
   without a detach key binds `C-b [` here, that is when the `tmux` on
@@ -126,7 +130,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `servers-per-workspace` | `workspaceKey` on registrations and `oats server list --json` rows; `oats server list --workspace-ref <ref>` and its `unknownWorkspace`; `workspaceKey` on `oats server check --json`, OATS 0.39.0 ([Servers per workspace](#servers-per-workspace)) | |
 | `server-connect` | `oats server connect`; `oats onboard --check`; `workspaceReadable` on `oats server check --json`, OATS 0.39.0 ([`oats server connect`](#oats-server-connect)) | |
 | `capability-route` | `oats <namespace> <command> … --server <id>` runs the capability command on the server, OATS 0.39.0 ([Capability commands on a server](#capability-commands-on-a-server)) | |
-| `operator-default-soul` | a capability command from a deployment without `--soul` runs as the first soul that provides its namespace (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
+| `operator-default-soul` | a capability command from a deployment without `--soul` resolves as the first soul that provides its namespace, using its settings and teams (named on stderr); none is `E_BAD_ARGS`, OATS 0.39.0 ([capabilities.md](capabilities.md)) | |
 | `waiting-on-you` | the `waiting` event kind and the session boundary rule; `oats instance waiting` and `oats instance attention`; `waitingOnYou` (with `message`) on `oats status --json` instance rows, on `oats session inspect --json` and in the events read, OATS 0.40.0 ([Waiting on you](#waiting-on-you)) | `eventsApi: 2` |
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
@@ -164,6 +168,9 @@ see the [official catalog](official-catalog.md) for current pins.
 | `status-liveness` | the local liveness on `oats status --json` instance rows is complete: `running` and `runtimeState` are read live at every call, from the row's recorded tmux server under the pane and shell-descendant rule, with `false` for a shell only on positive evidence and `null` when the reading is inconclusive ([The roster](#the-roster-oats-status---json)). A client needs no liveness probe of its own beside the roster where the probe lists it, whether the read goes through the warm reader or the CLI. Independent of `warm-reader` | |
 | `wake-hold` | a scheduled wake sends no key while the home has a live `permission`, `question` or unknown-reason claim, or a claims read that can't be trusted: the run is `skipped`, `reason: "waiting-on-you"`, `pending: true`, with `held` ([A held wake](schedules.md#a-held-wake)); the `wake-held` event ([the event kinds](#events)); `wakeHold` on every successful `session inspect --json` ([Inspect, input and attach](execution-targets.md#inspect-input-and-attach)), from the hook answer `dialogClaims` ([Commands and hooks](capabilities.md#commands-and-hooks)). Gate on the feature, then on `wakeHold`: the feature says this kernel holds, `wakeHold` whether this home's dialogs become claims, and `unknown` is not covered | |
 | `lifecycle-claim-start` | every `oats session start` and `oats session restart`, and a scheduled start, holds the home's lifecycle claim for the whole start (#1602), as `details.action: "start"`: a retire, a stop apply or an upgrade apply that arrives while it runs is refused `E_LIFECYCLE_BUSY` with `details.action: "start"`; the start or restart is refused `E_INSTANCE_RETIRING` beside a retire and `E_LIFECYCLE_BUSY` (with `details.holder` and `details.action`) beside a stop or an upgrade, before any effect; two starts still answer `E_SESSION_START_BUSY` ([Commands that meet on one home](#lifecycle-pairs)). A restart holds one claim across its stop and its launch. A kernel without it takes no claim for these, and reads a `start` holder as a retire | |
+| `spawn-attribution` | the kernel validates who spawned an instance: `spawnedBy` (`{instance, home}` or `null`) in `instance.json`, on the `spawned` event and on `oats status --json` rows and remote rows, and `OATS_SPAWNER_HOME` for spawn hooks ([Spawned by](#spawned-by)); `attributedHuman` on `oats status --json` rows and on remote rows ([Attributed human](#attributed-human)). Absent: no `spawnedBy` and no `attributedHuman`, and a capability must not read a missing `OATS_SPAWNER_HOME` as a person's spawn | |
+| `workspace-tasks-payload` | oats-workspace.yaml may carry a top-level `tasks:` payload, merged for the capability that fills the tasks slot exactly as `messaging:` is for the messaging one; its leaves' `settingsOrigins` are `{kind: "workspace", at: "oats-workspace.yaml#/tasks"}` ([Provider payloads have three homes](workspaces.md#provider-payloads-have-three-homes)). A kernel without it refuses a workspace file that carries `tasks:` (unknown property) | |
+| `settings-committed-only` | a manifest `settings.<key>.committedOnly: true` is enforced: that key in oats-local.yaml `settings.<cap>` or a `--provider <cap>` flag is refused `E_WORKSPACE_SCHEMA` reason `committed-only-key`, with `details.layer`, `details.at` and `details.allowed` ([Commands and hooks](capabilities.md#commands-and-hooks)). A kernel without it ignores the flag and merges the key | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -993,23 +1000,35 @@ same argument, given once). The ref is checked before anything is written.
   existing clone (the `clones:` entry, else `<dir>/<name>`), else where to
   clone it: `<dir>/<name>`, or `<dir>/agents-repo` for a member named
   `agents`. `url` is `null` when unknown.
-- `next.spawn` is `oats spawn <soul> --dir <dir>` naming the workspace's
-  OATS setup expert, else `null` (OATS 0.61.0; before it, only a soul named
-  `oats-operator-expert` was named). Among the souls onboarding lists
-  (confirmed members', external and package souls; standalone, the
-  repository's own), the setup expert is:
-  1. the soul named `<workspace name>-oats-setup-expert` that declares
-     `oats.setup`, where the workspace name is the `name:` of
+- `next.spawn` is a command string, `oats spawn <soul> --dir <dir>
+  [--name <instance>]`, naming the workspace's OATS setup expert, else
+  `null` (OATS 0.61.0; before it, only a soul named `oats-operator-expert`
+  was named). Among the souls onboarding lists (confirmed members', external
+  and package souls; standalone, the repository's own), the setup expert is:
+  1. the workspace's own soul named `<workspace name>-oats-setup-expert`
+     that declares `oats.setup`, where the workspace name is the `name:` of
      `oats-workspace.yaml` (`sync.workspace.name`); a standalone view has no
      workspace name, so this step does not apply there;
-  2. otherwise the first soul by name that declares `oats.setup`;
-  3. otherwise none: `null`.
+  2. otherwise `oats.framework`'s package soul `oats-setup-expert`, when it
+     declares `oats.setup`;
+  3. otherwise the first soul by name that declares `oats.setup`;
+  4. otherwise none: `null`.
 
   A soul declares `oats.setup` when its own `soul.yaml` names it under
   `capabilities:` as `{ from: … }`, from any source (`package`, `here` or a
   member key); `oats.setup: off` does not count. A soul is never chosen by
-  its name alone: one named `<workspace name>-oats-setup-expert` that does
-  not declare `oats.setup` falls through to step 2.
+  its name alone: a soul named `<workspace name>-oats-setup-expert` or
+  `oats-setup-expert` that does not declare `oats.setup` falls through to
+  the next step.
+
+  Only the package soul of step 2 gets `--name`: `<workspace
+  name>-oats-setup-expert`; `<workspace name>-oats-setup` when a soul of the
+  workspace already holds the first name (spawn refuses an instance name that
+  is a soul's); none when that is taken too, or when the name would pass the
+  64-character instance-name limit. Spawn then names the instance itself;
+  onboarding never refuses on a long workspace name. The text output says why
+  a name other than the first is suggested. A soul of steps 1 and 3 is
+  spawned with no `--name`.
 
   Only the soul's own declaration is read, not its resolved composition:
   `oats.setup` that reaches a soul only through the workspace's `defaults:`
@@ -1567,6 +1586,21 @@ one `retained-recovery:` and one `retained-worktree:` line per item, after a
 line that gives each kind's total, and at most 50 items per kind
 ([After a retire](souls-and-instances.md#after-a-retire-inspect-restore-dispose)).
 Each element is one line of text with no newline. The answer has no new key.
+
+`oats doctor --json` lists each retirement left open as one
+`retire-incomplete` problem in `problems[]`, `{code, message, remedy}`
+(oats-project/oats#1747). Text prints it as `! retire-incomplete: <message>`
+with the remedy on the next line. A retirement is open when the home reads
+quarantined (`rollbackIncomplete`), when its self-retire is `failed` or
+`interrupted`, or when a failed self-retire left its outcome beside a home
+that is still there. A home whose retire is `running` or `unknown`, a spawn
+in progress, and an outcome whose home is gone are not listed. The message
+names the instance, the home, what is open and since when. The remedy is
+`oats retire <name> --home <home>`, each word quoted for a shell, and names
+the capability whose retire hook failed last, or says that none is recorded.
+Doctor reads this as `oats status` does, offline and read-only. Its exit
+status does not change: doctor exits 0 with problems. A deployment with no
+open retirement sees no change.
 
 ### Desktop facts
 
@@ -2974,6 +3008,58 @@ Idempotent spawn replay returns the recorded value. Remote rows relay the
 host's value unchanged, including historical values, and use `null` when the
 host does not supply one. Consumers must allow for those historical meanings.
 
+<a id="spawned-by"></a>
+### Spawned by
+
+From feature `spawn-attribution`, every new home records `spawnedBy`: the
+instance whose session ran the spawn, `{instance, home}` (the canonical
+absolute home), or `null`. `instance.json` and the `spawned` event's `data`
+carry it as recorded. The `oats status --json` row carries it only in that
+shape: an `instance` that is an instance name and an absolute `home`, and no
+other key; anything else (a hand-edited record) reads `null`. A home spawned
+before the feature has no key on its row. It is apart from lineage: `parentInstance`, `relation`
+and `relativeTo` say nothing about it, and a spawn with `--relation unrelated`
+from an instance still has a spawner.
+
+It is read by the same check as [Spawn origin](#spawn-origin), plus the
+spawner's liveness. The caller is the instance that check confirms; the
+kernel then reads its session by its own liveness read (the `running` of
+`oats session inspect`, feature `session-inspect-running`, and of status
+rows), which has three answers:
+
+- **Running:** the spawner is that instance.
+- **Found gone** (a fallback shell, a dead or absent pane, a home that never
+  launched, or its tmux server gone): `null`.
+- **Cannot tell** (its tmux server cannot be read, its session receipt cannot
+  be used): the spawner is kept. As far as anyone knows, that instance runs
+  this command. The spawn is never refused.
+
+So `spawnedBy` non-null implies `spawnOrigin: "instance"`, and
+`spawnOrigin: "instance"` with `spawnedBy: null` means the spawner's session
+was found gone. `spawnOrigin: "operator"` always has `spawnedBy: null`: a
+person's shell, the Desktop, an automation (a scheduled job's environment
+carries no instance), and a home of another deployment. A `--server` spawn
+sends no caller environment to the host, so its spawner is `null` unless the
+caller is a live home on that host.
+
+Limits:
+
+- It reads the environment only, so a harness that strips its session's
+  environment reads as a person's spawn. That changes the recorded parent,
+  never the human.
+- The caller is read from an unauthenticated environment, so any process of
+  the same OS user can name a live instance as its spawner. That is accepted
+  under the custody answer: a convention under the same OS user, not a
+  boundary.
+- `spawnedBy` and the messaging identity's `attribution`
+  ([Attributed human](#attributed-human)) report, and no kernel decision
+  reads them.
+- `spawnedBy` is written once, at spawn. Retire's lineage repair doesn't
+  touch it, and it can name a home that no longer exists.
+
+Spawn hooks get it as `OATS_SPAWNER_HOME` when it is not `null`
+([capabilities.md](capabilities.md#commands-and-hooks)).
+
 <a id="spawn-errors"></a>
 ### Spawn errors
 
@@ -2991,7 +3077,7 @@ kernel stage raised as well.
 |---|---|---|
 | `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul; `--same-work` for an instance that would record no parent ([Same work as the parent](#same-work-as-the-parent-oats-instance-same-work)) |
 | `E_LOCAL_MISSING`, `E_NO_DEPLOYMENT` | | no `oats-local.yaml`; no `agents/` root |
-| `E_SOUL_UNKNOWN` | `{name, members, packages}` | no such soul, or not at `--agents-root` |
+| `E_SOUL_UNKNOWN` | `{name, members, packages, unconfirmed?}` | no such soul, or not at `--agents-root`. `unconfirmed`, only when a member could not be confirmed: `[{key, reason, detail}]`, which the message repeats with what to do |
 | `E_SOUL_AMBIGUOUS` | `{name, repos, qualified}` | several souls answer the bare name; use one of `qualified` |
 | `E_SOUL_DISABLED` | `{name, qualifiedName, entry}` | listed in `souls.disabled` |
 | `E_UNKNOWN_AGENT` | | the resolved soul is not under the deployment's agents root |
@@ -3340,7 +3426,7 @@ its absence.
   read** (OATS 0.52.0) is listed like every other, and one such home never
   fails the listing. Its row has the fields of a home with no `instance.json`
   and nothing from the record: `instance`, `home`, the Desktop facts
-  (`startedAt`, `identityAddress`, `modelFrom`, each `null`), `waitingOnYou:
+  (`startedAt`, `identityAddress`, `modelFrom`, `attributedHuman`, each `null`), `waitingOnYou:
   null`, `rollbackIncomplete` and `retirePending` when present, and `running:
   null` with `runtimeState: "unreachable"` and `runtimeError:
   "E_UNIDENTIFIED_INSTANCE_HOME: <home>/instance.json cannot be read
@@ -3558,6 +3644,26 @@ restart, else `createdAt` for a launched home, else `null`. `modelFrom` is
 `"harness-default"`, or `null` for an older home. `identityAddress` is the
 messaging identity's `address` (else `alias`), or `null`.
 
+<a id="attributed-human"></a>
+**Attributed human** (feature `spawn-attribution`): `attributedHuman` is on
+every instance row, the label of the human the instance's messaging identity
+is attributed to, or `null`. The messaging capability may record an optional
+`attribution` in the served identity it records (`identity`):
+`{mode: "human"|"none"|"unknown", human: {id, label}|null, parent: {id}|null}`,
+with opaque strings the kernel never interprets. The row reads it by slot,
+never by name: only the identity of the capability whose layer is `messaging`
+counts. The row's `identity` falls back to any capability that recorded one;
+this never does, so no other capability can name a human on a row.
+It is the `label` when `mode` is `"human"`, else `null`; an absent
+`attribution` is `null` too, never shown as "none". The label is untrusted
+text, held to a waiting claim's `message` rule ([Waiting on you](#waiting-on-you)):
+one line of 1 to 200 characters with no refused character (a control
+character, a line break, a bidi control), else `null`. An omitted `human` or
+`parent` is `null`. A malformed `attribution` (an unknown `mode`, a `human` without a
+string `id` and `label`, a `parent` without a string `id`) reads as absent and
+never fails the row. `identity` on the row and in `oats inspect` carries the
+`attribution` as recorded.
+
 <a id="the-remote-roster-oats-server-roster---json"></a>
 ### The remote roster (`oats server roster --json`)
 
@@ -3632,7 +3738,8 @@ route target:
   `identityAddress`, `teams`, `startedAt`, `createdAt`, `model`,
   `runtimeState`, `parentInstance`, `siblingInstance`, `relation`,
   `relativeTo` and `spawnOrigin`, and (relayed from 0.42.1) `work`, `repo`,
-  `branch`, `modelFrom`, `soul` and `modules`, are always present, `null`
+  `branch`, `modelFrom`, `soul` and `modules`, and (feature
+  `spawn-attribution`) `attributedHuman` and `spawnedBy`, are always present, `null`
   when the host does not supply them (an older host, a fact it never
   recorded, or a saved route the host no longer lists). Each is the
   [local row's](#the-roster-oats-status---json) fact of the same name,
@@ -3640,7 +3747,10 @@ route target:
   is a path on the host, never read here, and `soul` and `modules` are the
   host's own drift observation (against its own members and lock), not
   recomputed: `modules` is the drift rows, or the recorded map when the host
-  could not read its workspace, as on a local row.
+  could not read its workspace, as on a local row. `attributedHuman` passes
+  the [local row's](#attributed-human) label rule again on this side, and
+  `spawnedBy` the [local row's](#spawned-by) shape rule: a value either
+  refuses is `null`.
 - **`waitingOnYou`** (0.40.2, [Waiting on you](#waiting-on-you)) is on a row
   only when the host's kernel reports it: a row from a host before 0.40.0,
   and a saved route the host did not list, have no such key. Absent means
@@ -3719,7 +3829,8 @@ A group whose registration names another workspace is neither probed nor
 returned, its saved routes under that registration and target with it. A
 group is judged by its registration when it has one, so a saved route whose
 target differs from the registration's is a group of its own, kind 3. A key
-is compared with the registration's `workspaceKey` by exact string equality:
+is compared with the registration's `workspaceKey` as a string, the two
+spellings of a [moved repository](workspaces.md#moved-repositories) being one:
 it is the canonical key a host's `status --json` reports as `workspace.key`,
 never parsed as a repository reference. An empty or missing value, or one
 with whitespace or a control character, is `E_BAD_ARGS`. `--server` and
@@ -4250,6 +4361,12 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `branch-deleted` (not written since 0.41.0: no retire deletes a branch;
   older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
+  `retire-warning` (a retire hook's warning, `data: {message}`: one row per
+  entry of the retire hooks' `warnings`, a hook's own `warning` and the
+  kernel's lines about those hooks alike, in their order; written to the
+  workspace log only, as soon as the hooks return, so a retire that then
+  refuses or ends quarantined keeps them, and each run of the hooks, a retry
+  among them, adds its own; older clients read it as an unknown kind),
   `recomposed` (from earlier kernels), `waiting` (0.40: a producer's claim,
   [Waiting on you](#waiting-on-you)), `wake-held` (feature `wake-hold`: a
   scheduled wake began to hold, one row per hold, `data: {schedule, since,
@@ -4262,6 +4379,12 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   credentials, `member` a key or `null`, `hooks` the `worktree` hooks'
   receipt). `producer` is `kernel`, a capability id,
   or another producer id (`agent`). Older rows may carry `eventsApi: 1`.
+  The `message` of a `launch-warning` or `retire-warning` row is the
+  warning's text as stored: control, bidi and hidden characters replaced
+  with U+FFFD, cut to 2048 UTF-16 code units ending in `…` (never through a
+  surrogate pair); a warning that is not a string is stored as its JSON.
+  Clients show it as plain text. The answer that carried the warning
+  (`warnings`) keeps it as it was said.
   `launched` is written by spawn and, since 0.40, once per session start or
   restart, as soon as the session exists (`data: {harness, backend,
   launchConfig, phase, startId}`; spawn's row has neither `phase` nor
@@ -4276,7 +4399,8 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
 - `retired` (`data: {agent, keepDir, self, quarantine, workRecovery, hooks,
   reason?}`) is written to the workspace log only,
   `<deployment>/.agents/events/<agent>--<instance>.jsonl`, which outlives the
-  home. `reason` is present only when
+  home. What its hooks warned is not in it: those are the `retire-warning`
+  rows written before it. `reason` is present only when
   the retire completed a self-retire an older OATS recorded with
   `--delete-branch` (since 0.41.0: `this self-retire was requested with
   --delete-branch by an older OATS; retirement no longer deletes branches, so
@@ -4486,8 +4610,13 @@ oats instance attention [--message <text>] [--clear] --json
 - **Where it shows.** `waitingOnYou` on the events read, on `oats status
   --json` instance rows (running rows only) and on `oats session inspect
   --json` (beside `state`, whose enum is unchanged; `null` unless the harness
-  is running). Plain `oats status` prints `! needs input (<reason>):
-  <message>` under a running instance's row while it holds a claim.
+  is running). Plain `oats status` prints `! needs input (<reason>) since
+  <start>, <elapsed>: <message>` under a running instance's row while it holds
+  a claim (the message and its colon are omitted when absent). The start is
+  local to the CLI machine: `HH:MM` today, `Mon D HH:MM` on another day in
+  the same year, or `YYYY-MM-DD HH:MM` in another year. Elapsed time is floored
+  to `under a minute`, `N min`, `N h` or `N d`. A future start omits elapsed
+  time; an unparseable start retains the line without any time.
 - **Cost.** To compute the field, `oats status` reads the home log of each
   running row (the workspace log only when the home log is absent), with
   the same bounded read as the events read: at most the last 4 MiB, so a

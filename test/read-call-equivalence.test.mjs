@@ -54,6 +54,9 @@ test("status and workspace status answer in one process exactly as fresh CLI run
   assert.ok(Object.hasOwn(meta, "harness"), "a spawned home records its harness");
   meta.runtime = meta.harness;
   delete meta.harness;
+  // A messaging identity attributed to a human (feature spawn-attribution): the row's attributedHuman.
+  meta.capabilityRuntime = [{ id: "acme.chat", layer: "messaging" }];
+  meta.capabilityMeta = { "acme.chat": { identity: { alias: "alpha-a", attribution: { mode: "human", human: { id: "h-1", label: "Ada" }, parent: null } } } };
   writeFileSync(metaFile, `${JSON.stringify(meta, null, 2)}\n`);
   // No deployment at all, and a deployment whose workspace cannot be reached (beta's roster, so status has drift to look for).
   const empty = join(a.base, "empty");
@@ -128,6 +131,7 @@ test("status and workspace status answer in one process exactly as fresh CLI run
       if (fx === a) {
         assert.equal(agent.soulSource.status, "moved", "alpha's soul moved after its spawn");
         assert.deepEqual(st.answer.warnings.map((w) => w.code), ["deprecated-runtime-name"]);
+        assert.equal(agent.instances[0].attributedHuman, "Ada");
       } else assert.equal(Object.hasOwn(st.answer, "warnings"), false, "alpha's warning is not beta's");
       if (maxAge === 60) assert.equal(st.answer.observation.reused, true);
 

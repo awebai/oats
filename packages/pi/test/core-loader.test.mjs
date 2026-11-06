@@ -27,11 +27,11 @@ function fixture(t) {
   return { base, bin };
 }
 /** A kernel package of its own: the name and lib/core.mjs the loader checks for, and the two exports it reads. */
-function fakeKernel(base, name) {
+function fakeKernel(base, name, packageName = "@awebai/oats") {
   const root = join(base, name);
   mkdirSync(join(root, "lib"), { recursive: true });
   mkdirSync(join(root, "bin"));
-  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@awebai/oats", version: "0.0.0-fixture" }));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: packageName, version: "0.0.0-fixture" }));
   writeFileSync(join(root, "lib", "core.mjs"), `export const appendLogEntry = () => {};\nexport const PACKAGED_SKILLS_DIR = ${JSON.stringify(name)};\n`);
   writeFileSync(join(root, "bin", "oats.mjs"), "#!/usr/bin/env node\n", { mode: 0o755 });
   return root;
@@ -92,6 +92,22 @@ test("a home with no shim, a shim that is not a link, or a link to no kernel fal
       assert.equal(r.root, onPath);
     });
   }
+});
+
+test("a kernel published under the other npm name is a kernel, on PATH and in npm's global root", (t) => {
+  const fx = fixture(t);
+  const kernel = fakeKernel(fx.base, "renamed", "@oats-project/oats");
+  symlinkSync(join(kernel, "bin", "oats.mjs"), join(fx.bin, "oats"));
+  const r = load(fx);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.root, kernel);
+});
+
+test("a package of another name is no kernel, however it looks", (t) => {
+  const fx = fixture(t);
+  const other = fakeKernel(fx.base, "other", "@other/oats");
+  const r = load(fx, { OATS_PKG_ROOT: other });
+  assert.notEqual(r.status, 0);
 });
 
 test("outside an instance, an oats on PATH that links into a kernel package is found", (t) => {

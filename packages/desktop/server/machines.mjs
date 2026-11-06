@@ -12,6 +12,7 @@
  * messaging step); without them `forScope` answers null and the caller keeps today's list. */
 import { machinesGated, awebConnectGated, machineFieldProblem, MACHINE_ID, MACHINE_SCOPE_REASONS } from '../../client/machine-contract.mjs';
 import { mapBounded } from '../../client/deployment-observer.mjs';
+import { sameRepo } from '../../client/repo-moves.mjs';
 
 /** Unknown keys checked at once by the backfill. */
 export const BACKFILL_CONCURRENCY = 2;
@@ -54,7 +55,7 @@ export function createMachines({ adapter, cli, concurrency = BACKFILL_CONCURRENC
     if (typeof id !== 'string' || !MACHINE_ID.test(id)) refuse('E_BAD_ARGS', 'Select a machine');
     const row = (await registrations(scope.deployment)).find(r => r.id === id);
     if (!row) refuse('E_SERVER_UNKNOWN', `No machine is registered as ${id}`);
-    if (!keys.includes(row.workspaceKey)) refuse('E_SERVER_OTHER_WORKSPACE', `${id} is not a machine of this workspace`);
+    if (!keys.some(key => sameRepo(key, row.workspaceKey))) refuse('E_SERVER_OTHER_WORKSPACE', `${id} is not a machine of this workspace`);
     return row;
   }
   async function runCheck(id, cwd) {
@@ -87,7 +88,7 @@ export function createMachines({ adapter, cli, concurrency = BACKFILL_CONCURRENC
       try { rows = await registrations(scope.deployment); }
       catch (e) { return { servers: [], ...answer, error: { code: e.code || 'E_SERVERS', message: e.message || 'The server registry could not be read' } }; }
       startBackfill(rows, scope.deployment);
-      return { servers: rows.filter(r => r.workspaceKey === scope.key).map(r => ({ ...r, check: checks.get(r.id) ?? null })), ...answer,
+      return { servers: rows.filter(r => sameRepo(r.workspaceKey, scope.key)).map(r => ({ ...r, check: checks.get(r.id) ?? null })), ...answer,
         ...(settledBefore ? {} : { backfilling: true }) };
     },
     /** Settles when this start's backfill has run (at once when none started). */

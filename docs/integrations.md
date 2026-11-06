@@ -40,8 +40,8 @@ arrives from.
 ```yaml
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
-  oats.okf: v5.7.0
-  oats.aweb: v1.32.1
+  oats.okf: v5.8.0
+  oats.aweb: v1.37.0
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -102,7 +102,15 @@ operations in full.
   provider in `capabilities:` (`oats.jira`, `oats.linear`) then holds two and
   fails with `E_SLOT_CONFLICT`: to keep its own, it adds
   `oats.aweb-tasks: off` to its `capabilities:`. A soul opts out of tasks
-  entirely with `tasks: none`.
+  entirely with `tasks: none`. **A new workspace** made by the `oats-getting-started`
+  skill with aweb (not on a machine found-list) has it by default: the
+  skill writes this default (the team's first aweb task opts it in), unless
+  the person's projects
+  already use a tracker (GitHub issues in use, Jira, Linear and the like),
+  when it writes `tasks: none`. The setup expert then offers to make a tasks
+  capability of the workspace's own for that tracker, from how the team uses
+  it, and makes it the tasks default on the person's yes; it pins no
+  generic provider in its place.
 - **`oats.aweb`** mints a messaging identity for each instance at spawn and
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code
@@ -151,6 +159,12 @@ Building an integration is implementing a contract. The framework's
   `oats-local.yaml` `settings.<cap>` and refuses it elsewhere
   (`E_WORKSPACE_SCHEMA`, reason `host-only-key`). The provider cannot enforce
   this itself: it receives one merged payload without provenance.
+- A setting every deployment must share (which shared task list to use) is
+  declared `committedOnly: true`, the mirror: the resolver refuses it from
+  `oats-local.yaml` `settings.<cap>` and `--provider` (`E_WORKSPACE_SCHEMA`,
+  reason `committed-only-key`), so it comes only from the workspace's
+  `messaging:` or `tasks:`, a soul's slot payload or the manifest default.
+  Kernels without the feature `settings-committed-only` ignore the flag.
 - A slot provider that declares `binding` answers `oats readiness` through
   its `binding.check` command
   ([capabilities.md](capabilities.md#readiness-check-bindingcheck)).

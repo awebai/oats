@@ -15,12 +15,16 @@ aw whoami
 If it fails, report the exact failure to your human and do not use tasks.
 Continue only with a working identity; do not create or repair one here.
 
+This workspace tracks work in aweb tasks, and its agents use them.
 This skill implements the OATS tasks layer only when `oats.aweb-tasks` is
 selected. Conversation belongs to the deployment's messaging layer. Do not
 replace the selected tasks provider with aweb tasks in another deployment.
+OATS does not ship aweb's own `aweb-coordination` skill; this skill takes its
+place for day-to-day work coordination, and the messaging skills never teach it.
 
 Run commands from your **instance home**, with your own oats.aweb identity in
-its default team. This capability creates no identity and joins no team. If
+the tasks team: its default team, or the team your TASK.md names ("Tasks
+team" below). This capability creates no identity and joins no team. If
 messaging is not oats.aweb or your identity is missing, ask your human. Load
 `/oats-aweb` for the team roster and `/aweb-team-membership` for team selection.
 For a team you already joined, use that team's explicit identity home:
@@ -33,6 +37,31 @@ Apply that same prefix to every task/work command for the joined team. Never
 use another instance's identity. The human is an assignee like any team member;
 use the exact alias from the roster, never a display-name guess. If the human
 is absent from that roster, ask for their exact member alias rather than guess.
+
+## Tasks team
+
+Skip this section unless your TASK.md's Tasks line names a team. That team's
+task list is the deployment's, and it is never your default team's. Find the
+identity that acts in it from your instance home:
+
+```bash
+oats aweb teams --json
+```
+
+- If `defaultTeam.label` is that label, it is your default team: plain
+  `aw task` and `aw work` commands are right, as above.
+- Otherwise the identity home is `joined[].identityHome` of the entry whose
+  `label` is that label. Use it on **every** task and work command, the
+  identity check included:
+
+  ```bash
+  aw --identity-home <identityHome> whoami
+  aw --identity-home <identityHome> work ready
+  ```
+
+- If no joined entry has that label, or it has no `identityHome`, report it to
+  your human and stop. Never fall back to the default team, and never build
+  the path yourself.
 
 ## Find and inspect work
 
@@ -76,6 +105,20 @@ Use that form to assign work to another member, including the human. Do not
 combine their assignment with the in-progress transition, which assigns you.
 Claim age alone does not invalidate ownership: contact the holder and record
 the agreed disposition before explicitly changing status or assignment.
+
+Your claims stay present only while something heartbeats them: the host's
+wake daemon from aw 1.36.54, or on a Claude or pi channel home the aweb-channel
+plugin from 1.8.2 or the aweb pi extension from 0.4.1. If readiness warns
+`wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated`,
+report it to your human.
+
+## Work and claim events
+
+aweb can present an event of type `work` or `claim` beside mail and chat. It
+reports a change in the team's work; it is not a message and needs no reply.
+Act on it at once only when it affects the work you are on. Otherwise note it
+and inspect it at your next task boundary with `aw work active` or
+`aw task show <ref>`.
 
 ## File-sourced text
 

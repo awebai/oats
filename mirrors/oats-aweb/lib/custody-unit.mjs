@@ -206,9 +206,12 @@ export function lingerEnabled({ platform, user, env }) {
   return r.ok && /^Linger=yes$/m.test(r.stdout);
 }
 
-/** Writes the unit when it is missing or differs, and makes sure it is loaded.
- *  A unit of this label that serves another directory is refused. */
-export function ensureCustodyUnit({ platform, label, aw, root, home, address, uid, env, xdgConfigHome }) {
+/** Writes the unit when it is missing or differs, and makes sure it is loaded
+ *  and its process running; a running, unchanged unit is left as it is.
+ *  A unit of this label that serves another directory is refused. `rerun`
+ *  names the command to rerun in a failure's remedy; `unload` overrides
+ *  reloadLaunchd's clock, sleep and bound. */
+export async function ensureCustodyUnit({ platform, label, aw, root, home, address, uid, env, xdgConfigHome, rerun = "the command", unload = {} }) {
   const manager = unitManager(platform);
   if (!manager) fail("E_RESIDENT_UNIT_UNSUPPORTED", `this host (${platform}) has no supported per-user service manager`);
   const path = unitPath({ platform, home, xdgConfigHome }, label);
@@ -229,8 +232,13 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     const target = `gui/${uid}/${label}`;
     const loaded = manage(env, "launchctl", ["print", target]);
     if (loaded.missing) fail("E_RESIDENT_UNIT_UNSUPPORTED", "launchctl is not available on this host");
-    if (changed && loaded.ok) managed(env, "launchctl", ["bootout", target]);
-    if (changed || !loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
+    // A loaded job is reloaded when its text changed, or when it is not
+    // running: launchd refuses the respawns of a job whose binary was
+    // replaced (an aw upgrade: exit 78, "needs LWCR update") until a
+    // bootstrap re-reads its code requirement. A running, unchanged job is
+    // left serving.
+    if (loaded.ok && (changed || launchdPid(loaded.stdout) === undefined)) await reloadLaunchd({ env, uid, label, path, rerun, ...unload });
+    else if (!loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
   } else {
     // Enabled by its path, the user's manager links the file into its own
     // configuration wherever the file is; by name, it looks only there.
@@ -246,21 +254,59 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
   return { manager, label, path, changed };
 }
 
+// Past launchd's default ExitTimeOut (20 s; neither plist sets one), after
+// which launchd kills a job that has not exited on SIGTERM.
+const UNLOAD_MS = 30000, UNLOAD_POLL_MS = 250;
+// launchctl print's exit status for a service its domain does not have
+// ("Could not find service"): the only answer that confirms a job is gone.
+const LAUNCHD_NOT_FOUND = 113;
+const shellWord = (s) => /^[A-Za-z0-9/_.@:-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+
+/** Restarts a loaded launchd job: bootout, then one bootstrap once launchd
+ *  confirms the job is gone. bootout returns before the job has exited, and a
+ *  bootstrap while it is still unloading fails (5: Input/output error) and
+ *  leaves it unloaded. A bootout that exits nonzero (3 while the job is still
+ *  unloading) is not fatal by itself: the wait decides. Only print's
+ *  not-found status confirms the job is gone; any other failed print is no
+ *  answer, and the wait goes on. Not confirmed gone after `timeoutMs`, it
+ *  fails with `codes.failed` before any bootstrap, naming the manual step,
+ *  `rerun` and the last failed print. */
+export async function reloadLaunchd({ env, uid, label, path, codes = RESIDENT_CODES, rerun = "the command", now = Date.now, sleep = pause, timeoutMs = UNLOAD_MS, intervalMs = UNLOAD_POLL_MS }) {
+  const target = `gui/${uid}/${label}`;
+  if (manage(env, "launchctl", ["bootout", target]).missing) fail(codes.unsupported, "launchctl is not available on this host");
+  const until = now() + timeoutMs;
+  for (;;) {
+    const r = manage(env, "launchctl", ["print", target]);
+    if (!r.ok && r.status === LAUNCHD_NOT_FOUND) break;
+    if (now() >= until) {
+      const state = r.ok ? "is still unloading" : `could not be confirmed unloaded (launchctl print ${target} failed${r.status != null ? ` (exit ${r.status})` : ""}${r.stderr ? `: ${r.stderr}` : ""})`;
+      fail(codes.failed, `launchd job ${label} ${state} ${timeoutMs / 1000} s after launchctl bootout ${target}, so it was not bootstrapped: once \`launchctl print ${target}\` no longer finds it, run \`launchctl bootstrap gui/${uid} ${shellWord(path)}\`, then rerun ${rerun}`);
+    }
+    await sleep(intervalMs);
+  }
+  managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path], codes);
+}
+
 /** The pid of a unit's running process, or undefined when it is not running.
  *  Loaded is not running: a KeepAlive or Restart= unit that keeps exiting is
  *  loaded (launchd "spawn scheduled", systemd activating/auto-restart). */
 export function runningPid(manager, env, uid, label) {
   if (manager === "launchd") {
     const r = manage(env, "launchctl", ["print", `gui/${uid}/${label}`]);
-    // The job's own state and pid are its top-level (one-tab) lines.
-    if (!r.ok || !/^\tstate = running$/m.test(r.stdout)) return undefined;
-    return Number(/^\tpid = (\d+)$/m.exec(r.stdout)?.[1]) || undefined;
+    return r.ok ? launchdPid(r.stdout) : undefined;
   }
   const r = manage(env, "systemctl", ["--user", "show", "-p", "ActiveState,SubState,MainPID", `${label}.service`]);
   if (!r.ok) return undefined;
   const value = (key) => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout)?.[1];
   if (value("ActiveState") !== "active" || value("SubState") !== "running") return undefined;
   return Number(value("MainPID")) || undefined;
+}
+
+/** The running pid in a loaded job's `launchctl print` output, or undefined.
+ *  The job's own state and pid are its top-level (one-tab) lines. */
+function launchdPid(printed) {
+  if (!/^\tstate = running$/m.test(printed)) return undefined;
+  return Number(/^\tpid = (\d+)$/m.exec(printed)?.[1]) || undefined;
 }
 
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));

@@ -83,6 +83,7 @@ import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createHostTheme } from "./host-theme.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
 import { createSpawnFollow, watchOperator } from "./spawn-follow.mjs";
+import { createLaunchFocus } from "./launch-focus.mjs";
 import { registerSpawnDialogKeys } from "./spawn-dialog-keys.mjs";
 import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs";
@@ -867,6 +868,8 @@ async function refreshContextRoster({ user = false } = {}) {
     rosterSignaturePainted = signature;
     renderContextRoster(contextInstances);
   }
+  // A launch's --instance waits for an observed read of this computer's rows, painted (launch-focus.mjs).
+  if (!reportedFailure && !panel.workspace?.remote) launchFocus.observe(contextInstances);
   if (focusedRetry && !focusedRetry.isConnected && !contextRosterEl.querySelector(".ctx-list")?.contains(document.activeElement)) {
     const entry = rosterEntry();
     if (entry?.matches(".ctx-inst, .ctx-background-toggle")) setRovingRow(entry.closest(".ctx-list"), entry);
@@ -1450,11 +1453,16 @@ function setRovingRow(listEl, row) {
 
 /** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through any
  * collapsed ancestor. False when the roster does not list it (yet). #1579: an explicit ask to see the row, so a
- * row the Background section holds opens the section; only the ancestors of its own part are expanded. */
-async function showInRoster(instance) {
+ * row the Background section holds opens the section; only the ancestors of its own part are expanded.
+ * `read` false (a launch's --instance): only the rows painted now count, the roster is not read again, and the
+ * selection is made before this returns, so nothing the person does can come between. */
+async function showInRoster(instance, { read = true } = {}) {
   const ws = currentWorkspace();
   const find = () => contextWorkspace === ws ? contextInstances.find(i => (i.server || null) === (instance?.server || null) && i.home === instance?.home) : null;
-  if (!find()) await refreshContextRoster();
+  if (!find()) {
+    if (!read) return false;
+    await refreshContextRoster();
+  }
   const row = find();
   if (!row || ws !== currentWorkspace() || !contextRosterEl) return false;
   const placed = backgroundPlacement(contextInstances, backgroundShown()), inBackground = placed.has(instanceId(row));
@@ -3354,6 +3362,15 @@ function applyChordTitles() {
 onKeymapChange(() => applyChordTitles());
 applyChordTitles();
 
+// A launch's --instance (launch-focus.mjs): its row is selected as "show in roster" selects it, once an observed
+// roster read lists it, unless the person chose something first. Only selects: no terminal opens, nothing starts.
+const launchFocus = createLaunchFocus({
+  watch: () => tabOpenIntents.watch(), operator,
+  select: (row) => showInRoster(row, { read: false }),
+  notify: (text) => notifications.notify(text),
+});
+window.addEventListener('pagehide', () => launchFocus.dispose(), { once: true });
+
 // Persistent recursive instance tree: always available between the list of
 // workspaces' views and the foot, with no second/contextual sidebar and no width jump.
 initContextRoster();
@@ -3362,6 +3379,14 @@ onWorkspaceChange(restoreWorkspaceTabs);
 onWorkspaceChange((ws) => { const handed = handedLayout(ws); if (handed) void restoreHandedLayout(ws, handed); });
 // A take-over: another window took this window's workspace (main's window:release-workspace).
 desktopBridge?.onWorkspaceRelease?.((message) => { void releaseTakenWorkspace(message); });
+// A launch asks this window to select an instance (main's window:focus-instance). The rows of the newest roster read,
+// painted for the workspace shown, answer it at once (an earlier visit's rows never do: a read begun since, a
+// switch's included, moves contextRosterGen on); otherwise the next roster read does.
+desktopBridge?.onLaunchFocus?.((message) => {
+  launchFocus.request(message);
+  const painted = shownRoster?.gen === contextRosterGen && shownRoster.ws === currentWorkspace() && contextWorkspace === shownRoster.ws;
+  if (painted && launchFocus.pending()) launchFocus.observe(shownRoster.instances);
+});
 /** Another window took `workspace` over. This window answers main at once, with the layout it shows of it
  * (layout-handover.mjs: its terminals and its split; file, brain and view tabs do not move), then leaves it
  * (views/common.mjs leaveTakenWorkspace: its previous workspace, else the switcher), then closes every tab it

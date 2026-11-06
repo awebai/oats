@@ -6,13 +6,14 @@ import { teamRow, defaultTeamOf } from './team-rows.mjs';
 import { harnessOf, harnessFlag, HARNESSES } from './harness-names.mjs';
 import { launchOf, PREVIEW_FROM } from './launch-contract.mjs';
 import { previewWarningsOf } from './capability-warnings-contract.mjs';
+import { INSTANCE_NAME_MAX, validInstanceName } from './instance-name.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 /** The kernel caps instance names, explicit and derived, at 64 characters
  * (#159, E_INSTANCE_NAME_INVALID). A longer --name or --purpose can never
  * name an instance, so it is refused before any CLI call. */
-export const INSTANCE_NAME_MAX = 64;
+export { INSTANCE_NAME_MAX };
 const INSTANCE_TOKEN = new RegExp(`^[a-z0-9][a-z0-9-]{0,${INSTANCE_NAME_MAX - 1}}$`, 'i');
 const arg = (v, max = 1024) => typeof v === 'string' && !!v && v.length <= max && !v.startsWith('-') && !/[\x00-\x1f\x7f]/.test(v);
 const safe = (v, max = 4096) => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]|https?:\/\/[^/\s]*@|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/.test(v);
@@ -159,15 +160,13 @@ export const instanceSuggestSupported = cli => cli?.ok === true && absolute(cli.
 export const APPLY_SUGGEST_FEATURE = 'spawn-apply-suggest-name';
 /** The harnesses a suggest-name call may name (codex answers numbered, `unsupported-harness`, with no call). */
 export const SUGGEST_HARNESSES = ['claude', 'pi', 'codex'];
-/** The exact name a suggestion gives: the kernel's slug, within its cap. */
-const SUGGESTED = new RegExp(`^(?=.{1,${INSTANCE_NAME_MAX}}$)[a-z0-9]+(?:-[a-z0-9]+)*$`);
 /** `oats instance suggest-name`'s answer, `{ name?, naming }`, or null when it is malformed: `naming` as a preview's
  *  (namingOf), and `name` exactly when it was suggested. */
 export function instanceSuggestion(v) {
   if (!record(v) || Object.keys(v).some(k => !['name', 'naming'].includes(k))) return null;
   const naming = namingOf(v.naming);
   if (!naming) return null;
-  if (naming.source === 'suggested') return typeof v.name === 'string' && SUGGESTED.test(v.name) ? { name: v.name, naming } : null;
+  if (naming.source === 'suggested') return validInstanceName(v.name) ? { name: v.name, naming } : null;
   return Object.hasOwn(v, 'name') ? null : { naming };
 }
 /** The request of the dialog's suggest-name read: `{ action: 'suggest-name', soul, task, harness?, model? }`, or null.

@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { requireTerms } from './client-terms.mjs';
 import { displayLine, DETAIL_WITHHELD } from './display-text.mjs';
 import { originLead } from './instance-presentation.mjs';
+import { currentRepoKey } from './repo-moves.mjs';
 
 const TEXT_MAX = 2048;
 const text = v => typeof v === 'string' && v.length > 0 && v.length <= TEXT_MAX && !v.includes('\0');
@@ -151,14 +152,16 @@ const keyTail = key => String(key).split('/').filter(Boolean).pop() || String(ke
  * `deployments`: `[{ id, local, name, attach }]` where `attach` comes from attachment().
  * Returns `[{ id, name, key, team, teamLabel, unattached, deployments: [id…], primary }]`: attached
  * views first in order of their first deployment, then one view per unattached deployment, under
- * its deployment id (today's id, so nothing saved breaks). */
+ * its deployment id (today's id, so nothing saved breaks). The two spellings of a moved repository are one
+ * workspace (repo-moves.mjs): a view takes its id and key from its first deployment, so what is saved under
+ * an id holds until that deployment's own key changes. */
 export function buildViews(deployments) {
   const attached = new Map(), loose = [];
   for (const d of deployments) {
     if (!d.attach || d.attach.unattached) { loose.push(d); continue; }
-    const id = viewId(d.attach.key, d.attach.team);
-    if (!attached.has(id)) attached.set(id, { id, key: d.attach.key, team: d.attach.team, teamLabel: d.teamLabel ?? null, members: [] });
-    attached.get(id).members.push(d);
+    const bucket = viewId(currentRepoKey(d.attach.key), d.attach.team);
+    if (!attached.has(bucket)) attached.set(bucket, { id: viewId(d.attach.key, d.attach.team), key: d.attach.key, team: d.attach.team, teamLabel: d.teamLabel ?? null, members: [] });
+    attached.get(bucket).members.push(d);
   }
   const views = [...attached.values()].map(v => {
     const primary = v.members.find(d => d.local) || v.members[0];
@@ -168,7 +171,7 @@ export function buildViews(deployments) {
   });
   // The same key with another team is another workspace: both names say which team.
   const byKey = new Map();
-  for (const v of views) byKey.set(v.key, [...(byKey.get(v.key) || []), v]);
+  for (const v of views) byKey.set(currentRepoKey(v.key), [...(byKey.get(currentRepoKey(v.key)) || []), v]);
   for (const same of byKey.values()) {
     if (same.length < 2) continue;
     const labels = same.map(v => v.teamLabel);

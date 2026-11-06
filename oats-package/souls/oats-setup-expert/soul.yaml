@@ -1,0 +1,14 @@
+schemaVersion: 2
+name: oats-setup-expert
+description: The OATS setup expert for a workspace — onboards it and its people, and keeps its OATS setup working.
+# A package soul in worktree mode would work in a tree of the package's own
+# repository, so it works in its own folder and clones the workspace's host
+# repository into its work/ when it changes a shared file.
+work: directory
+# So it spawns on a machine before knowledge is set up there.
+knowledge: none
+# No messaging slot: it takes the workspace's messaging default, so it stays
+# the workspace's operator.
+capabilities:
+  oats.setup: { from: here }
+  oats.onboarding: { from: here }

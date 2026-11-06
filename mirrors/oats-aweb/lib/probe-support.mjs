@@ -5,16 +5,17 @@ import {join, delimiter} from 'node:path';
 import {request as httpsRequest} from 'node:https';
 import {refuse, parseProbeJson, canonicalArgument} from './probe-runtime.mjs';
 import {readWorkspaceService} from './probe-service.mjs';
-import {AW_MIN, stableVersion, versionAtLeast} from './aw-floor.mjs';
+import {AW_MIN, AWEB_CLOUD_ORIGINS, parseVersion, versionAtLeast} from './aw-floor.mjs';
+import { plainServiceUrl } from './plain-service.mjs';
 
 // Maintainer declaration: oats-aweb#57, issuecomment-6077900224. The origins and
 // server floor are probe only; the CLI floor is the provider's single aw floor.
-export const PROBE_RELEASE_SUPPORT = Object.freeze({origins: Object.freeze(['https://app.aweb.ai']), cliFloor: AW_MIN, serverFloor: '1.27.12'});
+export const PROBE_RELEASE_SUPPORT = Object.freeze({origins: AWEB_CLOUD_ORIGINS, cliFloor: AW_MIN, serverFloor: '1.27.12'});
 
 /** Exact selected service only. URL.origin strips /api without switching host;
  * credentials, query strings and fragments are never accepted as an authority. */
 export function probeMetadataUrl(awebUrl) {
-  if (typeof awebUrl !== 'string' || awebUrl.length > 2048 || !/^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(awebUrl)) return null;
+  if (!plainServiceUrl(awebUrl)) return null;
   let url;
   try { url = new URL(awebUrl); } catch { return null; }
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !['/', '/api', '/api/'].includes(url.pathname)) return null;
@@ -42,10 +43,11 @@ export function resolveProbeAw(pathValue) {
 }
 export function probeAwVersion(bytes) {
   const text = Buffer.isBuffer(bytes) ? bytes.toString('utf8') : String(bytes);
-  // versionReport() emits text, even with --json. Only the anchored release
-  // version line grants admission; dev, prerelease and malformed lines refuse.
-  const match = /^aw ((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\r?\n(?:  (?:commit:|built:) [^\r\n]*\r?\n)*$/.exec(text);
-  return match && stableVersion(match[1]) ? match[1] : null;
+  // versionReport() emits text, even with --json. Only the anchored
+  // version line grants admission; malformed lines refuse. A pre-release is a version like any other:
+  // the floor decides it (aw-floor.mjs).
+  const match = /^aw ([0-9][0-9A-Za-z.+-]*)\r?\n(?:  (?:commit:|built:) [^\r\n]*\r?\n)*$/.exec(text);
+  return match && parseVersion(match[1]) ? match[1] : null;
 }
 export function observeProbeMetadata(url, budget, request = httpsRequest) {
   const timeout = budget.cap(5000);

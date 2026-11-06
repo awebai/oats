@@ -74,9 +74,12 @@ A self-contained package has an `oats.json`:
   resolves as a spawn of a soul would: the soul named by `--soul <name>`, or,
   without `--soul`, the first soul of the deployment by name, not disabled
   there, whose resolution provides the namespace (souls whose resolution is
-  refused are skipped). The chosen soul is named on stderr (`oats <namespace>:
-  no --soul given; running as soul <member>/<soul>, …`), so the command's
-  stdout, its `--json` envelope included, is the provider's alone. When no
+  refused are skipped). The chosen soul is named on stderr, so the command's
+  stdout, its `--json` envelope included, is the provider's alone:
+  `oats <namespace>: using the settings and teams of soul <member>/<soul>, …`.
+  The command runs with that soul's resolution (its provider settings, its
+  teams, its source and its name, in the variables below) and starts no
+  instance of it. When no
   soul provides the namespace, the command is refused with `E_BAD_ARGS` (`no
   soul of this deployment provides the <namespace> namespace; pass --soul
   <name>`, with any skipped souls and their codes in `details.skipped`).
@@ -416,8 +419,8 @@ the workspace's slot default. Teams compose nothing, so a soul's composition
 is the same for every person and machine. A resolved capability whose manifest says `layer: X` fills slot X; two for one slot are
 `E_SLOT_CONFLICT`. Provider settings start from the manifest's own declared
 defaults (`settings.<key>.default`, the lowest layer), then take the workspace's
-`messaging` payload for the messaging slot, the soul's
-slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
+`messaging` payload for the messaging slot or its `tasks` payload for the tasks
+slot, the soul's slot payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider`,
 deep-merged in that order. There are no agent types, no `global`, no
 per-deployment activation or exclusion maps.
 
@@ -602,7 +605,8 @@ A spawn or launch hook also gets `OATS_HARNESS_EXECUTABLE`, for every harness
 and the same way in a preview: the absolute real path of the executable the
 pane will run, found the way the pane finds it. It is reserved, so a launch
 configuration's `env` or a trigger cannot set it, and an inherited value is
-dropped. Where that lookup has no answer the variable is absent, never
+dropped. It doesn't reach the harness's pane, even from an existing server's
+environment. Where that lookup has no answer the variable is absent, never
 guessed: a bare harness name on a spawn with `--no-launch`, or before the pane's
 `PATH` is known. A hook should read its absence as "unknown".
 
@@ -613,17 +617,41 @@ When the program has changed, the launch runs the new one and says so: a warning
 in the answer and a `launch-warning` event in the home, both naming the path the
 hooks were given and the path it runs.
 
-A spawn or launch hook also gets `OATS_YOLO=1` when the kernel's resolved `yolo`
-for this launch is true, and the same in a preview. Otherwise it is absent,
-never `0`, and absent means not known. `launch.yolo` in `instance.json` can't
-answer this: it is the previous launch's, and a spawn has none. It is reserved
-like `OATS_HARNESS_EXECUTABLE`: a launch configuration cannot set it, and an
-inherited value is dropped. Neither name reaches the harness's pane, even from
-an existing server's environment.
+A spawn hook also gets `OATS_SPAWNER_HOME` (feature `spawn-attribution`): the
+absolute home of the instance whose session ran the spawn, as the kernel
+validated it and recorded it in `instance.json` `spawnedBy`
+([Spawned by](desktop-cli-api.md#spawned-by)). The hook's own
+`OATS_INSTANCE_HOME` is the new instance's, so this is how a provider learns
+who spawned it. Unlike `spawnOrigin`, which is informational, it selects who
+signs: a messaging capability that attributes identities issues the new one
+from this spawner, and from the deployment's own agent when it is absent. It is set only for a spawn
+hook, and only when there is a spawner. It is absent when a person spawned (a
+shell, the Desktop, an automation), when the caller's session was found gone,
+when the caller's home is another deployment's, and for a `--server` spawn
+whose caller is not a live home on that host. A spawner whose session cannot
+be read is kept. It is independent of `--relation` and of `parentInstance`.
+It is reserved like `OATS_HARNESS_EXECUTABLE`: a launch configuration, a
+trigger or a hook's `env` cannot set it, an inherited value is dropped from
+every hook's environment, from the environment a launch or a tmux server
+starts with and from a scheduled job's, and it never reaches the harness's
+pane, even from an existing server's environment. The kernel reads the caller from its environment only, so a harness that
+strips its session's environment reads as a person's spawn: that changes the
+recorded parent, never the human.
 
-It reports this launch's flag and nothing more. A `yolo` home can still show a
-question dialog, and a bypass set through `args` or a harness's own settings
-reads as absent.
+Read its absence as a person's spawn only when the kernel lists
+`spawn-attribution` (`oats version --json` `features`): an older kernel never
+sets it, so there absence says nothing. A provider gates the behaviour that
+depends on it on that feature at run time, not with `compatibility.oats`,
+which would refuse every capability of the package on an older host.
+
+A messaging capability may record, in the served identity it records
+(`identity` in its hook meta), an optional `attribution: {mode:
+"human"|"none"|"unknown", human: {id, label}|null, parent: {id}|null}`. The
+kernel never interprets its strings; it shows the human's `label` as
+`attributedHuman` on status rows, read through the messaging slot under a
+waiting claim's message rule ([Attributed human](desktop-cli-api.md#attributed-human)).
+Absent means today's behaviour. `spawnedBy` and `attribution` report: no
+kernel decision reads them.
 
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
@@ -665,7 +693,10 @@ instance session they are the session's.
 soul-set value from a host-set one there, and never reads `soul.yaml` for it;
 a home with none recorded gives `{}`. A final JSON line may return `meta`,
 `brief`, `warning`, or harness-specific `launch` arguments; a preview-aware
-launch hook's preview answer may add `volatileEnv` (below). A **spawn or
+launch hook's preview answer may add `volatileEnv` (below). A retire hook's
+`warning` is in the retire's `warnings` and, as a `retire-warning` event, in
+the instance's workspace log, readable with `oats instance events` after the
+home is gone ([Events](desktop-cli-api.md#events)). A **spawn or
 launch hook** may also return an `env` object for the launched process;
 returning `env` from a retire or [worktree](#the-worktree-event) hook is an
 explicit contract error.
@@ -776,6 +807,25 @@ resolver accepts it only from the deployment's own `oats-local.yaml`
 `host-only-key`).
 Declare it for any key whose value points at something a committed file must
 never be able to choose.
+
+The mirror is `committedOnly: true`: a key that must be the same for every
+deployment of the workspace, such as which shared list a tasks provider uses.
+The resolver accepts it only from committed, reviewed files, and refuses it in
+the deployment's `oats-local.yaml` `settings.<capability>` and in a
+`--provider` flag (`E_WORKSPACE_SCHEMA`, reason `committed-only-key`). It is a
+refusal, not a warning, and the key's presence is enough, even with the
+committed value. Where it may be set follows the capability's layer: for a
+messaging or tasks capability, `oats-workspace.yaml` under `messaging:` or
+`tasks:`, or a soul's slot payload; for a knowledge capability, a soul's
+`knowledge:` payload; for a capability with no layer, only its manifest
+default. The refusal names the key, where it was set (`details.layer` `host` or
+`spawn`, `details.at`), where it may be set (`details.allowed`) and the fix. A
+key marked both `hostOnly` and `committedOnly` could be set by nothing but its
+default, so the resolver refuses the manifest (`E_PACKAGE_MANIFEST` for a
+package capability, `E_CAPABILITY_MISSING` for a member one, `details.why`
+`settings-flag-conflict`). The kernel does not validate manifests against the
+schema, so a kernel without the feature `settings-committed-only` ignores the
+flag and merges the key from any layer.
 
 A hook may return only names in its manifest's exact `environment` declaration.
 For package capabilities that declaration is part of the integrity-locked tree
@@ -1149,7 +1199,7 @@ runs `bin/claude-waiting.sh` from the home's module copy, which calls
 | `UserPromptSubmit`, `Stop`, `SessionEnd` | none | clear, not debounced (a turn boundary) |
 | `StopFailure` | none | set `attention` or `question` by the error's class, the error as its message (see "A failed turn" below) |
 
-**A failed turn** (oats.core 2.10.0,
+**A failed turn** (oats.core 2.11.0,
 [#1667](https://github.com/awebai/oats/issues/1667)). A turn that ends in a
 provider error stops the session with nothing left to run an instruction, so
 the harness adapter reports it. The claim is reason `attention`, or `question`
@@ -1206,6 +1256,15 @@ harness answers nothing too. A pi home reads `unknown`: an extension can open it
 own dialog, and the kernel can't see which load. `reported` doesn't mean every
 dialog: [What a hold leaves open](schedules.md#what-a-hold-leaves-open) names what
 it can't see, the Claude dialogs that fire no hook among them.
+
+**A pi home with no provider** (oats.core 2.12.0). pi starts with no provider, takes
+its prompt and shows no error, so the home reads as running while nothing happens.
+On a real pass, spawn and launch hooks run `OATS_HARNESS_EXECUTABLE --list-models`,
+bounded at 3 s, and warn only when pi answers "No models available". The warning
+never refuses. No executable handed, a failed or slow probe, or any other answer
+says nothing. The hook sees the calling process's environment, not the pane's, so
+a pi folder (`PI_CODING_AGENT_DIR`) or key that only the launch or the pane has can
+warn on a pi that works.
 
 **One home per settings file.** The launch hook bakes the home it writes the
 settings for into every command, as its real path (oats.core 2.4.1). The

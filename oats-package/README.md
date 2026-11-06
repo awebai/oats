@@ -1,8 +1,9 @@
 # Framework capability payload
 
-The **oats.framework** package: the Git-distributed payload that ships three
-independently selected, resource-only capabilities and one package soul,
-`knowledge-theory-expert`. Package identity and
+The **oats.framework** package: the Git-distributed payload that ships five
+independently selected capabilities, all resource-only but `oats.core`, and
+two package souls, `knowledge-theory-expert` and `oats-setup-expert`. Package
+identity and
 version live in `oats-package.json`; each capability's identity, version and
 floor live in its own `oats.json`. The package root is `oats-package/`, not the
 npm root; the kernel npm tarball does not contain it.
@@ -11,6 +12,8 @@ npm root; the kernel npm tarball does not contain it.
 | --- | --- | --- |
 | `oats.core` | `oats-operate`, `oats-souls`, `oats-token-saving`, and the "You run on OATS" inject | How an agent works inside an instance, and how it keeps messages to other instances few and short; its hooks write a Claude instance's waiting hooks and adopt a home that `oats instance upgrade` moves; no commands, and not a core capability |
 | `oats.setup` | `oats-setup-model`, `oats-onboarding`, `oats-setup-expert`, `oats-host-delivery`, `oats-agent-permissions`, `oats-git-setup`, `oats-workspace-config`, `oats-teams`, `oats-package-pins`, `oats-automations`, `oats-upgrade`, and the setup inject | How an operator understands, realizes, configures and upgrades a workspace and a deployment; no automatic provisioning |
+| `oats.onboarding` | `oats-tailor-workspace` (the package soul `oats-setup-expert` uses it) | How the setup expert turns OATS's defaults into a new workspace's own coordination, knowledge and tasks capabilities; procedure only, no inject |
+| `oats.support` | `support-intake`, `support-safety`, `support-ticket`, `support-handoff`, `support-relay`, and the support inject | The support desk role: tickets requests and hands them to the project's support maintainer; never changes code, reviews, merges, releases or deploys |
 | `oats.knowledge-theory` | `knowledge-capability-authoring` with its complete local references (the package soul `knowledge-theory-expert` uses it) | Optional authoring theory; no mandatory runtime doctrine, harvester or OKF dependency |
 
 ## How a workspace selects them
@@ -57,10 +60,10 @@ declaring it is the trust decision; its capabilities add no commands or hooks.
 ## Maintainers
 
 `node scripts/check-knowledge-theory-package.mjs` is the manifest/inventory
-gate for all three capabilities; `--write` only synchronizes the theory
+gate for all its capabilities and package souls; `--write` only synchronizes the theory
 references from canonical docs. The optional theory curriculum begins at
 [the local authoring guide](capabilities/oats-knowledge-theory/skills/knowledge-capability-authoring/references/knowledge-capability-authoring.md).
-Git preserves the canonical theory expert's `CLAUDE.md -> AGENTS.md` alias;
+Git preserves each package soul's `CLAUDE.md -> AGENTS.md` alias;
 acquisition must not synthesize an alias missing from a partial copy.
 Publishing a new package version and its catalog entry is release work: never
 claim a version that the catalog does not list.

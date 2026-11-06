@@ -11,13 +11,13 @@
     "workspace": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$",
       "description": "Repo ref of the workspace host; observed over the remote, need not be cloned."
     },
     "standalone": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "pattern": "^(?:git@[^@\\s]+|ssh:/{2}[A-Za-z0-9._~][A-Za-z0-9._~-]*@[^@\\s]+|[^@\\s]+)$",
       "description": "Repo ref to realize in the STANDALONE view: its own souls and from: here capabilities plus oats.core, no workspace lookup. Use when the repo's workspace cannot be read; `workspace:` still names the repo you point the kernel at."
     },
     "clones": {

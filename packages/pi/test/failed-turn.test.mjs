@@ -37,12 +37,25 @@ function recordingHome(t) {
   const shim = join(home, ".oats", "bin", "oats"), log = join(home, "calls");
   writeFileSync(shim, `#!${process.execPath}\nrequire("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`);
   chmodSync(shim, 0o755);
-  const all = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : [];
-  return { home, all, calls: () => all().slice(1) };
+  // The shim writes a line and its newline as one buffer, but the file exists before they arrive: only
+  // what a newline ends is a call, so a read in between sees none, not an empty or half line.
+  const all = () => existsSync(log) ? readFileSync(log, "utf8").split("\n").slice(0, -1).map((line) => JSON.parse(line)) : [];
+  return { home, log, all, calls: () => all().slice(1) };
 }
 
 const setArgv = (home, message) => ["instance", "waiting", "set", "--reason", "attention", `--message=${message}`, "--producer", "oats.pi", "--home", home, "--json"];
 const clearArgv = (home) => ["instance", "waiting", "clear", "--producer", "oats.pi", "--home", home, "--json"];
+
+test("the shim's log, read while it writes: an empty file holds no call, and neither does a line with no newline yet", (t) => {
+  const { log, all } = recordingHome(t);
+  assert.deepEqual(all(), [], "no file yet");
+  writeFileSync(log, "");
+  assert.deepEqual(all(), [], "created, nothing in it");
+  writeFileSync(log, '["one"]\n["tw');
+  assert.deepEqual(all(), [["one"]], "the half line waits");
+  writeFileSync(log, '["one"]\n["two"]\n');
+  assert.deepEqual(all(), [["one"], ["two"]]);
+});
 
 test("a provider refusal: the claim is set once pi settles, not at agent_end, and the next run clears it", async (t) => {
   const { home, all, calls } = recordingHome(t);

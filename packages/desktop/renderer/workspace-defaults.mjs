@@ -11,6 +11,7 @@
 import { iconElement } from './shell-icons.mjs';
 import { sourceChip, sourceText } from './source-chip.mjs';
 import { memberNames, hostKeyOf } from '../../client/capability-rows.mjs';
+import { sameRepo } from '../../client/repo-moves.mjs';
 
 export const defaultsCSS = `
 /* Workspace defaults (design 2026-10-23, round 3): one panel, no lead and no identity mark. */
@@ -115,7 +116,7 @@ export function workspaceDefaults(status) {
 export function defaultRow(rows, { name, from }, hostKey) {
   if (!text(from) || (from === 'here' && !text(hostKey))) return null;
   const repoKey = from === 'here' ? hostKey : from;
-  const found = list(rows).find(row => row?.name === name && (from === 'package' ? row.kind === 'package' : row.kind === 'member' && row.repoKey === repoKey));
+  const found = list(rows).find(row => row?.name === name && (from === 'package' ? row.kind === 'package' : row.kind === 'member' && sameRepo(row.repoKey, repoKey)));
   if (found) return { row: found, listed: true };
   // An unlisted package row names no package: the capability's id is not its package's (oats.core is oats.framework's).
   return { row: from === 'package' ? { name, kind: 'package' } : { name, kind: 'member', repoKey }, listed: false };

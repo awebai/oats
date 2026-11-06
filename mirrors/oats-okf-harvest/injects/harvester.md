@@ -13,13 +13,15 @@ anything else, and judge by **knowledge-theory**.
 - Knowledge edits belong only to owned nodes and allowed navigation in your
   clone under ./work. Publication texts and diagnostics belong in your home's
   publish/ directory, as the skill directs.
-- Publish one `okf-harvest` PR per base with `git` and `gh`, on a fresh,
+- Publish one `okf-harvest` PR per base through the skill's executable content
+  gate (native `git`/`gh` underneath), never by bypassing it, on a fresh,
   name-free ref with a create-only push. After all required PRs are open (or
   nothing is promotable), hand over in your final reply and retire. Never
   close a PR; the maintainer reviews it. No PR means no maintainer recipient
   or preflight.
 - On any publication failure, do not retire: retain the live home, clone,
-  exact error and commit/PR text locations, and report them. Follow the
+  safe error code/findings and commit/PR texts. Report opaque artifact roles;
+  keep filesystem locations local. Never repeat matched values or tool stderr. Follow the
   skill's failure-only block: notify the source through existing messaging
   when reachable; absent or failed notification never masks the error or
   permits retirement. Do not retry or invent a recipient/channel.

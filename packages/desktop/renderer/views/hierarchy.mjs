@@ -52,6 +52,7 @@
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "../roster-cadence.mjs";
 import { computeClusters, siblingEdges } from "./clusters.mjs";
+import { sameRepo } from "../../../client/repo-moves.mjs";
 import { runtimeState, runtimeCounts } from "../../../client/instance-presentation.mjs";
 import { serverLabel } from "../../../client/remote-address.mjs";
 import { unsupportedLine, speakerParts, keptFailureLine, heldLine, heldStatus } from "../speaker-line.mjs";
@@ -1139,7 +1140,7 @@ function soulTarget(s, i) {
   if (!remote && answer.ambiguous.includes(key)) return several;
   const matches = answer.agents.filter(a => a.agentsRoot === i.agentsRoot && (remote
     ? a.name === key && a.server === i.server
-    : a.key === key && a.soulSource?.repoKey === repoKey));
+    : a.key === key && sameRepo(a.soulSource?.repoKey, repoKey)));
   if (!matches.length) return { reason: `${key} is not among this deployment's souls now.` };
   if (matches.length > 1) return several;
   const a = matches[0];

@@ -15,6 +15,16 @@ ipcRenderer.on("window:release-workspace", (_e, message) => {
   if (releaseKept.length > RELEASE_KEPT) releaseKept.shift();
 });
 
+// A launch's ask to select an instance (window:focus-instance, single-instance.mjs launchInstance) is heard from the
+// page's start too: one that comes before the shell subscribes is kept for the first subscriber. Only the latest is
+// kept, since a later launch's ask replaces an earlier one.
+let focusKept = null;
+const focusSinks = new Set();
+ipcRenderer.on("window:focus-instance", (_e, message) => {
+  if (focusSinks.size) { for (const sink of [...focusSinks]) sink(message); return; }
+  focusKept = message;
+});
+
 // main's Omarchy flag (host-theme.mjs OMARCHY_ARG, spelled the same here: preload cannot import it).
 const IS_OMARCHY = process.argv.includes("--oats-host-omarchy");
 
@@ -88,6 +98,14 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
     return () => { releaseSinks.delete(sink); };
   },
   windowReleaseAnswer: (request, payload) => ipcRenderer.invoke("window:release-answer", request, payload),
+  /** A launch asks this window to select an instance of its workspace (`--instance`): `cb({ deployment, name })`,
+   * or `cb({ invalid: true })` for a value that was not an instance name. Select only; nothing answers. */
+  onLaunchFocus: (cb) => {
+    const sink = (message) => cb(message);
+    focusSinks.add(sink);
+    if (focusKept !== null) { const message = focusKept; focusKept = null; sink(message); }
+    return () => { focusSinks.delete(sink); };
+  },
   /** A window with no workspace: the served choices, re-read now (#521). */
   windowChoices: () => ipcRenderer.invoke("window:choices"),
   /** Open a workspace's window, or focus the one it has; null opens a New Window (the switcher). */
