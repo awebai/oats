@@ -29,7 +29,10 @@
 //      the AppImage's launcher or runtime;
 //   5. the packaged app bundle launches and its renderer reaches the shell
 //      (CDP probe), which also proves main spawned the bundled server and it
-//      answered — i.e. no source-checkout dependency.
+//      answered — i.e. no source-checkout dependency. Linux also launches the
+//      AppImage with a real CLI-created stopped row, first and then into the
+//      running app: main sends both requests, the row takes roster focus and
+//      no notice appears over each 35s observation. Neither launch opens a terminal.
 //
 // CI runs phases 1–4 on every installer leg: both installer workflows
 // (build-installers.yml and release.yml's desktop-build) set
@@ -245,8 +248,9 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
   // port is app-selected: main.mjs's ensureServer runs its own freePort
   // from OATS_DESKTOP_PORT, so a random start value cannot collide fatally.
   // stdio is captured (bounded rolling tail) and drained on 'close' before
-  // any crash tail is reported; startup exit fails fast; one launch, one
-  // bounded wait — never a blind retry.
+  // any crash tail is reported; each startup has one bounded readiness wait.
+  // The picker and AppImage use separate profiles; the repeated AppImage launch
+  // deliberately uses the running app's profile.
   async function probeWindow({ instance = false } = {}) {
     const root = mkdtempSync(join(tmpdir(), "oats-desktop-smoke-"));
     const userData = join(root, "profile");
@@ -400,9 +404,9 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
         // did-finish-load sends the request; allow its stdout pipe to drain after the shell appears.
         while (!startupLog && !childExit && Date.now() < launchDeadline) await new Promise((r) => setTimeout(r, 100));
         console.log(startupLog.trim() || "dist:smoke launch disposition missing");
-        // TEMPORARY Step 1b diagnostic fields come from the renderer's read-only probe. The CDP
-        // operations below only evaluate observations: no input, pointer or focus commands.
-        async function observeRenderer(label, traceOffset = 0) {
+        // Read the rendered outcome without input, pointer or focus commands. Sample for longer
+        // than the launch request's 30s wait so a late failure notice cannot look like success.
+        async function observeRenderer(label) {
           const socket = new WebSocket(targets.webSocketDebuggerUrl);
           try {
             const observation = await new Promise((resolve, reject) => {
@@ -411,14 +415,14 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
                 expression: `new Promise(resolve => {
                   const samples = [], started = Date.now(); let previous = null;
                   function capture() {
-                    const state = { ...globalThis.__oatsLaunchState?.(),
+                    const state = {
                       focusedRow: document.activeElement?.closest?.('.ctx-inst')?.dataset.treeInstance ?? null,
                       mainNavigation: document.querySelector('#nav .nav-item.active')?.textContent?.trim() ?? null,
                       notices: [...document.querySelectorAll('.app-toast-text')].map(el => el.textContent),
                     };
                     const encoded = JSON.stringify(state);
                     if (encoded !== previous) { samples.push({ ms: Date.now() - started, ...state }); previous = encoded; }
-                    if (Date.now() - started >= 35000) resolve({ samples, trace: (globalThis.__oatsLaunchFocusTrace ?? []).slice(${traceOffset}) });
+                    if (Date.now() - started >= 35000) resolve({ samples, observedForMs: Date.now() - started });
                     else setTimeout(capture, 250);
                   }
                   capture();
@@ -440,13 +444,14 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
         const first = await observeRenderer("first");
         const repeated = await runTracked(artifacts.AppImage, args, { cwd: env.HOME, env, timeout: PHASE_BUDGET_MS.repeatedLaunch });
         if (repeated.timedOut || repeated.code !== 0) throw new Error(`second AppImage launch failed: ${boundedTail(repeated.stderr, repeated.stdout)}`);
-        const second = await observeRenderer("second", first.trace.length);
+        const second = await observeRenderer("second");
         const lines = startupLog.trim().split("\n");
         console.log(`dist:smoke launch dispositions: ${JSON.stringify(lines)}`);
         if (lines.length !== 2 || lines.some(line => line !== expected)) throw new Error(`AppImage launch disposition: ${startupLog.trim() || "missing"}; output tail:\n${await drainTail()}`);
         const expectedRow = join(deployment, "agents", "smoke", "instances", "smoke-probe");
         for (const [label, observation] of [["first", first], ["second", second]]) {
           if (observation.samples.at(-1)?.focusedRow !== expectedRow) throw new Error(`${label} launch did not keep the fixture's roster row focused`);
+          if (observation.samples.some(sample => sample.notices.length)) throw new Error(`${label} launch showed a notice`);
         }
       }
       ok(`packaged ${instance ? "AppImage instance request" : "empty-dir picker"} launched; ${result}`);

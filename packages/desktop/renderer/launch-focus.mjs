@@ -24,13 +24,6 @@ const INVALID_NOTICE = 'The instance named at launch isn\'t a valid instance nam
 const noneNotice = (name) => `No instance ${name} in this workspace.`;
 const manyNotice = (name) => `More than one instance in this workspace is named ${name}, so none was selected.`;
 
-// TEMPORARY Step 1b probe; remove before hand-back. Records decisions without generating input.
-const trace = (event, detail = {}) => {
-  const events = globalThis.__oatsLaunchFocusTrace ??= [];
-  events.push({ at: Date.now(), event, ...detail });
-  if (events.length > 200) events.shift();
-};
-
 /** Main's message as a request: `{ deployment, name }` (an absolute deployment id and a valid name), `{ invalid:
  * true }`, or null for anything else. */
 export function launchFocusRequest(message) {
@@ -64,20 +57,14 @@ export function createLaunchFocus({ watch, operator = { input: () => 0, pointer:
   const drop = () => { if (pending) clearTimer(pending.timer); pending = null; };
   // Whether the person has not chosen since the request (since its ticket, once the first roster read took it).
   const quiet = (p) => {
-    try {
-      if (p.owns && !p.owns()) { trace('dropped', { why: 'ticket' }); return false; }
-      if (operator.input() !== p.input) { trace('dropped', { why: 'operator input' }); return false; }
-      if (operator.pointer() !== p.pointer) { trace('dropped', { why: 'operator pointer' }); return false; }
-      return true;
-    } catch { trace('dropped', { why: 'ownership check threw' }); return false; }
+    try { return (!p.owns || p.owns()) && operator.input() === p.input && operator.pointer() === p.pointer; }
+    catch { return false; }
   };
   const expire = (p) => {
     if (pending !== p) return;
     pending = null;
     if (!quiet(p)) return;
-    const text = p.request.invalid ? INVALID_NOTICE : noneNotice(p.request.name);
-    trace('notified', { text });
-    notify(text);
+    notify(p.request.invalid ? INVALID_NOTICE : noneNotice(p.request.name));
   };
   return {
     /** Main's message: a request replacing any pending one. A message that is not one changes nothing. */
@@ -88,25 +75,20 @@ export function createLaunchFocus({ watch, operator = { input: () => 0, pointer:
       const p = { request, owns: null, input: operator.input(), pointer: operator.pointer(), timer: null };
       p.timer = setTimer(() => expire(p), LAUNCH_FOCUS_PENDING_MS);
       pending = p;
-      trace('pending', { request });
     },
     /** An observed roster read of the window's workspace, its rows painted. */
     observe(rows) {
       const p = pending;
       if (!p) return;
       if (!quiet(p)) { drop(); return; }
-      if (!p.owns) { p.owns = watch(); trace('ticket taken'); }
-      if (p.request.invalid) { drop(); trace('notified', { text: INVALID_NOTICE }); notify(INVALID_NOTICE); return; }
+      if (!p.owns) p.owns = watch();
+      if (p.request.invalid) { drop(); notify(INVALID_NOTICE); return; }
       const match = launchFocusMatch(rows, p.request);
-      if (match.none) { trace('pending, no matching row'); return; }
+      if (match.none) return;
       drop();
-      if (match.many) { trace('notified', { text: manyNotice(p.request.name) }); notify(manyNotice(p.request.name)); return; }
-      trace('matched', { name: match.row.instance });
+      if (match.many) { notify(manyNotice(p.request.name)); return; }
       // A select that throws or rejects (the row went meanwhile) leaves nothing more to do.
-      try {
-        Promise.resolve(select(match.row)).then(result => trace('selected', { result }),
-          () => trace('selection rejected'));
-      } catch { trace('selection threw'); }
+      try { Promise.resolve(select(match.row)).catch(() => {}); } catch { /* as a rejection */ }
     },
     pending: () => pending !== null,
     dispose: drop,
